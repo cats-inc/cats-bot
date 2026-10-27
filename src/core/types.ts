@@ -285,3 +285,77 @@ export type BotHostEvent =
   | { type: 'presence.changed'; conversationId: string; presence: PresenceState; reason: PresenceReason }
   | { type: 'runtime.status'; state: RuntimeState; detail?: string }
   | { type: 'host.handoff'; message: HandoffMessage };
+
+// ---- Command results the presentation reads (SPEC-001 FR-32, SPEC-002) ----------
+// Kept here, free of imports, so the renderer can type the bridge from this file
+// alone (ADR-003); the modules that produce them re-export them.
+
+/** The process that holds a bot's instance lock. */
+export interface InstanceLock {
+  pid: number;
+  host: string;
+  startedAt: string;
+}
+
+/** `status`. */
+export interface BotStatus {
+  id: string;
+  name: string;
+  root: string;
+  runtime: { state: RuntimeState; pid: number | null };
+  queue: { queued: number; running: WorkItem | null };
+  conversations: number;
+  schedules: number;
+  heartbeat: { enabled: boolean; nextAt: string | null };
+  lastTickAt: string | null;
+  lock: InstanceLock | null;
+  telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null };
+}
+
+export interface ProviderDefinition {
+  id: string;
+  label: string;
+  /** The command the runtime launches unless an override is configured. */
+  command: string;
+}
+
+/** `listProviders`. */
+export interface ProviderInfo extends ProviderDefinition {
+  /** Whether the command was found on PATH; null when the host cannot tell. */
+  installed: boolean | null;
+}
+
+export interface ModelOption {
+  id: string;
+  label: string;
+  default: boolean;
+}
+
+/** `listModels`. */
+export interface ModelCatalog {
+  provider: string;
+  defaultModel: string | null;
+  models: ModelOption[];
+  /** `runtime` when the running runtime answered, `packaged` for the shipped catalog. */
+  source: 'runtime' | 'packaged' | 'none';
+}
+
+export type TelegramHealth = 'healthy' | 'degraded' | 'failed';
+
+export interface TelegramStatus {
+  polling: boolean;
+  health: TelegramHealth;
+  ownerChatId: number | null;
+  lastPollAt: string | null;
+  lastError: string | null;
+  processedUpdates: number;
+  consecutiveFailures: number;
+}
+
+/** `telegramStatus`: never carries the token itself. */
+export interface TelegramSettingsStatus {
+  enabled: boolean;
+  tokenStored: boolean;
+  protection: 'os' | 'file';
+  transport: TelegramStatus | null;
+}

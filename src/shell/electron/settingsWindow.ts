@@ -13,7 +13,9 @@ import type { BotHostEvent } from '../../core/types.ts';
 
 export interface PageWindowOptions {
   preloadPath: string;
+  /** The built pages (`dist/renderer`, ADR-003). */
   rendererDir: string;
+  iconPath: string;
 }
 
 export function pageUrl(rendererDir: string, page: string, query: Record<string, string> = {}): string {
@@ -31,7 +33,7 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
     show: false,
     autoHideMenuBar: true,
     title: init.title,
-    icon: join(options.rendererDir, '..', 'icon.png'),
+    icon: options.iconPath,
     backgroundColor: '#fffaf0',
     webPreferences: {
       preload: options.preloadPath,

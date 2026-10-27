@@ -13,11 +13,8 @@ import type { BotPaths } from './paths.ts';
  * the first through the handoff directory and exits.
  */
 
-export interface InstanceLock {
-  pid: number;
-  host: string;
-  startedAt: string;
-}
+export type { InstanceLock } from '../types.ts';
+import type { InstanceLock } from '../types.ts';
 
 export type LockResult =
   | { held: true; release: () => void }

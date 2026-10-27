@@ -74,12 +74,18 @@ last step, not the first.
 
 ### Shell tests
 
-- **Location**: `tests/shell/trayMenu.test.ts`
+- **Location**: `tests/shell/trayMenu.test.ts`, `tests/shell/bridge.test.ts`
 - **Scope**: the Electron-free parts of the shell: the tray menu data and the
   note view state. Everything that needs Electron is checked by hand (below).
   `tests/core/providers.test.ts` covers the provider list, PATH detection,
   the model catalogs and first-run input validation (SPEC-002);
   `trayMenu.test.ts` also covers where the floating bot appears and its bubble text.
+  `bridge.test.ts` checks the renderer's `window.catsBot` type against the
+  shell (commands, note layers, preload methods; ADR-003), and
+  `architecture-boundaries.test.ts` that the renderer takes only types from
+  `core/types.ts`. Renderer logic that does not touch the DOM lives in plain
+  `.ts` modules so `node:test` can run it; components are checked in the
+  real shell (below).
 
 ### Manual acceptance
 
@@ -115,7 +121,8 @@ node --test "tests/core/*.test.ts"
 node --test "tests/integration/*.test.ts"       # about 45 s; starts the real runtime
 ```
 
-`npm run typecheck` type-checks tests as well as sources (`tsconfig.test.json`).
+`npm run typecheck` type-checks tests as well as sources (`tsconfig.test.json`)
+and the renderer (`tsconfig.renderer.json`).
 
 ## Rules
 

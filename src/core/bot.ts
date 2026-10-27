@@ -39,11 +39,13 @@ import type {
   BotHostEvent,
   BotProfile,
   BotProfilePatch,
+  BotStatus,
   ConversationRecord,
   HandoffMessage,
   JournalEntry,
   RuntimeState,
   ScheduleRecord,
+  TelegramSettingsStatus,
   WorkItem,
 } from './types.ts';
 
@@ -96,19 +98,7 @@ export interface BotCoreOptions {
   telegram?: { apiBaseUrl?: string; fetch?: typeof fetch; pollTimeoutSeconds?: number };
 }
 
-export interface BotStatus {
-  id: string;
-  name: string;
-  root: string;
-  runtime: { state: RuntimeState; pid: number | null };
-  queue: { queued: number; running: WorkItem | null };
-  conversations: number;
-  schedules: number;
-  heartbeat: { enabled: boolean; nextAt: string | null };
-  lastTickAt: string | null;
-  lock: InstanceLock | null;
-  telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null };
-}
+export type { BotStatus } from './types.ts';
 
 export class BotNotInitializedError extends Error {
   constructor(root: string) {
@@ -500,7 +490,7 @@ export class BotCore implements BotHostApi {
   }
 
   /** `protection` is how the stored token is protected; without a token, what this host would use. */
-  telegramStatus(): { enabled: boolean; tokenStored: boolean; protection: 'os' | 'file'; transport: TelegramStatus | null } {
+  telegramStatus(): TelegramSettingsStatus {
     return {
       enabled: this.profile.telegram.enabled,
       tokenStored: this.secrets.has(SECRET_TELEGRAM_TOKEN),

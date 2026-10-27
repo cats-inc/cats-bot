@@ -139,9 +139,12 @@ through `BotHostApi`.
   names to `BotHostApi`; events are broadcast to every note. `windows.ts`
   owns the frameless sticky-note windows (close hides, bounds and
   always-on-top persist in `shell-state.json`); `tray.ts` and `trayMenu.ts`
-  the tray and its menu. `assets/preload.cjs` is the sandboxed contextBridge
-  and `assets/renderer/` the note page, which keeps no durable state. The
-  renderer never sees the runtime's URL or key.
+  the tray and its menu. `assets/preload.cjs` is the sandboxed contextBridge.
+  The pages (notes, settings and first run, the floating cat) live in
+  `src/renderer/` and are built by Vite into `dist/renderer/` (ADR-003); they
+  keep no durable state, type `window.catsBot` in `src/renderer/bridge.ts` and
+  take only types from the core. The renderer never sees the runtime's URL
+  or key.
 
 ### `src/core/transports/telegram.ts` and `src/core/secrets.ts`
 

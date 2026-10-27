@@ -27,10 +27,14 @@ integration-test run (ADR-001 §1).
 ## Verify the toolchain
 
 ```bash
-npm run typecheck   # tsc over src/ and tests/
+npm run typecheck   # tsc over src/ and tests/, then over src/renderer/ (DOM, JSX)
 npm test            # node --test over tests/**/*.test.ts
-npm run build       # tsc -> dist/
+npm run build       # tsc -> dist/, then vite build -> dist/renderer/
 ```
+
+The pages are built, not loaded from the source tree (ADR-003): after
+changing anything under `src/renderer/`, run `npm run build` (or just
+`npm run build:renderer`) before `npm run shell`.
 
 All three must pass on Windows and on Linux; CI runs them on both.
 
@@ -98,7 +102,7 @@ The `Package` workflow builds both on every main update and keeps them as a
 workflow artifact (`cats-bot-windows-<sha>`, 30 days). The installer is
 per-user, needs no administrator, adds Start menu and desktop shortcuts and
 starts the app; a bot that was never set up opens the first-run page
-(SPEC-002 FR-1). Icons come from `assets/renderer/cat.svg` through
+(SPEC-002 FR-1). Icons come from `src/renderer/cat.svg` through
 `npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the

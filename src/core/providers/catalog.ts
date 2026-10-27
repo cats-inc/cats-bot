@@ -12,31 +12,8 @@ import { delimiter, dirname, join } from 'node:path';
  * provider (see `BotCore.listModels`).
  */
 
-export interface ProviderDefinition {
-  id: string;
-  label: string;
-  /** The command the runtime launches unless an override is configured. */
-  command: string;
-}
-
-export interface ProviderInfo extends ProviderDefinition {
-  /** Whether the command was found on PATH; null when the host cannot tell. */
-  installed: boolean | null;
-}
-
-export interface ModelOption {
-  id: string;
-  label: string;
-  default: boolean;
-}
-
-export interface ModelCatalog {
-  provider: string;
-  defaultModel: string | null;
-  models: ModelOption[];
-  /** `runtime` when the running runtime answered, `packaged` for the shipped catalog. */
-  source: 'runtime' | 'packaged' | 'none';
-}
+export type { ModelCatalog, ModelOption, ProviderDefinition, ProviderInfo } from '../types.ts';
+import type { ModelCatalog, ModelOption, ProviderDefinition, ProviderInfo } from '../types.ts';
 
 export const CLI_PROVIDERS: readonly ProviderDefinition[] = [
   { id: 'claude', label: 'Claude Code', command: 'claude' },
