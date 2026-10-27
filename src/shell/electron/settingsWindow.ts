@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url';
 import { BrowserWindow } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
+import { guardNavigation } from './navigation.ts';
 
 /**
  * SPEC-002 FR-4: one settings window per bot, with tabs for the bot's
@@ -44,6 +45,7 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
     },
   });
   window.removeMenu();
+  guardNavigation(window.webContents);
   return window;
 }
 

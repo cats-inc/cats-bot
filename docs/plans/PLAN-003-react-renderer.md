@@ -26,11 +26,11 @@
 
 ### Slice 2：便箋改用 React 並渲染 markdown（FR-2、FR-3）
 
-- [ ] 便箋頁面以 React 重寫，保留 IME 的 Enter 判斷、只在有焦點時標為已讀、抬起後把焦點還給輸入框、
+- [x] 便箋頁面以 React 重寫，保留 IME 的 Enter 判斷、只在有焦點時標為已讀、抬起後把焦點還給輸入框、
       串流中的回覆以 `workItemId` 對應、回合結束後重新讀逐字稿。
-- [ ] `react-markdown` + `remark-gfm` + `remark-breaks`；連結與圖片規則；殼拒絕開新視窗與換頁，
+- [x] `react-markdown` + `remark-gfm` + `remark-breaks`；連結與圖片規則；殼拒絕開新視窗與換頁，
       http(s) 交給系統瀏覽器。
-- [ ] 測試：連結規則、逐字稿整理。
+- [x] 測試：連結規則、逐字稿整理。
 
 ### Slice 3：工具卡片與主人的決定（FR-4、FR-5）
 
@@ -53,4 +53,5 @@
 
 | Date | Update |
 |------|--------|
+| 2026-10-28 | Slice 2：便箋改用 React，bot 回覆以 `react-markdown` + GFM 顯示。真機驗收（fixture CLI 原樣回傳 markdown）：標題、粗體、斜體、刪除線、清單、引言、表格、程式碼區塊、單一換行都正確；外部連結帶 `target=_blank`、本機路徑是不可點的文字、原始 HTML 以文字顯示、遠端圖片變成連結；340 px 寬的便箋沒有橫向捲軸，程式碼區塊與過寬的表格在自己裡面捲動（表格原本繼承便箋的 `word-break` 而逐字斷行，已修正）。`window.open` 與換頁都被殼擋下，頁面仍在 `note.html`。回合進行中主人的訊息立即出現（舊版要等回合結束）、顯示 thinking…、Cancel 可按。重跑桌面層抬起（抬起後焦點回到輸入框）與背景未讀腳本都通過。未實測：點 https 連結真的開啟瀏覽器（避免在 owner 桌面開分頁；規則有單元測試）、輸入法 |
 | 2026-10-28 | Slice 1：Vite 7.3.6 建置三個頁面；Electron 41 以 file:// 載入 `type="module"` 的輸出正常，CSP 不必放寬。重跑驗收腳本：model 選單快速切換 8/8 正確、存檔保留 `claude · haiku`、桌面層便箋隱藏後再開 7 秒後仍抬起、背景便箋未讀 1 且浮動貓顯示 1、開啟後歸零；`dist:dir` 打包版以新的 bot id 開出首次啟動頁，provider 15 個、model 清單載入。esbuild 的 postinstall 被 npm 擋下仍可用（與 koffi 相同） |

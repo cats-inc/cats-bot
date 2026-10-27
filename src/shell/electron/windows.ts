@@ -13,6 +13,7 @@ import {
   type NoteViewState,
   type ShellState,
 } from './viewState.ts';
+import { guardNavigation } from './navigation.ts';
 import type { DesktopHost } from './win32Desktop.ts';
 
 /**
@@ -186,6 +187,7 @@ export class NoteWindows {
         spellcheck: false,
       },
     });
+    guardNavigation(window.webContents);
     this.windows.set(conversationId, window);
     const url = pathToFileURL(join(this.options.rendererDir, 'note.html'));
     url.searchParams.set('conversation', conversationId);
