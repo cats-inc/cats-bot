@@ -31,6 +31,29 @@ bot passes `--host 127.0.0.1 --port <port>` on the command line, where the port
 was just reserved by binding and closing a loopback listener (cats-runtime 0.6.1
 rejects `--port 0`).
 
+## Running Beside Cats Desktop
+
+A bot and Cats Desktop run side by side without port conflicts (checked on
+2026-10-28 with both running on the same Windows machine):
+
+- Cats Desktop listens on fixed loopback ports, 8181 for the app and 3110 for
+  its runtime (`cats-platform/desktop/host/config.ts`, overridable with
+  `CATS_DESKTOP_APP_PORT` / `CATS_DESKTOP_RUNTIME_PORT`).
+- A bot asks the operating system for a free port (bind to port 0) for its
+  runtime and its tool server, so it only ever gets ports from the dynamic
+  range (49152-65535 on Windows), never 3110 or 8181. The only overlap would
+  come from configuring Cats Desktop onto a port inside that range.
+- The runtime port is reserved and released just before the runtime binds
+  it. If another program takes it in that moment, the runtime fails to
+  start and the core retries with backoff and a newly reserved port
+  (SPEC-001 FR-6).
+- Every inherited `CATS_RUNTIME_*` variable, including `CATS_RUNTIME_PORT`, is
+  dropped before the bot's runtime starts, so a value meant for Cats Desktop
+  never redirects it.
+- The bot's runtime keeps its own data directory (`<bot data root>/runtime`)
+  and has session discovery off, so it neither reads nor adopts Cats Desktop
+  sessions. Both use the same provider CLI sign-in, by design.
+
 ## Cross-Project Port Coordination
 
 This project was created from **project-bootstrap**, which maintains a central
@@ -41,4 +64,4 @@ registry, and warn about conflicts.
 
 ---
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-28*
