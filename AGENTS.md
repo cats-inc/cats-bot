@@ -62,6 +62,28 @@
   conflicts and make ports configurable; do not modify an external registry
   without permission.
 
+## Release completion
+
+- Prepare version fields, release notes, exact source/artifact pins, compatibility
+  and migration notes, and the applicable signing profile in the original bump
+  commit/PR before publication. Do not claim future verification has passed.
+- After publication, verify the required workflow and public assets/registry,
+  report the results in the final response, and stop. Actions run results/logs
+  and release assets are the hosted evidence; do not create a GitHub Release for
+  an npm-only target.
+- MUST NOT edit the published GitHub Release (description, title, assets or
+  flags), and MUST NOT add a follow-up tracked report, status edit, commit or PR
+  to change "prepared" to "published", append validation/checksums, or refresh
+  release history in README/PROGRESS/docs. Do not offer any of these as optional
+  follow-ups. This rule overrides generic project-memory
+  sync requirements for routine publication results. Further repository changes
+  need an explicit request or an actual release defect within authorized scope.
+- Once the selected release is published and verified, perform its authorized
+  cleanup and finish. Do not chase unrelated main commits, rebase, rebuild or
+  republish solely to land post-release documentation.
+- Follow the [shared release completion policy](https://github.com/cats-inc/cats-one/blob/main/docs/release-guide.md#release-preparation-and-completion).
+
+
 ## Development Workflow
 
 Default: plan → feature/fix branch → implement → test → independent review →
