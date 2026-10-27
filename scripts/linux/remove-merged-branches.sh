@@ -8,14 +8,23 @@
 # When a pull request is squash-merged and its head branch is deleted on the
 # remote, the local branch stays behind, and `git branch -d` refuses to remove
 # it: a squashed commit has a different SHA than the branch it came from, so the
-# branch never looks fully merged. This script decides on upstream state rather
-# than commit reachability. A branch counts as merged once it had an upstream and
+# branch never looks fully merged. This script starts from upstream state rather
+# than commit reachability: a branch is a candidate once it had an upstream and
 # that upstream is gone.
 #
-# That makes the sweep safe by construction. A branch that was never pushed has
-# no upstream at all and can never be reported as gone, so local-only work is
-# never swept. Branches checked out in another worktree are reported and skipped,
-# and the default branch is never removed.
+# A gone upstream alone is not proof of a merge, though. A pull request closed
+# without merging and a branch that gained commits after its merge look exactly
+# the same. So a candidate is deleted only when the default branch already
+# contains everything on it: merging the branch into the default branch would
+# change nothing, or a commit on the default branch carries exactly the branch's
+# tree (a branch rebased before its squash merge). Any other candidate is kept
+# and reported, with the command to delete it by hand.
+#
+# A branch that was never pushed has no upstream at all and can never be
+# reported as gone, so local-only work is never swept. Branches checked out in
+# another worktree are reported and skipped, and the default branch is never
+# removed. The landed check needs Git 2.38 or newer; an older Git keeps every
+# candidate and says so.
 #
 # The working tree must be clean. A clean tree is not enough to leave a branch,
 # though: someone may have committed and be waiting on CI. --return-to-default
@@ -193,6 +202,67 @@ resolve_default_branch() {
 }
 
 default_branch="$(resolve_default_branch)"
+
+# The merge landed on the remote, so compare against its default branch when the
+# clone tracks one. A local default branch that is behind would only make a
+# merged branch look unmerged, never the other way round, so it is an acceptable
+# fallback for a clone without a remote.
+resolve_landed_ref() {
+  if [ -z "$default_branch" ]; then
+    return 0
+  fi
+  if git_repo show-ref --verify --quiet "refs/remotes/origin/$default_branch"; then
+    printf '%s\n' "refs/remotes/origin/$default_branch"
+  else
+    printf '%s\n' "refs/heads/$default_branch"
+  fi
+}
+
+# Prints landed, unmerged, no_default or unsupported for branch $1 against ref $2.
+branch_landed() {
+  local name="$1" into="$2" merged code into_tree merged_tree tip_tree base
+  if [ -z "$into" ]; then
+    echo no_default
+    return 0
+  fi
+
+  # A squash merge leaves nothing to find by commit reachability, so ask what
+  # merging the branch into the default branch would produce. When that tree
+  # equals the default branch's own tree, the branch has nothing left to add.
+  code=0
+  merged="$(git_repo merge-tree --write-tree --no-messages "$into" "$name" 2>/dev/null)" || code=$?
+  if [ "$code" -gt 1 ]; then
+    # Exit 1 is a conflicting merge, which the tree check below can still
+    # settle. Anything else is a usage error (Git before 2.38 has no
+    # --write-tree) or a broken repository, neither of which proves anything.
+    echo unsupported
+    return 0
+  fi
+  into_tree="$(git_repo rev-parse "$into^{tree}")"
+  merged_tree="$(printf '%s\n' "$merged" | head -n 1)"
+  if [ "$code" -eq 0 ] && [ "$merged_tree" = "$into_tree" ]; then
+    echo landed
+    return 0
+  fi
+
+  # A branch rebased before its squash merge leaves a commit on the default
+  # branch with exactly its tree, even when the default branch has since
+  # changed the same files and the merge above conflicted.
+  tip_tree="$(git_repo rev-parse "$name^{tree}")"
+  if base="$(git_repo merge-base "$into" "$name" 2>/dev/null)" && [ -n "$base" ]; then
+    if git_repo log --format=%T "$base..$into" | grep -Fxq -- "$tip_tree"; then
+      echo landed
+      return 0
+    fi
+  fi
+
+  echo unmerged
+}
+
+landed_into="$(resolve_landed_ref)"
+landed_label="${landed_into#refs/remotes/}"
+landed_label="${landed_label#refs/heads/}"
+
 current_branch="$(git_repo branch --show-current)"
 
 # Branches held by another worktree cannot be deleted; git blocks it for us, but
@@ -215,19 +285,36 @@ is_worktree_held() {
 
 blocked=()
 deletable=()
-# Only a gone upstream shows the current branch landed; a detached HEAD has none.
+# Only a landed current branch may be left; a detached HEAD has no branch at all.
 current_merged=false
 while IFS="$(printf '\t')" read -r name track; do
   if [ "$track" != "gone" ]; then
     continue
   fi
-  if [ -n "$current_branch" ] && [ "$name" = "$current_branch" ]; then
-    current_merged=true
-  fi
   # The default branch tracks a live upstream and should never reach this list,
   # but never delete the branch everything else falls back to.
   if [ -n "$default_branch" ] && [ "$name" = "$default_branch" ]; then
     continue
+  fi
+  # A gone upstream is only the trigger. Prove that the candidate has landed
+  # before it can be deleted; keep and report the rest (see branch_landed).
+  case "$(branch_landed "$name" "$landed_into")" in
+    landed) ;;
+    unmerged)
+      echo "  keep   $name (upstream gone, but '$landed_label' does not contain all of its changes; delete it yourself with git branch -D $name once you are sure)"
+      continue
+      ;;
+    no_default)
+      echo "  keep   $name (upstream gone, but there is no default branch to check it against)"
+      continue
+      ;;
+    *)
+      echo "  keep   $name (upstream gone, but git could not verify that it landed; the check needs Git 2.38 or newer)"
+      continue
+      ;;
+  esac
+  if [ -n "$current_branch" ] && [ "$name" = "$current_branch" ]; then
+    current_merged=true
   fi
   if is_worktree_held "$name"; then
     blocked+=("$name")
@@ -268,7 +355,7 @@ else
 
   for name in ${deletable[@]+"${deletable[@]}"}; do
     # -D, not -d: a squashed branch is never reachable from the default branch,
-    # so -d refuses every time. `gone` is the merge evidence here.
+    # so -d refuses every time. branch_landed supplied the merge evidence above.
     sha="$(git_repo rev-parse --short "$name")"
     if [ "$DRY_RUN" = true ]; then
       echo "  would delete $name (was $sha)"
@@ -286,7 +373,7 @@ if [ "$RETURN_TO_DEFAULT" = true ]; then
     # A clean tree only shows the work was committed. In a shared clone this
     # branch may be someone else's, still waiting on its pull request.
     if [ -n "$current_branch" ]; then
-      position="'$current_branch', which has not merged (its upstream still exists, or it was never pushed)"
+      position="'$current_branch', which has not merged (its upstream still exists, it was never pushed, or it still holds changes '$default_branch' lacks)"
     else
       position="a detached HEAD"
     fi

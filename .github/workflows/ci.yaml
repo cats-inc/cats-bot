@@ -107,7 +107,37 @@ jobs:
           test -f LICENSE || (echo "Missing LICENSE" && exit 1)
           echo "All required files present."
 
+      - name: Set up Python for YAML validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
       - name: Validate YAML files
+        # Every tracked YAML file must parse; one parse error fails the job.
         run: |
-          echo "Validating YAML files..."
-          find . -name "*.yaml" -o -name "*.yml" | head -20 | xargs -I {} sh -c 'python -c "import yaml; yaml.safe_load(open('{}'))" && echo "Valid: {}"' || true
+          python -m pip install --quiet pyyaml
+          python - <<'PY'
+          import subprocess
+          import sys
+
+          import yaml
+
+          listed = subprocess.run(
+              ["git", "ls-files", "-z", "--", "*.yaml", "*.yml"],
+              check=True,
+              capture_output=True,
+          ).stdout.decode("utf-8")
+          paths = [path for path in listed.split("\0") if path]
+          failures = 0
+          for path in paths:
+              try:
+                  with open(path, encoding="utf-8") as handle:
+                      list(yaml.safe_load_all(handle))
+              except Exception as error:
+                  failures += 1
+                  print(f"Invalid: {path}: {error}", file=sys.stderr)
+              else:
+                  print(f"Valid: {path}")
+          print(f"Checked {len(paths)} YAML file(s), {failures} invalid")
+          sys.exit(1 if failures else 0)
+          PY

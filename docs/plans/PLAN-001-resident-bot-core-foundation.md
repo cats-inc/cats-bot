@@ -48,7 +48,9 @@
 - [ ] Task 1.2：`src/core/store/`：資料根目錄配置、鎖檔與單一實例交接、暫存檔加 rename 的原子寫入、
       journal 追加與啟動時重建。
 - [ ] Task 1.3：`src/core/runtime/supervisor.ts`：以釘定套件的 bin 啟動 app-managed runtime、解析
-      `runtime.ready`、`GET /health` 確認、退避重啟、關閉順序、discovery 目錄指向空資料夾。
+      `runtime.ready`、`GET /health` 確認、退避重啟、關閉順序、以環境變數關閉背景 discovery
+      （`CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS=0`、WSL／Docker policy `manual_only`；不改 provider
+      的 session 目錄）。
 - [ ] Task 1.4：`src/core/runtime/client.ts`：sessions 的 create / resume / close / delete / cancel /
       observe / history、`messages` 的 NDJSON 串流解析、health；Bearer API key。
 - [ ] Task 1.5：`src/core/conversations/`：對話與 transcript、home 對話建立、attachment 狀態機、
@@ -59,7 +61,7 @@
       `conversations`；`run` 在前景跑 core 並把事件印到 stdout。
 - [ ] Task 1.8：測試：假 runtime client 與假時鐘的單元測試（狀態機、gate、重試、承接包截斷）；
       暫存目錄裡真的 runtime 程序加腳本化 fixture provider 的整合測試（建立、串流、取消、resume、
-      重啟 core 後狀態一致）。
+      重啟 core 後狀態一致；登錄裡有 discovered 項目時列表不受影響且 `history` 可讀）。
 
 **Deliverables**：A1 通過；`cats-bot run` 配合真的 CLI 能對話、取消、resume；重啟不重跑
 `interrupted` 的工作項。
@@ -67,7 +69,8 @@
 ### Phase 2: 活著（SPEC-001 FR-20–FR-31；驗收 A2）
 
 - [ ] Task 2.1：`src/core/life/reconcile.ts`：60 秒對帳 tick（啟動後 5 秒第一次、不重疊、不呼叫模型）、
-      runtime 重啟、home 的 resume / 重建與 5 分鐘退避、`presence` 紀錄、殘留 `running` 轉 `interrupted`。
+      runtime 重啟、runtime 狀態分類（活著／已關閉／不存在／未知）與 `busy` 保護、home 的 resume / 重建
+      與 5 分鐘退避、`presence` 紀錄、殘留 `running` 轉 `interrupted`。
 - [ ] Task 2.2：`src/core/life/schedules.ts`：一次性與 cron（IANA 時區由 core 換算）、到期轉工作項、
       coalesce、錯過政策與 grace。
 - [ ] Task 2.3：`src/core/tools/`：bot 的 session MCP server（`schedule_create`、`schedule_list`、
@@ -78,7 +81,8 @@
 - [ ] Task 2.6：CLI 加 `schedule add | list | cancel`、`approve <workItem> <decision>`、
       `heartbeat pause | resume`。
 - [ ] Task 2.7：測試：無視圖下到期排程執行；重複輸入合併；殺掉 runtime 後 home 在 60 秒內
-      `ready`；安靜心跳不產生訊息但有日誌；busy 4 分鐘重試；`interrupted` 不重播；三種錯過政策；
+      `ready`；session `busy` 時 tick 不 resume、重建或取消；`initializing` 的 session 由心跳帶到
+      ready；安靜心跳不產生訊息但有日誌；busy 4 分鐘重試；`interrupted` 不重播；三種錯過政策；
       OS 恢復後最多補一次心跳；模型口頭答應而未呼叫工具時沒有排程。
 
 **Deliverables**：A2 的無頭示範留下日誌證據：在對話裡建立排程、關掉所有視圖、到點執行、
@@ -180,6 +184,7 @@
 | Date | Update |
 |------|--------|
 | 2026-10-27 | PLAN-001 與 ADR-001、SPEC-001 一起建立；兩份研究文件融合；沒有任何程式碼 |
+| 2026-10-27 | 依 Codex 審閱修訂：discovery 隔離改為 runtime 旗標而非改目錄（ADR-001 §1、SPEC-001 FR-5）；對帳依 session 狀態分類並保護 `initializing` 與 `busy`（ADR-001 §5、SPEC-001 FR-20）；分支清理腳本改為驗證已落地才刪除；CI 的 YAML 驗證改為會失敗 |
 
 ---
 

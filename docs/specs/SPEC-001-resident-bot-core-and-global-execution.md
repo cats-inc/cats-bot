@@ -49,8 +49,11 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 - **工作項**：接納管線的單位，來源為主人訊息、排程、事件或心跳；狀態 `queued | running |
   awaiting_owner | completed | failed | cancelled | interrupted`。
 - **configRevision**：`executionTarget` 每次變更遞增的序號；工作項在接納時記下它。
-- **session 活著**：attachment 狀態為 `ready` 或帶 session id 的 `initializing`，且 runtime
-  `GET /sessions/{id}` / `observe` 未回報可復活的關閉狀態。runtime 連不上時為「未知」。
+- **session 活著**：runtime `GET /sessions/{id}`（或 `observe`）回報的 `status` 為 `initializing`、
+  `ready` 或 `busy`；runtime 的 `SessionStatus` 只有這三者加 `closing` 與 `closed`。`closing`／`closed`
+  是「已關閉」；404 是「不存在」；連不上、逾時或 5xx 是「未知」，與已關閉不同。attachment 側對應：
+  `ready` 與帶 session id 的 `initializing` 是活著的候選；`busy` 不是 attachment 狀態，而是 runtime
+  對進行中回合的回報。
 
 ## Requirements
 
@@ -64,7 +67,7 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 2. FR-2：資料根目錄預設 `~/.cats/bots/<id>/`，可由 `CATS_BOTS_HOME` 覆寫。配置：`profile.json`、
    `conversations/<conversationId>.json`（對話中繼資料與 attachment）、
    `transcripts/<conversationId>.jsonl`、`journal.jsonl`（工作項、排程與狀態轉移）、
-   `runtime/`（作為 `CATS_RUNTIME_DIR`）、`discovery/`（空資料夾，給 runtime 的 discovery 指向）、`logs/`。
+   `runtime/`（作為 `CATS_RUNTIME_DIR`）、`logs/`。
 3. FR-3：同一資料根目錄同一時間只有一個寫入者，以鎖檔保證；第二個同 id 實例把啟動參數交給
    第一個並退出。所有寫入以暫存檔加 rename 完成；讀取絕不寫回。
 4. FR-4：讀取時缺少或不合法的欄位逐欄套預設值，不改寫既有檔案；檔案損壞時回報錯誤並保留原檔，
@@ -74,9 +77,14 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 
 5. FR-5：core 以釘定版本的 `@cats-inc/cats-runtime` 套件的 `cats-runtime` bin 啟動子程序：
    `--startup-mode app-managed --managed-by cats-bots --ready-output json --host 127.0.0.1 --port 0`；
-   環境變數 `CATS_RUNTIME_DIR=<root>/runtime`、`CATS_RUNTIME_API_KEY=<core 產生的隨機值>`，
-   以及把 native / agent session discovery 目錄指向 `<root>/discovery/`。從 stdout 的 `runtime.ready`
-   取得 `healthUrl`，`GET /health` 成功才算 ready；逾時（預設 60 秒）標 `failed` 並記原因。
+   環境變數 `CATS_RUNTIME_DIR=<root>/runtime`、`CATS_RUNTIME_API_KEY=<core 產生的隨機值>`、
+   `CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS=0`（關閉背景 native 與 agent discovery）、
+   `CATS_RUNTIME_WSL_DISCOVERY_POLICY=manual_only`、`CATS_RUNTIME_DOCKER_DISCOVERY_POLICY=manual_only`。
+   不改任何 provider 的 session 目錄設定，因為同一目錄也是 `history` 與 resume 的讀取來源；core 永不
+   呼叫 `/sessions/discover` 類端點；runtime 以 FileWatcher 匯入的 `origin: 'discovered'` session 沒有
+   worker，core 在所有列表中忽略它們，並只以 attachment 記錄辨識自己的 session，不掃描 `GET /sessions`。
+   從 stdout 的 `runtime.ready` 取得 `healthUrl`，`GET /health` 成功才算 ready；逾時（預設 60 秒）
+   標 `failed` 並記原因。
 6. FR-6：runtime 意外退出時，core 把 runtime 標為 `failed`、所有 attachment 標為 `closed`，由對帳 tick
    帶退避重啟（5 秒、30 秒、2 分鐘、5 分鐘，之後固定 5 分鐘），每次重啟記入 journal。
    這與 platform `processSupervisor` 只標 `failed` 不重啟的行為不同，因為 bot 的承諾是活著。
@@ -122,8 +130,14 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 
 20. FR-20：對帳 tick 每 60 秒一次，啟動後 5 秒第一次，不重疊，不呼叫模型：
     - 檢查 runtime 健康，`failed` 時依 FR-6 重啟。
-    - home 對話的 attachment 不是活著就依 FR-11 resume 或重建；失敗退避 5 分鐘，原因記為
-      `no_capacity`（`Max sessions (N) reached`）、`wake_failed` 或 `runtime_unavailable`，同一段失敗只記一次。
+    - 以 Definitions 的分類對帳 home 對話的 attachment：
+      - 活著（`initializing`／`ready`／`busy`）：不動。`initializing` 由下一個回合（含心跳，同 platform
+        `companion/life/loop.ts`）帶到 ready；session 為 `busy` 或該 attachment 有 `running` 工作項時，
+        tick 絕不 resume、重建或取消。
+      - 已關閉（`closing`／`closed`）或不存在（404）：attachment 為 `sleeping` 就
+        `POST /sessions/{id}/resume`，否則依 FR-11 重建；失敗退避 5 分鐘，原因記為 `no_capacity`
+        （`Max sessions (N) reached`）、`wake_failed` 或 `runtime_unavailable`，同一段失敗只記一次。
+      - 未知（連不上、逾時、5xx）：依 FR-8 不做任何動作，下個 tick 再看。
     - 把重啟前殘留的 `running` 工作項標為 `interrupted` 並交給 FR-27 處理。
     - 把到期排程轉為工作項（FR-21）。
     - 狀態轉移時各寫一筆 `presence` 紀錄（`awake` / `sleeping` / `failed`），session 本來就活著時不寫。
@@ -191,7 +205,7 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 - **成本**：預設心跳間隔下，整天醒著的 bot 每天約 12–48 次隱藏回合；可關閉；每次安靜的心跳
   也算在 provider 額度裡，並可在 `logs/` 看到次數。
 - **容量**：私有 runtime 預設上限 50 個 session；bot 用 1 個 home 加開著的便箋數；ephemeral
-  provider 每回合 spawn 一次。
+  provider 每回合 spawn 一次；FileWatcher 匯入的 discovered 項目沒有 worker，不計入上限。
 - **量測**（第三階段填寫，數字成為預算）：
 
   | 情境 | 要收集的證據 |
@@ -214,10 +228,13 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 對應 PLAN-001 的各階段；每一條都要有可重跑的測試或留下證據的手動驗收。
 
 - A1 無頭 core：以真的選定 CLI（或 runtime 的腳本化 fixture provider）建立對話、串流回覆、取消、
-  resume；重啟 core 後 profile、對話與 journal 一致，`interrupted` 的工作項不被重跑。
+  resume；重啟 core 後 profile、對話與 journal 一致，`interrupted` 的工作項不被重跑；私有 runtime
+  的登錄裡有 discovered 項目時，bot 的對話列表不受影響，且自己 session 的 `history` 可讀。
 - A2 活著：在對話裡用工具建立「30 分鐘後」的排程，關閉所有視窗，到點執行、結果保留、
-  通知事件發出；殺掉 runtime 程序後 home 的 session 在 60 秒內回到 `ready`；心跳回 `[quiet]` 時
-  對話沒有新訊息但日誌有紀錄；重複輸入合併；provider busy 或不可用時的狀態與訊息真實。
+  通知事件發出；殺掉 runtime 程序後 home 的 session 在 60 秒內回到 `ready`；長回合進行中（`busy`）
+  跑過的 tick 不留下任何 resume、重建或取消紀錄，回合正常完成；`initializing` 的 session 由心跳帶到
+  ready；心跳回 `[quiet]` 時對話沒有新訊息但日誌有紀錄；重複輸入合併；provider busy 或不可用時的
+  狀態與訊息真實。
 - A3 殼：關掉便箋，執行繼續；重開便箋，歷史與進度重建；Quit 後沒有 runtime 與 CLI 孤兒。
 - A4 多便箋與全域變更：在一張便箋寫入暗號，另一張便箋問不到；變更 provider/model 後，進行中的
   回合用舊設定收尾、下一個回合用新設定；舊 attachment 不被 resume。
@@ -266,6 +283,8 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 - [ ] home 對話是否預設鏡像到 Telegram，或只有明確綁定的對話才鏡像。
 - [ ] 多 bot 共用 runtime 的評估門檻。
 - [ ] 第五階段的殼：Electron 加原生 helper，或 fleet 的宿主加 core 子程序。
+- [ ] file-backed discovery 的成本：若監看使用者整個 session 目錄不可接受，向 runtime 提「關閉
+      file-backed discovery 但保留 `history` 讀取」的旗標。
 
 ## References
 

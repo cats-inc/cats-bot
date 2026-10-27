@@ -4,6 +4,8 @@
 
 Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 owner 核准。
 核准只代表方向與分段被接受；本 repo 目前沒有任何可執行程式。
+同日依 Codex 的審閱修訂：§1 的 discovery 隔離改為對準 runtime 的每條通道（不改 session 目錄），
+§5 的對帳改為依 runtime 的 session 狀態分類，`initializing` 與 `busy` 受保護。
 規格見 [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md)，
 實作見 [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md)。
 
@@ -67,6 +69,14 @@ Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 ow
   `mcpServers`、`sessionKey`）、`POST /sessions/{id}/messages`（SSE 或 NDJSON；忙碌 409 且沒有佇列、
   無 worker 404、worker 已退出 410；guardrail 403/429）、`resume`、`cancel`、`close`、`observe`、`history`。
 - wakeup：`target.kind` 只有 `session`，cron 只接受 UTC，沒有 retry/backoff，觸發只做 `ensureSessionAwake`。
+- session 狀態只有 `initializing | ready | busy | closing | closed`（runtime `src/core/types.ts`）；
+  FileWatcher 把前三者當成活著的 session（`src/backends/cli/discovery/FileWatcher.ts`）；platform 的
+  companion loop 刻意讓 `initializing` 的 session 由第一次心跳帶到 ready（`companion/life/loop.ts`）。
+- session discovery 有四條通道：file-backed FileWatcher（provider 的 session 目錄，同一目錄也供
+  `history` 與 pi resume 讀取）、背景 native `listSessions()` 掃描與 agent discovery（同受
+  `CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS` 控制，預設 5000，`0` 關閉；`src/server.ts`）、WSL／Docker
+  policy（`always | if_running | manual_only`；`src/backends/cli/config.ts`）、明確的 `/sessions/discover`
+  端點。沒有 worker 的 discovered session 不計入 `maxSessions`（`WorkerPool` 只數活著的 worker）。
 - cats-platform 對 runtime 沒有 npm 依賴（HTTP、釘 SHA）；companion life loop 的常數：60 秒 tick、
   閒置 15 分鐘入睡、心跳醒後 2–10 分鐘、之後 30–120 分鐘、主人 10 分鐘內講過話就延後、busy 4 分鐘重試、
   失敗 30 分鐘重試、承接包 12,000 字元上限（ADR-127、SPEC-124）。
@@ -82,8 +92,19 @@ Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 ow
 - bot 以 app-managed 子程序啟動 runtime：`--startup-mode app-managed --managed-by cats-bots
   --ready-output json --host 127.0.0.1 --port 0`，從 `runtime.ready` 取得實際 port，再以 `GET /health`
   確認；私有 `CATS_RUNTIME_DIR` 在 bot 的資料根目錄下；`CATS_RUNTIME_API_KEY` 由 bot 產生；
-  native / agent session discovery 目錄指向空資料夾，避免 runtime 的 FileWatcher 匯入使用者的
-  所有 CLI session；關閉時先關 stdin，逾時再 SIGTERM。
+  關閉時先關 stdin，逾時再 SIGTERM。
+- 隔離外部 session 要對準 runtime 的每一條 discovery 通道，不能只處理一條：
+  - 背景的 native CLI `listSessions()` 掃描與 agent（ACP）discovery 同受
+    `CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS` 控制，bot 設為 `0` 關閉；`CATS_RUNTIME_WSL_DISCOVERY_POLICY`
+    與 `CATS_RUNTIME_DOCKER_DISCOVERY_POLICY` 設為 `manual_only`；bot 永不呼叫任何 `/sessions/discover`
+    類端點。
+  - file-backed discovery（runtime 對 claude、codex、copilot、pi 等 provider 的 session 目錄掛
+    FileWatcher）**不用改目錄來關**：同一個目錄也是 runtime 讀 `history` 與 pi resume 的來源，指向
+    空資料夾會弄壞 bot 自己的 session。bot 接受這些 `origin: 'discovered'` 項目存在——它們沒有 worker、
+    不計入 `CATS_RUNTIME_MAX_SESSIONS`——在所有列表中忽略，並只以自己的 attachment 記錄辨識自己的
+    session，從不靠掃描 `GET /sessions` 認親。
+  - 若量測顯示監看使用者整個 session 目錄的成本不可接受，向 runtime 提「關閉 file-backed discovery
+    但保留 `history` 讀取」的旗標，不在本 repo 繞路。
 - 不 source import runtime（`createRuntimeServer` 是 tests/dev embedding，runtime ADR-009）。
   若日後程序開銷證明有問題，in-process 嵌入才成為另一份 ADR 的題目。
 - cats-platform 只是設計參考。抄 life loop、心跳 prompt 形狀、session turn gate、Telegram long polling、
@@ -151,9 +172,12 @@ Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 ow
     30–120 分鐘、主人 10 分鐘內講過話就延後、busy 4 分鐘重試、失敗 30 分鐘重試）。即使安靜也是
     真的 provider 回合、消耗額度；每隻 bot 可關閉，且 SPEC-001 要求量測。
 - **對帳 tick**（每 60 秒，啟動後 5 秒第一次，不重疊，不呼叫模型）：檢查 runtime 健康與自己擁有的
-  子程序，runtime 意外退出就帶退避重啟；確認 home 的 attachment 是 `ready`，不是就 resume 或重建
-  （失敗退避 5 分鐘並記原因）；掃描 journal 的到期排程與重啟前殘留的 `running` 工作項。
-  runtime 重啟後 home 在一個 tick 內自己醒回來。runtime 連不上時視為「未知」，不做任何破壞性動作。
+  子程序，runtime 意外退出就帶退避重啟；以 runtime 回報的 session 狀態對帳 home 的 attachment——
+  `initializing`、`ready`、`busy` 都是活著：`initializing` 由下一個回合（含心跳）帶到 ready，與 platform
+  的 loop 相同；`busy` 是進行中的回合，對帳絕不 resume、重建或取消它；只有 `closing`／`closed`，或
+  runtime 回 404 不認得這個 session，才 resume 或重建（失敗退避 5 分鐘並記原因）；觀測失敗（連不上、
+  逾時、5xx）視為「未知」，不做任何動作——然後掃描 journal 的到期排程與重啟前殘留的 `running`
+  工作項。runtime 重啟後 home 在一個 tick 內自己醒回來。
 - v1 的佇列是 bot 範圍序列化：同一時間只跑一個回合。主人訊息優先於背景工作；進行中的回合不被
   隱含打斷，取消一定是明確的動作。core 持有以 runtime session 為鍵的 gate，不讓自己的並發撞出
   409（runtime 沒有佇列）。
@@ -231,6 +255,8 @@ Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 ow
 - 工作管理員會看到好幾個程序；「一個 exe」是一棵程序樹。
 - 第一階段選 Electron 不是對桌面層階段的承諾；殼的技術在第五階段重新評估。
 - 從 platform 抄來的模式以 MIT 與來源註記保存；尚未抽出共用套件，ADR-110 第 4、6 點日後可能改變這點。
+- 使用者自己的 CLI session 會以 discovered 項目出現在 bot 私有 runtime 的登錄裡（§1）；bot 忽略它們，
+  成本在第三階段量測。
 
 ## Alternatives Considered
 
