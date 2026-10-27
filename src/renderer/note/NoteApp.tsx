@@ -1,19 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
-import type { TranscriptEntry } from '../../core/types.ts';
+import type { ApprovalDecision, TranscriptEntry, WorkItem } from '../../core/types.ts';
 import type { NoteLayer } from '../bridge.ts';
 import { Markdown } from '../markdown/Markdown.tsx';
 import {
   addEntry,
   appendDelta,
+  buildNoteItems,
   entryClass,
-  entryKey,
   entryMeta,
   entryText,
   errorText,
   localEntry,
+  toolSummary,
+  upsertWorkItem,
   visibleEntries,
+  type DecisionItem,
+  type DecisionStatus,
   type PendingReply,
+  type ToolItem,
 } from './transcript.ts';
 
 /**
@@ -42,6 +47,88 @@ function Entry({ entry }: { entry: TranscriptEntry }) {
   );
 }
 
+const TOOL_STATUS: Record<ToolItem['status'], { mark: string; label: string }> = {
+  running: { mark: '…', label: 'running' },
+  done: { mark: '✓', label: 'done' },
+  error: { mark: '✕', label: 'failed' },
+};
+
+/** SPEC-003 FR-4: a tool call and its result, collapsed to one line until opened. */
+function ToolCard({ item }: { item: ToolItem }) {
+  const [open, setOpen] = useState(false);
+  const status = TOOL_STATUS[item.status];
+  return (
+    <div className={`tool-card tool-${item.status}`}>
+      <button className="tool-head" aria-expanded={open} title={open ? 'Hide details' : 'Show input and result'} onClick={() => setOpen(!open)}>
+        <span className="tool-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        <span className="tool-name">{item.name}</span>
+        <span className="tool-summary">{toolSummary(item)}</span>
+        <span className="tool-status" title={status.label}>{status.mark}</span>
+      </button>
+      {open && (
+        <div className="tool-body">
+          {item.input && (
+            <>
+              <div className="tool-label">Input</div>
+              <pre className="tool-text">{item.input}</pre>
+            </>
+          )}
+          <div className="tool-label">Result</div>
+          {item.result === null ? (
+            <div className="tool-empty">{item.status === 'running' ? 'Still running…' : 'No result was reported.'}</div>
+          ) : (
+            <pre className="tool-text">{item.result || '(empty)'}</pre>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const DECISION_OUTCOMES: Record<Exclude<DecisionStatus, 'waiting'>, string> = {
+  approved: 'Approved',
+  denied: 'Denied',
+  expired: 'Expired',
+};
+
+/** SPEC-003 FR-5: a question for the owner; buttons only while its work item waits. */
+function DecisionCard({ item }: { item: DecisionItem }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const decide = async (decision: ApprovalDecision) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.invoke('resolveApproval', item.workItemId, decision);
+    } catch (failure) {
+      setError(errorText(failure));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className={`entry entry-decision decision-${item.status}`}>
+      <div className="decision-text">{item.entry.text}</div>
+      {item.status === 'waiting' ? (
+        <div className="decision-actions">
+          <button className="decision-approve" disabled={busy} onClick={() => void decide('approve')}>
+            Approve
+          </button>
+          <button className="decision-deny" disabled={busy} onClick={() => void decide('deny')}>
+            Deny
+          </button>
+        </div>
+      ) : (
+        <div className="decision-outcome">
+          {DECISION_OUTCOMES[item.status]}
+          {item.detail ? `: ${item.detail}` : ''}
+        </div>
+      )}
+      {error && <div className="decision-error">{error}</div>}
+    </div>
+  );
+}
+
 export function NoteApp() {
   const requested = api.conversationId;
   // The note may be opened as `home`; the record's id replaces it once known.
@@ -54,6 +141,7 @@ export function NoteApp() {
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [pending, setPending] = useState<PendingReply | null>(null);
   const [running, setRunningState] = useState(false);
   const [runtimeNote, setRuntimeNote] = useState('');
@@ -78,7 +166,10 @@ export function NoteApp() {
 
   // A transcript read keeps the reply being streamed; it is not in the transcript until the turn ends.
   const reload = useCallback(async () => {
-    setEntries(visibleEntries(await api.invoke('transcript', conversation.current)));
+    const id = conversation.current;
+    const [transcript, work] = await Promise.all([api.invoke('transcript', id), api.invoke('listWorkItems')]);
+    setEntries(visibleEntries(transcript));
+    setWorkItems(work.filter((item) => item.conversationId === id));
   }, []);
 
   // Only a note the owner is looking at reads its replies (a background desktop note does not).
@@ -96,7 +187,10 @@ export function NoteApp() {
           else setEntries((current) => addEntry(current, event.entry));
           return;
         case 'work.updated':
-          if (event.workItem.conversationId === id && event.workItem.state === 'running') setRunning(true);
+        case 'work.awaitingOwner':
+          if (event.workItem.conversationId !== id) return;
+          setWorkItems((current) => upsertWorkItem(current, event.workItem));
+          if (event.type === 'work.updated' && event.workItem.state === 'running') setRunning(true);
           return;
         case 'turn.completed':
           if (event.conversationId !== id) return;
@@ -136,10 +230,12 @@ export function NoteApp() {
     };
   }, [markSeenIfFocused, refreshHeader, reload, setRunning]);
 
+  const items = useMemo(() => buildNoteItems(entries, workItems), [entries, workItems]);
+
   useLayoutEffect(() => {
     const element = transcriptRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [entries, pending]);
+  }, [items, pending]);
 
   const send = async () => {
     const text = draft.trim();
@@ -183,9 +279,11 @@ export function NoteApp() {
         </button>
       </header>
       <main className="note-transcript" id="transcript" ref={transcriptRef} aria-live="polite">
-        {entries.map((entry) => (
-          <Entry key={entryKey(entry)} entry={entry} />
-        ))}
+        {items.map((item) => {
+          if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
+          if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
+          return <Entry key={item.key} entry={item.entry} />;
+        })}
         {pending && (
           <div className="entry entry-bot pending">
             <Markdown text={pending.text} />

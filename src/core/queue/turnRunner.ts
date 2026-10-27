@@ -17,6 +17,26 @@ export const RUNTIME_UNAVAILABLE_RETRY_MS = 30_000;
 export const NO_CAPACITY_RETRY_MS = 5 * 60_000;
 const TOOL_RESULT_CLIP = 2_000;
 
+function clipToolText(text: string): string {
+  return text.length > TOOL_RESULT_CLIP ? `${text.slice(0, TOOL_RESULT_CLIP)}…` : text;
+}
+
+/**
+ * SPEC-003 FR-4: what a tool call was given. The runtime reports the input as
+ * `toolArgs` (an object for the Claude CLI) and seldom as text, so the
+ * transcript keeps it as indented JSON, clipped like results.
+ */
+export function toolInputText(event: { text?: unknown; toolArgs?: unknown }): string {
+  if (typeof event.text === 'string' && event.text) return clipToolText(event.text);
+  if (event.toolArgs === undefined || event.toolArgs === null) return '';
+  if (typeof event.toolArgs === 'string') return clipToolText(event.toolArgs);
+  try {
+    return clipToolText(JSON.stringify(event.toolArgs, null, 2) ?? '');
+  } catch {
+    return '';
+  }
+}
+
 export type TurnOutcome =
   | { kind: 'completed'; text: string; quiet: boolean }
   | { kind: 'failed'; reason: string; retryAfterMs?: number }
@@ -224,7 +244,7 @@ export class TurnRunner {
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'tool_use',
             origin,
-            text: typeof event.text === 'string' ? event.text : '',
+            text: toolInputText(event),
             workItemId: item.id,
             ...(typeof event.toolName === 'string' ? { toolName: event.toolName } : {}),
             ...(typeof event.toolId === 'string' ? { toolId: event.toolId } : {}),
@@ -237,7 +257,7 @@ export class TurnRunner {
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'tool_result',
             origin,
-            text: text.length > TOOL_RESULT_CLIP ? `${text.slice(0, TOOL_RESULT_CLIP)}…` : text,
+            text: clipToolText(text),
             workItemId: item.id,
             ...(typeof event.toolName === 'string' ? { toolName: event.toolName } : {}),
             ...(typeof event.toolId === 'string' ? { toolId: event.toolId } : {}),

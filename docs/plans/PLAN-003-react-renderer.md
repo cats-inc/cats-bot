@@ -34,9 +34,9 @@
 
 ### Slice 3：工具卡片與主人的決定（FR-4、FR-5）
 
-- [ ] 工具卡片（以 `toolId` 合併、收合與展開、錯誤狀態）。
-- [ ] `awaiting_owner` 的 Approve／Deny 按鈕，`work.updated` 後更新。
-- [ ] 測試：卡片分組與決定狀態。
+- [x] 工具卡片（以 `toolId` 合併、收合與展開、錯誤狀態）；core 把 runtime 只以 `toolArgs` 給的工具輸入存成 JSON。
+- [x] `awaiting_owner` 的 Approve／Deny 按鈕，`work.updated` 後更新。
+- [x] 測試：卡片分組與決定狀態。
 
 ### Slice 4：設定與首次啟動改用 React（FR-6）
 
@@ -53,5 +53,6 @@
 
 | Date | Update |
 |------|--------|
+| 2026-10-28 | Slice 3：工具卡片與主人的決定。真機（fixture CLI 經真的 runtime）：`tool` 回合顯示一張收合的 Read 卡片（摘要 `file.txt`、✓），展開看到輸入 `{"path": "file.txt"}` 與結果；`ask:` 問題顯示 Approve／Deny，按 Approve 後卡片變成 Approved、按鈕消失、bot 收到「approved」的訊息，另一題按 Deny 變成 Denied。發現：runtime 的 Claude 工具事件只以 `toolArgs` 帶輸入，core 原本只存 `text`（空字串），卡片看不到輸入；core 改為把 `toolArgs` 存成縮排 JSON，長度上限與結果相同 |
 | 2026-10-28 | Slice 2：便箋改用 React，bot 回覆以 `react-markdown` + GFM 顯示。真機驗收（fixture CLI 原樣回傳 markdown）：標題、粗體、斜體、刪除線、清單、引言、表格、程式碼區塊、單一換行都正確；外部連結帶 `target=_blank`、本機路徑是不可點的文字、原始 HTML 以文字顯示、遠端圖片變成連結；340 px 寬的便箋沒有橫向捲軸，程式碼區塊與過寬的表格在自己裡面捲動（表格原本繼承便箋的 `word-break` 而逐字斷行，已修正）。`window.open` 與換頁都被殼擋下，頁面仍在 `note.html`。回合進行中主人的訊息立即出現（舊版要等回合結束）、顯示 thinking…、Cancel 可按。重跑桌面層抬起（抬起後焦點回到輸入框）與背景未讀腳本都通過。未實測：點 https 連結真的開啟瀏覽器（避免在 owner 桌面開分頁；規則有單元測試）、輸入法 |
 | 2026-10-28 | Slice 1：Vite 7.3.6 建置三個頁面；Electron 41 以 file:// 載入 `type="module"` 的輸出正常，CSP 不必放寬。重跑驗收腳本：model 選單快速切換 8/8 正確、存檔保留 `claude · haiku`、桌面層便箋隱藏後再開 7 秒後仍抬起、背景便箋未讀 1 且浮動貓顯示 1、開啟後歸零；`dist:dir` 打包版以新的 bot id 開出首次啟動頁，provider 15 個、model 清單載入。esbuild 的 postinstall 被 npm 擋下仍可用（與 koffi 相同） |

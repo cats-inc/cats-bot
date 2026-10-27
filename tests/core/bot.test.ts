@@ -105,6 +105,14 @@ test('tool events, errors and interrupted streams are classified (FR-18)', async
     assert.equal(tool.state, 'completed');
     const kinds = core.transcript('home').map((entry) => entry.kind);
     assert.deepEqual(kinds, ['owner', 'tool_use', 'tool_result', 'bot']);
+    assert.equal(core.transcript('home')[1]!.text, 'Read file.txt', 'text the runtime gives is kept');
+
+    // SPEC-003 FR-4: input that arrives only as toolArgs is kept as JSON, clipped like results.
+    await sendAndWait(core, 'home', 'edit the notes');
+    const call = core.transcript('home').find((entry) => entry.kind === 'tool_use' && entry.toolName === 'Write')!;
+    assert.ok(call.text.startsWith('{\n  "file_path": "notes.md",\n  "content": "yyy'), call.text.slice(0, 60));
+    assert.equal(call.text.length, 2001);
+    assert.ok(call.text.endsWith('…'));
 
     const failed = await sendAndWait(core, 'home', 'error now');
     assert.equal(failed.state, 'failed');

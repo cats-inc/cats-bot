@@ -122,6 +122,11 @@ async function handleMessage(req, res, session, body) {
   } else if (message.startsWith('error')) {
     write({ type: 'error', text: 'provider exploded' });
     return finish(true);
+  } else if (message.startsWith('edit')) {
+    // The Claude CLI reports a call's input only as toolArgs (SPEC-003 FR-4).
+    write({ type: 'tool_use', toolName: 'Write', toolId: 't2', toolArgs: { file_path: 'notes.md', content: 'y'.repeat(2500) } });
+    write({ type: 'tool_result', toolName: 'Write', toolId: 't2', text: 'written' });
+    reply('wrote it');
   } else if (message.startsWith('tool')) {
     write({ type: 'tool_use', toolName: 'Read', toolId: 't1', text: 'Read file.txt' });
     write({ type: 'tool_result', toolName: 'Read', toolId: 't1', text: 'contents' });
