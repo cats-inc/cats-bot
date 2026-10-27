@@ -69,7 +69,16 @@ Add your project-specific automation scripts here.
 | Document | Status | Description |
 |----------|--------|-------------|
 | [research/](./research/) | Directory | Research notes and external sources |
+| [Standalone living bot feasibility](./research/2026-10-27-standalone-living-bot-feasibility.md) | Research | Read-only survey of cats-runtime, cats-platform and desktop-work-fleet; Catlas versus companion, runtime wakeup limits, dependency-direction options |
 | [Resident bot architecture assessment](./research/2026-10-27-resident-bot-architecture-assessment.md) | Research | Independent source-based recommendations for bot lifetime, Runtime integration, global model settings and desktop presentation |
+
+## Decision Records
+
+| Document | Status | Description |
+|----------|--------|-------------|
+| [ADR-001](./decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Draft | Proposed: resident bot core over cats-runtime, disposable presentation, one global execution target; fuses both research documents |
+| [SPEC-001](./specs/SPEC-001-resident-bot-core-and-global-execution.md) | Draft | Behavioural contract for the bot core, alive mechanisms, global retarget and the presentation API |
+| [PLAN-001](./plans/PLAN-001-resident-bot-core-foundation.md) | Draft | Phases 0 to 5 from toolchain to minimal shell; desktop presence reserved for a later ADR |
 
 ## Context-Driven Development
 
