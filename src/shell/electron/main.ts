@@ -2,10 +2,11 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
-import { app, dialog, ipcMain } from 'electron';
+import { app, dialog, ipcMain, safeStorage } from 'electron';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../../core/bot.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
+import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
 import { resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
 import type { BotHostEvent } from '../../core/types.ts';
 import { HOST_COMMANDS, runHostCommand } from './ipc.ts';
@@ -67,23 +68,29 @@ async function main(): Promise<void> {
     return;
   }
 
+  await app.whenReady();
+  // SPEC-001 NFR security: the shell keeps secrets encrypted with the OS facility when it has one.
+  const cipher: SecretCipher | undefined = safeStorage.isEncryptionAvailable()
+    ? {
+      label: 'os-safe-storage',
+      encrypt: (plain) => safeStorage.encryptString(plain),
+      decrypt: (buffer) => safeStorage.decryptString(buffer),
+    }
+    : undefined;
+  const openCore = () => BotCore.open({
+    root,
+    runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
+    secrets: new FileSecretStore(root, { ...(cipher ? { cipher } : {}), warn: (line) => process.stderr.write(`${line}\n`) }),
+    log: (line) => process.stderr.write(`${line}\n`),
+  });
   let core: BotCore;
   try {
-    core = BotCore.open({
-      root,
-      runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
-      log: (line) => process.stderr.write(`${line}\n`),
-    });
+    core = openCore();
   } catch (error) {
     if (error instanceof BotNotInitializedError && args.provider) {
       initializeBot(botsHome, { id: botId, name: args.name ?? botId, provider: args.provider, model: args.model ?? null });
-      core = BotCore.open({
-        root,
-        runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
-        log: (line) => process.stderr.write(`${line}\n`),
-      });
+      core = openCore();
     } else {
-      await app.whenReady();
       dialog.showErrorBox(
         'Cats Bot',
         `${error instanceof Error ? error.message : String(error)}\n\nInitialize the bot first: cats-bot init --name <name> --provider <provider>`
@@ -94,7 +101,6 @@ async function main(): Promise<void> {
     }
   }
 
-  await app.whenReady();
   const appPath = app.getAppPath();
   const assetsDir = join(appPath, 'assets');
   const rendererDir = join(assetsDir, 'renderer');

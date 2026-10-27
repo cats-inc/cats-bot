@@ -72,6 +72,22 @@ keeps running until Quit. The same `CATS_BOTS_PROVIDER_*` variables apply.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
 
+## Telegram (optional)
+
+```bash
+node src/cli/main.ts telegram set-token <token-from-BotFather>
+node src/cli/main.ts telegram enable
+node src/cli/main.ts telegram status
+```
+
+While the bot runs, the first private chat that writes to it becomes the
+owner's chat (send `/start`); only that chat is accepted afterwards. Inbound
+messages reach the home conversation; every home reply, including heartbeat
+and schedule results, is mirrored back. One bot polls one token; run a bot's
+token nowhere else or Telegram answers 409. The CLI stores the token as a
+file with owner-only permissions where the platform supports them and says
+so; the shell re-stores it encrypted with the OS facility.
+
 Packaging (Windows): `npm run dist:dir` builds `release/win-unpacked/`,
 `npm run dist:win` builds the NSIS installer and the portable executable.
 The runtime package ships inside the app and runs with the app's own Node

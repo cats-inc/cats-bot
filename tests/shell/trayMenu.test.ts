@@ -44,6 +44,7 @@ const status: BotStatus = {
   heartbeat: { enabled: true, nextAt: null },
   lastTickAt: null,
   lock: null,
+  telegram: { enabled: false, polling: false, ownerChatId: null },
 };
 
 test('the tray menu lists home, notes, heartbeat, login and quit with unread counts', () => {

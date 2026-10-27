@@ -30,6 +30,12 @@ export interface HeartbeatPolicy {
   regularMaxMinutes: number;
 }
 
+/** SPEC-001 FR-26: the optional Telegram binding; the token lives in the secret store. */
+export interface TelegramPolicy {
+  enabled: boolean;
+  ownerChatId: number | null;
+}
+
 /** SPEC-001 FR-1. */
 export interface BotProfile {
   schemaVersion: 1;
@@ -41,6 +47,7 @@ export interface BotProfile {
   permissions: BotPermissions;
   heartbeat: HeartbeatPolicy;
   idleSleepMinutes: number;
+  telegram: TelegramPolicy;
   updatedAt: string;
 }
 
@@ -213,7 +220,7 @@ export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 export interface HandoffMessage {
   id: string;
   at: string;
-  kind: 'open' | 'say' | 'args' | 'schedule_create' | 'schedule_cancel' | 'approve' | 'heartbeat' | 'quit';
+  kind: 'open' | 'say' | 'args' | 'schedule_create' | 'schedule_cancel' | 'approve' | 'heartbeat' | 'quit' | 'telegram';
   conversationId?: string;
   text?: string;
   args?: string[];
@@ -247,6 +254,7 @@ export interface BotProfilePatch {
   heartbeat?: Partial<HeartbeatPolicy>;
   idleSleepMinutes?: number;
   permissions?: Partial<BotPermissions>;
+  telegram?: Partial<TelegramPolicy>;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */

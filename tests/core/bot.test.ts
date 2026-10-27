@@ -267,3 +267,32 @@ test('a crashed runtime is restarted with backoff and the home session is rebuil
     await core.stop();
   }
 });
+
+test('a running turn finishes under its admitted target and the next one uses the new target (FR-27, A4)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'retarget-midturn', core: fastRetries });
+  await core.start();
+  try {
+    const running = waitForEvent(core, (event) => event.type === 'work.updated' && event.workItem.state === 'running');
+    const slow = await core.sendOwnerMessage('home', 'slow:1500');
+    await running;
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === slow.id);
+    await core.updateProfile({ executionTarget: { provider: 'claude', model: 'sonnet' } });
+    const finished = await done;
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.state, 'completed', 'the in-flight turn was not interrupted');
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.run?.model, null, 'it ran under the target it was admitted with');
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.configRevision, 1);
+
+    const next = await sendAndWait(core, 'home', 'after retarget');
+    assert.equal(next.state, 'completed');
+    assert.equal(next.run?.model, 'sonnet');
+    assert.equal(next.configRevision, 2);
+    const state = await fetchFakeState(core);
+    const creates = state.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>;
+    assert.equal(creates.length, 2);
+    assert.equal(creates[1]!.body.model, 'sonnet');
+    assert.ok(!state.calls.some((call) => call.op === 'resume'), 'the old attachment was never resumed');
+  } finally {
+    await core.stop();
+  }
+});

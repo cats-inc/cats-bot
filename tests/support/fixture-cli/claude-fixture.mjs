@@ -101,6 +101,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 let initialized = false;
 let turns = 0;
 let queue = Promise.resolve();
+/** Per-process memory: what one session remembers, another cannot recall (SPEC-001 A4). */
+let remembered = null;
 
 async function handleTurn(full) {
   const message = userMessageOf(full).trim();
@@ -120,6 +122,13 @@ async function handleTurn(full) {
     reply = `done after ${ms}ms`;
   } else if (message === 'resumed?') {
     reply = `resumed=${resumed ? 'yes' : 'no'}`;
+  } else if (message.startsWith('remember:')) {
+    remembered = message.slice('remember:'.length).trim();
+    reply = `remembered ${remembered}`;
+  } else if (message === 'recall?') {
+    reply = `recall=${remembered ?? 'nothing'}`;
+  } else if (message === 'model?') {
+    reply = `model=${model}`;
   } else if (message === 'instructions?') {
     reply = `instructions=${full === message ? '' : full.slice(0, full.length - message.length)}`;
   } else if (message.startsWith('tool')) {
