@@ -106,7 +106,8 @@ through `BotHostApi`.
 
 - **Purpose**: what keeps the bot alive without a window (FR-20 to FR-25, FR-28).
 - **Responsibilities**: `loop.ts` is the reconcile tick (every 60 s, 5 s after
-  start, never overlapping, never calling the model): restart the runtime with
+  start, never overlapping because a tick requested while one runs joins that
+  pass, never calling the model): restart the runtime with
   backoff, settle and fire schedules, keep the home session attached by the
   runtime's own session status (`initializing`/`ready`/`busy` are live and left
   alone; `closing`/`closed` resume; 404 rebuilds; unreachable means no action),
