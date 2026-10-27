@@ -50,9 +50,16 @@ A bot and Cats Desktop run side by side without port conflicts (checked on
 - Every inherited `CATS_RUNTIME_*` variable, including `CATS_RUNTIME_PORT`, is
   dropped before the bot's runtime starts, so a value meant for Cats Desktop
   never redirects it.
-- The bot's runtime keeps its own data directory (`<bot data root>/runtime`)
-  and has session discovery off, so it neither reads nor adopts Cats Desktop
-  sessions. Both use the same provider CLI sign-in, by design.
+- The bot's runtime keeps its own data directory (`<bot data root>/runtime`),
+  so its session registry is separate from Cats Desktop's. This is not full
+  isolation: only the background discovery (native and agent scans, WSL and
+  Docker) is off. The runtime still watches the provider CLIs' own session
+  folders (for example Claude Code's `~/.claude/projects`), which it also
+  reads for `history` and resume, so sessions started elsewhere, Cats
+  Desktop's included, can show up in the bot runtime's registry as
+  `origin: 'discovered'`. The bot never takes them over: it never lists the
+  runtime's sessions and knows its own only from its attachment records
+  (ADR-001 §1). Both use the same provider CLI sign-in, by design.
 
 ## Cross-Project Port Coordination
 
