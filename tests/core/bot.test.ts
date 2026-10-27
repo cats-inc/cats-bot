@@ -72,6 +72,31 @@ test('an owner message becomes a completed work item with a streamed reply', asy
   }
 });
 
+test('a view open in the background leaves a reply unread; only a focused view reads it (SPEC-002 FR-7)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'views', core: fastRetries });
+  await core.start();
+  const unread = async () => (await core.listConversations()).find((record) => record.role === 'home')!.unreadCount;
+  try {
+    // A desktop or wallpaper note is open the whole time without the owner looking at it.
+    await core.openView('home');
+    await sendAndWait(core, 'home', 'one');
+    assert.equal(await unread(), 1, 'open but not focused');
+    await core.markSeen('home');
+    await core.setViewFocused('home', true);
+    await sendAndWait(core, 'home', 'two');
+    assert.equal(await unread(), 0, 'focused');
+    await core.setViewFocused('home', false);
+    await sendAndWait(core, 'home', 'three');
+    assert.equal(await unread(), 1, 'focus moved to another window');
+    await core.setViewFocused('home', true);
+    await core.closeView('home');
+    await sendAndWait(core, 'home', 'four');
+    assert.equal(await unread(), 2, 'closing the view drops its focus');
+  } finally {
+    await core.stop();
+  }
+});
+
 test('tool events, errors and interrupted streams are classified (FR-18)', async () => {
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'events', core: fastRetries });
   await core.start();

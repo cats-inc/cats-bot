@@ -252,6 +252,8 @@ export interface BotHostApi {
   deleteConversation(conversationId: string): Promise<void>;
   openView(conversationId: string): Promise<void>;
   closeView(conversationId: string): Promise<void>;
+  /** An open view in the background does not read replies; only a focused one does. */
+  setViewFocused(conversationId: string, focused: boolean): Promise<void>;
   sendOwnerMessage(conversationId: string, text: string): Promise<WorkItem>;
   cancelTurn(conversationId: string): Promise<void>;
   markSeen(conversationId: string): Promise<void>;

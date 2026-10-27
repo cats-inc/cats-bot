@@ -182,6 +182,8 @@ export class BotCore implements BotHostApi {
   private telegram: TelegramTransport | null = null;
   private supervisor: RuntimeSupervisor | null;
   private readonly views = new Set<string>();
+  /** Views the owner is reading (focused); an open view in the background still counts replies as unread. */
+  private readonly focusedViews = new Set<string>();
   private readonly timers = new Set<NodeJS.Timeout>();
   /** Replaced sessions waiting for their running turn to end before they are closed (FR-27). */
   private readonly retiring = new Set<string>();
@@ -976,6 +978,7 @@ export class BotCore implements BotHostApi {
     }
     this.conversations.remove(record.id);
     this.views.delete(record.id);
+    this.focusedViews.delete(record.id);
     this.log(`conversation ${record.id} deleted`);
   }
 
@@ -984,7 +987,16 @@ export class BotCore implements BotHostApi {
   }
 
   async closeView(conversationId: string): Promise<void> {
-    this.views.delete(this.resolveConversationId(conversationId));
+    const id = this.resolveConversationId(conversationId);
+    this.views.delete(id);
+    this.focusedViews.delete(id);
+  }
+
+  /** Whether the owner is reading a conversation's view; only then is a new reply already read. */
+  async setViewFocused(conversationId: string, focused: boolean): Promise<void> {
+    const id = this.resolveConversationId(conversationId);
+    if (focused) this.focusedViews.add(id);
+    else this.focusedViews.delete(id);
   }
 
   listViews(): string[] {
@@ -1154,7 +1166,7 @@ export class BotCore implements BotHostApi {
           ...(outcome.text ? { notification: { deliveredAt: now.toISOString(), seenAt: null } } : {}),
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
-        if (conversation && outcome.text && !this.views.has(conversation.id)) {
+        if (conversation && outcome.text && !this.focusedViews.has(conversation.id)) {
           this.conversations.update(conversation.id, (record) => {
             record.unreadCount += 1;
           });

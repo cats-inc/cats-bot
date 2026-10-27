@@ -26,9 +26,35 @@ export interface FloatingBotOptions extends PageWindowOptions {
 export class FloatingBot {
   private readonly options: FloatingBotOptions;
   private window: BrowserWindow | null = null;
+  private watchingDisplays = false;
 
   constructor(options: FloatingBotOptions) {
     this.options = options;
+  }
+
+  /** A display removed, added or rescaled can leave the cat off every screen; bring it back. */
+  private readonly keepReachable = (): void => {
+    const window = this.browserWindow;
+    if (!window) return;
+    const [x = 0, y = 0] = window.getPosition();
+    const next = placeFloating({ x, y }, screen.getAllDisplays(), screen.getPrimaryDisplay());
+    if (next.x === x && next.y === y) return;
+    this.moveTo(next.x, next.y);
+    this.remember();
+  };
+
+  private watchDisplays(watch: boolean): void {
+    if (watch === this.watchingDisplays) return;
+    this.watchingDisplays = watch;
+    if (watch) {
+      screen.on('display-added', this.keepReachable);
+      screen.on('display-removed', this.keepReachable);
+      screen.on('display-metrics-changed', this.keepReachable);
+    } else {
+      screen.removeListener('display-added', this.keepReachable);
+      screen.removeListener('display-removed', this.keepReachable);
+      screen.removeListener('display-metrics-changed', this.keepReachable);
+    }
   }
 
   get visible(): boolean {
@@ -87,7 +113,9 @@ export class FloatingBot {
     window.on('moved', () => this.remember());
     window.on('closed', () => {
       if (this.window === window) this.window = null;
+      this.watchDisplays(false);
     });
+    this.watchDisplays(true);
     await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html'));
     window.showInactive();
   }
@@ -134,6 +162,7 @@ export class FloatingBot {
   }
 
   destroy(): void {
+    this.watchDisplays(false);
     this.browserWindow?.destroy();
     this.window = null;
   }

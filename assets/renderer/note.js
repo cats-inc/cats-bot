@@ -165,5 +165,6 @@
     }
   });
 
-  void refreshHeader().then(reload).then(() => api.invoke('markSeen', resolvedConversationId)).then(refreshHeader);
+  // A note restored in the background (desktop or wallpaper layer) has not been read; focus marks it seen.
+  void refreshHeader().then(reload).then(() => (document.hasFocus() ? api.invoke('markSeen', resolvedConversationId) : null)).then(refreshHeader);
 })();
