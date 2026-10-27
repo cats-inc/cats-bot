@@ -45,8 +45,8 @@ through `BotHostApi`.
   instructions, the single global `executionTarget`, permissions, heartbeat
   policy, `configRevision`.
 - **Responsibilities**: create with defaults, normalise field by field on read
-  (FR-4), apply patches and bump `configRevision` only on a real target change
-  (FR-27).
+  (FR-4), apply patches and bump `configRevision` only on a real change to
+  what a session is created with: target, instructions or permissions (FR-27).
 
 ### `src/core/store`
 
@@ -164,7 +164,9 @@ through `BotHostApi`.
 2. The turn runner admits the item (`running`, `configRevision` recorded),
    binds the conversation to a runtime session (creating one with persona plus
    handoff pack, resuming a sleeping one, or rebuilding a closed or stale one)
-   and streams `POST /sessions/{id}/messages` as NDJSON.
+   and streams `POST /sessions/{id}/messages` as NDJSON. Binding is one pass
+   per conversation at a time: the tick and a turn that bind together share
+   one result, and a replaced session is closed once no turn runs in it.
 3. Text, tool and error events become transcript entries and `turn.delta`
    host events; `result` completes the item, which is journaled with its
    result and notification state, and `turn.completed` is emitted.
@@ -187,7 +189,7 @@ through `BotHostApi`.
 - **Journal as truth** (ADR-001 §6): append-only records, last record per id
   wins, `interrupted` and `awaiting_owner` are first-class states.
 - **Lazy attachment**: a session exists only once a turn needs it; stale
-  attachments are never resumed after a target change.
+  attachments (created under an older `configRevision`) are never resumed.
 - **Copied patterns, not imported packages**: the session gate and the life
   loop shapes come from cats-platform with attribution; nothing imports it.
 

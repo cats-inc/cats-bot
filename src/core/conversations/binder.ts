@@ -1,7 +1,7 @@
 import type { ConversationStore } from './store.ts';
 import { buildHandoffPack, composeInstructions } from './handoff.ts';
 import type { CreateSessionRequest, RuntimeClient, RuntimeMcpServer } from '../runtime/client.ts';
-import type { BotProfile, ConversationRecord } from '../types.ts';
+import type { BotProfile, ConversationRecord, SessionAttachment } from '../types.ts';
 
 /**
  * SPEC-001 FR-11 / FR-27: how a conversation gets a usable runtime session.
@@ -19,15 +19,31 @@ export interface SessionBinderDependencies {
   conversations: ConversationStore;
   now(): Date;
   mcpServers?(conversationId: string): RuntimeMcpServer[];
+  /** A queued or running work item: its prompt reaches the session as a message, not in the handoff pack. */
+  isPendingWorkItem?(workItemId: string): boolean;
+  /** Closes a replaced session once no turn runs in it (FR-27); without it the old worker is left alone. */
+  retireSession?(sessionId: string): void;
   log(line: string): void;
 }
 
-export function attachmentMatchesTarget(conversation: ConversationRecord, profile: BotProfile): boolean {
+/** FR-27: a session is reused only when it was created under the profile's current revision. */
+export function attachmentIsCurrent(conversation: ConversationRecord, profile: BotProfile): boolean {
   const { attachment } = conversation;
   return (
     attachment.provider === profile.executionTarget.provider
     && (attachment.model ?? null) === (profile.executionTarget.model ?? null)
+    && attachment.configRevision === profile.configRevision
   );
+}
+
+/** What the owner reads when a conversation moves to a session of a newer revision. */
+export function staleNotice(attachment: SessionAttachment, profile: BotProfile): string {
+  const { provider, model } = profile.executionTarget;
+  const retargeted = attachment.provider !== provider || (attachment.model ?? null) !== (model ?? null);
+  const change = retargeted
+    ? `The bot now runs on ${provider}${model ? ` (${model})` : ''}`
+    : 'The bot\'s instructions or permissions changed';
+  return `${change}; this conversation continues in a new session with a handoff of what was said so far.`;
 }
 
 export function isNoCapacity(message: string): boolean {
@@ -36,6 +52,7 @@ export function isNoCapacity(message: string): boolean {
 
 export class SessionBinder {
   private readonly deps: SessionBinderDependencies;
+  private readonly inFlight = new Map<string, Promise<BindResult>>();
 
   constructor(deps: SessionBinderDependencies) {
     this.deps = deps;
@@ -43,31 +60,40 @@ export class SessionBinder {
 
   /**
    * Keeps a live attachment, resumes a sleeping one, and otherwise creates a
-   * session with the persona and the handoff pack. `excludeWorkItemId` keeps
-   * the prompt of the turn being bound out of the pack.
+   * session with the persona and the handoff pack. A call made while another
+   * bind of the same conversation runs joins it, so the tick and a turn never
+   * create two sessions and overwrite each other's attachment.
    */
-  async bind(conversationId: string, excludeWorkItemId?: string): Promise<BindResult> {
+  bind(conversationId: string): Promise<BindResult> {
+    const pending = this.inFlight.get(conversationId);
+    if (pending) return pending;
+    const run = this.bindNow(conversationId).finally(() => {
+      this.inFlight.delete(conversationId);
+    });
+    this.inFlight.set(conversationId, run);
+    return run;
+  }
+
+  private async bindNow(conversationId: string): Promise<BindResult> {
     const client = this.deps.client();
     if (!client) return { ok: false, reason: 'runtime unavailable', kind: 'create_failed', noCapacity: false };
     const conversation = this.deps.conversations.require(conversationId);
     const profile = this.deps.profile();
     const { attachment } = conversation;
-    const targetMatches = attachmentMatchesTarget(conversation, profile);
+    const current = attachmentIsCurrent(conversation, profile);
     const live = attachment.state === 'ready' || attachment.state === 'initializing';
-    if (attachment.sessionId && live && targetMatches) {
+    if (attachment.sessionId && live && current) {
       return { ok: true, sessionId: attachment.sessionId, how: 'kept' };
     }
-    if (attachment.sessionId && !targetMatches && attachment.state !== 'stale' && attachment.state !== 'none') {
-      this.deps.log(`conversation ${conversation.id}: attachment is stale after a provider/model change`);
+    if (attachment.sessionId && !current && attachment.state !== 'stale' && attachment.state !== 'none') {
+      this.deps.log(`conversation ${conversation.id}: attachment is stale after a configuration change`);
       this.deps.conversations.setAttachment(conversation.id, { state: 'stale' });
       this.deps.conversations.append(conversation.id, {
         kind: 'system',
         origin: 'system',
-        text: `The bot now runs on ${profile.executionTarget.provider}`
-          + `${profile.executionTarget.model ? ` (${profile.executionTarget.model})` : ''}; `
-          + 'this conversation continues in a new session with a handoff of what was said so far.',
+        text: staleNotice(attachment, profile),
       });
-    } else if (attachment.sessionId && attachment.state === 'sleeping' && targetMatches) {
+    } else if (attachment.sessionId && attachment.state === 'sleeping' && current) {
       try {
         const view = await client.resumeSession(attachment.sessionId, {
           ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
@@ -96,18 +122,18 @@ export class SessionBinder {
         text: 'The previous session could not be continued; a new session starts with a handoff of what was said so far.',
       });
     }
-    return this.create(client, this.deps.conversations.require(conversation.id), profile, excludeWorkItemId);
+    return this.create(client, this.deps.conversations.require(conversation.id), profile);
   }
 
   private async create(
     client: RuntimeClient,
     conversation: ConversationRecord,
     profile: BotProfile,
-    excludeWorkItemId?: string,
   ): Promise<BindResult> {
+    const isPending = this.deps.isPendingWorkItem;
     const pack = buildHandoffPack(
       this.deps.conversations.transcript(conversation.id)
-        .filter((entry) => excludeWorkItemId === undefined || entry.workItemId !== excludeWorkItemId),
+        .filter((entry) => !(isPending && entry.kind === 'owner' && entry.workItemId && isPending(entry.workItemId))),
     );
     const request: CreateSessionRequest = {
       provider: profile.executionTarget.provider,
@@ -120,6 +146,7 @@ export class SessionBinder {
       instructions: composeInstructions(profile.instructions, pack),
       ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
     };
+    const replaced = conversation.attachment.sessionId;
     try {
       const view = await client.createSession(request);
       this.deps.conversations.setAttachment(conversation.id, {
@@ -136,6 +163,8 @@ export class SessionBinder {
         });
       }
       this.deps.log(`conversation ${conversation.id}: created session ${view.id} (${view.status})`);
+      // FR-27: nothing else would ever close the replaced session's worker.
+      if (replaced && replaced !== view.id) this.deps.retireSession?.(replaced);
       return { ok: true, sessionId: view.id, how: 'created' };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);

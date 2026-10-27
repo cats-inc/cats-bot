@@ -17,6 +17,7 @@ const apiKey = process.env.CATS_RUNTIME_API_KEY ?? '';
 const maxSessions = Number(process.env.FAKE_MAX_SESSIONS ?? '50');
 const resumeFails = process.env.FAKE_RESUME_FAILS === '1';
 const crashAfterMs = Number(process.env.FAKE_CRASH_AFTER_MS ?? '0');
+const createDelayMs = Number(process.env.FAKE_CREATE_DELAY_MS ?? '0');
 
 const sessions = new Map();
 const calls = [];
@@ -156,6 +157,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && path === '/sessions') {
     const body = await readBody(req);
     calls.push({ op: 'create', body });
+    if (createDelayMs > 0) await sleep(createDelayMs);
     const live = [...sessions.values()].filter((s) => s.status !== 'closed').length;
     if (live >= maxSessions) {
       return json(res, 500, { error: `Failed to spawn session: Error: Max sessions (${maxSessions}) reached` });
