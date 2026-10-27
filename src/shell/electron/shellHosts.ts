@@ -36,6 +36,27 @@ export function shellHostsChanged(hosts: ShellHosts, windows: ShellWindows): boo
     || (hosts.wallpaper !== 0 && !windows.alive(hosts.wallpaper));
 }
 
+/** How often a host a note needs but Explorer did not have yet is looked for again. */
+export const MISSING_HOST_RETRY_MS = 10_000;
+
+/**
+ * Whether the hosts must be discovered again: Explorer restarted, a host died,
+ * or the layer a note needs had no host at the last discovery (Explorer can
+ * create it later, for example while it is still starting). Missing hosts are
+ * retried at most every `MISSING_HOST_RETRY_MS`, since discovery may ask
+ * Explorer for the wallpaper host, and only for a layer a note uses.
+ */
+export function shellHostsStale(
+  hosts: ShellHosts,
+  windows: ShellWindows,
+  needed: 'desktop' | 'wallpaper' | null,
+  sinceDiscoveryMs: number,
+): boolean {
+  if (shellHostsChanged(hosts, windows)) return true;
+  const missing = needed === null ? false : hosts[needed] === 0;
+  return missing && sinceDiscoveryMs >= MISSING_HOST_RETRY_MS;
+}
+
 export function discoverShellHosts(windows: ShellWindows): ShellHosts {
   const shell = windows.progman();
   if (shell === 0) return { desktop: 0, wallpaper: 0, shell };

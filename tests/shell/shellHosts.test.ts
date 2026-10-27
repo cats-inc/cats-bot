@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { discoverShellHosts, shellHostsChanged, type Hwnd, type ShellWindows } from '../../src/shell/electron/shellHosts.ts';
+import {
+  discoverShellHosts,
+  MISSING_HOST_RETRY_MS,
+  shellHostsChanged,
+  shellHostsStale,
+  type Hwnd,
+  type ShellWindows,
+} from '../../src/shell/electron/shellHosts.ts';
 
 /**
  * SPEC-002 FR-8: the Explorer host rules ported from desktop-work-fleet
@@ -121,4 +128,35 @@ test('no Progman means no hosts; a new Progman or a dead host means Explorer res
   assert.equal(shellHostsChanged(hosts, shell), true);
   shell.windows = [{ id: 30, className: 'Progman', parent: 0, process: 11 }];
   assert.equal(shellHostsChanged(hosts, shell), true);
+});
+
+test('a host that was missing is looked for again, rate-limited and only for a layer a note needs', () => {
+  // Explorer is still starting: Progman and the icons exist, the wallpaper WorkerW does not yet.
+  const shell = new FakeShell([
+    { id: 2, className: 'Progman', parent: 0, process: EXPLORER },
+    { id: 3, className: 'SHELLDLL_DefView', parent: 2, process: EXPLORER },
+  ]);
+  const hosts = discoverShellHosts(shell);
+  assert.deepEqual(hosts, { desktop: 2, wallpaper: 0, shell: 2 });
+  assert.equal(shellHostsChanged(hosts, shell), false, 'nothing died, so the old check never looked again');
+  assert.equal(shellHostsStale(hosts, shell, 'wallpaper', MISSING_HOST_RETRY_MS - 1), false, 'not before the retry interval');
+  assert.equal(shellHostsStale(hosts, shell, null, MISSING_HOST_RETRY_MS), false, 'no note needs it');
+  assert.equal(shellHostsStale(hosts, shell, 'desktop', MISSING_HOST_RETRY_MS), false, 'the desktop host is there');
+  assert.equal(shellHostsStale(hosts, shell, 'wallpaper', MISSING_HOST_RETRY_MS), true);
+
+  shell.windows.push({ id: 4, className: 'WorkerW', parent: 2, process: EXPLORER });
+  const again = discoverShellHosts(shell);
+  assert.deepEqual(again, { desktop: 2, wallpaper: 4, shell: 2 });
+  assert.equal(shellHostsStale(again, shell, 'wallpaper', MISSING_HOST_RETRY_MS), false);
+});
+
+test('a restarted Explorer is stale at once, whatever the layer and the time since the last look', () => {
+  const shell = new FakeShell([
+    { id: 2, className: 'Progman', parent: 0, process: EXPLORER },
+    { id: 3, className: 'SHELLDLL_DefView', parent: 2, process: EXPLORER },
+    { id: 4, className: 'WorkerW', parent: 2, process: EXPLORER },
+  ]);
+  const hosts = discoverShellHosts(shell);
+  shell.windows = [{ id: 30, className: 'Progman', parent: 0, process: 11 }];
+  assert.equal(shellHostsStale(hosts, shell, null, 0), true);
 });

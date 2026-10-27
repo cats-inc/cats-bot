@@ -420,7 +420,7 @@ async function main(): Promise<void> {
   if (windows.shellState.floatingBot.visible) setFloatingVisible(true);
   const reopen = windows.previouslyOpen();
   for (const conversationId of reopen.length > 0 ? reopen : ['home']) {
-    await windows.open(conversationId).catch((error: unknown) => {
+    await windows.open(conversationId, { restore: true }).catch((error: unknown) => {
       process.stderr.write(`reopen note failed: ${errorMessage(error)}\n`);
     });
   }
