@@ -1,5 +1,9 @@
 # Feature Specifications
 
+- [SPEC-004: Provider interactions and tool visibility](SPEC-004-provider-interactions-and-tool-visibility.md)
+  — approved, 2026-10-28; headless replies, serialized waiting/recovery, shell input
+  and live tool diagnostics. Runtime SPEC-039 consumer; implementation not started.
+
 > This directory contains feature specifications that define *what* to build and *why*.
 
 ## Purpose

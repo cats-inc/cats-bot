@@ -1,5 +1,9 @@
 # Implementation Plans
 
+- [PLAN-004: Provider interactions and tool visibility](PLAN-004-provider-interactions-and-tool-visibility.md)
+  — ready, 2026-10-28; core/CLI, life loop/recovery, shell
+  and isolated native/packaged acceptance. All phases pending.
+
 > This directory contains implementation plans that define *how* to build features.
 
 ## Purpose
