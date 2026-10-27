@@ -324,6 +324,32 @@ test('a running turn finishes under its admitted target and the next one uses th
   }
 });
 
+test('a provider change lets the running turn finish before the runtime restarts (FR-27)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'provider-midturn', core: fastRetries });
+  await core.start();
+  try {
+    const pidBefore = core.status().runtime.pid;
+    const running = waitForEvent(core, (event) => event.type === 'work.updated'
+      && event.workItem.state === 'running' && event.workItem.run !== undefined);
+    const slow = await core.sendOwnerMessage('home', 'slow:1200');
+    await running;
+    const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === slow.id);
+    await core.updateProfile({ executionTarget: { provider: 'codex', model: null } });
+    assert.equal(core.status().runtime.pid, pidBefore, 'the runtime stays up for the turn in flight');
+    const waiting = await core.sendOwnerMessage('home', 'after the switch');
+    const next = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === waiting.id);
+    const finished = await done;
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.state, 'completed', 'the turn in flight was not terminated');
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.run?.provider, 'claude');
+    const after = await next;
+    assert.equal(after.type === 'turn.completed' && after.workItem.state, 'completed', 'work admitted after the switch runs');
+    assert.equal(after.type === 'turn.completed' && after.workItem.run?.provider, 'codex');
+    assert.notEqual(core.status().runtime.pid, pidBefore, 'the runtime was replaced for the new provider');
+  } finally {
+    await core.stop();
+  }
+});
+
 test('a tick and an owner message racing for the home session bind it once (FR-11)', async () => {
   const { core } = openTestBot({
     botsHome: home.botsHome,

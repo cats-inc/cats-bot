@@ -2,8 +2,12 @@ import assert from 'node:assert/strict';
 import { createServer, type Server } from 'node:http';
 import { after, before, test } from 'node:test';
 
+import { rmSync } from 'node:fs';
+
+import { BotCore } from '../../src/core/bot.ts';
+import { botPathsFor } from '../../src/core/store/paths.ts';
 import { chunkTelegramText, TelegramTransport, type TelegramInbound } from '../../src/core/transports/telegram.ts';
-import { makeTempHome, openTestBot, waitForEvent, type TempHome } from '../support/harness.ts';
+import { fakeRuntimeEntry, makeTempHome, openTestBot, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
  * SPEC-001 FR-19 / FR-26 / A5 on a fake Telegram Bot API: one long-polling
@@ -98,10 +102,10 @@ function startFakeTelegram(token: string): Promise<FakeTelegram> {
   });
 }
 
-function privateMessage(chatId: number, text: string, name = 'Kenny'): Record<string, unknown> {
+function privateMessage(chatId: number, text: string, name = 'Kenny', messageId?: number): Record<string, unknown> {
   return {
     message: {
-      message_id: Math.floor(Math.random() * 100_000),
+      message_id: messageId ?? Math.floor(Math.random() * 100_000),
       text,
       chat: { id: chatId, type: 'private', first_name: name },
       from: { id: chatId, first_name: name },
@@ -197,6 +201,48 @@ test('the owner chat is bound, inbound text becomes a home turn, replies are mir
   await new Promise((resolve) => setTimeout(resolve, 1_500));
   assert.equal(telegram.polls, pollsAfterStop, 'no consumer survives stop');
   assert.equal(core.status().telegram.polling, false);
+});
+
+test('a message journaled before a crash is not accepted again when Telegram redelivers it (FR-26)', async () => {
+  const api = await startFakeTelegram('456:def');
+  const coreOptions = {
+    turnRetry: { ownerBusyMs: 200, backgroundBusyMs: 200, runtimeUnavailableMs: 200 },
+    telegram: { apiBaseUrl: api.url, pollTimeoutSeconds: 1 },
+  };
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'tg-once', core: coreOptions });
+  await core.setTelegramToken('456:def');
+  await core.updateProfile({ telegram: { enabled: true } });
+  await core.start();
+  try {
+    api.push(privateMessage(42, '/start'));
+    await until(() => api.sent.length >= 1, 10_000, 'greeting');
+    const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.prompt === 'only once');
+    api.push(privateMessage(42, 'only once', 'Kenny', 7));
+    await done;
+  } finally {
+    await core.stop();
+  }
+  // The crash came after the work item was journaled and before the accepted update was saved.
+  rmSync(botPathsFor(root).telegramState, { force: true });
+  const reopened = BotCore.open({
+    root,
+    log: () => {},
+    runtime: { runtimeEntry: fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000 },
+    life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
+    ...coreOptions,
+  });
+  const pollsBefore = api.polls;
+  await reopened.start();
+  try {
+    await until(() => api.polls >= pollsBefore + 2, 10_000, 'the redelivery was polled and acknowledged');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const accepted = reopened.listWorkItems().filter((item) => item.prompt === 'only once');
+    assert.equal(accepted.length, 1, 'the redelivered message created no second work item');
+    assert.equal(reopened.transcript('home').filter((entry) => entry.kind === 'owner' && entry.text === 'only once').length, 1);
+  } finally {
+    await reopened.stop();
+    await api.close();
+  }
 });
 
 function testTransport(

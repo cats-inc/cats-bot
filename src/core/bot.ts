@@ -184,6 +184,11 @@ export class BotCore implements BotHostApi {
   private readonly timers = new Set<NodeJS.Timeout>();
   /** Replaced sessions waiting for their running turn to end before they are closed (FR-27). */
   private readonly retiring = new Set<string>();
+  /** Work items waiting out a retry delay; cancellation and coalescing see them like queued ones. */
+  private readonly deferred = new Map<string, { item: WorkItem; timer: NodeJS.Timeout }>();
+  /** FR-27: a provider change restarts the runtime only once the running turn has ended. */
+  private runtimeSwapPending = false;
+  private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
   private handoffTimer: NodeJS.Timeout | null = null;
@@ -255,10 +260,13 @@ export class BotCore implements BotHostApi {
       conversations: this.conversations,
       binder: this.binder,
       client: () => this.client(),
-      runtimeState: () => this.runtimeState(),
-      ensureRuntime: () => this.ensureRuntime(),
+      // While the runtime is being replaced for a new provider the tick leaves it alone.
+      runtimeState: () => (this.runtimeSwitching() ? 'starting' : this.runtimeState()),
+      ensureRuntime: async () => (this.runtimeSwitching() ? false : this.ensureRuntime()),
       isTurnRunning: (conversationId) => this.isTurnRunning(conversationId),
-      hasQueuedWork: (key) => this.queue.findByCoalesceKey(key) !== undefined || this.running?.item.coalesceKey === key,
+      hasQueuedWork: (key) => this.queue.findByCoalesceKey(key) !== undefined
+        || this.running?.item.coalesceKey === key
+        || [...this.deferred.values()].some((entry) => entry.item.coalesceKey === key),
       enqueue: (item) => {
         this.enqueueWorkItem(item);
       },
@@ -453,7 +461,13 @@ export class BotCore implements BotHostApi {
         this.log('telegram owner chat bound and saved');
       },
       onOwnerMessage: async (message) => {
-        await this.sendOwnerMessage('home', message.text, 'telegram');
+        // A redelivered update whose work item was journaled before a crash is not accepted twice.
+        const sourceRef = `telegram:${message.chatId}:${message.messageId}`;
+        if (this.listWorkItems().some((item) => item.sourceRef === sourceRef)) {
+          this.log('telegram: an already accepted message was delivered again; skipped');
+          return;
+        }
+        await this.sendOwnerMessage('home', message.text, 'telegram', sourceRef);
       },
     });
     this.telegram = transport;
@@ -625,6 +639,7 @@ export class BotCore implements BotHostApi {
     if (this.handoffTimer) clearInterval(this.handoffTimer);
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
+    this.deferred.clear();
     const running = this.running;
     if (running) {
       running.controller.abort();
@@ -646,7 +661,7 @@ export class BotCore implements BotHostApi {
       name: this.profile.name,
       root: this.paths.root,
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
-      queue: { queued: this.queue.size, running: this.running?.item ?? null },
+      queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
@@ -717,13 +732,10 @@ export class BotCore implements BotHostApi {
   private cancelScheduleRecord(id: string): ScheduleRecord {
     const schedule = this.schedules.get(id);
     if (!schedule) throw new Error(`Unknown schedule ${id}`);
-    if (schedule.state !== 'active') return schedule;
+    // A fired occurrence still waiting in the queue or out a retry delay goes with the schedule.
+    const dropped = this.dropPendingWork((item) => item.coalesceKey === id, 'schedule cancelled');
+    if (schedule.state !== 'active' && dropped === 0) return schedule;
     const cancelled = this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
-    const queued = this.queue.findByCoalesceKey(id);
-    if (queued) {
-      this.queue.remove(queued.id);
-      this.record(transitionWorkItem(queued, 'cancelled', this.now(), { error: 'schedule cancelled' }));
-    }
     if (this.conversations.get(cancelled.conversationId)) {
       this.conversations.append(cancelled.conversationId, {
         kind: 'system',
@@ -878,13 +890,11 @@ export class BotCore implements BotHostApi {
         }
       }
       if (result.providerChanged && this.supervisor && this.supervisor.state !== 'stopped') {
-        // The private runtime only enables one provider; it is re-created for the new one.
-        this.log('provider changed: restarting the runtime for the new selection');
-        void this.supervisor.stop().then(() => {
-          if (this.stopped) return;
-          this.supervisor = this.createSupervisor();
-          return this.ensureRuntime();
-        });
+        // The private runtime only enables one provider; it is re-created for the new one once
+        // the running turn has finished under the target it was admitted with (FR-27).
+        this.runtimeSwapPending = true;
+        if (this.running) this.log('provider changed: the runtime restarts once the running turn ends');
+        this.pump();
       }
     }
     if (patch.heartbeat) {
@@ -913,12 +923,7 @@ export class BotCore implements BotHostApi {
     const record = this.conversations.require(conversationId);
     if (record.role === 'home') throw new Error('The home conversation cannot be deleted');
     if (this.running?.item.conversationId === record.id) await this.cancelTurn(record.id);
-    for (const item of this.queue.list()) {
-      if (item.conversationId === record.id) {
-        this.queue.remove(item.id);
-        this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: 'conversation deleted' }));
-      }
-    }
+    this.dropPendingWork((item) => item.conversationId === record.id, 'conversation deleted');
     for (const schedule of this.scheduleRecords()) {
       if (schedule.conversationId === record.id && schedule.state === 'active') {
         this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
@@ -946,11 +951,19 @@ export class BotCore implements BotHostApi {
     return [...this.views];
   }
 
-  async sendOwnerMessage(conversationId: string, text: string, source: 'owner' | 'telegram' = 'owner'): Promise<WorkItem> {
+  async sendOwnerMessage(
+    conversationId: string,
+    text: string,
+    source: 'owner' | 'telegram' = 'owner',
+    sourceRef?: string,
+  ): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
     const prompt = text.trim();
     if (!prompt) throw new Error('An owner message needs text');
-    const item = createWorkItem({ kind: 'owner_message', source, conversationId: id, prompt }, this.now());
+    const item: WorkItem = {
+      ...createWorkItem({ kind: 'owner_message', source, conversationId: id, prompt }, this.now()),
+      ...(sourceRef ? { sourceRef } : {}),
+    };
     this.conversations.append(id, { kind: 'owner', origin: 'owner', text: prompt, workItemId: item.id });
     this.record(item);
     this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
@@ -1000,6 +1013,50 @@ export class BotCore implements BotHostApi {
 
   // ---- queue ------------------------------------------------------------
 
+  private runtimeSwitching(): boolean {
+    return this.runtimeSwapPending || this.swappingRuntime;
+  }
+
+  /** FR-27: replace the runtime for the new provider; the queue waits until it is up. */
+  private async swapRuntime(): Promise<void> {
+    if (this.swappingRuntime || !this.supervisor) return;
+    this.swappingRuntime = true;
+    this.runtimeSwapPending = false;
+    try {
+      this.log('provider changed: restarting the runtime for the new selection');
+      await this.supervisor.stop();
+      if (this.stopped) return;
+      this.supervisor = this.createSupervisor();
+      await this.ensureRuntime();
+    } finally {
+      this.swappingRuntime = false;
+      this.pump();
+    }
+  }
+
+  /** Cancels queued and retry-delayed work matching `match`; returns how many items were dropped. */
+  private dropPendingWork(match: (item: WorkItem) => boolean, reason: string): number {
+    let dropped = 0;
+    for (const item of this.queue.list()) {
+      if (!match(item)) continue;
+      this.queue.remove(item.id);
+      this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
+      dropped += 1;
+    }
+    for (const [id, entry] of [...this.deferred]) {
+      const current = this.workItems.get(id) ?? entry.item;
+      if (!match(current)) continue;
+      clearTimeout(entry.timer);
+      this.timers.delete(entry.timer);
+      this.deferred.delete(id);
+      if (current.state === 'queued') {
+        this.record(transitionWorkItem(current, 'cancelled', this.now(), { error: reason }));
+        dropped += 1;
+      }
+    }
+    return dropped;
+  }
+
   /** FR-27: close a replaced session now, or after the turn still running in it. */
   private retireSession(sessionId: string): void {
     if (this.running?.item.run?.sessionId === sessionId) {
@@ -1019,7 +1076,11 @@ export class BotCore implements BotHostApi {
     for (const sessionId of [...this.retiring]) {
       if (this.running?.item.run?.sessionId !== sessionId) this.retireSession(sessionId);
     }
-    if (this.running || this.stopped || !this.started) return;
+    if (this.running || this.stopped || !this.started || this.swappingRuntime) return;
+    if (this.runtimeSwapPending) {
+      void this.swapRuntime();
+      return;
+    }
     const item = this.queue.take();
     if (!item) return;
     const controller = new AbortController();
@@ -1117,10 +1178,15 @@ export class BotCore implements BotHostApi {
           });
         }
         this.log(`turn ${waiting.id} deferred (${outcome.reason}) for ${outcome.retryAfterMs}ms`);
-        this.schedule(outcome.retryAfterMs, () => {
-          this.queue.enqueue(waiting);
+        const timer = this.schedule(outcome.retryAfterMs, () => {
+          this.deferred.delete(waiting.id);
+          // Cancelled, deleted or settled meanwhile: nothing to retry.
+          const current = this.workItems.get(waiting.id);
+          if (current?.state !== 'queued') return;
+          this.queue.enqueue(current);
           this.pump();
         });
+        this.deferred.set(waiting.id, { item: waiting, timer });
         break;
       }
       default:

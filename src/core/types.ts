@@ -159,6 +159,8 @@ export interface WorkItem {
   state: WorkItemState;
   attempts: number;
   coalesceKey?: string;
+  /** Where an inbound message came from (for example `telegram:<chat>:<message>`), to accept it once. */
+  sourceRef?: string;
   result?: WorkItemResult;
   notification?: NotificationState;
   /** The provider/model/session the run actually used (ADR-001 §3 evidence). */

@@ -151,7 +151,9 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
     （預設主機本地時區，時區換算由 core 負責，不依賴 runtime 的 UTC cron）、`prompt`、
     `missedPolicy: skip | coalesce | run_once`（預設 `once` 為 `run_once`、`cron` 為 `coalesce`）、
     `graceMinutes`（預設 1,440）、`createdBy: owner | agent`、`receipt`。到期時建立工作項，
-    `coalesceKey` 為排程 id；同一排程仍有 `queued` 工作項時不重複建立。
+    `coalesceKey` 為排程 id；同一排程仍有 `queued` 工作項（含正在等待重試延遲的）時不重複建立。
+    取消排程時，它已觸發、仍在佇列或重試延遲中的工作項一併標 `cancelled`；重試計時到期時先重讀
+    工作項，已不是 `queued` 就不再執行。
 22. FR-22：停機期間錯過的排程依 `missedPolicy` 處理：`skip` 記一筆略過通知；`coalesce` 合併為一次；
     `run_once` 在 `graceMinutes` 內執行一次、超過則略過並通知。絕不重播無上限的積壓。
 23. FR-23：OS 睡眠後恢復時立即跑一次對帳 tick；睡眠期間視為停機套用 FR-22；心跳最多補一次。
@@ -175,7 +177,9 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
     主人訊息工作項，bot 回覆鏡像回 Telegram；檔案監看與本機 webhook 必須明確設定，預設關閉。
     update 在耐久接納後（主人訊息工作項已寫入 journal，或確定不需處理）才推進 `offset`；處理失敗時
     不確認、退避後重新取回同一則；連續失敗 5 次的 update 記錄 id（不含內容）後略過，不讓一則壞訊息卡住
-    polling。上次接納的 `update_id` 依 bot id 持久化，重啟後先確認它，重送的已接納 update 不重複處理。
+    polling。上次接納的 `update_id` 依 bot id 持久化，重啟後先確認它，重送的已接納 update 不重複處理；
+    工作項另記 `sourceRef`（`telegram:<chat>:<message>`），即使當機發生在工作項寫入 journal 之後、
+    `update_id` 保存之前，重送的同一則訊息也不會建立第二個工作項。
 
 ### 全域 provider/model 變更
 
@@ -184,7 +188,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
     重新讀取；在較舊 revision 下建立的 attachment 標為 `stale`、不 resume，下次接納以承接包重建
     session，並在對話裡告知主人；被取代的 session 在其中沒有回合執行時關閉（`close`），不留下
     不受閒置政策管理的 worker。值都相同時為 no-op；名稱、心跳、閒置與 Telegram 設定不影響 session。
-    每個 run 記錄實際 provider/model。
+    換 provider 需要重啟私有 runtime：有回合在跑時先讓它在原設定下跑完，期間佇列暫停接納、tick 不碰
+    runtime；回合結束後才重啟 runtime，再接納後續工作。每個 run 記錄實際 provider/model。
 
 ### 復原與通知
 
