@@ -74,7 +74,8 @@ last step, not the first.
 
 ### Shell tests
 
-- **Location**: `tests/shell/trayMenu.test.ts`, `tests/shell/bridge.test.ts`
+- **Location**: `tests/shell/trayMenu.test.ts`, `tests/shell/bridge.test.ts`,
+  `tests/renderer/*.test.ts`
 - **Scope**: the Electron-free parts of the shell: the tray menu data and the
   note view state. Everything that needs Electron is checked by hand (below).
   `tests/core/providers.test.ts` covers the provider list, PATH detection,

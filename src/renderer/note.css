@@ -24,9 +24,10 @@ html, body {
   font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
 }
 
-body {
+.note-root {
   display: flex;
   flex-direction: column;
+  height: 100%;
 }
 
 .note-header {
@@ -97,6 +98,7 @@ body {
 
 .entry {
   max-width: 92%;
+  min-width: 0;
   padding: 6px 9px;
   border-radius: 10px;
   white-space: pre-wrap;
@@ -114,7 +116,8 @@ body {
   box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
 }
 
-.entry-bot.pending::after {
+/* The cursor sits at the end of the streamed text, inside its last block. */
+.entry-bot.pending .md > :last-child::after {
   content: "▍";
   color: var(--accent);
 }

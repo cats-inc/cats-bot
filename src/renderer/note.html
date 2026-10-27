@@ -8,23 +8,7 @@
   <link rel="stylesheet" href="note.css">
 </head>
 <body>
-  <header class="note-header" id="header">
-    <span class="note-title" id="title">Cats Bot</span>
-    <span class="note-unread" id="unread" hidden>0</span>
-    <span class="note-state" id="state"></span>
-    <span class="note-spacer"></span>
-    <button class="note-button" id="settings" title="Settings and notes">⚙</button>
-    <button class="note-button" id="layer" title="Where this note lives">▢</button>
-    <button class="note-button" id="hide" title="Hide (the bot keeps running)">✕</button>
-  </header>
-  <main class="note-transcript" id="transcript" aria-live="polite"></main>
-  <footer class="note-composer">
-    <textarea id="input" rows="2" placeholder="Say something… (Enter to send, Shift+Enter for a new line)"></textarea>
-    <div class="note-actions">
-      <button class="note-send" id="send">Send</button>
-      <button class="note-cancel" id="cancel" hidden>Cancel</button>
-    </div>
-  </footer>
-  <script type="module" src="./note.js"></script>
+  <div class="note-root" id="root"></div>
+  <script type="module" src="./note/main.tsx"></script>
 </body>
 </html>
