@@ -119,7 +119,7 @@ export class LifeLoop {
     catchUpUsed: false,
   };
   private lastTickAt: number | null = null;
-  private ticking = false;
+  private inFlight: Promise<LifeTickReport> | null = null;
   private stopped = false;
   private startupTimer: NodeJS.Timeout | null = null;
   private timer: NodeJS.Timeout | null = null;
@@ -165,22 +165,33 @@ export class LifeLoop {
   }
 
   get isIdle(): boolean {
-    return !this.ticking;
+    return this.inFlight === null;
   }
 
   private async runTick(): Promise<void> {
-    if (this.stopped || this.ticking) return;
-    this.ticking = true;
+    if (this.stopped) return;
     try {
       await this.tick();
     } catch (error) {
       this.deps.log(`tick failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
-    } finally {
-      this.ticking = false;
     }
   }
 
-  async tick(): Promise<LifeTickReport> {
+  /**
+   * One pass now. A call made while a pass is running joins that pass instead
+   * of starting another, so the timer, the CLI's tick and a test can never
+   * reconcile the same session twice at once (one rebuild, not two).
+   */
+  tick(): Promise<LifeTickReport> {
+    if (this.inFlight === null) {
+      this.inFlight = this.pass().finally(() => {
+        this.inFlight = null;
+      });
+    }
+    return this.inFlight;
+  }
+
+  private async pass(): Promise<LifeTickReport> {
     const now = this.deps.now();
     const nowMs = now.getTime();
     const intervalMs = this.deps.intervalMs ?? LIFE_TICK_INTERVAL_MS;

@@ -34,7 +34,7 @@ test('the tick keeps the home session alive: creates it, leaves a live one alone
   const { core } = openTestBot({
     botsHome: home.botsHome,
     id: 'alive',
-    core: { ...fast, life: { startupDelayMs: 3_600_000, intervalMs: 500, random: () => 1 } },
+    core: { ...fast, life: { random: () => 1 } },
     runtimeEnv: { FAKE_CRASH_AFTER_MS: '2500' },
   });
   await core.start();
@@ -53,8 +53,9 @@ test('the tick keeps the home session alive: creates it, leaves a live one alone
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'failed', 10_000);
     assert.equal((await core.listConversations())[0]!.attachment.state, 'closed');
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'ready', 10_000);
-    const revived = await core.tick();
+    const [revived, joined] = await Promise.all([core.tick(), core.tick()]);
     assert.equal(revived.outcome, 'rebuilt', 'the new runtime has no sessions, so home is rebuilt');
+    assert.equal(joined, revived, 'a tick requested while a pass runs joins it instead of overlapping it');
     assert.equal((await core.listConversations())[0]!.attachment.state, 'initializing');
     state = await fetchFakeState(core);
     assert.equal(state.calls.filter((call) => call.op === 'create').length, 1, 'one session on the new runtime');
