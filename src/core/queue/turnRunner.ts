@@ -48,6 +48,8 @@ export interface TurnRunnerDependencies {
   conversations: ConversationStore;
   now(): Date;
   emit(event: BotHostEvent): void;
+  /** FR-28: journals the item with its run before the prompt leaves, so a crash mid-turn keeps the evidence. */
+  persistRun(item: WorkItem): void;
   log(line: string): void;
   delays?: Partial<TurnRetryDelays>;
 }
@@ -90,12 +92,15 @@ export class TurnRunner {
         }
         return { kind: 'failed', reason: bound.reason };
       }
-      const profile = this.deps.conversations.require(item.conversationId).attachment;
+      const attachment = this.deps.conversations.require(item.conversationId).attachment;
       item.run = {
-        provider: profile.provider ?? '',
-        model: profile.model,
+        provider: attachment.provider ?? '',
+        model: attachment.model,
         sessionId: bound.sessionId,
+        startedAt: this.deps.now().toISOString(),
+        historyBaseline: bound.how === 'created' ? 0 : await this.historyLength(client, bound.sessionId),
       };
+      this.deps.persistRun(item);
       try {
         return await runWithSessionGate(bound.sessionId, () =>
           this.stream(client, bound.sessionId, item, controller));
@@ -117,6 +122,16 @@ export class TurnRunner {
       }
     }
     return { kind: 'failed', reason: 'The session could not be re-established after repeated attempts' };
+  }
+
+  /** The session's history length before this turn's prompt; null when the runtime cannot say. */
+  private async historyLength(client: RuntimeClient, sessionId: string): Promise<number | null> {
+    try {
+      const history = await client.getHistory(sessionId);
+      return Array.isArray(history.messages) ? history.messages.length : null;
+    } catch {
+      return null;
+    }
   }
 
   /** Decides what a rejected send means (SPEC-001 FR-17 / FR-18). */

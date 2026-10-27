@@ -180,6 +180,28 @@ test('a restart marks running work interrupted and never reruns it (FR-28)', asy
   }
 });
 
+test('the run is journaled before the prompt is sent, with its history baseline (FR-28)', async () => {
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'run-journal', core: fastRetries });
+  await core.start();
+  try {
+    const first = await sendAndWait(core, 'home', 'first turn');
+    assert.equal(first.run?.historyBaseline, 0, 'a new session starts with an empty history');
+    const running = waitForEvent(core, (event) => event.type === 'work.updated'
+      && event.workItem.state === 'running' && event.workItem.run !== undefined);
+    const slow = await core.sendOwnerMessage('home', 'slow:800');
+    await running;
+    const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === slow.id);
+    const journaled = readJournal(botPathsFor(root)).workItems.get(slow.id);
+    assert.equal(journaled?.state, 'running');
+    assert.equal(journaled?.run?.sessionId, first.run?.sessionId, 'a crash now would still know the session');
+    assert.equal(journaled?.run?.historyBaseline, 2, 'the first turn left two messages before this prompt');
+    assert.ok(journaled?.run?.startedAt);
+    await done;
+  } finally {
+    await core.stop();
+  }
+});
+
 test('a global target change makes the attachment stale and rebuilds with a handoff (FR-27)', async () => {
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'retarget', core: fastRetries });
   await core.start();

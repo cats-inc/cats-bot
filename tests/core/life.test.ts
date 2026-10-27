@@ -72,7 +72,9 @@ test('a tick during a running turn neither resumes, rebuilds nor cancels (A2 bus
   try {
     await core.tick();
     const before = await fetchFakeState(core);
-    const running = waitForEvent(core, (event) => event.type === 'work.updated' && event.workItem.state === 'running');
+    // The run is journaled right before the prompt leaves (FR-28).
+    const running = waitForEvent(core, (event) => event.type === 'work.updated'
+      && event.workItem.state === 'running' && event.workItem.run !== undefined);
     const slow = await core.sendOwnerMessage('home', 'slow:1500');
     await running;
     const report = await core.tick();

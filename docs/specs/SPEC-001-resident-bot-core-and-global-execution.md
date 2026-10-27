@@ -188,9 +188,13 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 
 ### 復原與通知
 
-28. FR-28：啟動時載入 journal，把 `running` 改為 `interrupted`；對每個 `interrupted` 工作項以
-    `GET /sessions/{id}/history` 與 `observe` 對帳：證據顯示已完成則標 `completed` 並補結果；
-    否則標 `awaiting_owner` 並附證據摘要。永不自動重跑。
+28. FR-28：送出 prompt 前先把 run（provider、model、session id、`startedAt`、`historyBaseline`：
+    送出前 history 的訊息數，新 session 為 0，讀不到為 null）寫進 journal。啟動時載入 journal，把
+    `running` 改為 `interrupted`；對每個 `interrupted` 工作項以 `GET /sessions/{id}/history` 對帳。
+    runtime 的 history 沒有回合結束標記，所以完成必須有證據：prompt 是這次 run 的（位於
+    `historyBaseline` 之後；沒有 baseline 時以不早於 `startedAt` 的時間戳辨識）、其後有回覆、core 自己
+    記下的這個回合的工具呼叫都有結果，且最後一則回覆在最後一個工具結果之後。全部成立才標
+    `completed` 並以這段回覆補結果；否則標 `awaiting_owner` 並附證據摘要。永不自動重跑。
 29. FR-29：通知投遞狀態（`deliveredAt`、`seenAt`）與結果一起持久化；重開便箋時從 store 重建
     `unreadCount` 與進度，不需要原始事件流。
 

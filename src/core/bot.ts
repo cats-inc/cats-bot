@@ -241,6 +241,9 @@ export class BotCore implements BotHostApi {
       conversations: this.conversations,
       now: this.now,
       emit: (event) => this.bus.emit(event),
+      persistRun: (item) => {
+        this.record({ ...item, ...(item.run ? { run: { ...item.run } } : {}) });
+      },
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
@@ -807,7 +810,8 @@ export class BotCore implements BotHostApi {
     try {
       for (const item of this.listWorkItems()) {
         if (item.state !== 'interrupted') continue;
-        const verdict = await reconcileInterrupted(item, client);
+        const own = this.conversations.get(item.conversationId) ? this.conversations.transcript(item.conversationId) : [];
+        const verdict = await reconcileInterrupted(item, client, own);
         const now = this.now();
         if (verdict.verdict === 'completed') {
           recordRecoveredReply(this.conversations, item, verdict.text);
