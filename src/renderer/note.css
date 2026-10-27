@@ -190,3 +190,154 @@ textarea {
 .note-cancel {
   background: #e8dcc0;
 }
+
+/* SPEC-003 FR-4: one card per tool call, a single line until opened. */
+.tool-card {
+  align-self: stretch;
+  min-width: 0;
+  border: 1px solid #e8dcab;
+  border-radius: 8px;
+  background: #fbf6df;
+  font-size: 12px;
+}
+
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.tool-head:hover {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+.tool-caret {
+  flex: none;
+  width: 10px;
+}
+
+.tool-name {
+  flex: none;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.tool-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-status {
+  flex: none;
+}
+
+.tool-running .tool-status {
+  color: var(--accent);
+}
+
+.tool-error {
+  border-color: #efb8b0;
+  background: #fff0ec;
+}
+
+.tool-error .tool-status {
+  color: #c0392b;
+  font-weight: 700;
+}
+
+.tool-body {
+  padding: 0 8px 8px;
+}
+
+.tool-label {
+  margin: 6px 0 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tool-text {
+  margin: 0;
+  max-height: 220px;
+  overflow: auto;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: #fffdf3;
+  border: 1px solid #efe5bf;
+  font: 11px/1.4 "Cascadia Mono", Consolas, ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tool-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* SPEC-003 FR-5: a question for the owner. */
+.entry-decision {
+  align-self: stretch;
+  background: #fff1d6;
+  border: 1px solid #f0cf8f;
+  font-size: 12px;
+}
+
+.decision-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.decision-actions button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.decision-approve {
+  background: var(--accent);
+  color: #fff;
+}
+
+.decision-deny {
+  background: #e8dcc0;
+}
+
+.decision-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.decision-outcome {
+  margin-top: 4px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.decision-approved .decision-outcome {
+  color: #3f7d3a;
+}
+
+.decision-denied .decision-outcome,
+.decision-expired .decision-outcome {
+  color: #a0503a;
+}
+
+.decision-error {
+  margin-top: 4px;
+  color: #c0392b;
+}

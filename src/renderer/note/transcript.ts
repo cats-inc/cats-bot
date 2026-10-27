@@ -1,4 +1,4 @@
-import type { TranscriptEntry, TranscriptEntryKind } from '../../core/types.ts';
+import type { TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
 
 /**
  * SPEC-001 FR-33, SPEC-003: what the note shows, apart from React. The note
@@ -75,4 +75,125 @@ export function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
   // Electron prefixes errors thrown in the main process.
   return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '');
+}
+
+// ---- SPEC-003 FR-4, FR-5: tool cards and the owner's decisions -------------------
+
+export type ToolStatus = 'running' | 'done' | 'error';
+
+export interface ToolItem {
+  type: 'tool';
+  key: string;
+  name: string;
+  /** What the CLI reported as the call's input; empty when only a result was seen. */
+  input: string;
+  result: string | null;
+  status: ToolStatus;
+}
+
+export type DecisionStatus = 'waiting' | 'approved' | 'denied' | 'expired';
+
+export interface DecisionItem {
+  type: 'decision';
+  key: string;
+  entry: TranscriptEntry;
+  workItemId: string;
+  status: DecisionStatus;
+  /** Why it expired, when it did. */
+  detail: string | null;
+}
+
+export type NoteItem = { type: 'entry'; key: string; entry: TranscriptEntry } | ToolItem | DecisionItem;
+
+/** Work items that ask the owner something: `ask_owner` questions and interrupted turns to run again. */
+const DECIDED_BY_OWNER = new Set(['ask_owner', 'recovery']);
+
+function decisionStatus(item: WorkItem): DecisionStatus {
+  switch (item.state) {
+    case 'awaiting_owner': return 'waiting';
+    case 'completed': return item.result?.text === 'denied' ? 'denied' : 'approved';
+    case 'cancelled': return 'denied';
+    default: return 'expired';
+  }
+}
+
+/**
+ * Turns the transcript into what the note shows: a tool call and its result
+ * (matched by `toolId`, newest call first, since a CLI may reuse ids across
+ * turns) become one card; the entry that asked the owner becomes a decision
+ * with buttons while its work item waits. Everything else stays an entry.
+ */
+export function buildNoteItems(entries: readonly TranscriptEntry[], workItems: readonly WorkItem[]): NoteItem[] {
+  const work = new Map(workItems.map((item) => [item.id, item]));
+  const running = new Set(workItems.filter((item) => item.state === 'running').map((item) => item.id));
+  const items: NoteItem[] = [];
+  const openCalls = new Map<string, { item: ToolItem; workItemId: string | undefined }>();
+  const asked = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind === 'progress') continue;
+    if (entry.kind === 'tool_use') {
+      const item: ToolItem = { type: 'tool', key: `tool:${entry.seq}`, name: entry.toolName || 'tool', input: entry.text, result: null, status: 'done' };
+      if (entry.toolId) openCalls.set(entry.toolId, { item, workItemId: entry.workItemId });
+      item.status = entry.workItemId && running.has(entry.workItemId) ? 'running' : 'done';
+      items.push(item);
+      continue;
+    }
+    if (entry.kind === 'tool_result') {
+      const call = entry.toolId ? openCalls.get(entry.toolId) : undefined;
+      const item: ToolItem = call?.item ?? { type: 'tool', key: `tool:${entry.seq}`, name: entry.toolName || 'tool', input: '', result: null, status: 'done' };
+      item.result = entry.text;
+      item.status = entry.isError ? 'error' : 'done';
+      if (call && entry.toolId) openCalls.delete(entry.toolId);
+      else items.push(item);
+      continue;
+    }
+    const asking = entry.kind === 'system' && entry.workItemId ? work.get(entry.workItemId) : undefined;
+    if (asking && DECIDED_BY_OWNER.has(asking.source) && !asked.has(asking.id)) {
+      asked.add(asking.id);
+      const status = decisionStatus(asking);
+      items.push({ type: 'decision', key: `decision:${asking.id}`, entry, workItemId: asking.id, status, detail: status === 'expired' ? asking.error ?? null : null });
+      continue;
+    }
+    items.push({ type: 'entry', key: entryKey(entry), entry });
+  }
+  return items;
+}
+
+/** Input fields that say what a call is about, in the order they are preferred. */
+const SUMMARY_FIELDS = ['command', 'file_path', 'path', 'pattern', 'url', 'query', 'description', 'prompt'];
+
+function firstLine(text: string): string {
+  return (text.split(/\r?\n/u).find((part) => part.trim()) ?? '').trim();
+}
+
+/**
+ * One line for a collapsed card. JSON input (how the Claude CLI reports it)
+ * shows its most telling field, else the compacted object; other input its
+ * first line; no input the first line of the result.
+ */
+export function toolSummary(item: ToolItem): string {
+  if (!item.input) return firstLine(item.result ?? '');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(item.input);
+  } catch {
+    return firstLine(item.input);
+  }
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    const fields = parsed as Record<string, unknown>;
+    for (const name of SUMMARY_FIELDS) {
+      const value = fields[name];
+      if (typeof value === 'string' && value.trim()) return firstLine(value);
+    }
+  }
+  return JSON.stringify(parsed) ?? '';
+}
+
+/** Keeps the note's copy of a work item current from `work.updated` events. */
+export function upsertWorkItem(items: readonly WorkItem[], item: WorkItem): WorkItem[] {
+  const index = items.findIndex((existing) => existing.id === item.id);
+  if (index === -1) return [...items, item];
+  const next = [...items];
+  next[index] = item;
+  return next;
 }
