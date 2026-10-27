@@ -1,0 +1,7 @@
+# Every text file checks out with LF regardless of core.autocrlf, matching
+# .editorconfig. Add binary or Git LFS patterns below as the project needs them.
+* text=auto eol=lf
+
+# Windows batch files need CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf

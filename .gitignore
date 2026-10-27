@@ -1,0 +1,51 @@
+# === Agent Local Configs ===
+.claude/
+.agents/
+.cursor/
+
+# === Python ===
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# === Node.js ===
+node_modules/
+dist/
+.npm/
+*.tgz
+
+# === Environment ===
+.env
+.env.local
+.env.*.local
+
+# === IDE ===
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.swp
+*.swo
+*~
+
+# === OS ===
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# === Logs ===
+*.log
+logs/
+
+# === Temporary ===
+tmp/
+temp/
+*.tmp

@@ -1,0 +1,54 @@
+{
+  "name": "@cats-inc/cats-bots",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Standalone always-alive desktop bots for the Cats ecosystem: one process per bot, wrapping an agent CLI through cats-runtime.",
+  "author": "sammykenny2 <sammykenny2@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cats-inc/cats-bots.git"
+  },
+  "homepage": "https://github.com/cats-inc/cats-bots#readme",
+  "bugs": {
+    "url": "https://github.com/cats-inc/cats-bots/issues"
+  },
+  "keywords": [
+    "cats",
+    "bots",
+    "desktop",
+    "companion",
+    "agent",
+    "cli"
+  ],
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "ts-node src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "format": "prettier --write \"src/**/*.{ts,tsx,json}\"",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^24.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.0.0",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=24.0.0"
+  }
+}
