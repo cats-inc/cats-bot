@@ -18,7 +18,12 @@ import { WorkQueue } from './queue/queue.ts';
 import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turnRunner.ts';
 import { createWorkItem, isTerminalWorkState, transitionWorkItem } from './queue/workItems.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN, type SecretStore } from './secrets.ts';
-import { TelegramTransport, type TelegramStatus } from './transports/telegram.ts';
+import {
+  readTelegramLastUpdateId,
+  TelegramTransport,
+  writeTelegramLastUpdateId,
+  type TelegramStatus,
+} from './transports/telegram.ts';
 import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
@@ -430,6 +435,8 @@ export class BotCore implements BotHostApi {
         : {}),
       now: this.now,
       log: this.log,
+      lastUpdateId: readTelegramLastUpdateId(this.paths.telegramState, token),
+      onUpdateAccepted: (updateId) => writeTelegramLastUpdateId(this.paths.telegramState, token, updateId),
       onOwnerBound: (chatId) => {
         this.profile = { ...this.profile, telegram: { ...this.profile.telegram, ownerChatId: chatId }, updatedAt: this.now().toISOString() };
         saveProfile(this.paths, this.profile);
@@ -458,11 +465,19 @@ export class BotCore implements BotHostApi {
     this.startTelegram();
   }
 
+  /** Re-stores secrets a host without a cipher (the CLI) wrote, when this host has one. */
+  protectSecretsAtRest(): number {
+    const upgraded = this.secrets.protectAtRest();
+    if (upgraded > 0) this.log(`re-stored ${upgraded} secret(s) with ${this.secrets.protection()} protection`);
+    return upgraded;
+  }
+
+  /** `protection` is how the stored token is protected; without a token, what this host would use. */
   telegramStatus(): { enabled: boolean; tokenStored: boolean; protection: 'os' | 'file'; transport: TelegramStatus | null } {
     return {
       enabled: this.profile.telegram.enabled,
       tokenStored: this.secrets.has(SECRET_TELEGRAM_TOKEN),
-      protection: this.secrets.protection(),
+      protection: this.secrets.protectionOf(SECRET_TELEGRAM_TOKEN) ?? this.secrets.protection(),
       transport: this.telegram?.status() ?? null,
     };
   }
@@ -577,9 +592,11 @@ export class BotCore implements BotHostApi {
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ heartbeat: { enabled: payload.enabled } });
         break;
       case 'telegram':
-        // The CLI wrote the token to the secret store itself; the core only re-reads it.
+        // The CLI wrote the token to the secret store itself; the core re-reads it and,
+        // when this host has a cipher, re-stores it encrypted.
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ telegram: { enabled: payload.enabled } });
         if (payload.reloadToken === true) {
+          this.protectSecretsAtRest();
           await this.stopTelegram();
           this.startTelegram();
         }

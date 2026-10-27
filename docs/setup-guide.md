@@ -86,7 +86,11 @@ messages reach the home conversation; every home reply, including heartbeat
 and schedule results, is mirrored back. One bot polls one token; run a bot's
 token nowhere else or Telegram answers 409. The CLI stores the token as a
 file with owner-only permissions where the platform supports them and says
-so; the shell re-stores it encrypted with the OS facility.
+so; a shell with the OS facility re-stores it encrypted, at once when it is
+running and otherwise on its next start. `telegram status` reports how the
+stored token is actually protected (`file` or `os`). An update is
+acknowledged only after it was accepted, so a failure retries it; the last
+accepted update id lives in `telegram-state.json`.
 
 Packaging (Windows): `npm run dist:dir` builds `release/win-unpacked/`,
 `npm run dist:win` builds the NSIS installer and the portable executable.

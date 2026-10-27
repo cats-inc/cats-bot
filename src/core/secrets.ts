@@ -10,7 +10,9 @@ import { readJsonFile, writeFileAtomic } from './store/atomicFile.ts';
  * shell through `safeStorage`, DPAPI on Windows) supplies a cipher and the
  * value is stored encrypted; without one the file holds the value as is,
  * with owner-only permissions where the platform supports them, and the CLI
- * says so. Secrets never appear in logs.
+ * says so. A host with a cipher re-stores such plain entries encrypted
+ * (`protectAtRest`), and status reports how a value is actually stored
+ * (`protectionOf`), not what the host could do. Secrets never appear in logs.
  */
 
 export interface SecretCipher {
@@ -27,7 +29,12 @@ export interface SecretStore {
   set(name: string, value: string): void;
   delete(name: string): void;
   has(name: string): boolean;
+  /** What this host can do: `os` when it has a cipher. */
   protection(): SecretProtection;
+  /** How the stored value is protected, or null when there is none. */
+  protectionOf(name: string): SecretProtection | null;
+  /** Re-stores plain entries with this host's cipher; returns how many it upgraded. */
+  protectAtRest(): number;
 }
 
 interface SecretsFile {
@@ -82,6 +89,26 @@ export class FileSecretStore implements SecretStore {
 
   has(name: string): boolean {
     return name in this.read().entries;
+  }
+
+  protectionOf(name: string): SecretProtection | null {
+    const entry = this.read().entries[name];
+    if (!entry) return null;
+    return entry.cipher === 'none' ? 'file' : 'os';
+  }
+
+  protectAtRest(): number {
+    if (!this.cipher) return 0;
+    const file = this.read();
+    let upgraded = 0;
+    for (const [name, entry] of Object.entries(file.entries)) {
+      if (entry.cipher !== 'none') continue;
+      const plain = Buffer.from(entry.value, 'base64').toString('utf8');
+      file.entries[name] = { cipher: this.cipher.label, value: this.cipher.encrypt(plain).toString('base64') };
+      upgraded += 1;
+    }
+    if (upgraded > 0) this.write(file);
+    return upgraded;
   }
 
   get(name: string): string | null {

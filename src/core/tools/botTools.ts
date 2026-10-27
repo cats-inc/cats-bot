@@ -38,12 +38,12 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'schedule_list',
-    description: 'List your active schedules with their ids and next times.',
+    description: 'List the active schedules of this conversation with their ids and next times.',
     inputSchema: { type: 'object', properties: {} },
   },
   {
     name: 'schedule_cancel',
-    description: 'Cancel one of your schedules by id.',
+    description: 'Cancel one of the schedules of this conversation by id.',
     inputSchema: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
   },
   {
@@ -91,7 +91,9 @@ export function createBotToolHandlers(deps: BotToolsDependencies): ToolHandlers 
           };
         }
         case 'schedule_list': {
-          const schedules = deps.listSchedules().filter((schedule) => schedule.state === 'active');
+          // Each conversation sees only its own schedules, so one note never reads another's prompts.
+          const schedules = deps.listSchedules()
+            .filter((schedule) => schedule.state === 'active' && schedule.conversationId === context.conversationId);
           if (schedules.length === 0) return { text: 'No active schedules.' };
           return {
             text: schedules.map((schedule) => `${describeSchedule(schedule)} (next ${schedule.nextAt ?? 'never'})`).join('\n'),
@@ -100,6 +102,10 @@ export function createBotToolHandlers(deps: BotToolsDependencies): ToolHandlers 
         case 'schedule_cancel': {
           const id = stringArg(args, 'id');
           if (!id) return { text: 'schedule_cancel needs an id', isError: true };
+          // A schedule of another conversation reads exactly like an unknown id.
+          const own = deps.listSchedules()
+            .some((schedule) => schedule.id === id && schedule.conversationId === context.conversationId);
+          if (!own) return { text: `No schedule ${id} in this conversation`, isError: true };
           const cancelled = deps.cancelSchedule(id);
           return { text: `Cancelled ${cancelled.id}. Receipt: ${cancelled.receipt}` };
         }

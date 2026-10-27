@@ -410,11 +410,15 @@ async function commandTelegram(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Prom
       return 2;
     }
     // The CLI has no OS credential facility: the token is stored as a file with owner-only
-    // permissions where the platform supports them. The shell stores it encrypted.
+    // permissions where the platform supports them. A shell with OS encryption re-stores it
+    // encrypted: a running one on the handoff below, otherwise on its next start.
     const store = new FileSecretStore(target.root, { warn: (line) => process.stderr.write(`${line}\n`) });
     if (action === 'set-token') store.set(SECRET_TELEGRAM_TOKEN, value!);
     else store.delete(SECRET_TELEGRAM_TOKEN);
-    process.stdout.write(`Telegram token ${action === 'set-token' ? 'stored' : 'cleared'} (file protection; the shell re-stores it encrypted).\n`);
+    process.stdout.write(action === 'set-token'
+      ? 'Telegram token stored with file protection. The shell re-stores it with OS encryption where the OS '
+        + 'offers it (now if it is running, otherwise on its next start); `telegram status` shows the actual protection.\n'
+      : 'Telegram token cleared.\n');
     if (target.running) handOff(target, { kind: 'telegram', payload: { reloadToken: true } });
     return 0;
   }

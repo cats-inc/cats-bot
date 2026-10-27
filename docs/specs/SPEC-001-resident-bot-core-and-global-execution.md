@@ -68,7 +68,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
    `conversations/<conversationId>.json`（對話中繼資料與 attachment）、
    `transcripts/<conversationId>.jsonl`、`journal.jsonl`（工作項、排程與狀態轉移）、
    `runtime/`（作為 `CATS_RUNTIME_DIR`）、`logs/`；另有 core 的 `life.json`（上次 tick 時間）、`instance.lock.json`、
-   `handoff/`、`secrets.json`（Telegram token 等，見 Open Questions），以及殼自己的 `shell-state.json`（便箋位置、大小、
+   `handoff/`、`secrets.json`（Telegram token 等，見 Open Questions）、`telegram-state.json`（上次接納的
+   `update_id`，非機密），以及殼自己的 `shell-state.json`（便箋位置、大小、
    always-on-top、開機啟動）。
 3. FR-3：同一資料根目錄同一時間只有一個寫入者，以鎖檔保證；第二個同 id 實例把啟動參數交給
    第一個並退出。所有寫入以暫存檔加 rename 完成；讀取絕不寫回。
@@ -154,7 +155,9 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 23. FR-23：OS 睡眠後恢復時立即跑一次對帳 tick；睡眠期間視為停機套用 FR-22；心跳最多補一次。
 24. FR-24：core 以 session MCP server（`mcpServers`）提供 bot 工具：`schedule_create`、`schedule_list`、
     `schedule_cancel`、`ask_owner`。排程只在 journal 寫入成功後存在，工具回傳含 `receipt` 的結果，
-    core 把收據寫進對話；模型只在回覆裡口頭答應而未呼叫工具時，不存在任何排程。
+    core 把收據寫進對話；模型只在回覆裡口頭答應而未呼叫工具時，不存在任何排程。`schedule_list` 與
+    `schedule_cancel` 只看得到呼叫者所在對話的排程；其他對話的排程 id 與不存在的 id 回同樣的錯誤，
+    不洩漏內容也不允許取消。
 25. FR-25：心跳只在 `heartbeat.enabled`、home attachment 活著時排程，計時器存在記憶體、重啟後重抽：
     - 醒來後第一次在 2–10 分鐘內，`kind: wake`；若醒來後 3 小時內已有 `wake` 心跳，改為一般心跳。
     - 之後每 30–120 分鐘隨機一次，`kind: regular`。
@@ -168,6 +171,9 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 26. FR-26：事件來源：便箋送出的主人訊息；工作項完成（產生通知，不自動產生新回合）；之後的
     Telegram long polling 以 bot 自己的 token、單一 `getUpdates` 消費者，入站訊息成為 home 對話的
     主人訊息工作項，bot 回覆鏡像回 Telegram；檔案監看與本機 webhook 必須明確設定，預設關閉。
+    update 在耐久接納後（主人訊息工作項已寫入 journal，或確定不需處理）才推進 `offset`；處理失敗時
+    不確認、退避後重新取回同一則；連續失敗 5 次的 update 記錄 id（不含內容）後略過，不讓一則壞訊息卡住
+    polling。上次接納的 `update_id` 依 bot id 持久化，重啟後先確認它，重送的已接納 update 不重複處理。
 
 ### 全域 provider/model 變更
 
@@ -286,7 +292,8 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 
 - [x] Telegram token 的儲存（2026-10-27）：存在資料根目錄的 `secrets.json`；Electron 殼以 `safeStorage`（Windows DPAPI、
       macOS Keychain、Linux secret service）加密後存入，無頭 CLI 退回明文檔案（POSIX 設 0600）並在指令輸出明示；
-      以一種方式存入的值另一種 host 讀不到時回報，不猜。
+      有加密能力的殼在啟動時、以及收到 CLI 換 token 的交接時，把明文項目重新加密存入；狀態回報的是實際存放的
+      保護方式，不是 host 的能力。以一種方式存入的值另一種 host 讀不到時回報，不猜。
 - [ ] 作息：是否沿用 ADR-127 的 bedtime / wake window，還是只有閒置政策與手動暫停。
 - [ ] 共用 bot 記憶的挑選與呈現（事實、承諾、open loops）。
 - [ ] 同一 provider 換 model 時是否能不換 session（取決於各 CLI 是否支援每回合指定 model）。
