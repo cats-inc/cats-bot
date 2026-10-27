@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:">
+  <title>Cats Bot Settings</title>
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <!-- First run (SPEC-002 FR-1): no bot yet, so the page talks to the setup channel, not the core. -->
+  <section class="setup" id="setup" hidden>
+    <div class="setup-card">
+      <div class="setup-face" aria-hidden="true">
+        <img src="cat.svg" alt="" width="96" height="96">
+      </div>
+      <h1>Meet your bot</h1>
+      <p class="lead">It lives in your tray, keeps sticky notes on your desktop and checks in on its own.
+        Pick the agent CLI it runs on; you can change everything later in Settings.</p>
+      <form id="setup-form" class="form">
+        <label class="field">
+          <span>Name</span>
+          <input id="setup-name" required maxlength="40" value="Mochi">
+        </label>
+        <label class="field">
+          <span>Agent CLI</span>
+          <select id="setup-provider"></select>
+          <small class="hint" id="setup-provider-hint"></small>
+        </label>
+        <label class="field">
+          <span>Model</span>
+          <select id="setup-model"></select>
+          <input id="setup-model-custom" placeholder="Model id" hidden>
+        </label>
+        <label class="field">
+          <span>Personality <em>(optional)</em></span>
+          <textarea id="setup-instructions" rows="3" placeholder="You are a curious cat who keeps me company while I work."></textarea>
+        </label>
+        <p class="error" id="setup-error" hidden></p>
+        <div class="actions">
+          <button type="submit" class="primary" id="setup-submit">Create and start</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <div class="settings" id="settings" hidden>
+    <nav class="tabs" aria-label="Settings sections">
+      <div class="brand">
+        <img src="cat.svg" alt="" width="40" height="40">
+        <div>
+          <strong id="brand-name">Cats Bot</strong>
+          <small id="brand-state">…</small>
+        </div>
+      </div>
+      <button class="tab" data-tab="bot" aria-selected="true">Bot</button>
+      <button class="tab" data-tab="notes">Notes</button>
+      <button class="tab" data-tab="life">Life</button>
+      <button class="tab" data-tab="telegram">Telegram</button>
+      <button class="tab" data-tab="app">App</button>
+    </nav>
+
+    <main class="panels">
+      <section class="panel" data-panel="bot">
+        <h2>Bot</h2>
+        <form id="bot-form" class="form">
+          <label class="field">
+            <span>Name</span>
+            <input id="bot-name" required maxlength="40">
+          </label>
+          <label class="field">
+            <span>Agent CLI</span>
+            <select id="bot-provider"></select>
+            <small class="hint" id="bot-provider-hint"></small>
+          </label>
+          <label class="field">
+            <span>Model</span>
+            <select id="bot-model"></select>
+            <input id="bot-model-custom" placeholder="Model id" hidden>
+            <small class="hint" id="bot-model-hint"></small>
+          </label>
+          <label class="field">
+            <span>Personality and instructions</span>
+            <textarea id="bot-instructions" rows="5" placeholder="Who the bot is and how it should talk to you."></textarea>
+          </label>
+          <details class="advanced">
+            <summary>Workspace and permissions</summary>
+            <label class="field">
+              <span>Workspace folder</span>
+              <div class="row">
+                <input id="bot-cwd">
+                <button type="button" id="bot-cwd-browse">Browse…</button>
+              </div>
+            </label>
+            <label class="field">
+              <span>File access</span>
+              <select id="bot-access">
+                <option value="read_write">Read and write</option>
+                <option value="read_only">Read only</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>Tool permissions</span>
+              <select id="bot-permission">
+                <option value="default">The CLI's own default</option>
+                <option value="whitelist">Only the allowed tools below</option>
+                <option value="skip">Allow every tool without asking</option>
+              </select>
+            </label>
+            <label class="field" id="bot-tools-field">
+              <span>Allowed tools <em>(comma separated)</em></span>
+              <input id="bot-tools" placeholder="Read, Grep, WebSearch">
+            </label>
+          </details>
+          <p class="notice" id="bot-notice" hidden></p>
+          <div class="actions">
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" data-panel="notes" hidden>
+        <div class="panel-head">
+          <h2>Notes</h2>
+          <button class="primary" id="notes-new">New note</button>
+        </div>
+        <p class="lead">Every note is its own conversation with the bot. Closing a note only hides it.</p>
+        <ul class="notes" id="notes-list"></ul>
+      </section>
+
+      <section class="panel" data-panel="life" hidden>
+        <h2>Life</h2>
+        <form id="life-form" class="form">
+          <label class="check">
+            <input type="checkbox" id="life-heartbeat">
+            <span>Heartbeat: the bot wakes up on its own and may say something unprompted</span>
+          </label>
+          <div class="pair">
+            <span>Right after you talk, check in after</span>
+            <input type="number" id="life-wake-min" min="1" max="1440"> –
+            <input type="number" id="life-wake-max" min="1" max="1440"> minutes
+          </div>
+          <div class="pair">
+            <span>Otherwise, every</span>
+            <input type="number" id="life-regular-min" min="1" max="10080"> –
+            <input type="number" id="life-regular-max" min="1" max="10080"> minutes
+          </div>
+          <div class="pair">
+            <span>A note's session goes to sleep after</span>
+            <input type="number" id="life-idle" min="1" max="1440"> idle minutes
+          </div>
+          <p class="hint" id="life-next"></p>
+          <div class="actions">
+            <button type="submit" class="primary">Save</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" data-panel="telegram" hidden>
+        <h2>Telegram</h2>
+        <p class="lead">Talk to the home note from your phone. Create a bot with @BotFather, paste its token here,
+          then send your bot one private message: that chat becomes the owner.</p>
+        <ul class="facts" id="telegram-facts"></ul>
+        <form id="telegram-form" class="form">
+          <label class="field">
+            <span>Bot token</span>
+            <div class="row">
+              <input id="telegram-token" type="password" autocomplete="off" placeholder="123456:ABC…">
+              <button type="submit">Save token</button>
+            </div>
+          </label>
+          <div class="row">
+            <label class="check">
+              <input type="checkbox" id="telegram-enabled">
+              <span>Poll Telegram for messages</span>
+            </label>
+            <span class="spacer"></span>
+            <button type="button" id="telegram-clear">Remove token</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="panel" data-panel="app" hidden>
+        <h2>App</h2>
+        <div class="form">
+          <label class="check" id="app-login-row">
+            <input type="checkbox" id="app-login">
+            <span>Start this bot when I sign in</span>
+          </label>
+          <ul class="facts" id="app-facts"></ul>
+          <div class="row">
+            <button type="button" id="app-open-data">Open data folder</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" hidden></div>
+  <script src="settings.js"></script>
+</body>
+</html>

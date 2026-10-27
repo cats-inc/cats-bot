@@ -22,6 +22,8 @@ export interface TrayMenuModel {
 export interface TrayMenuActions {
   onOpenConversation(conversationId: string): void;
   onNewNote(): void;
+  /** SPEC-002 FR-4: opens the settings window, on a given tab when one is named. */
+  onOpenSettings(tab?: string): void;
   onToggleHeartbeat(enabled: boolean): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onQuit(): void;
@@ -85,6 +87,7 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
   }
   template.push(
     { label: 'New note', click: () => actions.onNewNote() },
+    { label: 'Manage notes…', click: () => actions.onOpenSettings('notes') },
     { type: 'separator' },
     {
       label: model.heartbeatEnabled ? 'Pause heartbeat' : 'Resume heartbeat',
@@ -99,6 +102,10 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       click: () => actions.onToggleOpenAtLogin(!model.openAtLogin),
     });
   }
-  template.push({ type: 'separator' }, { label: 'Quit', click: () => actions.onQuit() });
+  template.push(
+    { label: 'Settings…', click: () => actions.onOpenSettings() },
+    { type: 'separator' },
+    { label: 'Quit', click: () => actions.onQuit() },
+  );
   return template;
 }

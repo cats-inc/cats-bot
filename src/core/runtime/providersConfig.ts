@@ -1,6 +1,7 @@
 import { mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+import { defaultCommandFor } from '../providers/catalog.ts';
 import { writeFileAtomic } from '../store/atomicFile.ts';
 
 /**
@@ -12,7 +13,10 @@ import { writeFileAtomic } from '../store/atomicFile.ts';
 
 export interface ProvidersConfigInput {
   provider: string;
-  /** Overrides the CLI command; tests point it at the fixture CLI. */
+  /**
+   * Overrides the CLI command; tests point it at the fixture CLI. Without it
+   * the provider's own command is used (`agy` for antigravity, for example).
+   */
   command?: string;
   /**
    * Arguments the runtime places before its own (`launch.args`), so a script
@@ -51,7 +55,7 @@ export function renderProvidersConfig(input: ProvidersConfigInput): string {
     '        instances:',
     '          native:',
     '            environment: native',
-    `            command: ${yamlScalar(input.command ?? input.provider)}`,
+    `            command: ${yamlScalar(input.command ?? defaultCommandFor(input.provider))}`,
     '            runner: auto',
   ];
   if (input.launchArgs && input.launchArgs.length > 0) {

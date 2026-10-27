@@ -13,6 +13,7 @@
   const stateEl = document.getElementById('state');
   const pinEl = document.getElementById('pin');
   const hideEl = document.getElementById('hide');
+  const settingsEl = document.getElementById('settings');
 
   let pending = null; // { workItemId, element }
   let running = false;
@@ -108,6 +109,7 @@
   });
   cancelEl.addEventListener('click', () => { void api.invoke('cancelTurn', resolvedConversationId); });
   hideEl.addEventListener('click', () => { void api.window.hide(); });
+  settingsEl.addEventListener('click', () => { void api.shell.openSettings(); });
   pinEl.addEventListener('click', async () => {
     const pinned = await api.window.togglePin();
     pinEl.setAttribute('aria-pressed', pinned ? 'true' : 'false');

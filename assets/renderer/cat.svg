@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <title>Cats Bot</title>
+  <path d="M22 54 L26 14 Q28 8 34 12 L58 32 Z" fill="#c9771f"/>
+  <path d="M106 54 L102 14 Q100 8 94 12 L70 32 Z" fill="#c9771f"/>
+  <path d="M30 44 L32 22 L50 36 Z" fill="#f6c9a8"/>
+  <path d="M98 44 L96 22 L78 36 Z" fill="#f6c9a8"/>
+  <ellipse cx="64" cy="72" rx="48" ry="42" fill="#e3933a"/>
+  <path d="M64 30 Q58 44 64 52 Q70 44 64 30 Z" fill="#c9771f"/>
+  <path d="M40 38 Q44 48 40 56" stroke="#c9771f" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <path d="M88 38 Q84 48 88 56" stroke="#c9771f" stroke-width="5" fill="none" stroke-linecap="round"/>
+  <ellipse cx="64" cy="90" rx="26" ry="18" fill="#fbe3c9"/>
+  <ellipse cx="44" cy="70" rx="9" ry="11" fill="#2b2a26"/>
+  <ellipse cx="84" cy="70" rx="9" ry="11" fill="#2b2a26"/>
+  <circle cx="47" cy="66" r="3.2" fill="#fff"/>
+  <circle cx="87" cy="66" r="3.2" fill="#fff"/>
+  <path d="M58 82 L70 82 L64 89 Z" fill="#e0707a"/>
+  <path d="M64 89 Q60 96 54 94 M64 89 Q68 96 74 94" stroke="#2b2a26" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  <path d="M20 82 L40 85 M18 92 L40 90 M108 82 L88 85 M110 92 L88 90" stroke="#7b5a3a" stroke-width="2" stroke-linecap="round"/>
+  <ellipse cx="34" cy="86" rx="7" ry="4" fill="#f2a7a0" opacity="0.6"/>
+  <ellipse cx="94" cy="86" rx="7" ry="4" fill="#f2a7a0" opacity="0.6"/>
+</svg>

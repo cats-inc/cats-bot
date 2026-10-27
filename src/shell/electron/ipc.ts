@@ -6,7 +6,8 @@ import type { ApprovalDecision, BotProfilePatch } from '../../core/types.ts';
  * may call it. Every command is a plain name with JSON arguments; the
  * renderer never receives the runtime's URL or key because the core never
  * exposes them. Window-only commands (hide, pin) are handled by the window
- * layer, not here.
+ * layer, not here. The settings page (SPEC-002) adds the provider and model
+ * catalogs, renaming and the Telegram token.
  */
 
 export type HostCommand =
@@ -23,7 +24,12 @@ export type HostCommand =
   | 'cancelSchedule'
   | 'listWorkItems'
   | 'resolveApproval'
-  | 'status';
+  | 'status'
+  | 'listProviders'
+  | 'listModels'
+  | 'renameConversation'
+  | 'telegramStatus'
+  | 'setTelegramToken';
 
 export const HOST_COMMANDS: readonly HostCommand[] = [
   'getProfile',
@@ -40,6 +46,11 @@ export const HOST_COMMANDS: readonly HostCommand[] = [
   'listWorkItems',
   'resolveApproval',
   'status',
+  'listProviders',
+  'listModels',
+  'renameConversation',
+  'telegramStatus',
+  'setTelegramToken',
 ];
 
 function asString(value: unknown, name: string): string {
@@ -85,6 +96,18 @@ export async function runHostCommand(core: BotCore, command: string, args: unkno
     }
     case 'status':
       return core.status();
+    case 'listProviders':
+      return core.listProviders();
+    case 'listModels':
+      return core.listModels(asString(args[0], 'provider'));
+    case 'renameConversation':
+      return core.renameConversation(asString(args[0], 'conversationId'), asString(args[1], 'title'));
+    case 'telegramStatus':
+      return core.telegramStatus();
+    case 'setTelegramToken':
+      // The token goes into the secret store and is never echoed back to a renderer.
+      await core.setTelegramToken(typeof args[0] === 'string' && args[0].trim() ? args[0] : null);
+      return core.telegramStatus();
     default:
       throw new Error(`Unknown host command ${command}`);
   }

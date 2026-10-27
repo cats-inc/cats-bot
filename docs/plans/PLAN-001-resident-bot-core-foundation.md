@@ -114,6 +114,9 @@
 
 ### Phase 5: 桌面存在感（需要新的 ADR，本計畫不排程）
 
+2026-10-28 起由 [ADR-002](../decisions/002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) 與
+[PLAN-002](./PLAN-002-desktop-presence.md) 接手，以下兩項不在本計畫追蹤。
+
 - [ ] Task 5.1：實驗兩條路：Electron 加原生 helper 移植 fleet 的 WorkerW / `SHELLDLL_DefView` 掛載，
       或 fleet 的 C#/WPF/WebView2 宿主加 core 子程序；各自做 DPI、焦點／IME、顯示器遺失復原的驗收。
 - [ ] Task 5.2：角色形象與桌面任意拖曳。

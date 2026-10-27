@@ -77,6 +77,8 @@ last step, not the first.
 - **Location**: `tests/shell/trayMenu.test.ts`
 - **Scope**: the Electron-free parts of the shell: the tray menu data and the
   note view state. Everything that needs Electron is checked by hand (below).
+  `tests/core/providers.test.ts` covers the provider list, PATH detection,
+  the model catalogs and first-run input validation (SPEC-002).
 
 ### Manual acceptance
 
@@ -86,6 +88,10 @@ last step, not the first.
   `window.catsBot`, `Page.captureScreenshot`) and send messages with
   `cats-bot say`; quit with `cats-bot quit` and confirm the whole process tree
   is gone. The SPEC-001 measurement table was filled this way on 2026-10-27.
+- First run and settings (SPEC-002): start the shell with a fresh
+  `CATS_BOTS_HOME`, an unused `--id` and the fixture CLI
+  (`CATS_BOTS_PROVIDER_COMMAND=node`, `CATS_BOTS_PROVIDER_LAUNCH_ARGS=<fixture>`),
+  fill the setup page through CDP, then drive `settings.html` the same way.
 
 ## Running Tests
 
