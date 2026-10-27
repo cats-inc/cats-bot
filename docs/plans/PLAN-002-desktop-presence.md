@@ -30,7 +30,7 @@
 
 ### Slice 3：安裝包（FR-9）
 
-- [ ] 應用程式圖示；CI 建置 Windows 安裝檔與免安裝檔並上傳 artifact；本機建置交給 owner。
+- [x] 應用程式圖示（`npm run icons` 由 `cat.svg` 產生安裝檔、視窗與 tray 圖示）；`Package` workflow 在 main 更新時建置 Windows 安裝檔與免安裝檔並上傳 artifact；安裝檔建立開始功能表與桌面捷徑、裝完即啟動。
 
 ### Slice 4：便箋的層（FR-8）
 
@@ -47,5 +47,6 @@
 
 | Date | Update |
 |------|--------|
+| 2026-10-28 | Slice 3：圖示改為貓臉（安裝檔、視窗、tray 1x／2x）；build resources 從 `assets/build` 改到 `assets/installer`，因為 `.gitignore` 的 `build/` 會吃掉前者；`Package` workflow 只在 main 與手動觸發時跑，不是必要檢查 |
 | 2026-10-28 | Slice 2：浮動的貓在 Windows 真機（3840×2160、150%）以注入的滑鼠事件驗收：透明視窗疊在其他視窗上、回合中顯示思考中、home 便箋沒有焦點時回覆以泡泡顯示並出現未讀數、拖曳後位置寫入 `shell-state.json` 且重開後不變、點一下開 home 便箋、右鍵是 tray 選單、透明處的點擊穿透到下面。修正：Electron 的 `setPosition` 在 150% 縮放下每次把視窗撐大一個像素，改用固定大小的 `setBounds`；切換忽略滑鼠時 Chromium 立刻回報 mouseleave，所以改以每次滑鼠移動的命中測試決定是否接收輸入；`SetCursorPos` 不經過 Electron 轉送滑鼠移動所用的 low-level hook，驗收要用注入的移動 |
 | 2026-10-28 | Slice 1：首次啟動頁與設定視窗在真的殼裡以 fixture CLI 走過：建立 bot、home 便箋可對話、改 model 存檔後對話標為下一回合換 session、新增／改名／刪除便箋（刪除同時關掉視窗）、Life／Telegram／App 分頁。修正：antigravity、cursor、kiro 的指令名稱與 provider 名稱不同，`providers.yaml` 之前會叫錯指令 |

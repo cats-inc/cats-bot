@@ -35,7 +35,8 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "shell": "electron .",
     "dist:win": "electron-builder --win nsis portable --publish never",
-    "dist:dir": "electron-builder --dir --publish never"
+    "dist:dir": "electron-builder --dir --publish never",
+    "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
     "@cats-inc/cats-runtime": "0.6.1"
@@ -58,12 +59,12 @@
     "npmRebuild": false,
     "directories": {
       "output": "release",
-      "buildResources": "assets/build"
+      "buildResources": "assets/installer"
     },
     "files": [
       "dist/**/*",
       "assets/**/*",
-      "!assets/build/**",
+      "!assets/installer/**",
       "package.json",
       "LICENSE"
     ],
@@ -72,11 +73,16 @@
         "nsis",
         "portable"
       ],
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "icon": "assets/installer/icon.png"
     },
     "nsis": {
       "oneClick": true,
       "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Cats Bot",
+      "runAfterFinish": true,
       "artifactName": "${productName}-${version}-setup.${ext}"
     },
     "portable": {

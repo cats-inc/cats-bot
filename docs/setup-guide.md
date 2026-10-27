@@ -94,6 +94,12 @@ accepted update id lives in `telegram-state.json`.
 
 Packaging (Windows): `npm run dist:dir` builds `release/win-unpacked/`,
 `npm run dist:win` builds the NSIS installer and the portable executable.
+The `Package` workflow builds both on every main update and keeps them as a
+workflow artifact (`cats-bot-windows-<sha>`, 30 days). The installer is
+per-user, needs no administrator, adds Start menu and desktop shortcuts and
+starts the app; a bot that was never set up opens the first-run page
+(SPEC-002 FR-1). Icons come from `assets/renderer/cat.svg` through
+`npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the
 runtime bin stays a plain file.

@@ -104,6 +104,7 @@ export class NoteWindows {
       autoHideMenuBar: true,
       backgroundColor: '#fff8d6',
       title: 'Cats Bot',
+      icon: join(this.options.rendererDir, '..', 'icon.png'),
       webPreferences: {
         preload: this.options.preloadPath,
         contextIsolation: true,
