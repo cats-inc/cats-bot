@@ -95,6 +95,38 @@
     });
   }
 
+  // Provider changes can overlap: only the newest request fills the model menu, and while it is
+  // loading the old provider's models are gone and the form cannot be saved with them.
+  function modelLoader(select, customEl, submitEl, fetchCatalog) {
+    let latest = 0;
+    let loading = false;
+    return {
+      get loading() { return loading; },
+      async load(provider, current) {
+        const request = ++latest;
+        loading = true;
+        submitEl.disabled = true;
+        const placeholder = document.createElement('option');
+        placeholder.textContent = 'Loading models…';
+        select.replaceChildren(placeholder);
+        select.disabled = true;
+        customEl.hidden = true;
+        let catalog;
+        try {
+          catalog = await fetchCatalog(provider);
+        } catch {
+          catalog = { provider, defaultModel: null, models: [], source: 'none' };
+        }
+        if (request !== latest) return null;
+        fillModels(select, customEl, catalog, current);
+        select.disabled = false;
+        submitEl.disabled = false;
+        loading = false;
+        return catalog;
+      },
+    };
+  }
+
   // ---------------------------------------------------------------- setup --
   async function startSetup() {
     $('setup').hidden = false;
@@ -107,9 +139,11 @@
     const preferred = providers.find((provider) => provider.id === 'claude' && provider.installed)
       || providers.find((provider) => provider.installed) || providers[0];
     fillProviders(providerEl, providers, preferred.id);
+    const submit = $('setup-submit');
+    const models = modelLoader(modelEl, customEl, submit, (provider) => api.setup.models(provider));
     const loadModels = async () => {
       providerHint(hintEl, providers, providerEl.value);
-      fillModels(modelEl, customEl, await api.setup.models(providerEl.value), null);
+      await models.load(providerEl.value, null);
     };
     providerEl.addEventListener('change', () => { void loadModels(); });
     bindCustomToggle(modelEl, customEl);
@@ -117,9 +151,9 @@
     $('setup-name').focus();
     $('setup-form').addEventListener('submit', async (event) => {
       event.preventDefault();
+      if (models.loading) return;
       const errorEl = $('setup-error');
       errorEl.hidden = true;
-      const submit = $('setup-submit');
       submit.disabled = true;
       submit.textContent = 'Starting…';
       try {
@@ -176,10 +210,13 @@
     $('bot-tools-field').hidden = profile.permissions.permissionMode !== 'whitelist';
   }
 
+  let botModels = null;
+
   async function loadBotModels(current) {
-    const provider = $('bot-provider').value;
-    const catalog = await api.invoke('listModels', provider);
-    fillModels($('bot-model'), $('bot-model-custom'), catalog, current);
+    botModels ??= modelLoader($('bot-model'), $('bot-model-custom'), $('bot-save'), (provider) => api.invoke('listModels', provider));
+    $('bot-model-hint').textContent = '';
+    const catalog = await botModels.load($('bot-provider').value, current);
+    if (!catalog) return;
     $('bot-model-hint').textContent = catalog.source === 'runtime'
       ? 'Models reported by the running runtime.'
       : catalog.source === 'packaged' ? 'Models from the catalog shipped with cats-runtime.' : 'No catalog for this CLI; type a model id or keep the default.';
@@ -191,6 +228,7 @@
 
   async function saveBot(event) {
     event.preventDefault();
+    if (botModels?.loading) return;
     const provider = $('bot-provider').value;
     const model = readModel($('bot-model'), $('bot-model-custom'));
     const permissionMode = $('bot-permission').value;
@@ -474,8 +512,10 @@
     $('settings').hidden = false;
     for (const tab of document.querySelectorAll('.tab')) tab.addEventListener('click', () => selectTab(tab.dataset.tab));
     $('bot-provider').addEventListener('change', () => {
-      providerHint($('bot-provider-hint'), providers, $('bot-provider').value);
-      void loadBotModels(null);
+      const provider = $('bot-provider').value;
+      providerHint($('bot-provider-hint'), providers, provider);
+      // Coming back to the saved provider shows its saved model again, so saving keeps it.
+      void loadBotModels(provider === profile.executionTarget.provider ? profile.executionTarget.model : null);
     });
     bindCustomToggle($('bot-model'), $('bot-model-custom'));
     $('bot-permission').addEventListener('change', () => { $('bot-tools-field').hidden = $('bot-permission').value !== 'whitelist'; });
