@@ -5,6 +5,16 @@ Scope: 唯讀的原始碼與文件盤點，對象是 cats-inc 現有成員與 `.
 本輪沒有執行任何程式、沒有建立 Runtime session、沒有呼叫 provider、沒有寫入任何既有 repo。
 這是研究紀錄，不是 ADR：下列「候選拓樸」與「建議」都是待決議的提案，沒有任何一項已被採納。
 
+勘誤（2026-10-27，Codex 審閱後；本文其餘內容保留原狀）：
+
+- 「候選拓樸」裡的「把 discovery 目錄指向空資料夾」不足也不對：runtime 還有背景的 native／agent
+  掃描（`CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS`）與 WSL／Docker policy，而 provider 的 session
+  目錄同時是 `history` 與 resume 的讀取來源，改目錄會弄壞自己的 session。正確政策見 ADR-001 §1。
+- 「session 不是 ready 就 resume 或重建」太粗：runtime 的狀態是 `initializing | ready | busy |
+  closing | closed`；`initializing` 可由第一個回合（含心跳）帶到 ready，`busy` 是進行中的回合，
+  兩者都不能重建。正確判定見 ADR-001 §5 與 SPEC-001 FR-20。
+- 「以 runtime wakeup 當 cron 計時器」已被 ADR-001 §5 否決；排程真相在 bot 自己的 journal。
+
 Baseline（皆為各 checkout 的 `main`）：
 
 | Repo | Version | HEAD |
