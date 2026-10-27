@@ -154,6 +154,17 @@ const server = createServer(async (req, res) => {
       startup: { mode: 'app-managed', phase: 'ready', ready: true, bootstrapRequired: false, pid: process.pid },
     });
   }
+  // Like cats-runtime 0.6.1: only the configured provider (claude for the fake) has a catalog.
+  const models = /^\/providers\/([^/]+)\/models$/u.exec(path);
+  if (req.method === 'GET' && models) {
+    if (models[1] !== 'claude') {
+      return json(res, 400, { error: `Failed to inspect provider models: Error: Provider '${models[1]}' is not configured`, code: 'provider_not_configured' });
+    }
+    return json(res, 200, {
+      provider: 'claude', backend: 'cli', instance: 'native', defaultModel: 'fake-opus', source: 'static',
+      models: [{ id: 'fake-opus', label: 'Fake Opus', default: true }, { id: 'fake-haiku', label: 'Fake Haiku', default: false }],
+    });
+  }
   if (req.method === 'POST' && path === '/sessions') {
     const body = await readBody(req);
     calls.push({ op: 'create', body });

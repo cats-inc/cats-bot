@@ -61,6 +61,12 @@ export interface RuntimeHealth {
   [key: string]: unknown;
 }
 
+export interface RuntimeModelCatalog {
+  provider: string;
+  defaultModel?: string | null;
+  models?: Array<{ id: string; label?: string; default?: boolean }>;
+}
+
 export interface RuntimeHistory {
   messages: Array<{ role: string; text: string }>;
   [key: string]: unknown;
@@ -192,6 +198,11 @@ export class RuntimeClient {
 
   getHistory(id: string): Promise<RuntimeHistory> {
     return this.request<RuntimeHistory>('GET', `/sessions/${encodeURIComponent(id)}/history`);
+  }
+
+  /** `GET /providers/{provider}/models`: the catalog of a configured provider (400 otherwise). */
+  providerModels(provider: string): Promise<RuntimeModelCatalog> {
+    return this.request<RuntimeModelCatalog>('GET', `/providers/${encodeURIComponent(provider)}/models`);
   }
 
   /**

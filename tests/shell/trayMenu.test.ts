@@ -47,7 +47,7 @@ const status: BotStatus = {
   telegram: { enabled: false, polling: false, ownerChatId: null },
 };
 
-test('the tray menu lists home, notes, heartbeat, login and quit with unread counts', () => {
+test('the tray menu lists home, notes, settings, heartbeat, login and quit with unread counts', () => {
   const clicks: string[] = [];
   const template = buildTrayMenuTemplate({
     botName: 'Mochi',
@@ -60,6 +60,7 @@ test('the tray menu lists home, notes, heartbeat, login and quit with unread cou
   }, {
     onOpenConversation: (id) => clicks.push(`open:${id}`),
     onNewNote: () => clicks.push('new'),
+    onOpenSettings: (tab) => clicks.push(`settings:${tab ?? 'bot'}`),
     onToggleHeartbeat: (enabled) => clicks.push(`heartbeat:${enabled}`),
     onToggleOpenAtLogin: (enabled) => clicks.push(`login:${enabled}`),
     onQuit: () => clicks.push('quit'),
@@ -71,9 +72,11 @@ test('the tray menu lists home, notes, heartbeat, login and quit with unread cou
     'Open home note (2)',
     'Notes',
     'New note',
+    'Manage notes…',
     'separator',
     'Pause heartbeat',
     'Start at login',
+    'Settings…',
     'separator',
     'Quit',
   ]);
@@ -82,13 +85,15 @@ test('the tray menu lists home, notes, heartbeat, login and quit with unread cou
   template[2]!.click!();
   template[3]!.submenu![0]!.click!();
   template[4]!.click!();
-  template[6]!.click!();
+  template[5]!.click!();
   template[7]!.click!();
+  template[8]!.click!();
   template[9]!.click!();
-  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'heartbeat:false', 'login:true', 'quit']);
+  template[11]!.click!();
+  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'login:true', 'settings:bot', 'quit']);
   assert.equal(buildTrayTooltip({ botName: 'Mochi', status, conversations: [conversation('home', 'home', 0)], heartbeatEnabled: true, openAtLogin: false, openAtLoginAvailable: false, awaitingOwner: 0 }), 'Mochi (runtime ready)');
   const paused = buildTrayMenuTemplate({ botName: 'Mochi', status: { ...status, runtime: { state: 'failed', pid: null } }, conversations: [], heartbeatEnabled: false, openAtLogin: true, openAtLoginAvailable: false, awaitingOwner: 0 }, {
-    onOpenConversation: () => {}, onNewNote: () => {}, onToggleHeartbeat: () => {}, onToggleOpenAtLogin: () => {}, onQuit: () => {},
+    onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {}, onToggleOpenAtLogin: () => {}, onQuit: () => {},
   });
   assert.equal(paused[0]?.label, 'Mochi: runtime failed, retrying');
   assert.ok(paused.some((item) => item.label === 'Resume heartbeat'));

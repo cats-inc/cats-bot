@@ -7,6 +7,7 @@ import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
 import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
 import { createFileLogger, type Logger } from './log.ts';
+import { listProviders, readPackagedModelCatalog, type ModelCatalog, type ProviderInfo } from './providers/catalog.ts';
 import {
   applyProfilePatch,
   createProfile,
@@ -910,6 +911,45 @@ export class BotCore implements BotHostApi {
 
   async listConversations(): Promise<ConversationRecord[]> {
     return this.conversations.list().map((record) => structuredClone(record));
+  }
+
+  /** SPEC-002 FR-3: the CLI providers a settings page offers, with whether each command is on PATH. */
+  listProviders(): ProviderInfo[] {
+    return listProviders();
+  }
+
+  /**
+   * SPEC-002 FR-3: the models of a provider. The running runtime answers for
+   * the bot's own provider (it only enables that one); any other provider, or
+   * a runtime that is not ready, falls back to the catalog the runtime package ships.
+   */
+  async listModels(provider: string): Promise<ModelCatalog> {
+    const client = this.client();
+    if (client && provider === this.profile.executionTarget.provider && this.runtimeState() === 'ready') {
+      try {
+        const catalog = await client.providerModels(provider);
+        const models = (catalog.models ?? [])
+          .filter((model) => typeof model.id === 'string' && model.id)
+          .map((model) => ({ id: model.id, label: model.label || model.id, default: model.default === true }));
+        if (models.length > 0) {
+          return { provider, defaultModel: catalog.defaultModel ?? models.find((model) => model.default)?.id ?? null, models, source: 'runtime' };
+        }
+      } catch (error) {
+        this.log(`model catalog for ${provider} from the runtime failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+    return readPackagedModelCatalog(provider);
+  }
+
+  /** SPEC-002 FR-5: a note's title is the owner's to choose; the home conversation keeps its role. */
+  async renameConversation(conversationId: string, title: string): Promise<ConversationRecord> {
+    const trimmed = title.trim();
+    if (!trimmed) throw new Error('A title cannot be empty');
+    const record = this.conversations.update(this.resolveConversationId(conversationId), (next) => {
+      next.title = trimmed.slice(0, 80);
+    });
+    this.bus.emit({ type: 'conversation.updated', conversation: record });
+    return structuredClone(record);
   }
 
   async createConversation(title?: string): Promise<ConversationRecord> {

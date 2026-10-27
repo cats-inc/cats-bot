@@ -48,6 +48,7 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 |------|-------|--------|--------------|
 | [000-template](./000-template.md) | Template | - | - |
 | [PLAN-001](./PLAN-001-resident-bot-core-foundation.md) | Resident Bot Core Foundation | Draft | [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md) |
+| [PLAN-002](./PLAN-002-desktop-presence.md) | Desktop Presence | In progress | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
 <!-- Add new plans above this line -->
 
 ## For AI Agents
