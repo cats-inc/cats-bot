@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 
-import { discoverShellHosts, shellHostsChanged, type Hwnd, type ShellHosts, type ShellWindows } from './shellHosts.ts';
+import { discoverShellHosts, shellHostsStale, type Hwnd, type ShellHosts, type ShellWindows } from './shellHosts.ts';
 
 /**
  * SPEC-002 FR-8 / ADR-002 §1, §5: the Windows desktop and wallpaper layers.
@@ -25,8 +25,11 @@ export interface DesktopHost {
   attachedLayer(window: Hwnd): AttachedLayer | null;
   /** True while the host a window is attached to still exists. */
   hostAlive(window: Hwnd): boolean;
-  /** Re-reads the hosts when Explorer restarted; returns whether they changed. */
-  refresh(): boolean;
+  /**
+   * Re-reads the hosts when Explorer restarted, or when the given layer had no
+   * host yet (rate-limited); returns whether they changed.
+   */
+  refresh(layer?: AttachedLayer): boolean;
   bringToFront(window: Hwnd): boolean;
 }
 
@@ -114,6 +117,7 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
   };
 
   let hosts: ShellHosts = discoverShellHosts(windows);
+  let discoveredAt = Date.now();
   log(`desktop hosts: icons ${hosts.desktop || 'none'}, wallpaper ${hosts.wallpaper || 'none'}`);
   /** Attached windows and the style each had as a top-level window. */
   const attached = new Map<Hwnd, { layer: AttachedLayer; parent: Hwnd; style: number }>();
@@ -124,16 +128,19 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
     return rect;
   };
 
-  const refresh = (): boolean => {
-    if (!shellHostsChanged(hosts, windows)) return false;
+  const refresh = (layer?: AttachedLayer): boolean => {
+    if (!shellHostsStale(hosts, windows, layer ?? null, Date.now() - discoveredAt)) return false;
+    const before = hosts;
     hosts = discoverShellHosts(windows);
+    discoveredAt = Date.now();
+    if (hosts.desktop === before.desktop && hosts.wallpaper === before.wallpaper && hosts.shell === before.shell) return false;
     log(`desktop hosts changed: icons ${hosts.desktop || 'none'}, wallpaper ${hosts.wallpaper || 'none'}`);
     return true;
   };
 
   return {
     attach(window, layer) {
-      refresh();
+      refresh(layer);
       const parent = layer === 'desktop' ? hosts.desktop : hosts.wallpaper;
       if (parent === 0 || !IsWindow(parent)) return false;
       // Fleet requires equal contexts; Electron 41 windows are per-monitor v1 (0x12) and Explorer's are v2 (0x22),

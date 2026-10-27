@@ -136,24 +136,31 @@ export class NoteWindows {
     return Object.entries(this.state.views).filter(([, view]) => view.open).map(([id]) => id);
   }
 
-  async open(conversationId: string): Promise<BrowserWindow> {
+  /**
+   * Shows a conversation's note. The owner opening a note (tray, settings,
+   * the floating cat) is asking to use it, so a desktop or wallpaper note is
+   * lifted and focused; `restore` (the shell starting, or Explorer coming
+   * back) puts it straight into its layer without taking the focus.
+   */
+  async open(conversationId: string, options: { restore?: boolean } = {}): Promise<BrowserWindow> {
+    const view = this.viewState(conversationId);
+    const layered = isAttachedLayer(view.layer) && Boolean(this.options.desktop);
     const existing = this.windows.get(conversationId);
     if (existing && !existing.isDestroyed()) {
-      const handle = handleOf(existing);
-      if (this.options.desktop?.isAttached(handle)) {
-        // Opening a note on the desktop or the wallpaper is asking to use it.
+      if (layered) {
+        // Attached, or detached since it was hidden while lifted: either way lifted until it loses focus,
+        // so the periodic host check does not put it back under the owner's cursor.
         existing.show();
         this.lift(conversationId, existing);
       } else {
         existing.show();
         existing.focus();
       }
-      this.viewState(conversationId).open = true;
+      view.open = true;
       this.persist();
       await this.options.core.openView(conversationId);
       return existing;
     }
-    const view = this.viewState(conversationId);
     const bounds = view.x !== undefined && view.y !== undefined
       ? clampToScreen({ x: view.x, y: view.y, width: view.width, height: view.height })
       : { width: view.width, height: view.height };
@@ -213,9 +220,17 @@ export class NoteWindows {
       this.persist();
     });
     await window.loadURL(url.href);
-    if (isAttachedLayer(view.layer) && this.options.desktop) window.showInactive();
-    else window.show();
-    this.applyLayer(conversationId, window);
+    if (layered && options.restore) {
+      window.showInactive();
+      this.applyLayer(conversationId, window);
+    } else if (layered) {
+      // Never attached yet; it goes to its layer when it loses focus (settle).
+      window.show();
+      this.lift(conversationId, window);
+    } else {
+      window.show();
+      this.applyLayer(conversationId, window);
+    }
     await this.options.core.openView(conversationId);
     return window;
   }
@@ -280,7 +295,7 @@ export class NoteWindows {
       const view = this.state.views[conversationId];
       if (!view || !view.open) return;
       this.options.desktop?.refresh();
-      void this.open(conversationId).then(
+      void this.open(conversationId, { restore: true }).then(
         () => this.log(`note ${conversationId}: reopened in the ${view.layer} layer after Explorer restarted`),
         () => {
           if (tries > 1) this.reopenLater(conversationId, tries - 1);
