@@ -6,7 +6,7 @@ import { after, before, test } from 'node:test';
 
 import type { BotStatus } from '../../src/core/bot.ts';
 import type { ConversationRecord } from '../../src/core/types.ts';
-import { bubbleText, FLOATING_SIZE, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
+import { bubbleText, catReachable, FLOATING_CAT, FLOATING_SIZE, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
 import { buildTrayMenuTemplate, buildTrayTooltip } from '../../src/shell/electron/trayMenu.ts';
 import { readShellState, shellStatePath, writeShellState } from '../../src/shell/electron/viewState.ts';
 
@@ -128,12 +128,25 @@ test('note view state normalises what it reads and round-trips what it writes', 
 });
 
 test('the floating bot keeps its place on a live display and says one short line (SPEC-002 FR-7)', () => {
-  const primary = { workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
-  const left = { workArea: { x: -1600, y: 0, width: 1600, height: 900 } };
+  const primary = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+  const left = { bounds: { x: -1600, y: 0, width: 1600, height: 900 }, workArea: { x: -1600, y: 0, width: 1600, height: 900 } };
   const corner = { x: 1920 - FLOATING_SIZE.width - 16, y: 1040 - FLOATING_SIZE.height - 16 };
   assert.deepEqual(placeFloating({}, [primary], primary), corner);
   assert.deepEqual(placeFloating({ x: -800, y: 300 }, [primary, left], primary), { x: -800, y: 300 });
   assert.deepEqual(placeFloating({ x: -800, y: 300 }, [primary], primary), corner, 'the left display is gone');
+  // The window still touches the remaining display, but the cat (from x + 192) is entirely off it.
+  assert.equal(catReachable({ x: 1800, y: 300 }, [primary]), false);
+  assert.deepEqual(placeFloating({ x: 1800, y: 300 }, [primary], primary), corner);
+  // Half the cat on screen is enough to grab it; the transparent rest may hang off the edge.
+  const halfOff = { x: 1920 - FLOATING_CAT.x - FLOATING_CAT.width / 2, y: 300 };
+  assert.equal(catReachable(halfOff, [primary]), true);
+  assert.deepEqual(placeFloating(halfOff, [primary], primary), halfOff);
+  assert.equal(catReachable({ x: halfOff.x + 1, y: 300 }, [primary]), false);
+  // Over the taskbar (outside the work area but on the display) still counts.
+  const onTaskbar = { x: 600, y: 1080 - FLOATING_CAT.y - FLOATING_CAT.height };
+  assert.deepEqual(placeFloating(onTaskbar, [primary], primary), onTaskbar);
+  // The cat can be reached across two displays only if one of them holds enough of it.
+  assert.equal(catReachable({ x: -FLOATING_CAT.x - 20, y: 300 }, [primary, left]), true);
   assert.equal(bubbleText('**Hello** there,\n\n```js\ncode\n```\n`ok`'), 'Hello there, ok');
   const long = bubbleText('word '.repeat(100), 40);
   assert.equal(long.length, 40);

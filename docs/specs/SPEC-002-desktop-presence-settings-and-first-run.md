@@ -36,6 +36,9 @@ provider、model、個性、權限、生活節奏、Telegram 與開機啟動，�
    保護方式、polling 狀態與 owner chat。
 7. FR-7：浮動 bot：透明、無邊框、最上層、不出現在工作列的貓；顯示醒著／思考中／睡著／未讀數；可拖曳且
    記住位置；點一下開 home 便箋；右鍵與 tray 相同的選單；有新回覆時顯示簡短泡泡；可從 tray 與設定隱藏。
+   記住的位置只在貓本體（不是整個透明視窗）至少一半落在某個螢幕上時沿用，否則回到主螢幕右下角；螢幕
+   增減或縮放改變時同樣檢查。未讀數跟著焦點：桌面、桌布層或被其他視窗擋住的便箋開著但沒有焦點時，新回覆
+   照樣算未讀，聚焦時才標為已讀。
 8. FR-8：每張便箋的層：`normal`、`top`、`desktop`、`wallpaper`，存在 `shell-state.json`；Windows 上
    `desktop` 與 `wallpaper` 掛到 Explorer 的桌面視窗下（尋找規則同 desktop-work-fleet
    `NativeShellLayers`），Explorer 重啟後重新掛載，找不到時退回 `normal` 並記錄原因，有便箋需要該層時

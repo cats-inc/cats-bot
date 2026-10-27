@@ -214,6 +214,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 
 32. FR-32：命令：`getProfile`、`updateProfile`（含 `executionTarget`、`heartbeat`）、
     `listConversations`、`createConversation`、`deleteConversation`、`openView` / `closeView`（只改視圖）、
+    `setViewFocused(conversationId, focused)`（主人正在看哪個視圖；只有聚焦中的視圖讓新回覆不算未讀，開著但在
+    背景的便箋照樣累加未讀）、
     `sendOwnerMessage(conversationId, text)`、`cancelTurn(conversationId)`、`markSeen(conversationId)`、
     `listSchedules`、`cancelSchedule`、`resolveApproval(workItemId, decision)`、`quit`。
     事件：`conversation.updated`、`turn.delta`、`turn.completed`、`work.awaitingOwner`、
