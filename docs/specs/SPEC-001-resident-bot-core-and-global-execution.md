@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft — awaiting owner approval of [ADR-001](../decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) |
+| **Status** | Accepted — 2026-10-27 together with [ADR-001](../decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md); implemented by PLAN-001 |
 | **Owner** | Claude |
 | **Reviewer** | Owner |
 | **Related decision** | ADR-001 |
@@ -270,7 +270,8 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 - `@cats-inc/cats-runtime`，精確版本（npm `latest` 為 0.6.1；main 上的 0.6.2 尚未發布）。
 - Node.js 24；TypeScript 5（可擦除語法）；`node:test`。
 - Electron（第三階段）。
-- 一個最小的 MCP stdio server 實作（第二階段；可自寫或採用官方 SDK，決定記在 PLAN-001）。
+- 一個最小的 MCP Streamable HTTP server 實作（第二階段；runtime 的 `mcpServers` 只接受 `transport: http`，
+  自寫、不引入 SDK，決定記在 PLAN-001）。
 - 設計參考：platform `src/products/chat/companion/life/`、`sessionTurnGate.ts`、
   `platform/transports/telegram/polling.ts`、`desktop/host/tray.ts` 與 `candidateProfile.ts`。
 

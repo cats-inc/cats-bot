@@ -5,21 +5,25 @@ wrapping an agent CLI through `cats-runtime`.
 
 ## Current status
 
-Research and decision phase; there is no runnable code yet and nothing is released.
+Implementation has started: PLAN-001 Phase 0 (toolchain and architecture boundaries)
+is in place, the bot itself is not implemented yet and nothing is released.
 
+- `npm ci && npm run typecheck && npm test && npm run build` passes on Windows and Linux
+  (CI); `src/` holds the SPEC-001 contract types and `tests/` the boundary test.
 - The feasibility survey of `cats-runtime` 0.6.2, `cats-platform` 0.11.1 and a
   sticky-note desktop host is in
   [docs/research/2026-10-27-standalone-living-bot-feasibility.md](docs/research/2026-10-27-standalone-living-bot-feasibility.md).
 - A second, independent research note by Codex is in
   [docs/research/2026-10-27-resident-bot-architecture-assessment.md](docs/research/2026-10-27-resident-bot-architecture-assessment.md).
-- [ADR-001](docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) (proposed) fuses both notes: it decides the
+- [ADR-001](docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) (accepted 2026-10-27) fuses both notes: it decides the
   dependency direction, the resident-core boundary, the conversation and session model and the
-  shell roadmap. [SPEC-001](docs/specs/SPEC-001-resident-bot-core-and-global-execution.md) and
-  [PLAN-001](docs/plans/PLAN-001-resident-bot-core-foundation.md) are drafts awaiting approval by the owner.
+  shell roadmap. [SPEC-001](docs/specs/SPEC-001-resident-bot-core-and-global-execution.md) is the
+  accepted behavioural contract and [PLAN-001](docs/plans/PLAN-001-resident-bot-core-foundation.md)
+  the plan being implemented, phase by phase.
 
 ## Direction
 
-Proposed in ADR-001, awaiting approval:
+Decided in ADR-001:
 
 - One executable is one bot instance: a resident Node bot core (profile, conversations,
   work journal, timers, one global provider/model) that runs `cats-runtime` as an
@@ -49,14 +53,22 @@ Proposed in ADR-001, awaiting approval:
 | --- | --- |
 | `docs/research/` | Two independent 2026-10-27 research notes (Claude and Codex) |
 | `docs/decisions/`, `docs/specs/`, `docs/plans/` | ADR-001, SPEC-001 and PLAN-001 (proposed and draft) plus the templates |
-| `src/`, `tests/` | Empty until the first implementation plan lands |
+| `src/`, `tests/` | `src/core/types.ts` (SPEC-001 contract types) and `src/index.ts`; the architecture boundary test |
 | `scripts/` | Skill sync and merged-branch sweep helpers from the bootstrap |
 
 ## Development
 
-Requires Node.js 24 (`.nvmrc`). The scripts and dev dependencies in `package.json`
-are still the bootstrap template: no install, build or test command has been
-verified, and tests should be reported as missing until a runner is chosen.
+Requires Node.js 24 (`.nvmrc`).
+
+```bash
+npm ci
+npm run typecheck
+npm test
+npm run build
+```
+
+See `docs/setup-guide.md` and `docs/testing.md`. The `@cats-inc/cats-runtime` dependency is
+pinned to an exact version; bumping it is its own PR with an integration-test run.
 
 ## Maintenance
 
