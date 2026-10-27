@@ -433,6 +433,7 @@
     const status = await api.invoke('status');
     $('app-login-row').hidden = !shellState.openAtLoginAvailable;
     $('app-login').checked = shellState.openAtLogin;
+    $('app-floating').checked = shellState.floatingVisible;
     const facts = [
       ['Bot id', status.id],
       ['Data folder', status.root],
@@ -482,6 +483,10 @@
     $('app-login').addEventListener('change', async () => {
       await api.shell.setOpenAtLogin($('app-login').checked);
       toast($('app-login').checked ? 'Starts at sign-in' : 'No longer starts at sign-in');
+    });
+    $('app-floating').addEventListener('change', async () => {
+      await api.shell.setFloatingVisible($('app-floating').checked);
+      toast($('app-floating').checked ? 'The cat is back' : 'The cat is hidden; the tray can bring it back');
     });
     $('app-open-data').addEventListener('click', () => { void api.shell.openDataFolder(); });
 

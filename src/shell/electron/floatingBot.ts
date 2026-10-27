@@ -1,0 +1,140 @@
+import { BrowserWindow, screen } from 'electron';
+
+import type { BotHostEvent } from '../../core/types.ts';
+import { bubbleText, FLOATING_SIZE, placeFloating } from './floatingPlacement.ts';
+import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
+import type { FloatingBotState } from './viewState.ts';
+
+/**
+ * SPEC-002 FR-7 / ADR-002 §4: the floating bot. One transparent, frameless,
+ * topmost window that never takes the taskbar or the focus. It ignores the
+ * mouse (forwarding moves, so the page still sees hover) except while the
+ * pointer is over the cat or its bubble, which the page reports.
+ */
+
+export interface FloatingBubble {
+  conversationId: string;
+  from: string;
+  text: string;
+}
+
+export interface FloatingBotOptions extends PageWindowOptions {
+  state(): FloatingBotState;
+  persist(): void;
+}
+
+export class FloatingBot {
+  private readonly options: FloatingBotOptions;
+  private window: BrowserWindow | null = null;
+
+  constructor(options: FloatingBotOptions) {
+    this.options = options;
+  }
+
+  get visible(): boolean {
+    return this.browserWindow?.isVisible() ?? false;
+  }
+
+  get browserWindow(): BrowserWindow | null {
+    return this.window && !this.window.isDestroyed() ? this.window : null;
+  }
+
+  owns(webContentsId: number): boolean {
+    return this.browserWindow?.webContents.id === webContentsId;
+  }
+
+  async show(): Promise<void> {
+    const state = this.options.state();
+    state.visible = true;
+    this.options.persist();
+    const existing = this.browserWindow;
+    if (existing) {
+      existing.showInactive();
+      return;
+    }
+    const position = placeFloating(state, screen.getAllDisplays(), screen.getPrimaryDisplay());
+    const window = new BrowserWindow({
+      ...position,
+      ...FLOATING_SIZE,
+      transparent: true,
+      frame: false,
+      resizable: false,
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      hasShadow: false,
+      focusable: false,
+      alwaysOnTop: true,
+      show: false,
+      title: 'Cats Bot',
+      backgroundColor: '#00000000',
+      webPreferences: {
+        preload: this.options.preloadPath,
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+        spellcheck: false,
+      },
+    });
+    this.window = window;
+    // Above ordinary topmost windows, like a desktop pet.
+    window.setAlwaysOnTop(true, 'screen-saver');
+    window.setIgnoreMouseEvents(true, { forward: true });
+    // Forwarded moves go to the page's own child window, which a load replaces.
+    window.webContents.on('did-finish-load', () => window.setIgnoreMouseEvents(true, { forward: true }));
+    window.on('moved', () => this.remember());
+    window.on('closed', () => {
+      if (this.window === window) this.window = null;
+    });
+    await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html'));
+    window.showInactive();
+  }
+
+  hide(): void {
+    const state = this.options.state();
+    state.visible = false;
+    this.options.persist();
+    this.browserWindow?.hide();
+  }
+
+  setInteractive(interactive: boolean): void {
+    const window = this.browserWindow;
+    if (!window) return;
+    if (interactive) window.setIgnoreMouseEvents(false);
+    else window.setIgnoreMouseEvents(true, { forward: true });
+  }
+
+  moveTo(x: number, y: number): void {
+    const window = this.browserWindow;
+    if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    // setPosition at a fractional scale factor grows the window a pixel at a time; fixed bounds do not.
+    window.setBounds({ x: Math.round(x), y: Math.round(y), ...FLOATING_SIZE });
+  }
+
+  remember(): void {
+    const window = this.browserWindow;
+    if (!window) return;
+    const [x, y] = window.getPosition();
+    const state = this.options.state();
+    state.x = x;
+    state.y = y;
+    this.options.persist();
+  }
+
+  bubble(message: FloatingBubble): void {
+    const window = this.browserWindow;
+    if (!window || !window.isVisible()) return;
+    window.webContents.send('floating:bubble', { ...message, text: bubbleText(message.text) });
+  }
+
+  broadcast(event: BotHostEvent): void {
+    this.browserWindow?.webContents.send('bot:event', event);
+  }
+
+  destroy(): void {
+    this.browserWindow?.destroy();
+    this.window = null;
+  }
+}

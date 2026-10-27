@@ -2,24 +2,26 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
-import { app, dialog, ipcMain, safeStorage, shell } from 'electron';
+import { Menu, app, dialog, ipcMain, safeStorage, shell, type MenuItemConstructorOptions } from 'electron';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../../core/bot.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
 import { resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
 import type { BotHostEvent } from '../../core/types.ts';
+import { FloatingBot } from './floatingBot.ts';
 import { HOST_COMMANDS, runHostCommand } from './ipc.ts';
 import { SettingsWindow } from './settingsWindow.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { BotTray } from './tray.ts';
+import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
 import { NoteWindows } from './windows.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The bot
  * core is mounted in the Electron main process; every timer lives here; the
- * tray, the sticky-note windows and the settings window are clients of
- * `BotHostApi`. All windows closed means the bot keeps running until Quit. A
+ * tray, the sticky-note windows, the settings window and the floating bot
+ * are clients of `BotHostApi`. All windows closed means the bot keeps running until Quit. A
  * bot that was never set up opens the first-run page (SPEC-002 FR-1).
  */
 
@@ -147,11 +149,27 @@ async function main(): Promise<void> {
     });
   };
 
+  const floating = new FloatingBot({
+    preloadPath,
+    rendererDir,
+    state: () => windows.shellState.floatingBot,
+    persist: () => windows.persist(),
+  });
+  const setFloatingVisible = (visible: boolean) => {
+    if (visible) {
+      void floating.show().catch((error: unknown) => {
+        process.stderr.write(`floating bot failed: ${errorMessage(error)}\n`);
+      });
+    } else {
+      floating.hide();
+    }
+    void refreshTray();
+  };
+
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
-  const refreshTray = async () => {
-    if (!tray) return;
+  const trayModel = async (): Promise<TrayMenuModel> => {
     const [profile, conversations] = await Promise.all([core.getProfile(), core.listConversations()]);
-    tray.update({
+    return {
       botName: profile.name,
       status: core.status(),
       conversations,
@@ -159,7 +177,12 @@ async function main(): Promise<void> {
       openAtLogin: windows.shellState.openAtLogin,
       openAtLoginAvailable,
       awaitingOwner: core.listWorkItems().filter((item) => item.state === 'awaiting_owner').length,
-    });
+      floatingVisible: windows.shellState.floatingBot.visible,
+    };
+  };
+  const refreshTray = async () => {
+    if (!tray) return;
+    tray.update(await trayModel());
   };
 
   const setOpenAtLogin = (enabled: boolean) => {
@@ -178,13 +201,13 @@ async function main(): Promise<void> {
     void core.stop().finally(() => {
       windows.destroyAll();
       settings.destroy();
+      floating.destroy();
       tray?.dispose();
       app.quit();
     });
   };
 
-  const tray: BotTray | null = new BotTray({
-    assetsDir,
+  const trayActions: TrayMenuActions = {
     onOpenConversation: (conversationId) => {
       void windows.open(conversationId).then(refreshTray).catch((error: unknown) => {
         process.stderr.write(`open note failed: ${errorMessage(error)}\n`);
@@ -198,17 +221,20 @@ async function main(): Promise<void> {
       void core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
     onToggleOpenAtLogin: (enabled) => setOpenAtLogin(enabled),
+    onToggleFloating: (visible) => setFloatingVisible(visible),
     onQuit: quit,
-  });
+  };
+  const tray: BotTray | null = new BotTray({ assetsDir, ...trayActions });
 
   const fromNote = (event: Electron.IpcMainInvokeEvent) => windows.windowFor(event.sender.id) !== null;
   const fromSettings = (event: Electron.IpcMainInvokeEvent) => settings.owns(event.sender.id);
+  const fromFloating = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => floating.owns(event.sender.id);
 
   ipcMain.handle('bot:invoke', async (event, command: unknown, args: unknown) => {
     if (typeof command !== 'string' || !HOST_COMMANDS.includes(command as never)) {
       throw new Error(`Unknown host command ${String(command)}`);
     }
-    if (!fromNote(event) && !fromSettings(event)) {
+    if (!fromNote(event) && !fromSettings(event) && !fromFloating(event)) {
       // A note that is being torn down may still flush a markSeen; nothing to do.
       if (quitting) return null;
       throw new Error('Command from an unknown window');
@@ -237,7 +263,7 @@ async function main(): Promise<void> {
     return { alwaysOnTop: owner ? windows.isPinned(owner.conversationId) : false, botName: app.getName() };
   });
   ipcMain.handle('window:open', async (event, conversationId: unknown) => {
-    if ((!fromNote(event) && !fromSettings(event)) || typeof conversationId !== 'string') return null;
+    if ((!fromNote(event) && !fromSettings(event) && !fromFloating(event)) || typeof conversationId !== 'string') return null;
     await windows.open(conversationId);
     void refreshTray();
     return null;
@@ -245,7 +271,41 @@ async function main(): Promise<void> {
   // SPEC-002 FR-4: shell preferences and helpers the settings page uses.
   ipcMain.handle('shell:state', (event) => {
     if (!fromSettings(event)) return null;
-    return { botId, openAtLogin: windows.shellState.openAtLogin, openAtLoginAvailable, version: app.getVersion() };
+    return {
+      botId,
+      openAtLogin: windows.shellState.openAtLogin,
+      openAtLoginAvailable,
+      floatingVisible: windows.shellState.floatingBot.visible,
+      version: app.getVersion(),
+    };
+  });
+  ipcMain.handle('shell:setFloatingVisible', (event, visible: unknown) => {
+    if (!fromSettings(event) || typeof visible !== 'boolean') return null;
+    setFloatingVisible(visible);
+    return visible;
+  });
+  // SPEC-002 FR-7: the floating bot's own channel.
+  ipcMain.on('floating:interactive', (event, interactive: unknown) => {
+    if (fromFloating(event)) floating.setInteractive(interactive === true);
+  });
+  ipcMain.on('floating:moveTo', (event, x: unknown, y: unknown) => {
+    if (fromFloating(event) && typeof x === 'number' && typeof y === 'number') floating.moveTo(x, y);
+  });
+  ipcMain.on('floating:dragEnd', (event) => {
+    if (fromFloating(event)) floating.remember();
+  });
+  ipcMain.handle('floating:activate', async (event) => {
+    if (!fromFloating(event)) return null;
+    await windows.open('home');
+    void refreshTray();
+    return null;
+  });
+  ipcMain.handle('floating:menu', async (event) => {
+    const owner = floating.browserWindow;
+    if (!fromFloating(event) || !owner) return null;
+    const template = buildTrayMenuTemplate(await trayModel(), trayActions) as MenuItemConstructorOptions[];
+    Menu.buildFromTemplate(template).popup({ window: owner });
+    return null;
   });
   ipcMain.handle('shell:setOpenAtLogin', (event, enabled: unknown) => {
     if (!fromSettings(event) || typeof enabled !== 'boolean') return null;
@@ -276,6 +336,11 @@ async function main(): Promise<void> {
   core.subscribe((event: BotHostEvent) => {
     windows.broadcast(event);
     settings.broadcast(event);
+    floating.broadcast(event);
+    if (event.type === 'turn.completed' && event.workItem.state === 'completed' && event.workItem.result?.text
+      && !windows.isFocused(event.conversationId)) {
+      void showBubble(event.conversationId, event.workItem.result.text);
+    }
     if (event.type === 'host.handoff' && event.message.kind === 'open') {
       void windows.open(event.message.conversationId ?? 'home');
     }
@@ -287,6 +352,13 @@ async function main(): Promise<void> {
       void refreshTray();
     }
   });
+
+  const showBubble = async (conversationId: string, text: string) => {
+    const [profile, conversations] = await Promise.all([core.getProfile(), core.listConversations()]);
+    const record = conversations.find((item) => item.id === conversationId);
+    const from = !record || record.role === 'home' ? profile.name : `${profile.name} · ${record.title}`;
+    floating.bubble({ conversationId, from, text });
+  };
 
   app.on('second-instance', () => {
     void windows.open('home');
@@ -308,6 +380,7 @@ async function main(): Promise<void> {
     throw error;
   }
   await refreshTray();
+  if (windows.shellState.floatingBot.visible) setFloatingVisible(true);
   const reopen = windows.previouslyOpen();
   for (const conversationId of reopen.length > 0 ? reopen : ['home']) {
     await windows.open(conversationId).catch((error: unknown) => {

@@ -51,7 +51,8 @@ export class NoteWindows {
     this.persist();
   }
 
-  private persist(): void {
+  /** Saves the shell state soon; the floating bot shares the file. */
+  persist(): void {
     if (this.saveTimer) clearTimeout(this.saveTimer);
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null;
@@ -155,6 +156,12 @@ export class NoteWindows {
     if (window && !window.isDestroyed()) window.setAlwaysOnTop(view.alwaysOnTop, 'floating');
     this.persist();
     return view.alwaysOnTop;
+  }
+
+  /** Whether the note of a conversation is the window the owner is looking at. */
+  isFocused(conversationId: string): boolean {
+    const window = this.windows.get(conversationId);
+    return window !== undefined && !window.isDestroyed() && window.isVisible() && window.isFocused();
   }
 
   isPinned(conversationId: string): boolean {

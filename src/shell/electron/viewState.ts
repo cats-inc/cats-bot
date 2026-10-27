@@ -17,10 +17,18 @@ export interface NoteViewState {
   open: boolean;
 }
 
+/** SPEC-002 FR-7: the floating bot's window position (top-left) and visibility. */
+export interface FloatingBotState {
+  visible: boolean;
+  x?: number;
+  y?: number;
+}
+
 export interface ShellState {
   schemaVersion: 1;
   views: Record<string, NoteViewState>;
   openAtLogin: boolean;
+  floatingBot: FloatingBotState;
 }
 
 export const DEFAULT_NOTE_SIZE = { width: 340, height: 460 };
@@ -45,10 +53,18 @@ export function readShellState(botRoot: string): ShellState {
       };
     }
   }
+  const floating = read.ok && read.value && typeof read.value.floatingBot === 'object' && read.value.floatingBot
+    ? read.value.floatingBot
+    : null;
   return {
     schemaVersion: 1,
     views,
     openAtLogin: read.ok && read.value?.openAtLogin === true,
+    floatingBot: {
+      // Shown unless the owner hid it.
+      visible: floating?.visible !== false,
+      ...(floating && Number.isFinite(floating.x) && Number.isFinite(floating.y) ? { x: floating.x, y: floating.y } : {}),
+    },
   };
 }
 
