@@ -31,6 +31,7 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
     show: false,
     autoHideMenuBar: true,
     title: init.title,
+    icon: join(options.rendererDir, '..', 'icon.png'),
     backgroundColor: '#fffaf0',
     webPreferences: {
       preload: options.preloadPath,
