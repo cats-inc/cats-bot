@@ -14,6 +14,13 @@ export interface ProvidersConfigInput {
   provider: string;
   /** Overrides the CLI command; tests point it at the fixture CLI. */
   command?: string;
+  /**
+   * Arguments the runtime places before its own (`launch.args`), so a script
+   * can be run through an interpreter without a shell wrapper: on Windows a
+   * `.cmd` wrapper goes through cmd.exe, which mangles quoted arguments such
+   * as the `--mcp-config` JSON.
+   */
+  launchArgs?: string[];
   /** Extra instance keys, for example `projects_dir` for the fixture. */
   instanceExtras?: Record<string, string>;
 }
@@ -47,6 +54,10 @@ export function renderProvidersConfig(input: ProvidersConfigInput): string {
     `            command: ${yamlScalar(input.command ?? input.provider)}`,
     '            runner: auto',
   ];
+  if (input.launchArgs && input.launchArgs.length > 0) {
+    lines.push('            launch:', '              args:');
+    for (const arg of input.launchArgs) lines.push(`                - ${yamlScalar(arg)}`);
+  }
   for (const [key, value] of Object.entries(input.instanceExtras ?? {})) {
     lines.push(`            ${key}: ${yamlScalar(value)}`);
   }

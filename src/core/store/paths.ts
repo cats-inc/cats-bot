@@ -18,6 +18,7 @@ export interface BotPaths {
   workspace: string;
   lock: string;
   handoff: string;
+  life: string;
 }
 
 export function resolveBotsHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -41,6 +42,7 @@ export function botPathsFor(root: string): BotPaths {
     workspace: join(root, 'workspace'),
     lock: join(root, 'instance.lock.json'),
     handoff: join(root, 'handoff'),
+    life: join(root, 'life.json'),
   };
 }
 

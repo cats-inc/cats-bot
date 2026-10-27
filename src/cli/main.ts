@@ -3,15 +3,16 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
+import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { botPathsFor, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
-import type { BotHostEvent, PermissionMode, WorkItem } from '../core/types.ts';
+import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
 /**
- * `cats-bot`: the headless entry point of PLAN-001 Phase 1. `run` keeps the
- * core in the foreground and prints its events; `say` either hands a message
- * to the running instance or runs one turn itself; `status` and
- * `conversations` only read the data root.
+ * `cats-bot`: the headless entry point. `run` keeps the core in the
+ * foreground and prints its events; every other command either hands its
+ * request to the running instance through the handoff directory or, when no
+ * instance holds the lock, applies it to the data root directly.
  */
 
 interface ParsedArgs {
@@ -58,13 +59,20 @@ const USAGE = `Usage: cats-bot <command> [options]
 Commands:
   init --name <name> --provider <provider> [--model <model>] [--id <id>] [--cwd <dir>]
        [--instructions <text>] [--permission-mode skip|whitelist|default]
-  run [--id <id>] [--json]            run the bot core in the foreground
-  say <conversation|home> <text...>   send an owner message (to the running bot, or one turn here)
-  status [--id <id>]                  show profile, runtime and queue state
-  conversations [--id <id>]           list conversations
+  run [--json]                           run the bot core in the foreground
+  say <conversation|home> <text...>      send an owner message
+  status                                 show profile, runtime, queue and life state
+  conversations [--json]                 list conversations
+  schedule add <conversation|home> --prompt <text> (--at <iso> | --in <minutes> | --cron "<expr>" [--tz <zone>])
+               [--missed skip|coalesce|run_once]
+  schedule list [--json]
+  schedule cancel <id>
+  approve <workItemId> <approve|deny>    answer a question the bot asked
+  heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
+  tick                                   run one reconcile pass (only when no instance is running)
 
-Bots live under CATS_BOTS_HOME (default ~/.cats/bots); CATS_BOT_ID or --id selects one
-when more than one exists.
+Every command except init and run takes --id <id>. Bots live under CATS_BOTS_HOME
+(default ~/.cats/bots); CATS_BOT_ID or --id selects one when more than one exists.
 `;
 
 function listBotIds(botsHome: string): string[] {
@@ -89,11 +97,17 @@ function resolveBotId(flags: ParsedArgs['flags'], env: NodeJS.ProcessEnv): strin
  * the scripted fixture CLI) and its discovery directory, without editing the
  * generated providers.yaml. Production ignores both.
  */
-function runtimeOverrides(env: NodeJS.ProcessEnv): { providerCommand?: string; instanceExtras?: Record<string, string> } {
+function runtimeOverrides(env: NodeJS.ProcessEnv): {
+  providerCommand?: string;
+  providerLaunchArgs?: string[];
+  instanceExtras?: Record<string, string>;
+} {
   const command = env.CATS_BOTS_PROVIDER_COMMAND?.trim();
+  const launchArgs = env.CATS_BOTS_PROVIDER_LAUNCH_ARGS?.trim();
   const projectsDir = env.CATS_BOTS_PROVIDER_PROJECTS_DIR?.trim();
   return {
     ...(command ? { providerCommand: command } : {}),
+    ...(launchArgs ? { providerLaunchArgs: launchArgs.split('\n').map((arg) => arg.trim()).filter(Boolean) } : {}),
     ...(projectsDir ? { instanceExtras: { projects_dir: projectsDir } } : {}),
   };
 }
@@ -112,7 +126,7 @@ function describeEvent(event: BotHostEvent): string | null {
     case 'host.handoff':
       return `[handoff] ${event.message.kind}`;
     case 'work.awaitingOwner':
-      return `[approval] ${event.workItem.id} awaits the owner`;
+      return `[approval] ${event.workItem.id} awaits the owner: ${event.workItem.prompt}`;
     default:
       return null;
   }
@@ -135,6 +149,23 @@ function printEvent(event: BotHostEvent, json: boolean): void {
   }
   const line = describeEvent(event);
   if (line) process.stdout.write(`${line}\n`);
+}
+
+interface Target {
+  id: string;
+  root: string;
+  running: ReturnType<typeof readInstanceLock>;
+}
+
+function resolveTarget(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Target {
+  const id = resolveBotId(parsed.flags, env);
+  const root = resolveBotRoot(id, env);
+  return { id, root, running: readInstanceLock(botPathsFor(root)) };
+}
+
+function handOff(target: Target, message: Omit<HandoffMessage, 'id' | 'at'>): void {
+  writeHandoff(botPathsFor(target.root), message);
+  process.stdout.write(`Handed ${message.kind} to the running bot (pid ${target.running?.pid}).\n`);
 }
 
 async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
@@ -162,10 +193,10 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
 }
 
 async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const id = resolveBotId(parsed.flags, env);
+  const target = resolveTarget(parsed, env);
   const json = parsed.flags.get('json') === true;
   const core = BotCore.open({
-    root: resolveBotRoot(id, env),
+    root: target.root,
     runtime: runtimeOverrides(env),
     log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
   });
@@ -190,25 +221,21 @@ async function commandSay(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     process.stderr.write('say needs a conversation id (or home) and the text\n');
     return 2;
   }
-  const id = resolveBotId(parsed.flags, env);
-  const root = resolveBotRoot(id, env);
-  const paths = botPathsFor(root);
-  const owner = readInstanceLock(paths);
-  if (owner) {
-    writeHandoff(paths, { kind: 'say', conversationId: conversation, text });
-    process.stdout.write(`Handed the message to the running bot (pid ${owner.pid}).\n`);
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    handOff(target, { kind: 'say', conversationId: conversation, text });
     return 0;
   }
-  const core = BotCore.open({ root, runtime: runtimeOverrides(env), log: (line) => process.stderr.write(`${line}\n`) });
+  const core = BotCore.open({ root: target.root, runtime: runtimeOverrides(env), log: (line) => process.stderr.write(`${line}\n`) });
   await core.start();
   try {
+    let pending: WorkItem | undefined;
     const finished = new Promise<WorkItem>((resolve) => {
       core.subscribe((event) => {
         if (event.type === 'turn.delta' && event.entry.kind === 'bot') process.stdout.write(event.entry.text);
         if (event.type === 'turn.completed' && event.workItem.id === pending?.id) resolve(event.workItem);
       });
     });
-    let pending: WorkItem | undefined;
     pending = await core.sendOwnerMessage(conversation, text);
     const result = await finished;
     process.stdout.write(`\n[${result.state}]${result.error ? ` ${result.error}` : ''}\n`);
@@ -219,27 +246,30 @@ async function commandSay(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
 }
 
 async function commandStatus(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const id = resolveBotId(parsed.flags, env);
-  const root = resolveBotRoot(id, env);
-  const core = BotCore.open({ root, log: () => {} });
+  const target = resolveTarget(parsed, env);
+  const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
   const profile = await core.getProfile();
-  const lock = readInstanceLock(botPathsFor(root));
+  const status = core.status();
   const summary = {
     id: profile.id,
     name: profile.name,
-    root,
+    root: target.root,
     executionTarget: profile.executionTarget,
     configRevision: profile.configRevision,
     heartbeat: profile.heartbeat,
-    running: lock ? { pid: lock.pid, since: lock.startedAt } : null,
+    idleSleepMinutes: profile.idleSleepMinutes,
+    schedules: status.schedules,
+    lastTickAt: status.lastTickAt,
+    awaitingOwner: core.listWorkItems().filter((item) => item.state === 'awaiting_owner').map((item) => ({ id: item.id, question: item.prompt })),
+    running: target.running ? { pid: target.running.pid, since: target.running.startedAt } : null,
   };
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
   return 0;
 }
 
 async function commandConversations(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const id = resolveBotId(parsed.flags, env);
-  const core = BotCore.open({ root: resolveBotRoot(id, env), log: () => {} });
+  const target = resolveTarget(parsed, env);
+  const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
   const conversations = await core.listConversations();
   if (parsed.flags.get('json') === true) {
     process.stdout.write(`${JSON.stringify(conversations, null, 2)}\n`);
@@ -253,6 +283,134 @@ async function commandConversations(parsed: ParsedArgs, env: NodeJS.ProcessEnv):
     process.stdout.write(`${record.id}\t${record.role}\t${record.attachment.state}\tunread=${record.unreadCount}\t${record.title}\n`);
   }
   return 0;
+}
+
+async function commandSchedule(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const [action, ...rest] = parsed.positional;
+  const target = resolveTarget(parsed, env);
+  if (action === 'list') {
+    const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+    const schedules = await core.listSchedules();
+    if (parsed.flags.get('json') === true) {
+      process.stdout.write(`${JSON.stringify(schedules, null, 2)}\n`);
+      return 0;
+    }
+    const active = schedules.filter((schedule) => schedule.state === 'active');
+    if (active.length === 0) {
+      process.stdout.write('No active schedules.\n');
+      return 0;
+    }
+    for (const schedule of active) {
+      process.stdout.write(`${describeSchedule(schedule)}\tnext=${schedule.nextAt ?? 'never'}\tconversation=${schedule.conversationId}\n`);
+    }
+    return 0;
+  }
+  if (action === 'cancel') {
+    const id = rest[0];
+    if (!id) {
+      process.stderr.write('schedule cancel needs the schedule id\n');
+      return 2;
+    }
+    if (target.running) {
+      handOff(target, { kind: 'schedule_cancel', payload: { id } });
+      return 0;
+    }
+    const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+    await core.cancelSchedule(id);
+    process.stdout.write(`Cancelled ${id}.\n`);
+    return 0;
+  }
+  if (action === 'add') {
+    const conversation = rest[0];
+    const prompt = flagString(parsed.flags, 'prompt');
+    const at = flagString(parsed.flags, 'at');
+    const inMinutes = flagString(parsed.flags, 'in');
+    const cron = flagString(parsed.flags, 'cron');
+    if (!conversation || !prompt || (!at && !inMinutes && !cron)) {
+      process.stderr.write('schedule add needs a conversation, --prompt and one of --at, --in or --cron\n');
+      return 2;
+    }
+    const missedPolicy = flagString(parsed.flags, 'missed') as MissedPolicy | undefined;
+    const input: Omit<CreateScheduleInput, 'at'> & { at?: Date } = {
+      conversationId: conversation,
+      prompt,
+      kind: cron ? 'cron' : 'once',
+      ...(cron ? { cron } : {}),
+      ...(flagString(parsed.flags, 'tz') ? { timezone: flagString(parsed.flags, 'tz') } : {}),
+      ...(missedPolicy ? { missedPolicy } : {}),
+      createdBy: 'owner',
+    };
+    if (!cron) {
+      input.at = at ? new Date(at) : new Date(Date.now() + Number(inMinutes) * 60_000);
+    }
+    if (target.running) {
+      const { at: when, ...payload } = input;
+      handOff(target, {
+        kind: 'schedule_create',
+        conversationId: conversation,
+        payload: { ...payload, ...(when ? { at: when.toISOString() } : {}) },
+      });
+      return 0;
+    }
+    const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+    const schedule = core.createSchedule(input as CreateScheduleInput);
+    process.stdout.write(`Created ${describeSchedule(schedule)}; next ${schedule.nextAt}\n`);
+    return 0;
+  }
+  process.stderr.write('schedule needs add, list or cancel\n');
+  return 2;
+}
+
+async function commandApprove(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const [workItemId, decision] = parsed.positional;
+  if (!workItemId || (decision !== 'approve' && decision !== 'deny')) {
+    process.stderr.write('approve needs a work item id and approve|deny\n');
+    return 2;
+  }
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    handOff(target, { kind: 'approve', payload: { workItemId, decision } });
+    return 0;
+  }
+  const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+  await core.resolveApproval(workItemId, decision);
+  process.stdout.write(`Recorded ${decision} for ${workItemId}; the bot continues on its next run.\n`);
+  return 0;
+}
+
+async function commandHeartbeat(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const [action] = parsed.positional;
+  if (action !== 'pause' && action !== 'resume') {
+    process.stderr.write('heartbeat needs pause or resume\n');
+    return 2;
+  }
+  const enabled = action === 'resume';
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    handOff(target, { kind: 'heartbeat', payload: { enabled } });
+    return 0;
+  }
+  const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+  await core.updateProfile({ heartbeat: { enabled } });
+  process.stdout.write(`Heartbeat ${enabled ? 'enabled' : 'paused'}.\n`);
+  return 0;
+}
+
+async function commandTick(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    process.stderr.write(`The bot is running (pid ${target.running.pid}); it ticks on its own.\n`);
+    return 1;
+  }
+  const core = BotCore.open({ root: target.root, runtime: runtimeOverrides(env), log: (line) => process.stderr.write(`${line}\n`) });
+  await core.start();
+  try {
+    const report = await core.tick();
+    process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+    return 0;
+  } finally {
+    await core.stop();
+  }
 }
 
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
@@ -269,6 +427,14 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandStatus(parsed, env);
       case 'conversations':
         return await commandConversations(parsed, env);
+      case 'schedule':
+        return await commandSchedule(parsed, env);
+      case 'approve':
+        return await commandApprove(parsed, env);
+      case 'heartbeat':
+        return await commandHeartbeat(parsed, env);
+      case 'tick':
+        return await commandTick(parsed, env);
       case undefined:
       case 'help':
       case '--help':

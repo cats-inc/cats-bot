@@ -128,7 +128,7 @@ async function handleMessage(req, res, session, body) {
   } else if (message.startsWith('instructions?')) {
     reply(`instructions=${session.instructions ?? ''}`);
   } else if (message.startsWith('[Cats heartbeat')) {
-    reply(session.heartbeatReply ?? '[quiet]');
+    reply(process.env.FAKE_HEARTBEAT_REPLY || '[quiet]');
   } else {
     reply(`echo: ${message}`);
   }

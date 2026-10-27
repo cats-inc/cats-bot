@@ -5,10 +5,13 @@ wrapping an agent CLI through `cats-runtime`.
 
 ## Current status
 
-PLAN-001 Phases 0 and 1 are in place: the headless bot core and the `cats-bot` CLI run a
+PLAN-001 Phases 0 to 2 are in place: the headless bot core and the `cats-bot` CLI run a
 provider CLI through a private cats-runtime child, with conversations, transcripts, a work
-journal, cancel, resume and restart recovery. The alive mechanisms (Phase 2) and the tray and
-sticky-note shell (Phase 3) are next. Nothing is released.
+journal, cancel, resume and restart recovery, and the bot stays alive on its own: a reconcile
+tick keeps the home session attached, durable schedules (one-time and cron in an IANA zone)
+fire into work items, hidden heartbeat turns let the bot decide whether to speak, and the
+bot's own MCP tool server lets the model create schedules and ask the owner. The tray and
+sticky-note shell (Phase 3) is next. Nothing is released.
 
 - `npm ci && npm run typecheck && npm test && npm run build` passes on Windows and Linux
   (CI). The suite includes an integration test that starts the real pinned cats-runtime with a
@@ -76,6 +79,8 @@ npm run build
 node src/cli/main.ts init --name Mochi --provider claude --instructions "You are Mochi."
 node src/cli/main.ts run            # keeps the bot in the foreground and prints its events
 node src/cli/main.ts say home hello # hands the message to the running bot, or runs one turn
+node src/cli/main.ts schedule add home --in 30 --prompt "remind me to stretch"
+node src/cli/main.ts heartbeat pause
 ```
 
 See `docs/setup-guide.md` and `docs/testing.md`. The `@cats-inc/cats-runtime` dependency is

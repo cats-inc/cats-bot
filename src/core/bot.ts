@@ -1,8 +1,11 @@
 import { mkdirSync } from 'node:fs';
-import { join } from 'node:path';
 
+import { SessionBinder } from './conversations/binder.ts';
 import { ConversationStore } from './conversations/store.ts';
 import { BotEventBus, type BotEventListener } from './host-api/events.ts';
+import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
+import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
+import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
 import { createFileLogger, type Logger } from './log.ts';
 import {
   applyProfilePatch,
@@ -16,15 +19,20 @@ import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turn
 import { createWorkItem, isTerminalWorkState, transitionWorkItem } from './queue/workItems.ts';
 import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
+import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
 import { botPathsFor, resolveBotRoot, type BotPaths } from './store/paths.ts';
+import { createBotToolHandlers } from './tools/botTools.ts';
+import { BotToolServer } from './tools/server.ts';
 import type {
+  ApprovalDecision,
   BotHostApi,
   BotHostEvent,
   BotProfile,
   BotProfilePatch,
   ConversationRecord,
+  HandoffMessage,
   JournalEntry,
   RuntimeState,
   ScheduleRecord,
@@ -33,18 +41,30 @@ import type {
 
 /**
  * The resident bot core (ADR-001 §2): owns the profile, conversations, the
- * work queue and journal, the runtime child and every timer. Hosts talk to it
- * only through `BotHostApi` and the event bus; it never imports Electron.
+ * work queue and journal, schedules, the runtime child, the tool server and
+ * every timer. Hosts talk to it only through `BotHostApi` and the event bus;
+ * it never imports Electron.
  */
 
 export interface BotRuntimeOptions {
   nodeExecPath?: string;
   runtimeEntry?: string;
   providerCommand?: string;
+  providerLaunchArgs?: string[];
   instanceExtras?: Record<string, string>;
   readyTimeoutMs?: number;
   stopTimeoutMs?: number;
   env?: NodeJS.ProcessEnv;
+}
+
+export interface BotLifeOptions {
+  intervalMs?: number;
+  startupDelayMs?: number;
+  wakeBackoffMs?: number;
+  awaitingOwnerTimeoutMs?: number;
+  busyRetryMs?: number;
+  failedRetryMs?: number;
+  random?: () => number;
 }
 
 export interface BotCoreOptions {
@@ -55,12 +75,13 @@ export interface BotCoreOptions {
   log?: Logger;
   /** Tests may skip the runtime child and talk to this client instead. */
   runtimeClient?: RuntimeClient;
-  /** SPEC-001 FR-24: the bot tool server descriptors handed to every session (Phase 2). */
-  mcpServers?: () => RuntimeMcpServer[];
   handoffPollMs?: number;
   /** Tests shorten the SPEC-001 retry and restart delays; production keeps the defaults. */
   turnRetry?: Partial<TurnRetryDelays>;
   runtimeRestartDelaysMs?: number[];
+  life?: BotLifeOptions;
+  /** SPEC-001 FR-24: set false to run without the bot tool server (tests). */
+  tools?: boolean;
 }
 
 export interface BotStatus {
@@ -70,6 +91,9 @@ export interface BotStatus {
   runtime: { state: RuntimeState; pid: number | null };
   queue: { queued: number; running: WorkItem | null };
   conversations: number;
+  schedules: number;
+  heartbeat: { enabled: boolean; nextAt: string | null };
+  lastTickAt: string | null;
   lock: InstanceLock | null;
 }
 
@@ -124,6 +148,8 @@ interface RunningTurn {
   controller: AbortController;
 }
 
+const PACKAGE_VERSION = '0.1.0';
+
 export class BotCore implements BotHostApi {
   readonly paths: BotPaths;
   private profile: BotProfile;
@@ -134,7 +160,11 @@ export class BotCore implements BotHostApi {
   private readonly conversations: ConversationStore;
   private readonly queue = new WorkQueue();
   private readonly workItems = new Map<string, WorkItem>();
+  private readonly schedules = new Map<string, ScheduleRecord>();
+  private readonly binder: SessionBinder;
   private readonly runner: TurnRunner;
+  private readonly toolServer: BotToolServer | null;
+  private readonly life: LifeLoop;
   private supervisor: RuntimeSupervisor | null;
   private readonly views = new Set<string>();
   private readonly timers = new Set<NodeJS.Timeout>();
@@ -143,6 +173,8 @@ export class BotCore implements BotHostApi {
   private handoffTimer: NodeJS.Timeout | null = null;
   private runtimeAttempt = 0;
   private runtimeRestartTimer: NodeJS.Timeout | null = null;
+  private runtimeRestartAt: number | null = null;
+  private recovering = false;
   private started = false;
   private stopped = false;
 
@@ -157,43 +189,70 @@ export class BotCore implements BotHostApi {
       now: this.now,
       warn: (message) => this.log(`warn ${message}`),
     });
-    // Read-only hosts (status, conversations) see the records without starting anything.
+    // Read-only hosts (status, conversations, schedule list) see the records without starting anything.
     this.conversations.load();
-    this.supervisor = options.runtimeClient
+    this.loadJournal();
+    this.supervisor = options.runtimeClient ? null : this.createSupervisor();
+    this.toolServer = options.tools === false
       ? null
-      : new RuntimeSupervisor({
-        runtimeDir: this.paths.runtime,
-        providers: {
-          provider: profile.executionTarget.provider,
-          ...(options.runtime?.providerCommand ? { command: options.runtime.providerCommand } : {}),
-          ...(options.runtime?.instanceExtras ? { instanceExtras: options.runtime.instanceExtras } : {}),
-        },
-        ...(options.runtime?.nodeExecPath ? { nodeExecPath: options.runtime.nodeExecPath } : {}),
-        ...(options.runtime?.runtimeEntry ? { runtimeEntry: options.runtime.runtimeEntry } : {}),
-        ...(options.runtime?.env ? { env: options.runtime.env } : {}),
-        ...(options.runtime?.readyTimeoutMs ? { readyTimeoutMs: options.runtime.readyTimeoutMs } : {}),
-        ...(options.runtime?.stopTimeoutMs ? { stopTimeoutMs: options.runtime.stopTimeoutMs } : {}),
-        ...(options.fetch ? { fetch: options.fetch } : {}),
-        onEvent: (event) => this.onRuntimeEvent(event),
+      : new BotToolServer({
+        serverVersion: PACKAGE_VERSION,
+        handlers: createBotToolHandlers({
+          createSchedule: (input) => this.createSchedule(input),
+          listSchedules: () => this.scheduleRecords(),
+          cancelSchedule: (id) => this.cancelScheduleRecord(id),
+          askOwner: (conversationId, question) => this.askOwner(conversationId, question),
+          now: this.now,
+        }),
       });
-    this.runner = new TurnRunner({
+    this.binder = new SessionBinder({
       client: () => this.client(),
       profile: () => this.profile,
       conversations: this.conversations,
       now: this.now,
-      ...(options.mcpServers ? { mcpServers: options.mcpServers } : {}),
+      mcpServers: (conversationId) => this.mcpServersFor(conversationId),
+      log: this.log,
+    });
+    this.runner = new TurnRunner({
+      client: () => this.client(),
+      binder: this.binder,
+      conversations: this.conversations,
+      now: this.now,
       emit: (event) => this.bus.emit(event),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
-  }
-
-  private restartDelayMs(attempt: number): number {
-    const custom = this.options.runtimeRestartDelaysMs;
-    if (custom && custom.length > 0) {
-      return custom[Math.min(attempt, custom.length - 1)]!;
-    }
-    return runtimeRestartDelayMs(attempt);
+    const life = options.life ?? {};
+    this.life = new LifeLoop({
+      now: this.now,
+      random: life.random ?? Math.random,
+      profile: () => this.profile,
+      conversations: this.conversations,
+      binder: this.binder,
+      client: () => this.client(),
+      runtimeState: () => this.runtimeState(),
+      ensureRuntime: () => this.ensureRuntime(),
+      isTurnRunning: (conversationId) => this.isTurnRunning(conversationId),
+      hasQueuedWork: (key) => this.queue.findByCoalesceKey(key) !== undefined || this.running?.item.coalesceKey === key,
+      enqueue: (item) => {
+        this.enqueueWorkItem(item);
+      },
+      schedules: () => this.scheduleRecords(),
+      saveSchedule: (schedule) => this.saveSchedule(schedule),
+      awaitingOwner: () => this.listWorkItems().filter((item) => item.state === 'awaiting_owner'),
+      expireWorkItem: (item, reason) => this.expireWorkItem(item, reason),
+      journal: (entry) => this.journal(entry),
+      emit: (event) => this.bus.emit(event),
+      log: this.log,
+      readLifeState: () => this.readLifeState(),
+      writeLifeState: (state) => writeJsonAtomic(this.paths.life, state),
+      ...(life.intervalMs !== undefined ? { intervalMs: life.intervalMs } : {}),
+      ...(life.startupDelayMs !== undefined ? { startupDelayMs: life.startupDelayMs } : {}),
+      ...(life.wakeBackoffMs !== undefined ? { wakeBackoffMs: life.wakeBackoffMs } : {}),
+      ...(life.awaitingOwnerTimeoutMs !== undefined ? { awaitingOwnerTimeoutMs: life.awaitingOwnerTimeoutMs } : {}),
+      ...(life.busyRetryMs !== undefined ? { busyRetryMs: life.busyRetryMs } : {}),
+      ...(life.failedRetryMs !== undefined ? { failedRetryMs: life.failedRetryMs } : {}),
+    });
   }
 
   /** Loads an initialized bot without starting anything. */
@@ -206,6 +265,40 @@ export class BotCore implements BotHostApi {
       throw new Error(`Corrupt profile at ${paths.profile}: ${loaded.error}`);
     }
     return new BotCore(options, loaded.profile);
+  }
+
+  private createSupervisor(): RuntimeSupervisor {
+    const { options } = this;
+    return new RuntimeSupervisor({
+      runtimeDir: this.paths.runtime,
+      providers: {
+        provider: this.profile.executionTarget.provider,
+        ...(options.runtime?.providerCommand ? { command: options.runtime.providerCommand } : {}),
+        ...(options.runtime?.providerLaunchArgs ? { launchArgs: options.runtime.providerLaunchArgs } : {}),
+        ...(options.runtime?.instanceExtras ? { instanceExtras: options.runtime.instanceExtras } : {}),
+      },
+      ...(options.runtime?.nodeExecPath ? { nodeExecPath: options.runtime.nodeExecPath } : {}),
+      ...(options.runtime?.runtimeEntry ? { runtimeEntry: options.runtime.runtimeEntry } : {}),
+      ...(options.runtime?.env ? { env: options.runtime.env } : {}),
+      ...(options.runtime?.readyTimeoutMs ? { readyTimeoutMs: options.runtime.readyTimeoutMs } : {}),
+      ...(options.runtime?.stopTimeoutMs ? { stopTimeoutMs: options.runtime.stopTimeoutMs } : {}),
+      ...(options.fetch ? { fetch: options.fetch } : {}),
+      onEvent: (event) => this.onRuntimeEvent(event),
+    });
+  }
+
+  private loadJournal(): void {
+    const journal = readJournal(this.paths);
+    if (journal.corruptLines > 0) this.log(`warn journal has ${journal.corruptLines} unreadable line(s)`);
+    this.workItems.clear();
+    this.schedules.clear();
+    for (const item of journal.workItems.values()) this.workItems.set(item.id, item);
+    for (const schedule of journal.schedules.values()) this.schedules.set(schedule.id, schedule);
+  }
+
+  private readLifeState(): LifeState | null {
+    const read = readJsonFile<LifeState>(this.paths.life);
+    return read.ok && typeof read.value === 'object' && read.value !== null ? read.value : null;
   }
 
   subscribe(listener: BotEventListener): () => void {
@@ -225,6 +318,10 @@ export class BotCore implements BotHostApi {
     return this.options.runtimeClient ?? this.supervisor?.client ?? null;
   }
 
+  private mcpServersFor(conversationId: string): RuntimeMcpServer[] {
+    return this.toolServer?.descriptorFor(conversationId) ?? [];
+  }
+
   private journal(entry: JournalEntry): void {
     appendJournal(this.paths, entry);
   }
@@ -234,6 +331,12 @@ export class BotCore implements BotHostApi {
     this.journal({ type: 'work', at: this.now().toISOString(), item });
     this.bus.emit({ type: 'work.updated', workItem: item });
     return item;
+  }
+
+  private saveSchedule(schedule: ScheduleRecord): ScheduleRecord {
+    this.schedules.set(schedule.id, schedule);
+    this.journal({ type: 'schedule', at: this.now().toISOString(), schedule });
+    return schedule;
   }
 
   private schedule(delayMs: number, fn: () => void): NodeJS.Timeout {
@@ -246,6 +349,11 @@ export class BotCore implements BotHostApi {
     return timer;
   }
 
+  private isTurnRunning(conversationId?: string): boolean {
+    if (!this.running) return false;
+    return conversationId === undefined || this.running.item.conversationId === conversationId;
+  }
+
   async start(): Promise<void> {
     if (this.started) throw new Error('Bot core already started');
     this.started = true;
@@ -256,13 +364,11 @@ export class BotCore implements BotHostApi {
 
     this.conversations.load();
     this.conversations.home();
+    this.loadJournal();
 
     // SPEC-001 FR-28: whatever was running when the core died is interrupted, never rerun.
-    const journal = readJournal(this.paths);
-    if (journal.corruptLines > 0) this.log(`warn journal has ${journal.corruptLines} unreadable line(s)`);
     const pending: WorkItem[] = [];
-    for (const item of journal.workItems.values()) {
-      this.workItems.set(item.id, item);
+    for (const item of [...this.workItems.values()]) {
       if (item.state === 'running') {
         this.record(transitionWorkItem(item, 'interrupted', this.now(), { error: 'core restarted during this turn' }));
       } else if (item.state === 'queued') {
@@ -280,27 +386,36 @@ export class BotCore implements BotHostApi {
       this.queue.enqueue(item);
     }
 
+    if (this.toolServer) {
+      await this.toolServer.start();
+      this.log('tool server listening on loopback');
+    }
     await this.ensureRuntime();
     const pollMs = this.options.handoffPollMs ?? 1_500;
     this.handoffTimer = setInterval(() => this.drainHandoffs(), pollMs);
     this.handoffTimer.unref?.();
+    this.life.start();
     this.pump();
   }
 
-  /** SPEC-001 FR-6: start the runtime, or schedule the next attempt with backoff. */
+  /** SPEC-001 FR-6: start the runtime, or wait for the scheduled attempt with backoff. */
   async ensureRuntime(): Promise<boolean> {
     if (!this.supervisor || this.stopped) return this.client() !== null;
-    if (this.supervisor.state === 'ready' || this.supervisor.state === 'starting') return true;
+    if (this.supervisor.state === 'ready') return true;
+    if (this.supervisor.state === 'starting') return false;
+    if (this.runtimeRestartAt !== null && this.now().getTime() < this.runtimeRestartAt) return false;
     if (this.runtimeRestartTimer) {
       clearTimeout(this.runtimeRestartTimer);
       this.timers.delete(this.runtimeRestartTimer);
       this.runtimeRestartTimer = null;
     }
+    this.runtimeRestartAt = null;
     this.journal({ type: 'runtime', at: this.now().toISOString(), event: 'started', detail: `attempt ${this.runtimeAttempt + 1}` });
     try {
       await this.supervisor.start();
       this.runtimeAttempt = 0;
       this.journal({ type: 'runtime', at: this.now().toISOString(), event: 'ready' });
+      void this.recoverInterrupted();
       this.pump();
       return true;
     } catch (error) {
@@ -311,14 +426,24 @@ export class BotCore implements BotHostApi {
     }
   }
 
+  private restartDelayMs(attempt: number): number {
+    const custom = this.options.runtimeRestartDelaysMs;
+    if (custom && custom.length > 0) {
+      return custom[Math.min(attempt, custom.length - 1)]!;
+    }
+    return runtimeRestartDelayMs(attempt);
+  }
+
   private scheduleRuntimeRestart(): void {
     if (this.stopped || !this.supervisor || this.runtimeRestartTimer) return;
     const delay = this.restartDelayMs(this.runtimeAttempt);
     this.runtimeAttempt += 1;
+    this.runtimeRestartAt = this.now().getTime() + delay;
     this.journal({ type: 'runtime', at: this.now().toISOString(), event: 'restart_scheduled', detail: `${delay}ms` });
     this.log(`runtime restart in ${delay}ms (attempt ${this.runtimeAttempt + 1})`);
     this.runtimeRestartTimer = this.schedule(delay, () => {
       this.runtimeRestartTimer = null;
+      this.runtimeRestartAt = null;
       void this.ensureRuntime();
     });
   }
@@ -338,9 +463,8 @@ export class BotCore implements BotHostApi {
             this.bus.emit({ type: 'conversation.updated', conversation: updated });
           }
         }
+        this.life.forgetAwake();
         if (!event.expected) this.scheduleRuntimeRestart();
-        break;
-      case 'log':
         break;
       default:
         break;
@@ -351,11 +475,40 @@ export class BotCore implements BotHostApi {
     for (const message of takeHandoffs(this.paths)) {
       this.log(`handoff ${message.kind}`);
       this.bus.emit({ type: 'host.handoff', message });
-      if (message.kind === 'say' && message.text) {
-        void this.sendOwnerMessage(message.conversationId ?? 'home', message.text).catch((error: unknown) => {
-          this.log(`handoff say failed: ${error instanceof Error ? error.message : String(error)}`);
+      void this.applyHandoff(message).catch((error: unknown) => {
+        this.log(`handoff ${message.kind} failed: ${error instanceof Error ? error.message : String(error)}`);
+      });
+    }
+  }
+
+  private async applyHandoff(message: HandoffMessage): Promise<void> {
+    const payload = message.payload ?? {};
+    switch (message.kind) {
+      case 'say':
+        if (message.text) await this.sendOwnerMessage(message.conversationId ?? 'home', message.text);
+        break;
+      case 'schedule_create': {
+        const { at, ...input } = payload as unknown as Omit<CreateScheduleInput, 'at'> & { at?: string };
+        this.createSchedule({
+          ...input,
+          conversationId: this.resolveConversationId(input.conversationId ?? message.conversationId ?? 'home'),
+          ...(at ? { at: new Date(at) } : {}),
         });
+        break;
       }
+      case 'schedule_cancel':
+        if (typeof payload.id === 'string') await this.cancelSchedule(payload.id);
+        break;
+      case 'approve':
+        if (typeof payload.workItemId === 'string' && (payload.decision === 'approve' || payload.decision === 'deny')) {
+          await this.resolveApproval(payload.workItemId, payload.decision);
+        }
+        break;
+      case 'heartbeat':
+        if (typeof payload.enabled === 'boolean') await this.updateProfile({ heartbeat: { enabled: payload.enabled } });
+        break;
+      default:
+        break;
     }
   }
 
@@ -363,6 +516,7 @@ export class BotCore implements BotHostApi {
     if (this.stopped) return;
     this.stopped = true;
     this.log('core stop');
+    this.life.stop();
     if (this.handoffTimer) clearInterval(this.handoffTimer);
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
@@ -376,6 +530,7 @@ export class BotCore implements BotHostApi {
       }
     }
     if (this.supervisor) await this.supervisor.stop();
+    if (this.toolServer) await this.toolServer.stop();
     this.releaseLock?.();
     this.releaseLock = null;
   }
@@ -388,6 +543,9 @@ export class BotCore implements BotHostApi {
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
       queue: { queued: this.queue.size, running: this.running?.item ?? null },
       conversations: this.conversations.list().length,
+      schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
+      heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
+      lastTickAt: this.readLifeState()?.lastTickAt ?? null,
       lock: readInstanceLock(this.paths),
     };
   }
@@ -413,9 +571,165 @@ export class BotCore implements BotHostApi {
     return Array.isArray(history.messages) ? history.messages : [];
   }
 
+  /** One reconcile pass now (SPEC-001 FR-20); the loop also runs it on its own timer. */
+  tick(): Promise<LifeTickReport> {
+    return this.life.tick();
+  }
+
+  get lastTick(): LifeTickReport | null {
+    return this.life.report;
+  }
+
   private resolveConversationId(idOrAlias: string): string {
     if (idOrAlias === 'home') return this.conversations.home().id;
     return this.conversations.require(idOrAlias).id;
+  }
+
+  // ---- schedules (SPEC-001 FR-21, FR-24) ---------------------------------
+
+  scheduleRecords(): ScheduleRecord[] {
+    return [...this.schedules.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  createSchedule(input: CreateScheduleInput): ScheduleRecord {
+    const conversationId = this.resolveConversationId(input.conversationId);
+    const schedule = this.saveSchedule(buildSchedule({ ...input, conversationId }, this.now()));
+    this.conversations.append(conversationId, {
+      kind: 'system',
+      origin: 'schedule',
+      text: `Schedule created: ${describeSchedule(schedule)}. Next: ${schedule.nextAt}. Receipt: ${schedule.receipt}`,
+    });
+    this.log(`schedule ${schedule.id} created (${schedule.kind}, by ${schedule.createdBy})`);
+    this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversationId) });
+    return schedule;
+  }
+
+  private cancelScheduleRecord(id: string): ScheduleRecord {
+    const schedule = this.schedules.get(id);
+    if (!schedule) throw new Error(`Unknown schedule ${id}`);
+    if (schedule.state !== 'active') return schedule;
+    const cancelled = this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
+    const queued = this.queue.findByCoalesceKey(id);
+    if (queued) {
+      this.queue.remove(queued.id);
+      this.record(transitionWorkItem(queued, 'cancelled', this.now(), { error: 'schedule cancelled' }));
+    }
+    if (this.conversations.get(cancelled.conversationId)) {
+      this.conversations.append(cancelled.conversationId, {
+        kind: 'system',
+        origin: 'schedule',
+        text: `Schedule cancelled: ${cancelled.id}. Receipt: ${cancelled.receipt}`,
+      });
+    }
+    this.log(`schedule ${id} cancelled`);
+    return cancelled;
+  }
+
+  async listSchedules(): Promise<ScheduleRecord[]> {
+    return this.scheduleRecords().map((schedule) => structuredClone(schedule));
+  }
+
+  async cancelSchedule(scheduleId: string): Promise<void> {
+    this.cancelScheduleRecord(scheduleId);
+  }
+
+  // ---- approvals (SPEC-001 FR-28, FR-30) ---------------------------------
+
+  askOwner(conversationId: string, question: string): WorkItem {
+    const id = this.resolveConversationId(conversationId);
+    const item = createWorkItem({ kind: 'event', source: 'ask_owner', conversationId: id, prompt: question.trim() }, this.now());
+    const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', this.now(), {
+      notification: { deliveredAt: this.now().toISOString(), seenAt: null },
+    }));
+    this.conversations.append(id, {
+      kind: 'system',
+      origin: 'event',
+      text: `Approval needed (${waiting.id}): ${waiting.prompt}`,
+      workItemId: waiting.id,
+    });
+    this.conversations.update(id, (record) => {
+      record.unreadCount += 1;
+    });
+    this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
+    this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
+    this.log(`approval ${waiting.id} awaits the owner`);
+    return waiting;
+  }
+
+  async resolveApproval(workItemId: string, decision: ApprovalDecision): Promise<void> {
+    const item = this.workItems.get(workItemId);
+    if (!item) throw new Error(`Unknown work item ${workItemId}`);
+    if (item.state !== 'awaiting_owner') throw new Error(`Work item ${workItemId} is ${item.state}, not awaiting the owner`);
+    const now = this.now();
+    const answer = decision === 'approve' ? 'approved' : 'denied';
+    if (item.source === 'recovery') {
+      if (decision === 'approve') {
+        this.record(transitionWorkItem(item, 'completed', now, { result: { text: `owner asked to rerun`, completedAt: now.toISOString() } }));
+        await this.sendOwnerMessage(item.conversationId, item.prompt);
+      } else {
+        this.record(transitionWorkItem(item, 'cancelled', now, { error: 'owner declined to rerun the interrupted turn' }));
+      }
+      this.log(`approval ${item.id} ${answer} (recovery)`);
+      return;
+    }
+    this.record(transitionWorkItem(item, 'completed', now, {
+      result: { text: answer, completedAt: now.toISOString() },
+      notification: { ...(item.notification ?? { deliveredAt: now.toISOString() }), seenAt: now.toISOString() },
+    }));
+    this.log(`approval ${item.id} ${answer}`);
+    await this.sendOwnerMessage(item.conversationId, `Decision on your question "${item.prompt}": ${answer}.`);
+  }
+
+  private expireWorkItem(item: WorkItem, reason: string): void {
+    this.record(transitionWorkItem(item, 'failed', this.now(), { error: reason }));
+    this.conversations.append(item.conversationId, {
+      kind: 'system',
+      origin: 'event',
+      text: `Approval ${item.id} expired: ${reason}.`,
+      workItemId: item.id,
+    });
+    this.log(`approval ${item.id} expired`);
+  }
+
+  /** SPEC-001 FR-28: settle interrupted turns by runtime evidence, never by rerunning. */
+  async recoverInterrupted(): Promise<void> {
+    if (this.recovering || this.stopped) return;
+    const client = this.client();
+    if (!client) return;
+    this.recovering = true;
+    try {
+      for (const item of this.listWorkItems()) {
+        if (item.state !== 'interrupted') continue;
+        const verdict = await reconcileInterrupted(item, client);
+        const now = this.now();
+        if (verdict.verdict === 'completed') {
+          recordRecoveredReply(this.conversations, item, verdict.text);
+          this.finish(this.record(transitionWorkItem(item, 'completed', now, {
+            result: { text: verdict.text, completedAt: now.toISOString() },
+            notification: { deliveredAt: now.toISOString(), seenAt: null },
+          })));
+          this.log(`recovery ${item.id}: completed by runtime evidence`);
+        } else if (verdict.verdict === 'awaiting_owner') {
+          const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
+            source: 'recovery',
+            error: verdict.evidence,
+            notification: { deliveredAt: now.toISOString(), seenAt: null },
+          }));
+          this.conversations.append(item.conversationId, {
+            kind: 'system',
+            origin: 'event',
+            text: `Approval needed (${waiting.id}): the turn "${waiting.prompt.slice(0, 80)}" was interrupted (${verdict.evidence}). Approve to run it again, deny to drop it.`,
+            workItemId: waiting.id,
+          });
+          this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
+          this.log(`recovery ${item.id}: awaiting the owner (${verdict.evidence})`);
+        } else {
+          this.log(`recovery ${item.id}: no verdict yet (${verdict.reason})`);
+        }
+      }
+    } finally {
+      this.recovering = false;
+    }
   }
 
   // ---- BotHostApi -------------------------------------------------------
@@ -456,31 +770,18 @@ export class BotCore implements BotHostApi {
       if (result.providerChanged && this.supervisor && this.supervisor.state !== 'stopped') {
         // The private runtime only enables one provider; it is re-created for the new one.
         this.log('provider changed: restarting the runtime for the new selection');
-        void this.supervisor.stop().then(() => this.ensureRuntimeForProvider());
+        void this.supervisor.stop().then(() => {
+          if (this.stopped) return;
+          this.supervisor = this.createSupervisor();
+          return this.ensureRuntime();
+        });
       }
     }
+    if (patch.heartbeat) {
+      this.life.resetHeartbeatSchedule();
+      this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'}; next interval is re-drawn`);
+    }
     return structuredClone(this.profile);
-  }
-
-  private async ensureRuntimeForProvider(): Promise<void> {
-    if (!this.supervisor || this.stopped) return;
-    const next = new RuntimeSupervisor({
-      runtimeDir: this.paths.runtime,
-      providers: {
-        provider: this.profile.executionTarget.provider,
-        ...(this.options.runtime?.providerCommand ? { command: this.options.runtime.providerCommand } : {}),
-        ...(this.options.runtime?.instanceExtras ? { instanceExtras: this.options.runtime.instanceExtras } : {}),
-      },
-      ...(this.options.runtime?.nodeExecPath ? { nodeExecPath: this.options.runtime.nodeExecPath } : {}),
-      ...(this.options.runtime?.runtimeEntry ? { runtimeEntry: this.options.runtime.runtimeEntry } : {}),
-      ...(this.options.runtime?.env ? { env: this.options.runtime.env } : {}),
-      ...(this.options.runtime?.readyTimeoutMs ? { readyTimeoutMs: this.options.runtime.readyTimeoutMs } : {}),
-      ...(this.options.runtime?.stopTimeoutMs ? { stopTimeoutMs: this.options.runtime.stopTimeoutMs } : {}),
-      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
-      onEvent: (event) => this.onRuntimeEvent(event),
-    });
-    this.supervisor = next;
-    await this.ensureRuntime();
   }
 
   async listConversations(): Promise<ConversationRecord[]> {
@@ -502,6 +803,11 @@ export class BotCore implements BotHostApi {
       if (item.conversationId === record.id) {
         this.queue.remove(item.id);
         this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: 'conversation deleted' }));
+      }
+    }
+    for (const schedule of this.scheduleRecords()) {
+      if (schedule.conversationId === record.id && schedule.state === 'active') {
+        this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
       }
     }
     const client = this.client();
@@ -574,18 +880,6 @@ export class BotCore implements BotHostApi {
     this.bus.emit({ type: 'conversation.updated', conversation: updated });
   }
 
-  async listSchedules(): Promise<ScheduleRecord[]> {
-    return [];
-  }
-
-  async cancelSchedule(scheduleId: string): Promise<void> {
-    throw new Error(`Schedules are not available yet (${scheduleId})`);
-  }
-
-  async resolveApproval(workItemId: string, decision: 'approve' | 'deny'): Promise<void> {
-    throw new Error(`Approvals are not available yet (${workItemId}: ${decision})`);
-  }
-
   async quit(): Promise<void> {
     await this.stop();
   }
@@ -619,11 +913,12 @@ export class BotCore implements BotHostApi {
     }
     const now = this.now();
     const conversation = this.conversations.get(admitted.conversationId);
+    const isHeartbeat = admitted.kind === 'heartbeat';
     switch (outcome.kind) {
       case 'completed': {
         const finished = this.record(transitionWorkItem(admitted, 'completed', now, {
           result: { text: outcome.text, completedAt: now.toISOString() },
-          notification: { deliveredAt: now.toISOString(), seenAt: null },
+          ...(outcome.text ? { notification: { deliveredAt: now.toISOString(), seenAt: null } } : {}),
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
         if (conversation && outcome.text && !this.views.has(conversation.id)) {
@@ -631,6 +926,7 @@ export class BotCore implements BotHostApi {
             record.unreadCount += 1;
           });
         }
+        if (isHeartbeat) this.life.onHeartbeatResult(finished, outcome.quiet ? 'quiet' : 'spoke');
         this.finish(finished);
         break;
       }
@@ -639,7 +935,7 @@ export class BotCore implements BotHostApi {
           error: outcome.reason,
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
-        if (conversation) {
+        if (conversation && !isHeartbeat) {
           this.conversations.append(conversation.id, {
             kind: 'error',
             origin: 'system',
@@ -648,21 +944,34 @@ export class BotCore implements BotHostApi {
             isError: true,
           });
         }
+        if (isHeartbeat) this.life.onHeartbeatResult(failed, 'failed');
         this.finish(failed);
         break;
       }
-      case 'interrupted':
-        this.finish(this.record(transitionWorkItem(admitted, 'interrupted', now, {
+      case 'interrupted': {
+        const interrupted = this.record(transitionWorkItem(admitted, 'interrupted', now, {
           error: 'the turn ended without a result',
           ...(admitted.run ? { run: admitted.run } : {}),
-        })));
+        }));
+        if (isHeartbeat) this.life.onHeartbeatResult(interrupted, 'failed');
+        this.finish(interrupted);
         break;
-      case 'cancelled':
-        this.finish(this.record(transitionWorkItem(admitted, 'cancelled', now, {
+      }
+      case 'cancelled': {
+        const cancelled = this.record(transitionWorkItem(admitted, 'cancelled', now, {
           ...(admitted.run ? { run: admitted.run } : {}),
-        })));
+        }));
+        if (isHeartbeat) this.life.onHeartbeatResult(cancelled, 'failed');
+        this.finish(cancelled);
         break;
+      }
       case 'retry_later': {
+        if (isHeartbeat) {
+          // FR-25: the loop retries the same heartbeat later instead of keeping it queued.
+          const dropped = this.record(transitionWorkItem(admitted, 'cancelled', now, { error: outcome.reason }));
+          this.life.onHeartbeatResult(dropped, outcome.reason === 'session_busy' ? 'busy' : 'failed');
+          break;
+        }
         const waiting = this.record(transitionWorkItem(admitted, 'queued', now, {
           error: outcome.reason,
           ...(admitted.run ? { run: admitted.run } : {}),

@@ -14,9 +14,13 @@ import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 export const supportDir = resolve(import.meta.dirname);
 export const fakeRuntimeEntry = join(supportDir, 'fake-runtime.mjs');
 export const fixtureCliDir = join(supportDir, 'fixture-cli');
-export const fixtureCliCommand = process.platform === 'win32'
-  ? join(fixtureCliDir, 'claude-fixture.cmd')
-  : join(fixtureCliDir, 'claude-fixture');
+/**
+ * The fixture is run as `node claude-fixture.mjs …` through the runtime's
+ * `launch.args`, never through a shell wrapper: cmd.exe would mangle the
+ * quoted `--mcp-config` JSON the runtime passes.
+ */
+export const fixtureCliCommand = process.execPath;
+export const fixtureCliLaunchArgs = [join(fixtureCliDir, 'claude-fixture.mjs')];
 
 export interface TempHome {
   botsHome: string;
@@ -61,6 +65,8 @@ export function openTestBot(options: TestBotOptions): { core: BotCore; root: str
       ...options.core?.runtime,
     },
     handoffPollMs: 100,
+    // Tests drive the reconcile tick by hand unless they say otherwise.
+    life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000, ...options.core?.life },
     ...options.core,
   });
   return { core, root };

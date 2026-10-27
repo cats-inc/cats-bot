@@ -24,7 +24,8 @@ last step, not the first.
 ### Unit tests
 
 - **Location**: `tests/core/profile.test.ts`, `store.test.ts`, `handoff.test.ts`,
-  `queue.test.ts`
+  `queue.test.ts`, `cron.test.ts`, `schedules.test.ts`, `heartbeat.test.ts`,
+  `tools.test.ts`
 - **Scope**: profile defaults and field-by-field normalisation, atomic writes,
   the instance lock and handoff files, journal rebuild, handoff-pack
   truncation, queue ordering and the session gate. Pure functions and the
@@ -32,27 +33,38 @@ last step, not the first.
 
 ### Core tests on the fake runtime
 
-- **Location**: `tests/core/bot.test.ts` with `tests/support/fake-runtime.mjs`
+- **Location**: `tests/core/bot.test.ts` and `tests/core/life.test.ts` with
+  `tests/support/fake-runtime.mjs`
 - **Scope**: `BotCore` through the real supervisor and client against a small
   HTTP stand-in for cats-runtime whose behaviour the message text scripts
   (`busy-once`, `noworker-once`, `exit-once`, `slow:<ms>`, `interrupt`,
   `error`, `tool`, `instructions?`). Covers streaming, retry on 409, resume on
   404, rebuild on 410, cancel, restart recovery (`interrupted`), stale
   attachments after a target change, the single-instance lock and handoff,
-  note deletion and runtime crash restarts with backoff.
+  note deletion and runtime crash restarts with backoff. The life tests drive
+  `core.tick()` by hand with an adjustable clock: home session creation and
+  revival after a crash, busy protection, quiet and spoken heartbeats, pause,
+  due schedules and coalescing, missed policies after downtime, approvals and
+  their timeout, idle notes.
 
 ### Integration tests
 
-- **Location**: `tests/integration/runtime.test.ts` with
-  `tests/support/fixture-cli/`
+- **Location**: `tests/integration/runtime.test.ts` and
+  `tests/integration/tools.test.ts` with `tests/support/fixture-cli/`
 - **Scope**: the real pinned `cats-runtime` bin from `node_modules`, started
   the way the bot starts it (`--startup-mode app-managed`, a reserved loopback
   port, private `CATS_RUNTIME_DIR`, discovery flags off), with the scripted
-  fixture CLI registered as `claude` (it speaks Claude Code's stream-json,
-  answers the runtime's `--version`/`--help` probes and honours `--resume`).
+  fixture CLI registered as `claude` through `command: node` plus
+  `launch.args` (it speaks Claude Code's stream-json, answers the runtime's
+  `--version`/`--help` probes, honours `--resume` and calls the bot's MCP
+  server from `--mcp-config` like the real CLI would).
   Covers session creation with persona instructions, streaming, tool events,
   cancel, resume with `--resume`, `history`, and that a discovered entry in
-  the private registry changes nothing for the bot (SPEC-001 A1).
+  the private registry changes nothing for the bot (SPEC-001 A1). The tools
+  test has the fixture call the bot's MCP server through the runtime's
+  `--mcp-config` (bearer token from the environment variable the runtime
+  sets): a schedule created by the model fires on the tick, `ask_owner` waits
+  for the owner, and a quiet heartbeat leaves no message (SPEC-001 A2).
 - Every test starts its own runtime in a temporary directory and stops it in
   `after`, so no child process outlives the test run.
 
@@ -68,7 +80,7 @@ last step, not the first.
 npm test                                      # everything
 node --test tests/architecture-boundaries.test.ts
 node --test "tests/core/*.test.ts"
-node --test tests/integration/runtime.test.ts   # about 20 s; starts the real runtime
+node --test "tests/integration/*.test.ts"       # about 45 s; starts the real runtime
 ```
 
 `npm run typecheck` type-checks tests as well as sources (`tsconfig.test.json`).

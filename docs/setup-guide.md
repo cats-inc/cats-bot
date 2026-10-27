@@ -45,7 +45,17 @@ node src/cli/main.ts run                 # foreground; Ctrl+C stops the runtime 
 node src/cli/main.ts say home hello      # to the running bot, or one turn when none runs
 node src/cli/main.ts status
 node src/cli/main.ts conversations
+node src/cli/main.ts schedule add home --in 30 --prompt "remind me to stretch"
+node src/cli/main.ts schedule add home --cron "0 9 * * 1-5" --tz Asia/Taipei --prompt "morning check-in"
+node src/cli/main.ts schedule list
+node src/cli/main.ts approve <workItemId> approve
+node src/cli/main.ts heartbeat pause
 ```
+
+While `run` holds the instance lock, every other command hands its request to
+the running bot through the handoff directory; without a running instance it
+applies to the data root directly (a schedule added that way fires on the next
+run).
 
 `init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
 the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.
@@ -56,11 +66,18 @@ Bot data lives under `~/.cats/bots/<bot-id>/` unless `CATS_BOTS_HOME` points
 elsewhere (`docs/services.md`). Never point a test or an experiment at your
 real `~/.cats`.
 
-For development without a real CLI, `CATS_BOTS_PROVIDER_COMMAND` points the
-provider at another executable (for example
-`tests/support/fixture-cli/claude-fixture.cmd`) and
-`CATS_BOTS_PROVIDER_PROJECTS_DIR` moves its discovery directory; both are read
-by `run` and `say` only.
+For development without a real CLI, three variables (read by `run`, `say` and
+`tick` only) point the provider at the scripted fixture instead:
+
+```bash
+CATS_BOTS_PROVIDER_COMMAND=node                      # the interpreter, spawned directly
+CATS_BOTS_PROVIDER_LAUNCH_ARGS=tests/support/fixture-cli/claude-fixture.mjs   # one argument per line
+CATS_BOTS_PROVIDER_PROJECTS_DIR=/tmp/fixture-projects # the discovery directory it would scan
+```
+
+The fixture is launched through the runtime's `launch.args`, never through a
+`.cmd` wrapper: on Windows that wrapper would go through cmd.exe, which mangles
+the quoted `--mcp-config` JSON the runtime passes to the CLI.
 
 ## Common Issues
 

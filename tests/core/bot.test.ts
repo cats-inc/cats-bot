@@ -156,20 +156,24 @@ test('a restart marks running work interrupted and never reruns it (FR-28)', asy
   const queued = createWorkItem({ kind: 'owner_message', source: 'owner', conversationId: first.conversationId, prompt: 'still queued' }, new Date());
   appendJournal(paths, { type: 'work', at: new Date().toISOString(), item: queued });
 
-  const reopened = BotCore.open({ root, log: () => {}, runtime: { runtimeEntry: (await import('../support/harness.ts')).fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000 }, ...fastRetries });
+  const reopened = BotCore.open({ root, log: () => {}, runtime: { runtimeEntry: (await import('../support/harness.ts')).fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000 }, life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 }, ...fastRetries });
   const done = waitForEvent(reopened, (event) => event.type === 'turn.completed' && event.workItem.id === queued.id);
+  const recovered = waitForEvent(reopened, (event) => event.type === 'work.awaitingOwner' && event.workItem.id === stale.id);
   await reopened.start();
   try {
     const finished = await done;
     assert.equal(finished.type === 'turn.completed' && finished.workItem.state, 'completed', 'queued work survives a restart');
-    assert.equal(reopened.getWorkItem(stale.id)?.state, 'interrupted');
+    // FR-28: the new runtime has no evidence of the lost turn, so the owner decides; it is never rerun.
+    await recovered;
+    assert.equal(reopened.getWorkItem(stale.id)?.state, 'awaiting_owner');
     const journal = readJournal(paths);
-    assert.equal(journal.workItems.get(stale.id)?.state, 'interrupted');
+    assert.equal(journal.workItems.get(stale.id)?.state, 'awaiting_owner');
+    assert.ok(journal.entries.some((entry) => entry.type === 'work' && entry.item.id === stale.id && entry.item.state === 'interrupted'), 'it passed through interrupted first');
     const state = await fetchFakeState(reopened);
     assert.ok(!state.calls.some((call) => call.op === 'message' && call.message === 'lost turn'), 'the interrupted turn was not replayed');
     const home1 = (await reopened.listConversations())[0]!;
     assert.equal(home1.attachment.state, 'ready');
-    const texts = reopened.transcript('home').map((entry) => entry.text);
+    const texts = reopened.transcript('home').filter((entry) => entry.kind !== 'system').map((entry) => entry.text);
     assert.deepEqual(texts, ['before restart', 'echo: before restart', 'echo: still queued']);
   } finally {
     await reopened.stop();
