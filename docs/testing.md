@@ -25,7 +25,8 @@ last step, not the first.
 
 - **Location**: `tests/core/profile.test.ts`, `store.test.ts`, `handoff.test.ts`,
   `queue.test.ts`, `cron.test.ts`, `schedules.test.ts`, `heartbeat.test.ts`,
-  `tools.test.ts`
+  `tools.test.ts`, `secrets.test.ts`, `telegram.test.ts` (against an
+  in-process fake Telegram Bot API)
 - **Scope**: profile defaults and field-by-field normalisation, atomic writes,
   the instance lock and handoff files, journal rebuild, handoff-pack
   truncation, queue ordering and the session gate. Pure functions and the
@@ -49,8 +50,8 @@ last step, not the first.
 
 ### Integration tests
 
-- **Location**: `tests/integration/runtime.test.ts` and
-  `tests/integration/tools.test.ts` with `tests/support/fixture-cli/`
+- **Location**: `tests/integration/runtime.test.ts`, `tools.test.ts` and
+  `multinote.test.ts` with `tests/support/fixture-cli/`
 - **Scope**: the real pinned `cats-runtime` bin from `node_modules`, started
   the way the bot starts it (`--startup-mode app-managed`, a reserved loopback
   port, private `CATS_RUNTIME_DIR`, discovery flags off), with the scripted
@@ -64,7 +65,10 @@ last step, not the first.
   test has the fixture call the bot's MCP server through the runtime's
   `--mcp-config` (bearer token from the environment variable the runtime
   sets): a schedule created by the model fires on the tick, `ask_owner` waits
-  for the owner, and a quiet heartbeat leaves no message (SPEC-001 A2).
+  for the owner, and a quiet heartbeat leaves no message (SPEC-001 A2). The
+  multi-note test shows a secret told in one note is not recalled from
+  another and that a model change replaces the session instead of resuming
+  it (SPEC-001 A4).
 - Every test starts its own runtime in a temporary directory and stops it in
   `after`, so no child process outlives the test run.
 

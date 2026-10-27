@@ -9,6 +9,7 @@ import type {
   ExecutionTarget,
   HeartbeatPolicy,
   PermissionMode,
+  TelegramPolicy,
   WorkspaceAccess,
 } from '../types.ts';
 
@@ -22,6 +23,8 @@ export const HEARTBEAT_DEFAULTS: HeartbeatPolicy = {
 };
 
 export const IDLE_SLEEP_MINUTES_DEFAULT = 15;
+
+export const TELEGRAM_DEFAULTS: TelegramPolicy = { enabled: false, ownerChatId: null };
 
 export const PROFILE_SCHEMA_VERSION = 1 as const;
 
@@ -55,7 +58,19 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     },
     heartbeat: { ...HEARTBEAT_DEFAULTS },
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
+    telegram: { ...TELEGRAM_DEFAULTS },
     updatedAt: now,
+  };
+}
+
+function normalizeTelegram(value: unknown, fallback: TelegramPolicy): TelegramPolicy {
+  if (!isRecord(value)) return { ...fallback };
+  const ownerChatId = value.ownerChatId;
+  return {
+    enabled: booleanOr(value.enabled, fallback.enabled),
+    ownerChatId: typeof ownerChatId === 'number' && Number.isSafeInteger(ownerChatId)
+      ? ownerChatId
+      : ownerChatId === null ? null : fallback.ownerChatId,
   };
 }
 
@@ -139,6 +154,7 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     permissions: normalizePermissions(raw.permissions, fallback.permissions),
     heartbeat: normalizeHeartbeat(raw.heartbeat, fallback.heartbeat),
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
+    telegram: normalizeTelegram(raw.telegram, fallback.telegram),
     updatedAt: stringOr(raw.updatedAt, fallback.updatedAt),
   };
 }
@@ -188,6 +204,9 @@ export function applyProfilePatch(
       ? normalizeHeartbeat({ ...profile.heartbeat, ...patch.heartbeat }, profile.heartbeat)
       : profile.heartbeat,
     idleSleepMinutes: patch.idleSleepMinutes ?? profile.idleSleepMinutes,
+    telegram: patch.telegram
+      ? normalizeTelegram({ ...profile.telegram, ...patch.telegram }, profile.telegram)
+      : profile.telegram,
     updatedAt: now.toISOString(),
   };
   return {

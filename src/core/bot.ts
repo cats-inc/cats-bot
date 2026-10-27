@@ -17,6 +17,8 @@ import {
 import { WorkQueue } from './queue/queue.ts';
 import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turnRunner.ts';
 import { createWorkItem, isTerminalWorkState, transitionWorkItem } from './queue/workItems.ts';
+import { FileSecretStore, SECRET_TELEGRAM_TOKEN, type SecretStore } from './secrets.ts';
+import { TelegramTransport, type TelegramStatus } from './transports/telegram.ts';
 import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
@@ -82,6 +84,10 @@ export interface BotCoreOptions {
   life?: BotLifeOptions;
   /** SPEC-001 FR-24: set false to run without the bot tool server (tests). */
   tools?: boolean;
+  /** Where secrets such as the Telegram token live; hosts with OS encryption pass a cipher-backed store. */
+  secrets?: SecretStore;
+  /** SPEC-001 FR-26: Telegram long polling knobs; tests point `apiBaseUrl` at a fake API. */
+  telegram?: { apiBaseUrl?: string; fetch?: typeof fetch; pollTimeoutSeconds?: number };
 }
 
 export interface BotStatus {
@@ -95,6 +101,7 @@ export interface BotStatus {
   heartbeat: { enabled: boolean; nextAt: string | null };
   lastTickAt: string | null;
   lock: InstanceLock | null;
+  telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null };
 }
 
 export class BotNotInitializedError extends Error {
@@ -165,6 +172,8 @@ export class BotCore implements BotHostApi {
   private readonly runner: TurnRunner;
   private readonly toolServer: BotToolServer | null;
   private readonly life: LifeLoop;
+  private readonly secrets: SecretStore;
+  private telegram: TelegramTransport | null = null;
   private supervisor: RuntimeSupervisor | null;
   private readonly views = new Set<string>();
   private readonly timers = new Set<NodeJS.Timeout>();
@@ -192,6 +201,7 @@ export class BotCore implements BotHostApi {
     // Read-only hosts (status, conversations, schedule list) see the records without starting anything.
     this.conversations.load();
     this.loadJournal();
+    this.secrets = options.secrets ?? new FileSecretStore(this.paths.root, { warn: (line) => this.log(`warn ${line}`) });
     this.supervisor = options.runtimeClient ? null : this.createSupervisor();
     this.toolServer = options.tools === false
       ? null
@@ -395,7 +405,66 @@ export class BotCore implements BotHostApi {
     this.handoffTimer = setInterval(() => this.drainHandoffs(), pollMs);
     this.handoffTimer.unref?.();
     this.life.start();
+    this.startTelegram();
     this.pump();
+  }
+
+  // ---- Telegram (SPEC-001 FR-19, FR-26) ---------------------------------
+
+  private startTelegram(): void {
+    if (this.telegram || this.stopped || !this.started) return;
+    if (!this.profile.telegram.enabled) return;
+    const token = this.secrets.get(SECRET_TELEGRAM_TOKEN);
+    if (!token) {
+      this.log('telegram enabled but no token is stored; polling not started');
+      return;
+    }
+    const transport = new TelegramTransport({
+      token,
+      botName: this.profile.name,
+      ownerChatId: this.profile.telegram.ownerChatId,
+      ...(this.options.telegram?.apiBaseUrl ? { apiBaseUrl: this.options.telegram.apiBaseUrl } : {}),
+      ...(this.options.telegram?.fetch ? { fetch: this.options.telegram.fetch } : {}),
+      ...(this.options.telegram?.pollTimeoutSeconds !== undefined
+        ? { pollTimeoutSeconds: this.options.telegram.pollTimeoutSeconds }
+        : {}),
+      now: this.now,
+      log: this.log,
+      onOwnerBound: (chatId) => {
+        this.profile = { ...this.profile, telegram: { ...this.profile.telegram, ownerChatId: chatId }, updatedAt: this.now().toISOString() };
+        saveProfile(this.paths, this.profile);
+        this.log('telegram owner chat bound and saved');
+      },
+      onOwnerMessage: async (message) => {
+        await this.sendOwnerMessage('home', message.text, 'telegram');
+      },
+    });
+    this.telegram = transport;
+    transport.start();
+  }
+
+  private async stopTelegram(): Promise<void> {
+    const transport = this.telegram;
+    this.telegram = null;
+    if (transport) await transport.stop();
+  }
+
+  /** Stores (or clears) the token in the secret store; polling follows the profile flag. */
+  async setTelegramToken(token: string | null): Promise<void> {
+    if (token && token.trim()) this.secrets.set(SECRET_TELEGRAM_TOKEN, token.trim());
+    else this.secrets.delete(SECRET_TELEGRAM_TOKEN);
+    this.log(`telegram token ${token ? 'stored' : 'cleared'} (${this.secrets.protection()} protection)`);
+    await this.stopTelegram();
+    this.startTelegram();
+  }
+
+  telegramStatus(): { enabled: boolean; tokenStored: boolean; protection: 'os' | 'file'; transport: TelegramStatus | null } {
+    return {
+      enabled: this.profile.telegram.enabled,
+      tokenStored: this.secrets.has(SECRET_TELEGRAM_TOKEN),
+      protection: this.secrets.protection(),
+      transport: this.telegram?.status() ?? null,
+    };
   }
 
   /** SPEC-001 FR-6: start the runtime, or wait for the scheduled attempt with backoff. */
@@ -507,6 +576,14 @@ export class BotCore implements BotHostApi {
       case 'heartbeat':
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ heartbeat: { enabled: payload.enabled } });
         break;
+      case 'telegram':
+        // The CLI wrote the token to the secret store itself; the core only re-reads it.
+        if (typeof payload.enabled === 'boolean') await this.updateProfile({ telegram: { enabled: payload.enabled } });
+        if (payload.reloadToken === true) {
+          await this.stopTelegram();
+          this.startTelegram();
+        }
+        break;
       default:
         break;
     }
@@ -517,6 +594,7 @@ export class BotCore implements BotHostApi {
     this.stopped = true;
     this.log('core stop');
     this.life.stop();
+    await this.stopTelegram();
     if (this.handoffTimer) clearInterval(this.handoffTimer);
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
@@ -547,6 +625,11 @@ export class BotCore implements BotHostApi {
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
       lastTickAt: this.readLifeState()?.lastTickAt ?? null,
       lock: readInstanceLock(this.paths),
+      telegram: {
+        enabled: this.profile.telegram.enabled,
+        polling: this.telegram?.status().polling ?? false,
+        ownerChatId: this.profile.telegram.ownerChatId,
+      },
     };
   }
 
@@ -781,6 +864,10 @@ export class BotCore implements BotHostApi {
       this.life.resetHeartbeatSchedule();
       this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'}; next interval is re-drawn`);
     }
+    if (patch.telegram) {
+      await this.stopTelegram();
+      this.startTelegram();
+    }
     return structuredClone(this.profile);
   }
 
@@ -832,11 +919,11 @@ export class BotCore implements BotHostApi {
     return [...this.views];
   }
 
-  async sendOwnerMessage(conversationId: string, text: string): Promise<WorkItem> {
+  async sendOwnerMessage(conversationId: string, text: string, source: 'owner' | 'telegram' = 'owner'): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
     const prompt = text.trim();
     if (!prompt) throw new Error('An owner message needs text');
-    const item = createWorkItem({ kind: 'owner_message', source: 'owner', conversationId: id, prompt }, this.now());
+    const item = createWorkItem({ kind: 'owner_message', source, conversationId: id, prompt }, this.now());
     this.conversations.append(id, { kind: 'owner', origin: 'owner', text: prompt, workItemId: item.id });
     this.record(item);
     this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
@@ -1001,6 +1088,10 @@ export class BotCore implements BotHostApi {
     const conversation = this.conversations.get(item.conversationId);
     if (conversation) {
       this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversation.id) });
+      // FR-26: the home conversation is mirrored to Telegram, replies in order (FR-19).
+      if (this.telegram && conversation.role === 'home' && item.state === 'completed' && item.result?.text) {
+        void this.telegram.send(item.result.text);
+      }
     }
     this.bus.emit({ type: 'turn.completed', conversationId: item.conversationId, workItem: item });
   }

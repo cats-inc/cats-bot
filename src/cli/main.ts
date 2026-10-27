@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
 import { readProviderOverrides } from '../core/hostEnv.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
+import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { botPathsFor, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
@@ -72,6 +73,8 @@ Commands:
   heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
   tick                                   run one reconcile pass (only when no instance is running)
   quit                                   ask the running instance (CLI or shell) to stop
+  telegram set-token <token> | clear-token | enable | disable | status
+                                         bind the bot to a Telegram bot token (long polling)
   open [conversation|home]               ask the running shell to show a note window
 
 Every command except init and run takes --id <id>. Bots live under CATS_BOTS_HOME
@@ -398,6 +401,43 @@ async function commandOpen(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
   return 0;
 }
 
+async function commandTelegram(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const [action, value] = parsed.positional;
+  const target = resolveTarget(parsed, env);
+  if (action === 'set-token' || action === 'clear-token') {
+    if (action === 'set-token' && !value) {
+      process.stderr.write('telegram set-token needs the token\n');
+      return 2;
+    }
+    // The CLI has no OS credential facility: the token is stored as a file with owner-only
+    // permissions where the platform supports them. The shell stores it encrypted.
+    const store = new FileSecretStore(target.root, { warn: (line) => process.stderr.write(`${line}\n`) });
+    if (action === 'set-token') store.set(SECRET_TELEGRAM_TOKEN, value!);
+    else store.delete(SECRET_TELEGRAM_TOKEN);
+    process.stdout.write(`Telegram token ${action === 'set-token' ? 'stored' : 'cleared'} (file protection; the shell re-stores it encrypted).\n`);
+    if (target.running) handOff(target, { kind: 'telegram', payload: { reloadToken: true } });
+    return 0;
+  }
+  if (action === 'enable' || action === 'disable') {
+    const enabled = action === 'enable';
+    if (target.running) {
+      handOff(target, { kind: 'telegram', payload: { enabled } });
+      return 0;
+    }
+    const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+    await core.updateProfile({ telegram: { enabled } });
+    process.stdout.write(`Telegram ${enabled ? 'enabled' : 'disabled'}; it polls while the bot runs.\n`);
+    return 0;
+  }
+  if (action === 'status') {
+    const core = BotCore.open({ root: target.root, log: () => {}, tools: false });
+    process.stdout.write(`${JSON.stringify(core.telegramStatus(), null, 2)}\n`);
+    return 0;
+  }
+  process.stderr.write('telegram needs set-token, clear-token, enable, disable or status\n');
+  return 2;
+}
+
 async function commandQuit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
   const target = resolveTarget(parsed, env);
   if (!target.running) {
@@ -451,6 +491,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandQuit(parsed, env);
       case 'open':
         return await commandOpen(parsed, env);
+      case 'telegram':
+        return await commandTelegram(parsed, env);
       case undefined:
       case 'help':
       case '--help':

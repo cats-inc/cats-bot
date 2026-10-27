@@ -68,7 +68,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
    `conversations/<conversationId>.json`（對話中繼資料與 attachment）、
    `transcripts/<conversationId>.jsonl`、`journal.jsonl`（工作項、排程與狀態轉移）、
    `runtime/`（作為 `CATS_RUNTIME_DIR`）、`logs/`；另有 core 的 `life.json`（上次 tick 時間）、`instance.lock.json`、
-   `handoff/`，以及殼自己的 `shell-state.json`（便箋位置、大小、always-on-top、開機啟動）。
+   `handoff/`、`secrets.json`（Telegram token 等，見 Open Questions），以及殼自己的 `shell-state.json`（便箋位置、大小、
+   always-on-top、開機啟動）。
 3. FR-3：同一資料根目錄同一時間只有一個寫入者，以鎖檔保證；第二個同 id 實例把啟動參數交給
    第一個並退出。所有寫入以暫存檔加 rename 完成；讀取絕不寫回。
 4. FR-4：讀取時缺少或不合法的欄位逐欄套預設值，不改寫既有檔案；檔案損壞時回報錯誤並保留原檔，
@@ -283,11 +284,14 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 
 ## Open Questions
 
-- [ ] Telegram token 的儲存：OS 憑證庫的跨平台做法，以及沒有憑證庫時的退回方式。
+- [x] Telegram token 的儲存（2026-10-27）：存在資料根目錄的 `secrets.json`；Electron 殼以 `safeStorage`（Windows DPAPI、
+      macOS Keychain、Linux secret service）加密後存入，無頭 CLI 退回明文檔案（POSIX 設 0600）並在指令輸出明示；
+      以一種方式存入的值另一種 host 讀不到時回報，不猜。
 - [ ] 作息：是否沿用 ADR-127 的 bedtime / wake window，還是只有閒置政策與手動暫停。
 - [ ] 共用 bot 記憶的挑選與呈現（事實、承諾、open loops）。
 - [ ] 同一 provider 換 model 時是否能不換 session（取決於各 CLI 是否支援每回合指定 model）。
-- [ ] home 對話是否預設鏡像到 Telegram，或只有明確綁定的對話才鏡像。
+- [x] home 對話預設鏡像到 Telegram（2026-10-27）：啟用時 home 的每則完成回覆（含心跳開口與排程結果）依序送到 owner 的
+      chat；便箋對話不鏡像。
 - [ ] 多 bot 共用 runtime 的評估門檻。
 - [ ] 第五階段的殼：Electron 加原生 helper，或 fleet 的宿主加 core 子程序。
 - [ ] file-backed discovery 的成本：若監看使用者整個 session 目錄不可接受，向 runtime 提「關閉

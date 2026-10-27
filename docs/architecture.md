@@ -138,9 +138,22 @@ through `BotHostApi`.
   and `assets/renderer/` the note page, which keeps no durable state. The
   renderer never sees the runtime's URL or key.
 
-### Planned (PLAN-001 Phase 4)
+### `src/core/transports/telegram.ts` and `src/core/secrets.ts`
 
-- Multi-note acceptance, global retarget acceptance, Telegram long polling.
+- **Purpose**: the optional Telegram binding (FR-19, FR-26) and where its
+  token lives.
+- **Responsibilities**: one long-polling `getUpdates` consumer per bot with
+  exponential backoff and 409-conflict handling; the first private chat that
+  writes becomes the owner and is persisted in the profile; inbound text
+  becomes an owner message in the home conversation; every completed home
+  reply is mirrored back in order, split at 4,000 characters. The token is
+  kept in `secrets.json` by `FileSecretStore`, encrypted through Electron's
+  `safeStorage` when the shell runs, as a file otherwise. Loop shape adapted
+  from cats-platform's Telegram polling with attribution.
+
+### Later (PLAN-001 Phase 5, separate ADR)
+
+- Desktop presence: wallpaper or desktop layer, character, native hosts.
 
 ## Data Flow
 

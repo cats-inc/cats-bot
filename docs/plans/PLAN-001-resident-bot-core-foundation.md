@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 到 3 已完成，Phase 4 進行中 |
+| **Status** | Phases 0–4 done — owner 於 2026-10-27 指示開始實作，同日完成；Phase 5 依計畫不排程（需要新的 ADR） |
 | **Owner** | Claude |
 | **Assigned To** | Claude |
 | **Reviewer** | Owner |
@@ -104,10 +104,10 @@
 
 ### Phase 4: 多便箋、全域變更與 Telegram（驗收 A4、A5）
 
-- [ ] Task 4.1：多張便箋對應多個對話；新建與刪除對話；非 home 的閒置入睡與原生 resume。
-- [ ] Task 4.2：全域 `executionTarget` 變更：`configRevision`、stale attachment 不 resume、對話內告知、
+- [x] Task 4.1：多張便箋對應多個對話；新建與刪除對話；非 home 的閒置入睡與原生 resume。
+- [x] Task 4.2：全域 `executionTarget` 變更：`configRevision`、stale attachment 不 resume、對話內告知、
       暗號隔離測試（一張便箋的暗號另一張問不到；換模型後舊 session 不被 resume）。
-- [ ] Task 4.3：可選的 Telegram long polling：bot 自己的 token、單一 `getUpdates` 消費者、入站成為
+- [x] Task 4.3：可選的 Telegram long polling：bot 自己的 token、單一 `getUpdates` 消費者、入站成為
       home 的主人訊息、回覆鏡像且分段依序；token 儲存依 SPEC-001 Open Questions 的決定。
 
 **Deliverables**：A4 通過；啟用 Telegram 時 A5 通過。
@@ -190,6 +190,7 @@
 | 2026-10-27 | Phase 1 完成：`src/core`（profile、store、runtime supervisor 與 client、conversations 與承接包、queue 與 turn runner、`BotCore`）、`src/cli/main.ts`（`init`、`run`、`say`、`status`、`conversations`）；測試 30 個：單元、假 runtime 的 core 端對端、真 runtime 0.6.1 加 fixture CLI 的整合測試（建立、串流、取消、resume、history、discovered 項目不影響列表）。實測修正：runtime 0.6.1 拒絕 `--port 0`，core 改為啟動前自己預留 loopback port（SPEC-001 FR-5）；runtime 意外退出的退避重啟已先在 core 內實作（原列於 Task 2.1），對帳 tick 到 Phase 2 再接上；FR-28 以 `history`／`observe` 對帳證據留給 Task 2.5，Phase 1 只把殘留的 `running` 標為 `interrupted` 且不重跑 |
 | 2026-10-27 | Phase 2 完成：`src/core/life`（`loop.ts` 對帳 tick、`schedules.ts` 與 `cron.ts` 的 IANA 時區 cron、`heartbeat.ts`、`recovery.ts`）、`src/core/tools`（Streamable HTTP 的 session MCP server 與 `schedule_create`／`schedule_list`／`schedule_cancel`／`ask_owner`）、`src/core/conversations/binder.ts`（turn runner 與 tick 共用的 session 綁定）、CLI 加 `schedule add|list|cancel`、`approve`、`heartbeat pause|resume`、`tick`；測試：cron、schedules、heartbeat、recovery、tools 單元測試，假 runtime 的 life 測試（tick 建立與復活 home、busy 保護、安靜與開口的心跳、暫停、到期排程與 coalesce、停機後的錯過政策與一次補心跳、ask_owner 與逾時、便箋閒置入睡），真 runtime 的 fixture CLI 經 `--mcp-config` 呼叫 bot 工具伺服器建立排程並到點執行、`ask_owner`、心跳 `[quiet]`。設計說明：承接包只在建立或替換 session 時以 instructions 送入，心跳 prompt 本身只帶時間事實與 `[quiet]` 規則；session `busy` 時的心跳由 loop 四分鐘後重排，而不是留在佇列 |
 | 2026-10-27 | Phase 3 完成：`src/shell/electron`（`main.ts` 在主程序掛載 core、每個 bot id 一把單一實例鎖（以 per-bot userData 區分）、`assets/preload.cjs` 以 contextBridge 暴露 `BotHostApi` 命令與事件、`windows.ts` 無邊框便箋視窗（關閉即藏、位置與 always-on-top 存 `shell-state.json`）、`tray.ts`／`trayMenu.ts`（開 home、列便箋、新便箋、暫停心跳、開機啟動、Quit）、`assets/renderer/` 便箋頁面）；CLI 加 `open`、`quit`（handoff 給執行中的殼）；electron-builder 設定（`asar: false`，Windows NSIS 與 portable）；量測表填入 fixture provider 的實測數字（見 SPEC-001）。未做：乾淨機器上的安裝驗證（本機只跑過 `--dir` 與 installer 的建置與啟動）、顯示器遺失情境；Electron 綁 41.2.0（與 platform 相同，本機已有快取） |
+| 2026-10-27 | Phase 4 完成：多便箋與閒置入睡在 Phase 2 已有，本階段以真 runtime 驗收 A4（一張便箋記住的暗號另一張問不到；改 model 後舊 attachment 標 stale、不 resume，下一回合在新 session 用新 model，進行中的回合以接納時的設定收尾）；`src/core/transports/telegram.ts` long polling（單一 `getUpdates` 消費者、第一個私訊的 chat 成為 owner 並存入 profile、入站成為 home 的主人訊息工作項、home 的回覆依序鏡像並以 4,000 字元分段、409 衝突退避）；`src/core/secrets.ts`（token 存 `secrets.json`：殼用 Electron `safeStorage` 加密，CLI 退回檔案並明示）；CLI `telegram set-token|clear-token|enable|disable|status`。Open Questions 決定：token 儲存走 safeStorage 加檔案退回；home 預設鏡像到 Telegram |
 
 ---
 

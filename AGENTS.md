@@ -23,7 +23,7 @@
   implementation; the two notes under `docs/research/` are their evidence. Does not
   import `@cats-inc/cats-platform`.
 - Entry points: `src/cli/main.ts` is the headless `cats-bot` CLI (`init`, `run`, `say`,
-  `status`, `conversations`, `schedule`, `approve`, `heartbeat`, `tick`; run it as
+  `status`, `conversations`, `schedule`, `approve`, `heartbeat`, `tick`, `open`, `quit`, `telegram`; run it as
   `node src/cli/main.ts …` or `npm run bot -- …` after a build). `src/core/bot.ts` exports `BotCore`, the `BotHostApi` every host uses.
   `src/shell/electron/main.ts` is the Electron tray and sticky-note shell (`npm run build && npm run shell`; packaging with
   `npm run dist:win`). Electron is pinned to the version cats-platform uses; `allowScripts` in `package.json` lets npm run its
