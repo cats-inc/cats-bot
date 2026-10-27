@@ -71,11 +71,7 @@ export function entryMeta(entry: TranscriptEntry, formatTime = (at: Date) => at.
   return `${unprompted}${formatTime(new Date(entry.at))}`;
 }
 
-export function errorText(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  // Electron prefixes errors thrown in the main process.
-  return message.replace(/^Error invoking remote method '[^']+': (?:Error: )?/u, '');
-}
+export { errorText } from '../errors.ts';
 
 // ---- SPEC-003 FR-4, FR-5: tool cards and the owner's decisions -------------------
 

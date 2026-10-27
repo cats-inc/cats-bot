@@ -30,6 +30,10 @@ export default defineConfig({
         settings: `${root}settings.html`,
         floating: `${root}floating.html`,
       },
+      output: {
+        // React and markdown in one chunk the note and settings share; the floating cat loads none of it.
+        manualChunks: (id) => (id.includes('node_modules') ? 'vendor' : undefined),
+      },
     },
   },
 });
