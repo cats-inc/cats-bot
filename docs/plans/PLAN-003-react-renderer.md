@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-28 要求切 slice 實作並交付安裝包 |
+| **Status** | Done — 2026-10-28，四個 slice 於 #23–#26 合併 |
 | **Owner** | Claude |
 | **Related spec** | [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) |
 | **Related decision** | [ADR-003](../decisions/003-build-the-renderer-with-react-and-vite-like-cats-desktop.md) |
@@ -42,7 +42,7 @@
 
 - [x] Bot、Notes、Life、Telegram、App 分頁與首次啟動頁以 React 重寫，行為同 SPEC-002。
 - [x] model 清單的請求序號邏輯抽成可測試的模組並補測試（`settingsLogic.ts`）。
-- [ ] 驗收後從 main 建安裝檔交給 owner。
+- 合併後從 main 建安裝檔交給 owner（本機 `release/`，不提交）。
 
 ## Testing Strategy
 
