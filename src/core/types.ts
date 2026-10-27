@@ -213,7 +213,7 @@ export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 export interface HandoffMessage {
   id: string;
   at: string;
-  kind: 'open' | 'say' | 'args' | 'schedule_create' | 'schedule_cancel' | 'approve' | 'heartbeat';
+  kind: 'open' | 'say' | 'args' | 'schedule_create' | 'schedule_cancel' | 'approve' | 'heartbeat' | 'quit';
   conversationId?: string;
   text?: string;
   args?: string[];

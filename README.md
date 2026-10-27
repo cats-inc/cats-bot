@@ -5,13 +5,14 @@ wrapping an agent CLI through `cats-runtime`.
 
 ## Current status
 
-PLAN-001 Phases 0 to 2 are in place: the headless bot core and the `cats-bot` CLI run a
+PLAN-001 Phases 0 to 3 are in place: the headless bot core and the `cats-bot` CLI run a
 provider CLI through a private cats-runtime child, with conversations, transcripts, a work
 journal, cancel, resume and restart recovery, and the bot stays alive on its own: a reconcile
 tick keeps the home session attached, durable schedules (one-time and cron in an IANA zone)
 fire into work items, hidden heartbeat turns let the bot decide whether to speak, and the
-bot's own MCP tool server lets the model create schedules and ask the owner. The tray and
-sticky-note shell (Phase 3) is next. Nothing is released.
+bot's own MCP tool server lets the model create schedules and ask the owner. The first
+shell is an Electron tray with sticky-note windows that mounts the same core; multi-note
+acceptance and Telegram (Phase 4) are next. Nothing is released.
 
 - `npm ci && npm run typecheck && npm test && npm run build` passes on Windows and Linux
   (CI). The suite includes an integration test that starts the real pinned cats-runtime with a
@@ -61,6 +62,7 @@ Decided in ADR-001:
 | `docs/decisions/`, `docs/specs/`, `docs/plans/` | ADR-001, SPEC-001 and PLAN-001 (proposed and draft) plus the templates |
 | `src/core/` | The bot core: profile, store, runtime supervisor and client, conversations, queue, `BotCore` |
 | `src/cli/` | The headless `cats-bot` entry point |
+| `src/shell/electron/`, `assets/` | The Electron tray and sticky-note shell, its preload bridge and renderer page |
 | `tests/` | Boundary, unit, fake-runtime core and real-runtime integration tests |
 | `scripts/` | Skill sync and merged-branch sweep helpers from the bootstrap |
 
@@ -81,6 +83,7 @@ node src/cli/main.ts run            # keeps the bot in the foreground and prints
 node src/cli/main.ts say home hello # hands the message to the running bot, or runs one turn
 node src/cli/main.ts schedule add home --in 30 --prompt "remind me to stretch"
 node src/cli/main.ts heartbeat pause
+npm run shell -- --provider claude --name Mochi   # the tray and sticky-note shell
 ```
 
 See `docs/setup-guide.md` and `docs/testing.md`. The `@cats-inc/cats-runtime` dependency is

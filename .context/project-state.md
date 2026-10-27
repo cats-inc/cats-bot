@@ -5,11 +5,11 @@
 
 ## Current Focus
 
-- **Active Phase**: PLAN-001 Phase 3 (minimal Electron shell: tray, sticky notes, packaging, measurements)
-- **Current Task**: Phases 0 to 2 landed 2026-10-27; Phase 3 next
+- **Active Phase**: PLAN-001 Phase 4 (multi-note acceptance, global retarget acceptance, Telegram)
+- **Current Task**: Phases 0 to 3 landed 2026-10-27; Phase 4 next
 - **Pending Actions**:
-  - [ ] PLAN-001 Phase 3 tasks 3.1 to 3.5
-  - [ ] PLAN-001 Phase 4 multi-note, global retarget acceptance, Telegram
+  - [ ] PLAN-001 Phase 4 tasks 4.1 to 4.3
+  - [ ] Clean-machine check of the Windows installer and portable build
 
 ## Memory Bank
 
@@ -17,7 +17,7 @@
 |-----|-------|
 | **User Preference** | Slices land as PRs with auto-merge; replies in Traditional Chinese |
 | **Important Context** | cats-runtime 0.6.1 rejects `--port 0` (core reserves a port) and accepts only `transport: http` MCP servers |
-| **Last Major Event** | PLAN-001 Phase 2 (alive mechanisms and bot tool server) completed on 2026-10-27 |
+| **Last Major Event** | PLAN-001 Phase 3 (Electron tray and sticky-note shell, measurements) completed on 2026-10-27 |
 
 ## Active Agents
 

@@ -3,6 +3,7 @@ import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
+import { readProviderOverrides } from '../core/hostEnv.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { botPathsFor, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
@@ -70,6 +71,8 @@ Commands:
   approve <workItemId> <approve|deny>    answer a question the bot asked
   heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
   tick                                   run one reconcile pass (only when no instance is running)
+  quit                                   ask the running instance (CLI or shell) to stop
+  open [conversation|home]               ask the running shell to show a note window
 
 Every command except init and run takes --id <id>. Bots live under CATS_BOTS_HOME
 (default ~/.cats/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -92,24 +95,9 @@ function resolveBotId(flags: ParsedArgs['flags'], env: NodeJS.ProcessEnv): strin
   throw new Error(`Several bots exist (${ids.join(', ')}); pass --id or set CATS_BOT_ID`);
 }
 
-/**
- * Development overrides: point the provider at another command (for example
- * the scripted fixture CLI) and its discovery directory, without editing the
- * generated providers.yaml. Production ignores both.
- */
-function runtimeOverrides(env: NodeJS.ProcessEnv): {
-  providerCommand?: string;
-  providerLaunchArgs?: string[];
-  instanceExtras?: Record<string, string>;
-} {
-  const command = env.CATS_BOTS_PROVIDER_COMMAND?.trim();
-  const launchArgs = env.CATS_BOTS_PROVIDER_LAUNCH_ARGS?.trim();
-  const projectsDir = env.CATS_BOTS_PROVIDER_PROJECTS_DIR?.trim();
-  return {
-    ...(command ? { providerCommand: command } : {}),
-    ...(launchArgs ? { providerLaunchArgs: launchArgs.split('\n').map((arg) => arg.trim()).filter(Boolean) } : {}),
-    ...(projectsDir ? { instanceExtras: { projects_dir: projectsDir } } : {}),
-  };
+/** Development overrides shared with the shell: see `src/core/hostEnv.ts`. */
+function runtimeOverrides(env: NodeJS.ProcessEnv) {
+  return readProviderOverrides(env);
 }
 
 function describeEvent(event: BotHostEvent): string | null {
@@ -203,13 +191,16 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   core.subscribe((event) => printEvent(event, json));
   await core.start();
   const status = core.status();
-  if (!json) process.stdout.write(`cats-bot ${status.id} running (pid ${process.pid}); press Ctrl+C to stop\n`);
+  if (!json) process.stdout.write(`cats-bot ${status.id} running (pid ${process.pid}); press Ctrl+C or run cats-bot quit to stop\n`);
   await new Promise<void>((resolve) => {
     const stop = () => {
       void core.stop().finally(resolve);
     };
     process.once('SIGINT', stop);
     process.once('SIGTERM', stop);
+    core.subscribe((event) => {
+      if (event.type === 'host.handoff' && event.message.kind === 'quit') stop();
+    });
   });
   return 0;
 }
@@ -396,6 +387,27 @@ async function commandHeartbeat(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Pro
   return 0;
 }
 
+async function commandOpen(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const conversation = parsed.positional[0] ?? 'home';
+  const target = resolveTarget(parsed, env);
+  if (!target.running) {
+    process.stderr.write('No running instance; start the shell or cats-bot run first.\n');
+    return 1;
+  }
+  handOff(target, { kind: 'open', conversationId: conversation });
+  return 0;
+}
+
+async function commandQuit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  if (!target.running) {
+    process.stdout.write('No running instance.\n');
+    return 0;
+  }
+  handOff(target, { kind: 'quit' });
+  return 0;
+}
+
 async function commandTick(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
   const target = resolveTarget(parsed, env);
   if (target.running) {
@@ -435,6 +447,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandHeartbeat(parsed, env);
       case 'tick':
         return await commandTick(parsed, env);
+      case 'quit':
+        return await commandQuit(parsed, env);
+      case 'open':
+        return await commandOpen(parsed, env);
       case undefined:
       case 'help':
       case '--help':

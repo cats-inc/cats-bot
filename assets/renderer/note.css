@@ -1,0 +1,189 @@
+:root {
+  --paper: #fff8d6;
+  --paper-edge: #f1e3a6;
+  --ink: #2b2a26;
+  --muted: #7b7560;
+  --owner: #dfefff;
+  --bot: #ffffff;
+  --system: #f3eccc;
+  --error: #ffe3e0;
+  --accent: #d98a2b;
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font: 14px/1.4 "Segoe UI", system-ui, sans-serif;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+.note-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  background: var(--paper-edge);
+  -webkit-app-region: drag;
+  user-select: none;
+}
+
+.note-header button {
+  -webkit-app-region: no-drag;
+}
+
+.note-title {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-unread {
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  text-align: center;
+}
+
+.note-state {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.note-spacer {
+  flex: 1;
+}
+
+.note-button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.note-button:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.note-button[aria-pressed="true"] {
+  background: rgba(217, 138, 43, 0.25);
+}
+
+.note-transcript {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.entry {
+  max-width: 92%;
+  padding: 6px 9px;
+  border-radius: 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.entry-owner {
+  align-self: flex-end;
+  background: var(--owner);
+}
+
+.entry-bot {
+  align-self: flex-start;
+  background: var(--bot);
+  box-shadow: 0 1px 1px rgba(0, 0, 0, 0.08);
+}
+
+.entry-bot.pending::after {
+  content: "▍";
+  color: var(--accent);
+}
+
+.entry-system,
+.entry-tool,
+.entry-progress {
+  align-self: stretch;
+  background: var(--system);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.entry-error {
+  align-self: stretch;
+  background: var(--error);
+  font-size: 12px;
+}
+
+.entry-meta {
+  display: block;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.note-composer {
+  padding: 6px 8px 8px;
+  background: var(--paper-edge);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+textarea {
+  width: 100%;
+  resize: none;
+  border: 1px solid #d9cc92;
+  border-radius: 6px;
+  padding: 6px;
+  font: inherit;
+  background: #fffdf2;
+}
+
+.note-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.note-send,
+.note-cancel {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.note-send {
+  background: var(--accent);
+  color: #fff;
+}
+
+.note-send:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.note-cancel {
+  background: #e8dcc0;
+}

@@ -68,11 +68,20 @@ last step, not the first.
 - Every test starts its own runtime in a temporary directory and stops it in
   `after`, so no child process outlives the test run.
 
+### Shell tests
+
+- **Location**: `tests/shell/trayMenu.test.ts`
+- **Scope**: the Electron-free parts of the shell: the tray menu data and the
+  note view state. Everything that needs Electron is checked by hand (below).
+
 ### Manual acceptance
 
-- A real provider CLI on Windows for SPEC-001 A1 to A4; PLAN-001 Phase 3 adds
-  tray and sticky-note checks with the `desktop-ui-automation` skill and fills
-  the measurement table.
+- A real provider CLI on Windows for SPEC-001 A1 to A4.
+- The shell: launch it with `--remote-debugging-port=<port>`, drive the note
+  page through the Chrome DevTools Protocol (`Runtime.evaluate` on
+  `window.catsBot`, `Page.captureScreenshot`) and send messages with
+  `cats-bot say`; quit with `cats-bot quit` and confirm the whole process tree
+  is gone. The SPEC-001 measurement table was filled this way on 2026-10-27.
 
 ## Running Tests
 

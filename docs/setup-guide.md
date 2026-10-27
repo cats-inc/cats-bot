@@ -52,10 +52,31 @@ node src/cli/main.ts approve <workItemId> approve
 node src/cli/main.ts heartbeat pause
 ```
 
-While `run` holds the instance lock, every other command hands its request to
-the running bot through the handoff directory; without a running instance it
-applies to the data root directly (a schedule added that way fires on the next
-run).
+While `run` or the shell holds the instance lock, every other command hands its
+request to the running bot through the handoff directory (`open` shows a note,
+`quit` stops the instance); without a running instance it applies to the data
+root directly (a schedule added that way fires on the next run).
+
+## The tray and sticky-note shell
+
+```bash
+npm run build
+npm run shell -- --provider claude --name Mochi   # first launch initializes the bot
+npm run shell -- --id mochi                        # later launches
+```
+
+The shell mounts the same core in the Electron main process: a tray icon
+(open home note, notes, new note, pause heartbeat, start at login, quit) and
+one frameless sticky note per conversation. Closing a note hides it; the bot
+keeps running until Quit. The same `CATS_BOTS_PROVIDER_*` variables apply.
+Electron's binary is downloaded by its install script, which `allowScripts`
+in `package.json` permits for the pinned version.
+
+Packaging (Windows): `npm run dist:dir` builds `release/win-unpacked/`,
+`npm run dist:win` builds the NSIS installer and the portable executable.
+The runtime package ships inside the app and runs with the app's own Node
+(`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the
+runtime bin stays a plain file.
 
 `init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
 the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.
