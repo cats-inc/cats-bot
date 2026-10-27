@@ -15,6 +15,8 @@ import { SettingsWindow } from './settingsWindow.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { BotTray } from './tray.ts';
 import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
+import { NOTE_LAYER_LABELS, NOTE_LAYERS, type NoteLayer } from './viewState.ts';
+import { loadDesktopHost } from './win32Desktop.ts';
 import { NoteWindows } from './windows.ts';
 
 /**
@@ -141,7 +143,16 @@ async function main(): Promise<void> {
   core.protectSecretsAtRest();
 
   let quitting = false;
-  const windows = new NoteWindows({ core, botRoot: root, preloadPath, rendererDir, isQuitting: () => quitting });
+  const log = (line: string) => process.stderr.write(`${line}\n`);
+  const windows = new NoteWindows({
+    core,
+    botRoot: root,
+    preloadPath,
+    rendererDir,
+    isQuitting: () => quitting,
+    desktop: loadDesktopHost(log),
+    log,
+  });
   const settings = new SettingsWindow({ preloadPath, rendererDir });
   const openSettings = (tab?: string) => {
     void settings.open(tab).catch((error: unknown) => {
@@ -254,13 +265,39 @@ async function main(): Promise<void> {
     void refreshTray();
     return null;
   });
-  ipcMain.handle('window:togglePin', (event) => {
-    const owner = windows.windowFor(event.sender.id);
-    return owner ? windows.togglePin(owner.conversationId) : false;
-  });
+  // SPEC-002 FR-8: a note's layer, chosen from its own header or from the settings page.
+  const isLayer = (value: unknown): value is NoteLayer => typeof value === 'string' && NOTE_LAYERS.includes(value as NoteLayer);
   ipcMain.handle('window:state', (event) => {
     const owner = windows.windowFor(event.sender.id);
-    return { alwaysOnTop: owner ? windows.isPinned(owner.conversationId) : false, botName: app.getName() };
+    return {
+      layer: owner ? windows.layerOf(owner.conversationId) : 'normal',
+      layers: windows.availableLayers(),
+      botName: app.getName(),
+    };
+  });
+  ipcMain.handle('window:layerMenu', (event) => {
+    const owner = windows.windowFor(event.sender.id);
+    if (!owner) return null;
+    const current = windows.layerOf(owner.conversationId);
+    const template: MenuItemConstructorOptions[] = windows.availableLayers().map((layer) => ({
+      label: NOTE_LAYER_LABELS[layer],
+      type: 'radio',
+      checked: layer === current,
+      click: () => {
+        windows.setLayer(owner.conversationId, layer);
+      },
+    }));
+    Menu.buildFromTemplate(template).popup({ window: owner.window });
+    return null;
+  });
+  ipcMain.handle('shell:noteLayers', (event) => {
+    if (!fromSettings(event)) return null;
+    return { layers: windows.availableLayers(), labels: NOTE_LAYER_LABELS, views: windows.layers() };
+  });
+  ipcMain.handle('shell:setNoteLayer', async (event, conversationId: unknown, layer: unknown) => {
+    if (!fromSettings(event) || typeof conversationId !== 'string' || !isLayer(layer)) return null;
+    windows.setLayer(conversationId, layer);
+    return layer;
   });
   ipcMain.handle('window:open', async (event, conversationId: unknown) => {
     if ((!fromNote(event) && !fromSettings(event) && !fromFloating(event)) || typeof conversationId !== 'string') return null;

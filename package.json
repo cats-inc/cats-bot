@@ -39,7 +39,8 @@
     "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
-    "@cats-inc/cats-runtime": "0.6.1"
+    "@cats-inc/cats-runtime": "0.6.1",
+    "koffi": "2.16.3"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
@@ -65,6 +66,12 @@
       "dist/**/*",
       "assets/**/*",
       "!assets/installer/**",
+      "!node_modules/koffi/src/**",
+      "!node_modules/koffi/vendor/**",
+      "!node_modules/koffi/doc/**",
+      "!node_modules/koffi/lib/**",
+      "!node_modules/koffi/build/koffi/{darwin,freebsd,linux,musl,openbsd}_*/**",
+      "!node_modules/koffi/build/koffi/win32_{ia32,arm64}/**",
       "package.json",
       "LICENSE"
     ],

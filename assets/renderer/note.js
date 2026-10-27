@@ -11,7 +11,14 @@
   const titleEl = document.getElementById('title');
   const unreadEl = document.getElementById('unread');
   const stateEl = document.getElementById('state');
-  const pinEl = document.getElementById('pin');
+  const layerEl = document.getElementById('layer');
+  const LAYER_ICONS = { normal: '▢', top: '📌', desktop: '🖥', wallpaper: '🖼' };
+  const LAYER_TITLES = {
+    normal: 'Normal window',
+    top: 'Always on top',
+    desktop: 'On the desktop, below windows',
+    wallpaper: 'On the wallpaper, below icons',
+  };
   const hideEl = document.getElementById('hide');
   const settingsEl = document.getElementById('settings');
 
@@ -80,7 +87,7 @@
     unreadEl.hidden = record.unreadCount === 0;
     unreadEl.textContent = String(record.unreadCount);
     const windowState = await api.window.state();
-    pinEl.setAttribute('aria-pressed', windowState.alwaysOnTop ? 'true' : 'false');
+    showLayer(windowState.layer);
   }
 
   async function send() {
@@ -110,9 +117,15 @@
   cancelEl.addEventListener('click', () => { void api.invoke('cancelTurn', resolvedConversationId); });
   hideEl.addEventListener('click', () => { void api.window.hide(); });
   settingsEl.addEventListener('click', () => { void api.shell.openSettings(); });
-  pinEl.addEventListener('click', async () => {
-    const pinned = await api.window.togglePin();
-    pinEl.setAttribute('aria-pressed', pinned ? 'true' : 'false');
+  function showLayer(layer) {
+    layerEl.textContent = LAYER_ICONS[layer] || LAYER_ICONS.normal;
+    layerEl.title = `${LAYER_TITLES[layer] || LAYER_TITLES.normal} (click to change)`;
+  }
+  layerEl.addEventListener('click', () => { void api.window.layerMenu(); });
+  api.window.onLayer(showLayer);
+  // A note on the desktop is lifted into an ordinary window when it is used; give the typing back to the input.
+  api.window.onLifted(() => {
+    if (!document.activeElement || document.activeElement === document.body) inputEl.focus();
   });
   window.addEventListener('focus', () => { void api.invoke('markSeen', resolvedConversationId).then(refreshHeader); });
 

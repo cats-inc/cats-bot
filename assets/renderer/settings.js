@@ -257,7 +257,10 @@
     return times.length ? times[times.length - 1] : null;
   }
 
+  let noteLayers = null;
+
   async function renderNotes() {
+    noteLayers = await api.shell.noteLayers();
     const records = await api.invoke('listConversations');
     records.sort((a, b) => (a.role === 'home' ? -1 : b.role === 'home' ? 1 : (lastActivity(b) || b.createdAt).localeCompare(lastActivity(a) || a.createdAt)));
     const list = $('notes-list');
@@ -282,7 +285,7 @@
 
     const open = button('Open', () => { void api.window.openConversation(record.id); });
     const rename = button('Rename', () => startRename(row, record));
-    row.append(main, open, rename);
+    row.append(main, layerSelect(record), open, rename);
     if (record.role !== 'home') {
       const remove = button('Delete', async () => {
         if (!remove.classList.contains('armed')) {
@@ -303,6 +306,24 @@
       row.append(remove);
     }
     return row;
+  }
+
+  function layerSelect(record) {
+    const select = document.createElement('select');
+    select.className = 'layer';
+    select.title = 'Where this note lives';
+    for (const layer of noteLayers.layers) {
+      const option = document.createElement('option');
+      option.value = layer;
+      option.textContent = noteLayers.labels[layer];
+      select.append(option);
+    }
+    select.value = noteLayers.views[record.id] || 'normal';
+    select.addEventListener('change', async () => {
+      await api.shell.setNoteLayer(record.id, select.value);
+      toast(`${record.title}: ${noteLayers.labels[select.value]}`);
+    });
+    return select;
   }
 
   function badge(text, kind) {
@@ -498,6 +519,10 @@
       if (event.type === 'runtime.status') void renderBrand();
     });
     api.onNavigate?.((tab) => selectTab(tab));
+    // A note's layer can change from its own header; show the current one when the page comes back.
+    window.addEventListener('focus', () => {
+      if (!$('notes-list').closest('.panel').hidden) void renderNotes();
+    });
 
     await renderBot();
     await renderBrand();

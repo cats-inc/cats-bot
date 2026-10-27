@@ -335,6 +335,13 @@ textarea {
   max-width: 260px;
 }
 
+.note-row select.layer {
+  width: auto;
+  max-width: 200px;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
 .badge {
   display: inline-block;
   font-size: 11px;

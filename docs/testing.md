@@ -99,6 +99,12 @@ last step, not the first.
   Electron uses to forward moves to a click-through window. Read the cat's
   rectangle from the page (`getBoundingClientRect` plus `window.screenX`,
   times `devicePixelRatio`) before pressing.
+- Note layers (SPEC-002 FR-8) on Windows: put the note where no application
+  window covers the desktop, confirm the parent with `GetAncestor(hwnd,
+  GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
+  and before sending any key check `GetForegroundWindow()` is the note: a
+  click on an attached note does not make it the foreground window, so keys
+  sent without that check land in whatever window the owner had active.
 
 ## Running Tests
 
