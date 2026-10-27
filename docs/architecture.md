@@ -115,7 +115,10 @@ through `BotHostApi`.
   heartbeat turn is due. `schedules.ts` and `cron.ts` hold durable one-time and
   cron schedules evaluated in an IANA zone with skip/coalesce/run_once missed
   policies; `heartbeat.ts` the prompt, delays and `[quiet]` rule; `recovery.ts`
-  the evidence check that settles interrupted turns by the runtime transcript.
+  the evidence check that settles interrupted turns by the runtime transcript:
+  only messages after the run's journaled history baseline count, and a reply
+  completes the turn only when every tool call the core saw has its result
+  before it; anything less waits for the owner.
 
 ### `src/core/tools`
 

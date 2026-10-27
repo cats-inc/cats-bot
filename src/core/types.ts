@@ -162,9 +162,23 @@ export interface WorkItem {
   result?: WorkItemResult;
   notification?: NotificationState;
   /** The provider/model/session the run actually used (ADR-001 §3 evidence). */
-  run?: { provider: string; model: string | null; sessionId: string };
+  run?: WorkRun;
   error?: string;
   updatedAt: string;
+}
+
+/**
+ * SPEC-001 FR-28: journaled before the prompt is sent, so recovery can tell
+ * this turn's messages in the runtime transcript from earlier ones.
+ */
+export interface WorkRun {
+  provider: string;
+  model: string | null;
+  sessionId: string;
+  /** When the prompt was about to be sent. */
+  startedAt?: string;
+  /** How many history messages the session had before the prompt; null when it could not be read. */
+  historyBaseline?: number | null;
 }
 
 export type MissedPolicy = 'skip' | 'coalesce' | 'run_once';
