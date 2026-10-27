@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 已完成 |
+| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 與 Phase 1 已完成 |
 | **Owner** | Claude |
 | **Assigned To** | Claude |
 | **Reviewer** | Owner |
@@ -44,22 +44,22 @@
 
 ### Phase 1: 無頭 core（SPEC-001 FR-1–FR-19；驗收 A1、A6）
 
-- [ ] Task 1.1：`src/core/profile/`：`BotProfile` 型別、預設值、逐欄補值、`configRevision`。
-- [ ] Task 1.2：`src/core/store/`：資料根目錄配置、鎖檔與單一實例交接、暫存檔加 rename 的原子寫入、
+- [x] Task 1.1：`src/core/profile/`：`BotProfile` 型別、預設值、逐欄補值、`configRevision`。
+- [x] Task 1.2：`src/core/store/`：資料根目錄配置、鎖檔與單一實例交接、暫存檔加 rename 的原子寫入、
       journal 追加與啟動時重建。
-- [ ] Task 1.3：`src/core/runtime/supervisor.ts`：以釘定套件的 bin 啟動 app-managed runtime、解析
+- [x] Task 1.3：`src/core/runtime/supervisor.ts`：以釘定套件的 bin 啟動 app-managed runtime、解析
       `runtime.ready`、`GET /health` 確認、退避重啟、關閉順序、以環境變數關閉背景 discovery
       （`CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS=0`、WSL／Docker policy `manual_only`；不改 provider
       的 session 目錄）。
-- [ ] Task 1.4：`src/core/runtime/client.ts`：sessions 的 create / resume / close / delete / cancel /
+- [x] Task 1.4：`src/core/runtime/client.ts`：sessions 的 create / resume / close / delete / cancel /
       observe / history、`messages` 的 NDJSON 串流解析、health；Bearer API key。
-- [ ] Task 1.5：`src/core/conversations/`：對話與 transcript、home 對話建立、attachment 狀態機、
+- [x] Task 1.5：`src/core/conversations/`：對話與 transcript、home 對話建立、attachment 狀態機、
       承接包（12,000 字元；短原文、長 digest 加近期）、閒置政策。
-- [ ] Task 1.6：`src/core/queue/`：工作項、接納（記 `configRevision`）、序列化執行、session gate、
+- [x] Task 1.6：`src/core/queue/`：工作項、接納（記 `configRevision`）、序列化執行、session gate、
       404 / 409 / 410 / 403 / 429 的處理與回覆依序附加。
-- [ ] Task 1.7：`src/cli/main.ts`：`cats-bot init`、`run`、`say <conversation> <text>`、`status`、
+- [x] Task 1.7：`src/cli/main.ts`：`cats-bot init`、`run`、`say <conversation> <text>`、`status`、
       `conversations`；`run` 在前景跑 core 並把事件印到 stdout。
-- [ ] Task 1.8：測試：假 runtime client 與假時鐘的單元測試（狀態機、gate、重試、承接包截斷）；
+- [x] Task 1.8：測試：假 runtime client 與假時鐘的單元測試（狀態機、gate、重試、承接包截斷）；
       暫存目錄裡真的 runtime 程序加腳本化 fixture provider 的整合測試（建立、串流、取消、resume、
       重啟 core 後狀態一致；登錄裡有 discovered 項目時列表不受影響且 `history` 可讀）。
 
@@ -187,6 +187,7 @@
 | 2026-10-27 | PLAN-001 與 ADR-001、SPEC-001 一起建立；兩份研究文件融合；沒有任何程式碼 |
 | 2026-10-27 | 依 Codex 審閱修訂：discovery 隔離改為 runtime 旗標而非改目錄（ADR-001 §1、SPEC-001 FR-5）；對帳依 session 狀態分類並保護 `initializing` 與 `busy`（ADR-001 §5、SPEC-001 FR-20）；分支清理腳本改為驗證已落地才刪除；CI 的 YAML 驗證改為會失敗 |
 | 2026-10-27 | Phase 0 完成：ESM 工具鏈（`NodeNext`、`erasableSyntaxOnly`、`rewriteRelativeImportExtensions`）、`node:test` 直接跑 `.ts`、CI Node job（ubuntu 與 windows）、釘定 `@cats-inc/cats-runtime` 0.6.1、架構邊界測試、`src/core/types.ts` 契約型別、services／setup／testing 文件；修正：bot 的 MCP server 必須走 Streamable HTTP（runtime 拒絕 stdio） |
+| 2026-10-27 | Phase 1 完成：`src/core`（profile、store、runtime supervisor 與 client、conversations 與承接包、queue 與 turn runner、`BotCore`）、`src/cli/main.ts`（`init`、`run`、`say`、`status`、`conversations`）；測試 30 個：單元、假 runtime 的 core 端對端、真 runtime 0.6.1 加 fixture CLI 的整合測試（建立、串流、取消、resume、history、discovered 項目不影響列表）。實測修正：runtime 0.6.1 拒絕 `--port 0`，core 改為啟動前自己預留 loopback port（SPEC-001 FR-5）；runtime 意外退出的退避重啟已先在 core 內實作（原列於 Task 2.1），對帳 tick 到 Phase 2 再接上；FR-28 以 `history`／`observe` 對帳證據留給 Task 2.5，Phase 1 只把殘留的 `running` 標為 `interrupted` 且不重跑 |
 
 ---
 

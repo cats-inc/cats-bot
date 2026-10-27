@@ -5,26 +5,26 @@
 
 ## Current Focus
 
-- **Active Phase**: [e.g., Phase 1: Foundation]
-- **Current Task**: [e.g., Implementing User Login]
+- **Active Phase**: PLAN-001 Phase 2 (alive: reconcile tick, schedules, heartbeat, bot tool server)
+- **Current Task**: Phase 0 and Phase 1 landed 2026-10-27; Phase 2 next
 - **Pending Actions**:
-  - [ ] [Action 1]
-  - [ ] [Action 2]
+  - [ ] PLAN-001 Phase 2 tasks 2.1 to 2.7
+  - [ ] PLAN-001 Phase 3 Electron shell and the SPEC-001 measurement table
 
 ## Memory Bank
 
 | Key | Value |
 |-----|-------|
-| **User Preference** | [e.g., Prefer functional programming style] |
-| **Important Context** | [e.g., Database migration required before next deploy] |
-| **Last Major Event** | [e.g., Completed initial setup on 2025-01-01] |
+| **User Preference** | Slices land as PRs with auto-merge; replies in Traditional Chinese |
+| **Important Context** | cats-runtime 0.6.1 rejects `--port 0` (core reserves a port) and accepts only `transport: http` MCP servers |
+| **Last Major Event** | PLAN-001 Phase 1 (headless core and CLI) completed on 2026-10-27 |
 
 ## Active Agents
 
-- **Conductor**: [Agent Name]
+- **Conductor**: Claude (implementing PLAN-001 at the owner's request)
 - **Specialists**:
-  - [Agent Name]: [Role/Task]
+  - Codex: independent review of ADR-001 and the sweep scripts (2026-10-27)
 
 ---
 
-*Last Updated: YYYY-MM-DD*
+*Last Updated: 2026-10-27*

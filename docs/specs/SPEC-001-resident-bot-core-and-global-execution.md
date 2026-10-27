@@ -76,7 +76,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 ### Runtime 監督
 
 5. FR-5：core 以釘定版本的 `@cats-inc/cats-runtime` 套件的 `cats-runtime` bin 啟動子程序：
-   `--startup-mode app-managed --managed-by cats-bots --ready-output json --host 127.0.0.1 --port 0`；
+   `--startup-mode app-managed --managed-by cats-bots --ready-output json --host 127.0.0.1 --port <port>`，
+   其中 `<port>` 是 core 啟動前自己預留的空閒 loopback port（runtime 0.6.1 拒絕 `--port 0`）；
    環境變數 `CATS_RUNTIME_DIR=<root>/runtime`、`CATS_RUNTIME_API_KEY=<core 產生的隨機值>`、
    `CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS=0`（關閉背景 native 與 agent discovery）、
    `CATS_RUNTIME_WSL_DISCOVERY_POLICY=manual_only`、`CATS_RUNTIME_DOCKER_DISCOVERY_POLICY=manual_only`。
