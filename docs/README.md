@@ -1,5 +1,11 @@
 # Documentation Index
 
+[Provider interactions and tool visibility](specs/SPEC-004-provider-interactions-and-tool-visibility.md)
+is approved for sliced implementation (2026-10-28) for headless owner replies, safe waiting
+and recovery, note/tray UI and effective tool/permission diagnostics.
+[PLAN-004](plans/PLAN-004-provider-interactions-and-tool-visibility.md) integrates
+Runtime SPEC-039 independently of Platform. Implementation has not started.
+
 > This directory contains all project documentation.
 
 ## Root-Level Documents
