@@ -67,7 +67,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 2. FR-2：資料根目錄預設 `~/.cats/bots/<id>/`，可由 `CATS_BOTS_HOME` 覆寫。配置：`profile.json`、
    `conversations/<conversationId>.json`（對話中繼資料與 attachment）、
    `transcripts/<conversationId>.jsonl`、`journal.jsonl`（工作項、排程與狀態轉移）、
-   `runtime/`（作為 `CATS_RUNTIME_DIR`）、`logs/`。
+   `runtime/`（作為 `CATS_RUNTIME_DIR`）、`logs/`；另有 core 的 `life.json`（上次 tick 時間）、`instance.lock.json`、
+   `handoff/`，以及殼自己的 `shell-state.json`（便箋位置、大小、always-on-top、開機啟動）。
 3. FR-3：同一資料根目錄同一時間只有一個寫入者，以鎖檔保證；第二個同 id 實例把啟動參數交給
    第一個並退出。所有寫入以暫存檔加 rename 完成；讀取絕不寫回。
 4. FR-4：讀取時缺少或不合法的欄位逐欄套預設值，不改寫既有檔案；檔案損壞時回報錯誤並保留原檔，
@@ -208,16 +209,19 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
   也算在 provider 額度裡，並可在 `logs/` 看到次數。
 - **容量**：私有 runtime 預設上限 50 個 session；bot 用 1 個 home 加開著的便箋數；ephemeral
   provider 每回合 spawn 一次；FileWatcher 匯入的 discovered 項目沒有 worker，不計入上限。
-- **量測**（第三階段填寫，數字成為預算）：
+- **量測**（第三階段 2026-10-27 於 Windows 11、Electron 41.2.0、runtime 0.6.1 以 fixture provider 實測；
+  數字即預算，真的 CLI 另加它自己的成本）：
 
-  | 情境 | 要收集的證據 |
+  | 情境 | 2026-10-27 實測（fixture provider） |
   | --- | --- |
-  | 只有 tray、閒置 | CPU、working set / private memory、程序數、週期性喚醒活動 |
-  | 開 1 張與 3 張便箋 | 每張視窗的增量成本、輸入反應 |
-  | 第一次與 resume 後的 CLI 回合 | 首字延遲、總延遲、尖峰資源 |
-  | 視窗全關、排程執行 | 執行連續性、結果持久化、通知投遞 |
-  | 同時 2 隻 bot | 每隻 runtime 的開銷、provider 容量競爭 |
-  | 顯示器遺失與恢復 | core 連續性、視圖重建、未送出草稿保留 |
+  | 只有 tray、閒置（便箋藏起但 renderer 仍在） | 7 個程序（Electron 5、runtime node 1、conhost 1）、working set 468 MB、private 312 MB、10 秒內 CPU 0.03% |
+  | 開 1 張與 3 張便箋 | 1 張：7 個程序、working set 470 MB、private 314 MB；3 張：11 個程序（含 provider worker）、working set 725 MB、private 403 MB、CPU 0.21%；每張便箋約 +100–130 MB working set |
+  | 第一次與 resume 後的 CLI 回合 | 新便箋第一回合（建 session 加 spawn fixture）首字 175 ms、完成 184 ms；暖 session 第二回合首字 34 ms、完成 42 ms（只含 bot 與 runtime 的開銷） |
+  | 視窗全關、排程執行 | 三張便箋全藏起後以 CLI 加 1 分鐘後的排程：到期後的下一個 tick 執行（加入後 119 秒），結果寫入 journal 與 transcript，home `unreadCount` 變 1 |
+  | 同時 2 隻 bot | 各自一個 runtime：第一隻（3 張藏起的便箋）working set 726 MB，第二隻（1 張）660 MB，合計約 1.4 GB、18 個程序；閒置 CPU 0.03–0.13%；provider 容量未競爭（fixture） |
+  | 顯示器遺失與恢復 | 尚未量測（需要實體顯示器變更）；視窗位置在開啟時夾回可見工作區 |
+
+  預算含意：藏起的便箋不釋放 renderer，若要壓低 tray 閒置成本，日後可在藏起一段時間後銷毀視窗再重建。
 
 - **安全**：runtime 只綁 loopback；API key 每隻 bot 隨機產生；Telegram token 優先存 OS 憑證庫，
   退回檔案時限制權限並明示風險（不照抄 platform 的明文存法）；日誌不含 prompt、回覆與憑證。

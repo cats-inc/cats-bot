@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0、1、2 已完成 |
+| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 到 3 已完成，Phase 4 進行中 |
 | **Owner** | Claude |
 | **Assigned To** | Claude |
 | **Reviewer** | Owner |
@@ -90,15 +90,15 @@
 
 ### Phase 3: 最小 Electron 殼（SPEC-001 FR-32–FR-34；驗收 A3 與量測）
 
-- [ ] Task 3.1：`src/shell/electron/main.ts` 在主程序掛載 core；`preload.ts` 以 contextBridge 暴露
+- [x] Task 3.1：`src/shell/electron/main.ts` 在主程序掛載 core；`preload.ts` 以 contextBridge 暴露
       `BotHostApi`；所有計時器留在主程序。
-- [ ] Task 3.2：tray 與選單、每個 bot id 一把單一實例鎖、可選開機啟動；抄 platform `desktop/host`
+- [x] Task 3.2：tray 與選單、每個 bot id 一把單一實例鎖、可選開機啟動；抄 platform `desktop/host`
       的 `tray.ts`、`trayMenu.ts`、`candidateProfile.ts` 模式並在檔頭註明來源與 revision。
-- [ ] Task 3.3：一張便箋視窗：串流輸出、輸入框、歷史、取消、未讀、螢幕內拖曳、always-on-top 切換、
+- [x] Task 3.3：一張便箋視窗：串流輸出、輸入框、歷史、取消、未讀、螢幕內拖曳、always-on-top 切換、
       關閉即藏到 tray、明確 Quit 並清掉子程序。
-- [ ] Task 3.4：封裝：Windows 安裝檔與免安裝檔；runtime 套件與 Node 的取得方式沿用 platform 的
+- [x] Task 3.4：封裝：Windows 安裝檔與免安裝檔；runtime 套件與 Node 的取得方式沿用 platform 的
       `ELECTRON_RUN_AS_NODE=1` 做法；啟動與關閉在乾淨機器驗證沒有孤兒程序。
-- [ ] Task 3.5：填 SPEC-001 的量測表並把數字定為預算；用 `desktop-ui-automation` skill 做 Windows 驗收。
+- [x] Task 3.5：填 SPEC-001 的量測表並把數字定為預算；用 `desktop-ui-automation` skill 做 Windows 驗收。
 
 **Deliverables**：A3 通過；量測表有數字；殼當掉時的行為有紀錄，作為 ADR-001 §2 觸發條件的證據。
 
@@ -189,6 +189,7 @@
 | 2026-10-27 | Phase 0 完成：ESM 工具鏈（`NodeNext`、`erasableSyntaxOnly`、`rewriteRelativeImportExtensions`）、`node:test` 直接跑 `.ts`、CI Node job（ubuntu 與 windows）、釘定 `@cats-inc/cats-runtime` 0.6.1、架構邊界測試、`src/core/types.ts` 契約型別、services／setup／testing 文件；修正：bot 的 MCP server 必須走 Streamable HTTP（runtime 拒絕 stdio） |
 | 2026-10-27 | Phase 1 完成：`src/core`（profile、store、runtime supervisor 與 client、conversations 與承接包、queue 與 turn runner、`BotCore`）、`src/cli/main.ts`（`init`、`run`、`say`、`status`、`conversations`）；測試 30 個：單元、假 runtime 的 core 端對端、真 runtime 0.6.1 加 fixture CLI 的整合測試（建立、串流、取消、resume、history、discovered 項目不影響列表）。實測修正：runtime 0.6.1 拒絕 `--port 0`，core 改為啟動前自己預留 loopback port（SPEC-001 FR-5）；runtime 意外退出的退避重啟已先在 core 內實作（原列於 Task 2.1），對帳 tick 到 Phase 2 再接上；FR-28 以 `history`／`observe` 對帳證據留給 Task 2.5，Phase 1 只把殘留的 `running` 標為 `interrupted` 且不重跑 |
 | 2026-10-27 | Phase 2 完成：`src/core/life`（`loop.ts` 對帳 tick、`schedules.ts` 與 `cron.ts` 的 IANA 時區 cron、`heartbeat.ts`、`recovery.ts`）、`src/core/tools`（Streamable HTTP 的 session MCP server 與 `schedule_create`／`schedule_list`／`schedule_cancel`／`ask_owner`）、`src/core/conversations/binder.ts`（turn runner 與 tick 共用的 session 綁定）、CLI 加 `schedule add|list|cancel`、`approve`、`heartbeat pause|resume`、`tick`；測試：cron、schedules、heartbeat、recovery、tools 單元測試，假 runtime 的 life 測試（tick 建立與復活 home、busy 保護、安靜與開口的心跳、暫停、到期排程與 coalesce、停機後的錯過政策與一次補心跳、ask_owner 與逾時、便箋閒置入睡），真 runtime 的 fixture CLI 經 `--mcp-config` 呼叫 bot 工具伺服器建立排程並到點執行、`ask_owner`、心跳 `[quiet]`。設計說明：承接包只在建立或替換 session 時以 instructions 送入，心跳 prompt 本身只帶時間事實與 `[quiet]` 規則；session `busy` 時的心跳由 loop 四分鐘後重排，而不是留在佇列 |
+| 2026-10-27 | Phase 3 完成：`src/shell/electron`（`main.ts` 在主程序掛載 core、每個 bot id 一把單一實例鎖（以 per-bot userData 區分）、`assets/preload.cjs` 以 contextBridge 暴露 `BotHostApi` 命令與事件、`windows.ts` 無邊框便箋視窗（關閉即藏、位置與 always-on-top 存 `shell-state.json`）、`tray.ts`／`trayMenu.ts`（開 home、列便箋、新便箋、暫停心跳、開機啟動、Quit）、`assets/renderer/` 便箋頁面）；CLI 加 `open`、`quit`（handoff 給執行中的殼）；electron-builder 設定（`asar: false`，Windows NSIS 與 portable）；量測表填入 fixture provider 的實測數字（見 SPEC-001）。未做：乾淨機器上的安裝驗證（本機只跑過 `--dir` 與 installer 的建置與啟動）、顯示器遺失情境；Electron 綁 41.2.0（與 platform 相同，本機已有快取） |
 
 ---
 

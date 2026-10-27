@@ -16,9 +16,10 @@ through `BotHostApi`.
 
 ```text
 ┌───────────────────────────────┐   BotHostApi commands + events
-│ host: cats-bot CLI / shell    │◀────────────────────────────────┐
+│ host: cats-bot CLI / Electron │◀────────────────────────────────┐
+│ tray + sticky notes (shell)   │                                 │
 └───────────────┬───────────────┘                                 │
-                │ in-process (CLI) / IPC (shell, PLAN-001 Phase 3)│
+                │ in-process (CLI) / contextBridge IPC (shell)    │
 ┌───────────────▼───────────────────────────────────────────────┐ │
 │ bot core  src/core                                            │ │
 │  profile  conversations+transcripts  queue+journal  timers    │─┘
@@ -124,10 +125,22 @@ through `BotHostApi`.
   `ask_owner`. A schedule exists only once journaled and the receipt is written
   into the conversation; a question becomes an `awaiting_owner` work item.
 
-### Planned (PLAN-001 Phases 3 and 4)
+### `src/shell/electron` and `assets/`
 
-- `src/shell/electron`: tray, sticky-note windows, IPC bridge for `BotHostApi`.
-- Telegram long polling.
+- **Purpose**: the first presentation host (ADR-001 §2, §8; FR-32 to FR-34).
+- **Responsibilities**: `main.ts` mounts `BotCore` in the Electron main
+  process (every timer stays there), takes one single-instance lock per bot
+  id, and routes `bot:invoke` IPC calls to `ipc.ts`, which maps command
+  names to `BotHostApi`; events are broadcast to every note. `windows.ts`
+  owns the frameless sticky-note windows (close hides, bounds and
+  always-on-top persist in `shell-state.json`); `tray.ts` and `trayMenu.ts`
+  the tray and its menu. `assets/preload.cjs` is the sandboxed contextBridge
+  and `assets/renderer/` the note page, which keeps no durable state. The
+  renderer never sees the runtime's URL or key.
+
+### Planned (PLAN-001 Phase 4)
+
+- Multi-note acceptance, global retarget acceptance, Telegram long polling.
 
 ## Data Flow
 
