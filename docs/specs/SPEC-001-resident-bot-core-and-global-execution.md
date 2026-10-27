@@ -48,7 +48,7 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
   `providerSessionId`、狀態 `none | initializing | ready | sleeping | closed | stale | failed`。
 - **工作項**：接納管線的單位，來源為主人訊息、排程、事件或心跳；狀態 `queued | running |
   awaiting_owner | completed | failed | cancelled | interrupted`。
-- **configRevision**：`executionTarget` 每次變更遞增的序號；工作項在接納時記下它。
+- **configRevision**：`executionTarget`、`instructions` 或 `permissions`（含 `cwd`）每次實際變更遞增的序號；工作項在接納時記下它，attachment 記下建立時的值。
 - **session 活著**：runtime `GET /sessions/{id}`（或 `observe`）回報的 `status` 為 `initializing`、
   `ready` 或 `busy`；runtime 的 `SessionStatus` 只有這三者加 `closing` 與 `closed`。`closing`／`closed`
   是「已關閉」；404 是「不存在」；連不上、逾時或 5xx 是「未知」，與已關閉不同。attachment 側對應：
@@ -104,6 +104,8 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
     `POST /sessions`，帶 `executionTarget`、`instructions`（人設加承接包）、`permissions` 對應欄位與
     `mcpServers`（FR-24 的 bot 工具伺服器）；為 `sleeping` 時 `POST /sessions/{id}/resume`。
     resume 失敗保留 attachment、標 `failed` 並把錯誤寫進對話，絕不靜默換成空白 session。
+    同一對話同時只有一次綁定：對帳 tick 與回合同時綁定時共用同一個結果，不會各建一個 session
+    互相覆寫 attachment；承接包不含仍在 `queued` / `running` 的主人訊息，它們以訊息送入。
 12. FR-12：承接脈絡：CLI provider 的原生 transcript 由 CLI 保存；core 另外保存自己的 transcript，
     並在建立或替換 session 時以 instructions 送入承接包：12,000 字元上限，短對話原文、長對話
     digest 加近期內容。digest 是有損的，不宣稱無損召回。
@@ -171,10 +173,12 @@ provider/model。殼（tray、便箋）是可拋棄的客戶端；所有視窗�
 
 ### 全域 provider/model 變更
 
-27. FR-27：變更 `executionTarget` 時 `configRevision` 遞增並持久化；`running` 的工作項在它記下的
-    revision 下跑完或被取消；`queued` 的工作項在接納時重新讀取；在其他 provider 或 model 下建立的
-    attachment 標為 `stale`、不 resume，下次接納以承接包重建 session，並在對話裡告知主人；
-    provider 與 model 都相同時為 no-op。每個 run 記錄實際 provider/model。
+27. FR-27：變更 `executionTarget`、`instructions` 或 `permissions`（含 `cwd`）時 `configRevision`
+    遞增並持久化；`running` 的工作項在它記下的 revision 下跑完或被取消；`queued` 的工作項在接納時
+    重新讀取；在較舊 revision 下建立的 attachment 標為 `stale`、不 resume，下次接納以承接包重建
+    session，並在對話裡告知主人；被取代的 session 在其中沒有回合執行時關閉（`close`），不留下
+    不受閒置政策管理的 worker。值都相同時為 no-op；名稱、心跳、閒置與 Telegram 設定不影響 session。
+    每個 run 記錄實際 provider/model。
 
 ### 復原與通知
 

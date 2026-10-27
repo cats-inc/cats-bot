@@ -98,7 +98,30 @@ test('applyProfilePatch bumps configRevision only for a real target change (FR-2
 
   const renamed = applyProfilePatch(profile, { name: 'Other', heartbeat: { enabled: false } }, now);
   assert.equal(renamed.targetChanged, false);
+  assert.equal(renamed.sessionChanged, false);
+  assert.equal(renamed.profile.configRevision, 1);
   assert.equal(renamed.profile.name, 'Other');
   assert.equal(renamed.profile.heartbeat.enabled, false);
   assert.equal(renamed.profile.heartbeat.wakeMinMinutes, 2);
+});
+
+test('applyProfilePatch bumps configRevision for instructions, permissions and cwd too (FR-27)', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  for (const patch of [
+    { instructions: 'You are Kettle.' },
+    { permissions: { workspaceAccess: 'read_only' as const } },
+    { permissions: { permissionMode: 'skip' as const } },
+    { permissions: { cwd: 'C:/elsewhere' } },
+    { permissions: { allowedTools: ['Read'] } },
+  ]) {
+    const result = applyProfilePatch(profile, patch, now);
+    assert.equal(result.sessionChanged, true, JSON.stringify(patch));
+    assert.equal(result.targetChanged, false);
+    assert.equal(result.profile.configRevision, 2, JSON.stringify(patch));
+  }
+  const same = applyProfilePatch(profile, { instructions: '', permissions: { workspaceAccess: 'read_write', cwd: 'C:/work' } }, now);
+  assert.equal(same.sessionChanged, false, 'identical values are a no-op');
+  assert.equal(same.profile.configRevision, 1);
+  const telegram = applyProfilePatch(profile, { telegram: { enabled: true }, idleSleepMinutes: 5 }, now);
+  assert.equal(telegram.sessionChanged, false);
 });

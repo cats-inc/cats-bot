@@ -178,28 +178,44 @@ export function sameExecutionTarget(a: ExecutionTarget, b: ExecutionTarget): boo
   return a.provider === b.provider && (a.model ?? null) === (b.model ?? null);
 }
 
+function samePermissions(a: BotPermissions, b: BotPermissions): boolean {
+  return (
+    a.workspaceAccess === b.workspaceAccess
+    && a.permissionMode === b.permissionMode
+    && a.cwd === b.cwd
+    && JSON.stringify(a.allowedTools ?? null) === JSON.stringify(b.allowedTools ?? null)
+  );
+}
+
 /**
- * SPEC-001 FR-27: a changed execution target bumps `configRevision`; an
- * identical target is a no-op. Returns the new profile and whether the target changed.
+ * SPEC-001 FR-27: a change to anything a session is created with (execution
+ * target, instructions, permissions, cwd) bumps `configRevision`, so sessions
+ * of the old revision are replaced; an identical value is a no-op. Returns the
+ * new profile and what changed.
  */
 export function applyProfilePatch(
   profile: BotProfile,
   patch: BotProfilePatch,
   now: Date,
-): { profile: BotProfile; targetChanged: boolean; providerChanged: boolean } {
+): { profile: BotProfile; targetChanged: boolean; providerChanged: boolean; sessionChanged: boolean } {
   const nextTarget = patch.executionTarget
     ? normalizeExecutionTarget(patch.executionTarget, profile.executionTarget)
     : profile.executionTarget;
   const targetChanged = !sameExecutionTarget(nextTarget, profile.executionTarget);
+  const nextInstructions = patch.instructions ?? profile.instructions;
+  const nextPermissions = patch.permissions
+    ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
+    : profile.permissions;
+  const sessionChanged = targetChanged
+    || nextInstructions !== profile.instructions
+    || !samePermissions(nextPermissions, profile.permissions);
   const next: BotProfile = {
     ...profile,
     name: patch.name ?? profile.name,
-    instructions: patch.instructions ?? profile.instructions,
+    instructions: nextInstructions,
     executionTarget: nextTarget,
-    configRevision: targetChanged ? profile.configRevision + 1 : profile.configRevision,
-    permissions: patch.permissions
-      ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
-      : profile.permissions,
+    configRevision: sessionChanged ? profile.configRevision + 1 : profile.configRevision,
+    permissions: nextPermissions,
     heartbeat: patch.heartbeat
       ? normalizeHeartbeat({ ...profile.heartbeat, ...patch.heartbeat }, profile.heartbeat)
       : profile.heartbeat,
@@ -213,5 +229,6 @@ export function applyProfilePatch(
     profile: next,
     targetChanged,
     providerChanged: nextTarget.provider !== profile.executionTarget.provider,
+    sessionChanged,
   };
 }

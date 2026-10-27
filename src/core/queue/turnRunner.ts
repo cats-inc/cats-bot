@@ -83,7 +83,7 @@ export class TurnRunner {
     let rebuiltAfterExit = false;
     for (let round = 0; round < 3; round += 1) {
       if (controller.signal.aborted) return { kind: 'cancelled' };
-      const bound = await this.deps.binder.bind(item.conversationId, item.id);
+      const bound = await this.deps.binder.bind(item.conversationId);
       if (!bound.ok) {
         if (bound.noCapacity && item.kind !== 'owner_message') {
           return { kind: 'retry_later', reason: 'no_capacity', retryAfterMs: this.delays.noCapacityMs };
@@ -187,6 +187,8 @@ export class TurnRunner {
       switch (event.type) {
         case 'init':
         case 'result': {
+          // The conversation may already have moved to a newer session (FR-27); only this one is touched.
+          if (this.deps.conversations.get(conversationId)?.attachment.sessionId !== sessionId) break;
           if (event.sessionId) {
             this.deps.conversations.setAttachment(conversationId, { state: 'ready', providerSessionId: event.sessionId });
           } else if (event.type === 'result') {

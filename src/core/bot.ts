@@ -1,6 +1,6 @@
 import { mkdirSync } from 'node:fs';
 
-import { SessionBinder } from './conversations/binder.ts';
+import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { ConversationStore } from './conversations/store.ts';
 import { BotEventBus, type BotEventListener } from './host-api/events.ts';
 import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
@@ -177,6 +177,8 @@ export class BotCore implements BotHostApi {
   private supervisor: RuntimeSupervisor | null;
   private readonly views = new Set<string>();
   private readonly timers = new Set<NodeJS.Timeout>();
+  /** Replaced sessions waiting for their running turn to end before they are closed (FR-27). */
+  private readonly retiring = new Set<string>();
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
   private handoffTimer: NodeJS.Timeout | null = null;
@@ -221,6 +223,11 @@ export class BotCore implements BotHostApi {
       conversations: this.conversations,
       now: this.now,
       mcpServers: (conversationId) => this.mcpServersFor(conversationId),
+      isPendingWorkItem: (workItemId) => {
+        const state = this.workItems.get(workItemId)?.state;
+        return state === 'queued' || state === 'running';
+      },
+      retireSession: (sessionId) => this.retireSession(sessionId),
       log: this.log,
     });
     this.runner = new TurnRunner({
@@ -821,31 +828,30 @@ export class BotCore implements BotHostApi {
     return structuredClone(this.profile);
   }
 
-  /** SPEC-001 FR-27: a target change bumps the revision and makes foreign attachments stale. */
+  /**
+   * SPEC-001 FR-27: a change to the target, instructions or permissions bumps
+   * the revision and makes attachments of older revisions stale.
+   */
   async updateProfile(patch: BotProfilePatch): Promise<BotProfile> {
     const result = applyProfilePatch(this.profile, patch, this.now());
     this.profile = result.profile;
     saveProfile(this.paths, this.profile);
-    if (result.targetChanged) {
+    if (result.sessionChanged) {
       this.journal({
         type: 'config',
         at: this.now().toISOString(),
         configRevision: this.profile.configRevision,
         executionTarget: this.profile.executionTarget,
       });
-      this.log(`config revision ${this.profile.configRevision}: target changed`);
+      this.log(`config revision ${this.profile.configRevision}: ${result.targetChanged ? 'target' : 'session settings'} changed`);
       for (const conversation of this.conversations.list()) {
         const { attachment } = conversation;
-        const matches = attachment.provider === this.profile.executionTarget.provider
-          && (attachment.model ?? null) === (this.profile.executionTarget.model ?? null);
-        if (attachment.sessionId && !matches && attachment.state !== 'stale') {
+        if (attachment.sessionId && !attachmentIsCurrent(conversation, this.profile) && attachment.state !== 'stale') {
           this.conversations.setAttachment(conversation.id, { state: 'stale' });
           this.conversations.append(conversation.id, {
             kind: 'system',
             origin: 'system',
-            text: `The bot now runs on ${this.profile.executionTarget.provider}`
-              + `${this.profile.executionTarget.model ? ` (${this.profile.executionTarget.model})` : ''}; `
-              + 'this conversation continues in a new session with a handoff of what was said so far.',
+            text: staleNotice(attachment, this.profile),
           });
           this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversation.id) });
         }
@@ -973,7 +979,25 @@ export class BotCore implements BotHostApi {
 
   // ---- queue ------------------------------------------------------------
 
+  /** FR-27: close a replaced session now, or after the turn still running in it. */
+  private retireSession(sessionId: string): void {
+    if (this.running?.item.run?.sessionId === sessionId) {
+      this.retiring.add(sessionId);
+      return;
+    }
+    this.retiring.delete(sessionId);
+    const client = this.client();
+    if (!client) return;
+    this.log(`closing replaced session ${sessionId}`);
+    void client.closeSession(sessionId).catch((error: unknown) => {
+      this.log(`close of replaced session ${sessionId} failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
   private pump(): void {
+    for (const sessionId of [...this.retiring]) {
+      if (this.running?.item.run?.sessionId !== sessionId) this.retireSession(sessionId);
+    }
     if (this.running || this.stopped || !this.started) return;
     const item = this.queue.take();
     if (!item) return;
