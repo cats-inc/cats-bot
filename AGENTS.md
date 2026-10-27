@@ -23,8 +23,8 @@
   implementation; the two notes under `docs/research/` are their evidence. Does not
   import `@cats-inc/cats-platform`.
 - Entry points: `src/cli/main.ts` is the headless `cats-bot` CLI (`init`, `run`, `say`,
-  `status`, `conversations`; run it as `node src/cli/main.ts …` or `npm run bot -- …` after
-  a build). `src/core/bot.ts` exports `BotCore`, the `BotHostApi` every host uses. The
+  `status`, `conversations`, `schedule`, `approve`, `heartbeat`, `tick`; run it as
+  `node src/cli/main.ts …` or `npm run bot -- …` after a build). `src/core/bot.ts` exports `BotCore`, the `BotHostApi` every host uses. The
   Electron shell is PLAN-001 Phase 3 and does not exist yet.
 - Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5, ESM (`NodeNext`), erasable
   TypeScript syntax only (Node runs `.ts` tests by type stripping: no `enum`, `namespace`

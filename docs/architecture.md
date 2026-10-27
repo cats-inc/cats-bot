@@ -22,6 +22,7 @@ through `BotHostApi`.
 ┌───────────────▼───────────────────────────────────────────────┐ │
 │ bot core  src/core                                            │ │
 │  profile  conversations+transcripts  queue+journal  timers    │─┘
+│  life loop (tick, schedules, heartbeat)   tool server (MCP)   │
 │  runtime supervisor ──── runtime client (HTTP, bearer key)    │
 └───────────────┬───────────────────────────────────────────────┘
                 │ spawn: cats-runtime --startup-mode app-managed --port <reserved>
@@ -100,10 +101,31 @@ through `BotHostApi`.
   events; `say` hands a message to the running instance through the handoff
   directory, or runs one turn itself when no instance holds the lock.
 
-### Planned (PLAN-001 Phases 2 to 4)
+### `src/core/life`
 
-- `src/core/life`: reconciliation tick, schedules, heartbeat, recovery.
-- `src/core/tools`: the bot's session MCP server (Streamable HTTP on loopback).
+- **Purpose**: what keeps the bot alive without a window (FR-20 to FR-25, FR-28).
+- **Responsibilities**: `loop.ts` is the reconcile tick (every 60 s, 5 s after
+  start, never overlapping, never calling the model): restart the runtime with
+  backoff, settle and fire schedules, keep the home session attached by the
+  runtime's own session status (`initializing`/`ready`/`busy` are live and left
+  alone; `closing`/`closed` resume; 404 rebuilds; unreachable means no action),
+  put idle notes to sleep, expire unanswered approvals, and decide when a
+  heartbeat turn is due. `schedules.ts` and `cron.ts` hold durable one-time and
+  cron schedules evaluated in an IANA zone with skip/coalesce/run_once missed
+  policies; `heartbeat.ts` the prompt, delays and `[quiet]` rule; `recovery.ts`
+  the evidence check that settles interrupted turns by the runtime transcript.
+
+### `src/core/tools`
+
+- **Purpose**: the bot's own tools for its model (FR-24, FR-30).
+- **Responsibilities**: a minimal MCP Streamable HTTP server on loopback with a
+  per-bot bearer token; the conversation that owns a session is in the URL path
+  of its descriptor. Tools: `schedule_create`, `schedule_list`, `schedule_cancel`,
+  `ask_owner`. A schedule exists only once journaled and the receipt is written
+  into the conversation; a question becomes an `awaiting_owner` work item.
+
+### Planned (PLAN-001 Phases 3 and 4)
+
 - `src/shell/electron`: tray, sticky-note windows, IPC bridge for `BotHostApi`.
 - Telegram long polling.
 

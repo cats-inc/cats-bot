@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
-import { fixtureCliCommand, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
+import { fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
  * SPEC-001 A1 against the real pinned cats-runtime package: the bot starts it
@@ -57,6 +57,7 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
       runtime: {
         runtimeEntry: resolveRuntimeEntry(),
         providerCommand: fixtureCliCommand,
+        providerLaunchArgs: fixtureCliLaunchArgs,
         instanceExtras: { projects_dir: projectsDir },
         readyTimeoutMs: 90_000,
         stopTimeoutMs: 10_000,

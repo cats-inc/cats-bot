@@ -2,7 +2,10 @@
 // --output-format stream-json` protocol, registered with the real cats-runtime
 // as the `claude` command in integration tests. It answers the runtime's
 // `--version` / `--help` probes, stays resident across turns, honours
-// `--resume <id>`, and replies deterministically from the message text.
+// `--resume <id>`, replies deterministically from the message text, and can
+// call the bot's own MCP tool server the way the real CLI would (through the
+// `--mcp-config` the runtime passes, with the bearer token from the
+// environment variable the runtime sets).
 import { appendFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { createInterface } from 'node:readline';
@@ -23,6 +26,7 @@ if (args.includes('--help')) {
     '  --verbose',
     '  --resume <id>',
     '  --model <model>',
+    '  --mcp-config <json>',
     '',
   ].join('\n'));
   process.exit(0);
@@ -35,9 +39,40 @@ const modelIndex = args.indexOf('--model');
 const model = modelIndex !== -1 ? args[modelIndex + 1] : 'claude-fixture';
 const logPath = process.env.CATS_BOTS_FIXTURE_LOG;
 
+const mcpIndex = args.indexOf('--mcp-config');
+let mcpServers = {};
+if (mcpIndex !== -1) {
+  try {
+    mcpServers = JSON.parse(args[mcpIndex + 1] ?? '{}').mcpServers ?? {};
+  } catch {
+    mcpServers = {};
+  }
+}
+
+function expandEnv(value) {
+  return String(value).replace(/\$\{([A-Z0-9_]+)\}/gu, (_, name) => process.env[name] ?? '');
+}
+
+async function callTool(name, toolArgs) {
+  const server = mcpServers['cats-bot'];
+  if (!server) return 'no cats-bot MCP server configured';
+  const headers = { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' };
+  for (const [key, value] of Object.entries(server.headers ?? {})) headers[key] = expandEnv(value);
+  const rpc = async (method, params, id) => {
+    const response = await fetch(server.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id, method, params }) });
+    if (response.status === 202) return null;
+    return response.json();
+  };
+  await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'claude-fixture', version: '0' } }, 1);
+  await rpc('notifications/initialized', {});
+  const result = await rpc('tools/call', { name, arguments: toolArgs }, 2);
+  if (result?.error) return `tool error: ${result.error.message}`;
+  return (result?.result?.content ?? []).map((block) => block.text ?? '').join('');
+}
+
 function log(entry) {
   if (!logPath) return;
-  appendFileSync(logPath, `${JSON.stringify({ at: new Date().toISOString(), sessionId, resumed: Boolean(resumed), ...entry })}\n`);
+  appendFileSync(logPath, `${JSON.stringify({ at: new Date().toISOString(), sessionId, resumed: Boolean(resumed), mcp: Object.keys(mcpServers), ...entry })}\n`);
 }
 
 function emit(frame) {
@@ -72,7 +107,10 @@ async function handleTurn(full) {
   turns += 1;
   if (!initialized) {
     initialized = true;
-    emit({ type: 'system', subtype: 'init', cwd: process.cwd(), tools: [], mcp_servers: [], model, permissionMode: 'default', claude_code_version: '2.1.267' });
+    emit({
+      type: 'system', subtype: 'init', cwd: process.cwd(), tools: [], model, permissionMode: 'default', claude_code_version: '2.1.267',
+      mcp_servers: Object.keys(mcpServers).map((name) => ({ name, status: 'connected' })),
+    });
   }
   log({ turn: turns, message, args, full });
   let reply;
@@ -88,6 +126,21 @@ async function handleTurn(full) {
     emit({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { path: 'file.txt' } }] } });
     emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'contents of file.txt' }] } });
     reply = 'used a tool';
+  } else if (message.startsWith('schedule:')) {
+    const [, minutes, ...prompt] = message.split(':');
+    const text = await callTool('schedule_create', { prompt: prompt.join(':'), delayMinutes: Number(minutes) });
+    reply = `scheduled -> ${text}`;
+  } else if (message.startsWith('cron:')) {
+    const [, expression, ...prompt] = message.split('|');
+    const text = await callTool('schedule_create', { prompt: prompt.join('|'), cron: expression });
+    reply = `scheduled -> ${text}`;
+  } else if (message.startsWith('ask:')) {
+    const text = await callTool('ask_owner', { question: message.slice('ask:'.length) });
+    reply = `asked -> ${text}`;
+  } else if (message === 'schedules?') {
+    reply = await callTool('schedule_list', {});
+  } else if (message.startsWith('[Cats heartbeat')) {
+    reply = process.env.CATS_BOTS_FIXTURE_HEARTBEAT_REPLY || '[quiet]';
   } else {
     reply = `echo: ${message}`;
   }

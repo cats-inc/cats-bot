@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 與 Phase 1 已完成 |
+| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0、1、2 已完成 |
 | **Owner** | Claude |
 | **Assigned To** | Claude |
 | **Reviewer** | Owner |
@@ -68,19 +68,19 @@
 
 ### Phase 2: 活著（SPEC-001 FR-20–FR-31；驗收 A2）
 
-- [ ] Task 2.1：`src/core/life/reconcile.ts`：60 秒對帳 tick（啟動後 5 秒第一次、不重疊、不呼叫模型）、
+- [x] Task 2.1：`src/core/life/reconcile.ts`：60 秒對帳 tick（啟動後 5 秒第一次、不重疊、不呼叫模型）、
       runtime 重啟、runtime 狀態分類（活著／已關閉／不存在／未知）與 `busy` 保護、home 的 resume / 重建
       與 5 分鐘退避、`presence` 紀錄、殘留 `running` 轉 `interrupted`。
-- [ ] Task 2.2：`src/core/life/schedules.ts`：一次性與 cron（IANA 時區由 core 換算）、到期轉工作項、
+- [x] Task 2.2：`src/core/life/schedules.ts`：一次性與 cron（IANA 時區由 core 換算）、到期轉工作項、
       coalesce、錯過政策與 grace。
-- [ ] Task 2.3：`src/core/tools/`：bot 的 session MCP server（`schedule_create`、`schedule_list`、
+- [x] Task 2.3：`src/core/tools/`：bot 的 session MCP server（`schedule_create`、`schedule_list`、
       `schedule_cancel`、`ask_owner`），以 `mcpServers` 掛到每個 session；收據寫入對話。
-- [ ] Task 2.4：`src/core/life/heartbeat.ts`：隨機間隔、`wake` 與 `regular`、延後條件、prompt、
+- [x] Task 2.4：`src/core/life/heartbeat.ts`：隨機間隔、`wake` 與 `regular`、延後條件、prompt、
       `[quiet]` 判斷、busy 與失敗重試、只記 kind 與結果的日誌。
-- [ ] Task 2.5：啟動時的復原（以 `history` / `observe` 對帳、`awaiting_owner`）與通知投遞狀態。
-- [ ] Task 2.6：CLI 加 `schedule add | list | cancel`、`approve <workItem> <decision>`、
+- [x] Task 2.5：啟動時的復原（以 `history` / `observe` 對帳、`awaiting_owner`）與通知投遞狀態。
+- [x] Task 2.6：CLI 加 `schedule add | list | cancel`、`approve <workItem> <decision>`、
       `heartbeat pause | resume`。
-- [ ] Task 2.7：測試：無視圖下到期排程執行；重複輸入合併；殺掉 runtime 後 home 在 60 秒內
+- [x] Task 2.7：測試：無視圖下到期排程執行；重複輸入合併；殺掉 runtime 後 home 在 60 秒內
       `ready`；session `busy` 時 tick 不 resume、重建或取消；`initializing` 的 session 由心跳帶到
       ready；安靜心跳不產生訊息但有日誌；busy 4 分鐘重試；`interrupted` 不重播；三種錯過政策；
       OS 恢復後最多補一次心跳；模型口頭答應而未呼叫工具時沒有排程。
@@ -188,6 +188,7 @@
 | 2026-10-27 | 依 Codex 審閱修訂：discovery 隔離改為 runtime 旗標而非改目錄（ADR-001 §1、SPEC-001 FR-5）；對帳依 session 狀態分類並保護 `initializing` 與 `busy`（ADR-001 §5、SPEC-001 FR-20）；分支清理腳本改為驗證已落地才刪除；CI 的 YAML 驗證改為會失敗 |
 | 2026-10-27 | Phase 0 完成：ESM 工具鏈（`NodeNext`、`erasableSyntaxOnly`、`rewriteRelativeImportExtensions`）、`node:test` 直接跑 `.ts`、CI Node job（ubuntu 與 windows）、釘定 `@cats-inc/cats-runtime` 0.6.1、架構邊界測試、`src/core/types.ts` 契約型別、services／setup／testing 文件；修正：bot 的 MCP server 必須走 Streamable HTTP（runtime 拒絕 stdio） |
 | 2026-10-27 | Phase 1 完成：`src/core`（profile、store、runtime supervisor 與 client、conversations 與承接包、queue 與 turn runner、`BotCore`）、`src/cli/main.ts`（`init`、`run`、`say`、`status`、`conversations`）；測試 30 個：單元、假 runtime 的 core 端對端、真 runtime 0.6.1 加 fixture CLI 的整合測試（建立、串流、取消、resume、history、discovered 項目不影響列表）。實測修正：runtime 0.6.1 拒絕 `--port 0`，core 改為啟動前自己預留 loopback port（SPEC-001 FR-5）；runtime 意外退出的退避重啟已先在 core 內實作（原列於 Task 2.1），對帳 tick 到 Phase 2 再接上；FR-28 以 `history`／`observe` 對帳證據留給 Task 2.5，Phase 1 只把殘留的 `running` 標為 `interrupted` 且不重跑 |
+| 2026-10-27 | Phase 2 完成：`src/core/life`（`loop.ts` 對帳 tick、`schedules.ts` 與 `cron.ts` 的 IANA 時區 cron、`heartbeat.ts`、`recovery.ts`）、`src/core/tools`（Streamable HTTP 的 session MCP server 與 `schedule_create`／`schedule_list`／`schedule_cancel`／`ask_owner`）、`src/core/conversations/binder.ts`（turn runner 與 tick 共用的 session 綁定）、CLI 加 `schedule add|list|cancel`、`approve`、`heartbeat pause|resume`、`tick`；測試：cron、schedules、heartbeat、recovery、tools 單元測試，假 runtime 的 life 測試（tick 建立與復活 home、busy 保護、安靜與開口的心跳、暫停、到期排程與 coalesce、停機後的錯過政策與一次補心跳、ask_owner 與逾時、便箋閒置入睡），真 runtime 的 fixture CLI 經 `--mcp-config` 呼叫 bot 工具伺服器建立排程並到點執行、`ask_owner`、心跳 `[quiet]`。設計說明：承接包只在建立或替換 session 時以 instructions 送入，心跳 prompt 本身只帶時間事實與 `[quiet]` 規則；session `busy` 時的心跳由 loop 四分鐘後重排，而不是留在佇列 |
 
 ---
 

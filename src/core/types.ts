@@ -213,10 +213,11 @@ export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 export interface HandoffMessage {
   id: string;
   at: string;
-  kind: 'open' | 'say' | 'args';
+  kind: 'open' | 'say' | 'args' | 'schedule_create' | 'schedule_cancel' | 'approve' | 'heartbeat';
   conversationId?: string;
   text?: string;
   args?: string[];
+  payload?: Record<string, unknown>;
 }
 
 /** SPEC-001 FR-32 commands, as plain serializable calls. */
@@ -236,6 +237,8 @@ export interface BotHostApi {
   resolveApproval(workItemId: string, decision: 'approve' | 'deny'): Promise<void>;
   quit(): Promise<void>;
 }
+
+export type ApprovalDecision = 'approve' | 'deny';
 
 export interface BotProfilePatch {
   name?: string;
