@@ -62,12 +62,14 @@ Add your project-specific automation scripts here.
 - Bootstrap - generic guidance supplied by the bootstrap; usable as-is
 - Directory - container for individual records
 - Optional - requires an additional flavor
+- Research - evidence and recommendations; not an accepted architecture decision
 
 ## Research
 
 | Document | Status | Description |
 |----------|--------|-------------|
 | [research/](./research/) | Directory | Research notes and external sources |
+| [Resident bot architecture assessment](./research/2026-10-27-resident-bot-architecture-assessment.md) | Research | Independent source-based recommendations for bot lifetime, Runtime integration, global model settings and desktop presentation |
 
 ## Context-Driven Development
 
