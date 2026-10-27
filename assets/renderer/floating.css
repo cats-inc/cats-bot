@@ -1,0 +1,229 @@
+* {
+  box-sizing: border-box;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  color: #2b2a26;
+  user-select: none;
+}
+
+/* The cat sits in the bottom-right corner; the bubble grows up and to the left of it. */
+.cat {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  width: 96px;
+  height: 96px;
+  cursor: grab;
+  filter: drop-shadow(0 4px 6px rgba(60, 40, 10, 0.35));
+  transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+.cat.dragging {
+  cursor: grabbing;
+}
+
+.cat svg {
+  display: block;
+  pointer-events: none;
+}
+
+.body {
+  transform-origin: 64px 110px;
+  animation: breathe 4s ease-in-out infinite;
+}
+
+.eyes-open {
+  transform-origin: 64px 70px;
+  animation: blink 6s infinite;
+}
+
+.eyes-closed {
+  display: none;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1, 1); }
+  50% { transform: scale(1.02, 0.98); }
+}
+
+@keyframes blink {
+  0%, 94%, 100% { transform: scaleY(1); }
+  96% { transform: scaleY(0.1); }
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 11px;
+  background: #d8453b;
+  color: #fff;
+  font-weight: 700;
+  font-size: 12px;
+  line-height: 22px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  animation: pop 0.3s ease-out;
+}
+
+@keyframes pop {
+  from { transform: scale(0.4); }
+  to { transform: scale(1); }
+}
+
+/* Thinking: dots above the head and a little bob. */
+.thinking-dots {
+  position: absolute;
+  right: 40px;
+  bottom: 106px;
+  display: none;
+  gap: 4px;
+  padding: 4px 8px;
+  background: #fff;
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+.thinking-dots span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #d98a2b;
+  animation: dot 1.2s infinite ease-in-out;
+}
+
+.thinking-dots span:nth-child(2) { animation-delay: 0.2s; }
+.thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+@keyframes dot {
+  0%, 80%, 100% { transform: translateY(0); opacity: 0.4; }
+  40% { transform: translateY(-4px); opacity: 1; }
+}
+
+body.thinking .thinking-dots {
+  display: flex;
+}
+
+body.thinking .body {
+  animation: bob 0.9s ease-in-out infinite;
+}
+
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-2deg); }
+}
+
+/* Sleeping: closed eyes and drifting z's. */
+body.sleeping .eyes-open {
+  display: none;
+}
+
+body.sleeping .eyes-closed {
+  display: inline;
+}
+
+.zzz {
+  position: absolute;
+  right: 20px;
+  bottom: 96px;
+  display: none;
+  font-weight: 700;
+  color: #7b7560;
+}
+
+.zzz span {
+  display: inline-block;
+  animation: drift 3s infinite ease-in;
+  opacity: 0;
+}
+
+.zzz span:nth-child(2) { animation-delay: 1s; font-size: 15px; }
+.zzz span:nth-child(3) { animation-delay: 2s; font-size: 18px; }
+
+@keyframes drift {
+  0% { transform: translate(0, 0); opacity: 0; }
+  20% { opacity: 1; }
+  100% { transform: translate(10px, -26px); opacity: 0; }
+}
+
+body.sleeping .zzz {
+  display: block;
+}
+
+/* The runtime is down: a faded, grey cat. */
+body.offline .cat {
+  filter: grayscale(1) drop-shadow(0 4px 6px rgba(0, 0, 0, 0.25));
+  opacity: 0.7;
+}
+
+.bubble {
+  position: absolute;
+  right: 16px;
+  bottom: 112px;
+  max-width: 260px;
+  min-width: 140px;
+  padding: 8px 12px 10px;
+  background: #fff8d6;
+  border: 1px solid #f1e3a6;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(60, 40, 10, 0.25);
+  cursor: pointer;
+  animation: rise 0.25s ease-out;
+}
+
+.bubble::after {
+  content: "";
+  position: absolute;
+  right: 40px;
+  bottom: -8px;
+  border-width: 8px 8px 0;
+  border-style: solid;
+  border-color: #fff8d6 transparent transparent;
+}
+
+@keyframes rise {
+  from { transform: translateY(8px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.bubble-from {
+  font-size: 11px;
+  font-weight: 600;
+  color: #7b7560;
+  margin-right: 16px;
+}
+
+.bubble-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.bubble-close {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  border: 0;
+  background: transparent;
+  color: #7b7560;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 4px;
+}

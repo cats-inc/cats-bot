@@ -1,8 +1,10 @@
 // The only bridge between a renderer (a sticky note, the settings page or
-// the first-run setup) and the main process (SPEC-001 FR-34, SPEC-002).
+// the first-run setup, the floating bot) and the main process (SPEC-001
+// FR-34, SPEC-002).
 // Commands go to the core through `bot:invoke`; events come back on
 // `bot:event`. Window-only actions use `window:*`, shell preferences
-// `shell:*`, and first-run setup `setup:*`; the main process checks which
+// `shell:*`, the floating bot `floating:*` and first-run setup `setup:*`;
+// the main process checks which
 // window sent each one. Nothing here can reach the runtime: the renderer never
 // learns its URL or key. Plain CommonJS on purpose: sandboxed preload scripts
 // cannot be ES modules.
@@ -58,6 +60,33 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
     openSettings(tab) {
       return ipcRenderer.invoke('shell:openSettings', tab);
+    },
+    setFloatingVisible(visible) {
+      return ipcRenderer.invoke('shell:setFloatingVisible', visible);
+    },
+  },
+  floating: {
+    setInteractive(interactive) {
+      ipcRenderer.send('floating:interactive', interactive === true);
+    },
+    moveTo(x, y) {
+      ipcRenderer.send('floating:moveTo', x, y);
+    },
+    dragEnd() {
+      ipcRenderer.send('floating:dragEnd');
+    },
+    activate() {
+      return ipcRenderer.invoke('floating:activate');
+    },
+    menu() {
+      return ipcRenderer.invoke('floating:menu');
+    },
+    onBubble(listener) {
+      const wrapped = (_event, message) => listener(message);
+      ipcRenderer.on('floating:bubble', wrapped);
+      return () => {
+        ipcRenderer.removeListener('floating:bubble', wrapped);
+      };
     },
   },
   setup: {

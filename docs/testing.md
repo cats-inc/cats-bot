@@ -78,7 +78,8 @@ last step, not the first.
 - **Scope**: the Electron-free parts of the shell: the tray menu data and the
   note view state. Everything that needs Electron is checked by hand (below).
   `tests/core/providers.test.ts` covers the provider list, PATH detection,
-  the model catalogs and first-run input validation (SPEC-002).
+  the model catalogs and first-run input validation (SPEC-002);
+  `trayMenu.test.ts` also covers where the floating bot appears and its bubble text.
 
 ### Manual acceptance
 
@@ -92,6 +93,12 @@ last step, not the first.
   `CATS_BOTS_HOME`, an unused `--id` and the fixture CLI
   (`CATS_BOTS_PROVIDER_COMMAND=node`, `CATS_BOTS_PROVIDER_LAUNCH_ARGS=<fixture>`),
   fill the setup page through CDP, then drive `settings.html` the same way.
+- The floating bot (SPEC-002 FR-7) needs real input: move the mouse with
+  injected events (`mouse_event` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE`
+  or `SendInput`), not `SetCursorPos`, which bypasses the low-level hook
+  Electron uses to forward moves to a click-through window. Read the cat's
+  rectangle from the page (`getBoundingClientRect` plus `window.screenX`,
+  times `devicePixelRatio`) before pressing.
 
 ## Running Tests
 

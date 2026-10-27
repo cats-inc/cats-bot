@@ -17,6 +17,8 @@ export interface TrayMenuModel {
   openAtLogin: boolean;
   openAtLoginAvailable: boolean;
   awaitingOwner: number;
+  /** SPEC-002 FR-7. */
+  floatingVisible: boolean;
 }
 
 export interface TrayMenuActions {
@@ -26,6 +28,7 @@ export interface TrayMenuActions {
   onOpenSettings(tab?: string): void;
   onToggleHeartbeat(enabled: boolean): void;
   onToggleOpenAtLogin(enabled: boolean): void;
+  onToggleFloating(visible: boolean): void;
   onQuit(): void;
 }
 
@@ -94,6 +97,12 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       click: () => actions.onToggleHeartbeat(!model.heartbeatEnabled),
     },
   );
+  template.push({
+    label: 'Show floating cat',
+    type: 'checkbox',
+    checked: model.floatingVisible,
+    click: () => actions.onToggleFloating(!model.floatingVisible),
+  });
   if (model.openAtLoginAvailable) {
     template.push({
       label: 'Start at login',
