@@ -22,7 +22,8 @@ const DEFAULT_API_BASE_URL = 'https://api.telegram.org';
 const DEFAULT_POLL_TIMEOUT_SECONDS = 25;
 export const MAX_UPDATE_ATTEMPTS = 5;
 
-export type TelegramHealth = 'healthy' | 'degraded' | 'failed';
+export type { TelegramHealth, TelegramStatus } from '../types.ts';
+import type { TelegramHealth, TelegramStatus } from '../types.ts';
 
 export interface TelegramInbound {
   chatId: number;
@@ -78,15 +79,6 @@ export function writeTelegramLastUpdateId(path: string, token: string, updateId:
   writeJsonAtomic(path, state);
 }
 
-export interface TelegramStatus {
-  polling: boolean;
-  health: TelegramHealth;
-  ownerChatId: number | null;
-  lastPollAt: string | null;
-  lastError: string | null;
-  processedUpdates: number;
-  consecutiveFailures: number;
-}
 
 interface TelegramUpdate {
   update_id: number;

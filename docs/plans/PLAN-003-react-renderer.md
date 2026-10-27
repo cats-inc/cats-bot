@@ -1,0 +1,56 @@
+# PLAN-003: React Renderer
+
+## Metadata
+
+| Field | Value |
+|-------|-------|
+| **Status** | In progress — owner 於 2026-10-28 要求切 slice 實作並交付安裝包 |
+| **Owner** | Claude |
+| **Related spec** | [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) |
+| **Related decision** | [ADR-003](../decisions/003-build-the-renderer-with-react-and-vite-like-cats-desktop.md) |
+
+## Overview
+
+每個 slice 一個 PR，CI 綠燈後自動合併。先單獨換掉建置流程（畫面與行為不變），確認 file:// 載入、CSP 與
+打包都沒問題，再逐頁改寫：先便箋（使用者每天看的），再工具卡片與決定按鈕，最後設定頁。全部合併後
+從 main 建一包安裝檔交給 owner。
+
+## Implementation Phases
+
+### Slice 1：Vite 與 TypeScript 建置（SPEC-003 FR-1）
+
+- [x] 頁面搬到 `src/renderer/`，Vite 多頁建置到 `dist/renderer/`；殼改從那裡載入，圖示路徑改為明確傳入。
+- [x] `bridge.ts` 定義 `window.catsBot` 的型別；命令結果型別搬進 `core/types.ts`；浮動貓改為 TypeScript。
+- [x] `THIRD-PARTY-NOTICES.txt`；`tsconfig.renderer.json`；架構邊界與 bridge 契約測試。
+- [x] 驗收：既有腳本在 Vite 建置上重跑，打包版首次啟動頁正常。
+
+### Slice 2：便箋改用 React 並渲染 markdown（FR-2、FR-3）
+
+- [ ] 便箋頁面以 React 重寫，保留 IME 的 Enter 判斷、只在有焦點時標為已讀、抬起後把焦點還給輸入框、
+      串流中的回覆以 `workItemId` 對應、回合結束後重新讀逐字稿。
+- [ ] `react-markdown` + `remark-gfm` + `remark-breaks`；連結與圖片規則；殼拒絕開新視窗與換頁，
+      http(s) 交給系統瀏覽器。
+- [ ] 測試：連結規則、逐字稿整理。
+
+### Slice 3：工具卡片與主人的決定（FR-4、FR-5）
+
+- [ ] 工具卡片（以 `toolId` 合併、收合與展開、錯誤狀態）。
+- [ ] `awaiting_owner` 的 Approve／Deny 按鈕，`work.updated` 後更新。
+- [ ] 測試：卡片分組與決定狀態。
+
+### Slice 4：設定與首次啟動改用 React（FR-6）
+
+- [ ] Bot、Notes、Life、Telegram、App 分頁與首次啟動頁以 React 重寫，行為同 SPEC-002。
+- [ ] model 清單的請求序號邏輯抽成可測試的模組並補測試。
+- [ ] 驗收後從 main 建安裝檔交給 owner。
+
+## Testing Strategy
+
+- 不碰 DOM 的邏輯以 `node:test` 測試；元件在真的殼裡以 CDP 驗收（docs/testing.md）。
+- 每個 slice 重跑既有的驗收腳本：設定頁 model 競態與存檔、桌面層便箋的抬起、背景便箋的未讀。
+
+## Progress Log
+
+| Date | Update |
+|------|--------|
+| 2026-10-28 | Slice 1：Vite 7.3.6 建置三個頁面；Electron 41 以 file:// 載入 `type="module"` 的輸出正常，CSP 不必放寬。重跑驗收腳本：model 選單快速切換 8/8 正確、存檔保留 `claude · haiku`、桌面層便箋隱藏後再開 7 秒後仍抬起、背景便箋未讀 1 且浮動貓顯示 1、開啟後歸零；`dist:dir` 打包版以新的 bot id 開出首次啟動頁，provider 15 個、model 清單載入。esbuild 的 postinstall 被 npm 擋下仍可用（與 koffi 相同） |

@@ -1,4 +1,4 @@
-// Renders assets/renderer/cat.svg into the PNG icons the app ships:
+// Renders src/renderer/cat.svg into the PNG icons the app ships:
 //   assets/installer/icon.png (256x256, electron-builder makes the .ico from it)
 //   assets/icon.png       (256x256, window icon at run time)
 //   assets/tray-icon.png  (32x32) and assets/tray-icon@2x.png (64x64)
@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { app, BrowserWindow } from 'electron';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const svg = readFileSync(join(root, 'assets', 'renderer', 'cat.svg'));
+const svg = readFileSync(join(root, 'src', 'renderer', 'cat.svg'));
 const targets = [
   [256, join(root, 'assets', 'installer', 'icon.png')],
   [256, join(root, 'assets', 'icon.png')],

@@ -28,8 +28,9 @@
     "cats-bot": "dist/cli/main.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.test.json",
+    "build": "tsc -p tsconfig.json && vite build",
+    "build:renderer": "vite build",
+    "typecheck": "tsc -p tsconfig.test.json && tsc -p tsconfig.renderer.json",
     "test": "node --test \"tests/**/*.test.ts\"",
     "bot": "node dist/cli/main.js",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
@@ -44,10 +45,19 @@
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
+    "@types/react": "18.3.28",
+    "@types/react-dom": "18.3.7",
+    "@vitejs/plugin-react": "4.7.0",
     "electron": "^41.2.0",
     "electron-builder": "^26.18.0",
     "prettier": "^3.9.10",
-    "typescript": "^5.9.3"
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-markdown": "10.1.0",
+    "remark-breaks": "4.0.0",
+    "remark-gfm": "4.0.1",
+    "typescript": "^5.9.3",
+    "vite": "7.3.6"
   },
   "engines": {
     "node": ">=24.0.0"

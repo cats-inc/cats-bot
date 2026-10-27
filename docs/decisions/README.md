@@ -41,6 +41,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [000-template](./000-template.md) | Template | - | - |
 | [001](./001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Build a Resident Bot Core on cats-runtime with Disposable Presentation | Proposed | 2026-10-27 |
 | [002](./002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) | Give the Bot a Desktop Presence in the Electron Shell | Accepted | 2026-10-28 |
+| [003](./003-build-the-renderer-with-react-and-vite-like-cats-desktop.md) | Build the Renderer with React and Vite, Like Cats Desktop | Accepted | 2026-10-28 |
 <!-- Add new ADRs above this line -->
 
 ## For AI Agents

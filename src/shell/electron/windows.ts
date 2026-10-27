@@ -32,7 +32,9 @@ export interface NoteWindowsOptions {
   core: BotCore;
   botRoot: string;
   preloadPath: string;
+  /** The built pages (`dist/renderer`, ADR-003). */
   rendererDir: string;
+  iconPath: string;
   isQuitting(): boolean;
   /** Windows only; without it notes offer the normal and top layers. */
   desktop?: DesktopHost | null;
@@ -175,7 +177,7 @@ export class NoteWindows {
       autoHideMenuBar: true,
       backgroundColor: '#fff8d6',
       title: 'Cats Bot',
-      icon: join(this.options.rendererDir, '..', 'icon.png'),
+      icon: this.options.iconPath,
       webPreferences: {
         preload: this.options.preloadPath,
         contextIsolation: true,

@@ -86,8 +86,10 @@ async function main(): Promise<void> {
 
   const appPath = app.getAppPath();
   const assetsDir = join(appPath, 'assets');
-  const rendererDir = join(assetsDir, 'renderer');
+  // ADR-003: the pages are built by Vite; the preload and the icons stay plain files in assets/.
+  const rendererDir = join(appPath, 'dist', 'renderer');
   const preloadPath = join(assetsDir, 'preload.cjs');
+  const iconPath = join(assetsDir, 'icon.png');
 
   // SPEC-001 NFR security: the shell keeps secrets encrypted with the OS facility when it has one.
   const cipher: SecretCipher | undefined = safeStorage.isEncryptionAvailable()
@@ -121,6 +123,7 @@ async function main(): Promise<void> {
       const done = await runFirstRunSetup({
         preloadPath,
         rendererDir,
+        iconPath,
         create: async (input) => {
           initializeBot(botsHome, {
             id: botId,
@@ -149,11 +152,12 @@ async function main(): Promise<void> {
     botRoot: root,
     preloadPath,
     rendererDir,
+    iconPath,
     isQuitting: () => quitting,
     desktop: loadDesktopHost(log),
     log,
   });
-  const settings = new SettingsWindow({ preloadPath, rendererDir });
+  const settings = new SettingsWindow({ preloadPath, rendererDir, iconPath });
   const openSettings = (tab?: string) => {
     void settings.open(tab).catch((error: unknown) => {
       process.stderr.write(`open settings failed: ${errorMessage(error)}\n`);
@@ -163,6 +167,7 @@ async function main(): Promise<void> {
   const floating = new FloatingBot({
     preloadPath,
     rendererDir,
+    iconPath,
     state: () => windows.shellState.floatingBot,
     persist: () => windows.persist(),
   });

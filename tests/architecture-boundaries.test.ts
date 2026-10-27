@@ -106,3 +106,34 @@ test('the shell never holds the runtime client directly', () => {
   }
   assert.deepEqual(offenders, []);
 });
+
+test('the renderer takes only types from the core, and nothing from Node or Electron (ADR-003)', () => {
+  const rendererRoot = join(srcRoot, 'renderer');
+  const typesFile = join(srcRoot, 'core', 'types.ts');
+  const files: string[] = [];
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir)) {
+      const full = join(dir, entry);
+      if (statSync(full).isDirectory()) walk(full);
+      else if (/\.(?:ts|tsx|js)$/u.test(entry)) files.push(full);
+    }
+  };
+  walk(rendererRoot);
+  assert.ok(files.length > 0, 'src/renderer has sources');
+  const offenders: string[] = [];
+  const statement = /\b(?:import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/gu;
+  for (const file of files) {
+    for (const match of readFileSync(file, 'utf8').matchAll(statement)) {
+      const typeOnly = Boolean(match[1]);
+      const specifier = match[2]!;
+      const where = `${relative(repoRoot, file)} imports ${specifier}`;
+      if (specifier === 'electron' || specifier.startsWith('electron/') || specifier.startsWith('node:')) {
+        offenders.push(where);
+      } else if (isRelative(specifier) && !resolvesInside(file, specifier, rendererRoot)) {
+        // Outside the renderer only the core's type contract, and only as types (erased from the bundle).
+        if (!typeOnly || resolve(dirname(file), specifier) !== typesFile) offenders.push(`${where} (only \`import type\` from core/types.ts)`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
