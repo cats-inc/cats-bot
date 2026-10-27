@@ -18,17 +18,21 @@
 - Purpose: standalone, always-alive desktop bots for the Cats ecosystem. One
   process per bot wraps an agent CLI through `@cats-inc/cats-runtime` (app-managed
   child process, loopback HTTP), with a tray icon, sticky-note conversations and one
-  global provider/model per bot. Research phase; see
-  `docs/research/2026-10-27-standalone-living-bot-feasibility.md`. Does not
+  global provider/model per bot. Decision phase: read `docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md`
+  (proposed), `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md` and `docs/plans/PLAN-001-resident-bot-core-foundation.md` before any
+  implementation; the two notes under `docs/research/` are their evidence. Does not
   import `@cats-inc/cats-platform`.
-- Entry points: none yet. `src/` holds only the placeholder; the bot core, shell
-  and packaging entry points are decided by the first ADR.
-- Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5 with the bootstrap
-  `tsconfig.json` (CommonJS output until the module format is decided); consumes
-  `cats-runtime` 0.6.x over its process + HTTP contract. Shell technology
-  (Electron or a native host) is undecided.
-- Test command: none verified. The template `npm test` (jest) has no installed
-  dependencies and no tests; report tests as missing until a runner is chosen.
+- Entry points: none implemented. ADR-001 defines a headless `cats-bot` CLI over the
+  bot core and an Electron shell as the first presentation host; `src/` still holds
+  only the placeholder until PLAN-001 Phase 1.
+- Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5. ADR-001 selects ESM
+  (`NodeNext`), erasable TypeScript syntax and an exact pin of `@cats-inc/cats-runtime`
+  consumed over its process + HTTP contract; `tsconfig.json` and `package.json` remain
+  the CommonJS bootstrap template until PLAN-001 Phase 0 lands. Electron is the first
+  shell; desktop-layer hosts need a later ADR.
+- Test command: none verified. ADR-001 chooses `node:test` with Node 24 type
+  stripping, but the template `npm test` (jest) is still in place with no installed
+  dependencies and no tests; report tests as missing until PLAN-001 Phase 0 lands.
 - Subprojects: none declared; nested AGENTS.md files provide scoped instructions
   and do not by themselves prove a monorepo architecture.
 

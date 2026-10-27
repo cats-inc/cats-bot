@@ -39,6 +39,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | ADR | Title | Status | Date |
 |-----|-------|--------|------|
 | [000-template](./000-template.md) | Template | - | - |
+| [001](./001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Build a Resident Bot Core on cats-runtime with Disposable Presentation | Proposed | 2026-10-27 |
 <!-- Add new ADRs above this line -->
 
 ## For AI Agents

@@ -49,6 +49,7 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | Spec | Title | Status | Related Plan |
 |------|-------|--------|--------------|
 | [000-template](./000-template.md) | Template | - | - |
+| [SPEC-001](./SPEC-001-resident-bot-core-and-global-execution.md) | Resident Bot Core and Global Execution Contract | Draft | [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md) |
 <!-- Add new specs above this line -->
 
 ## For AI Agents
