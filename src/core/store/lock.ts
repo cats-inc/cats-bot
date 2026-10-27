@@ -70,11 +70,16 @@ export function readInstanceLock(paths: BotPaths): InstanceLock | null {
   return existing.value.host === hostname() && processAlive(existing.value.pid) ? existing.value : null;
 }
 
+/** Orders handoffs written by one process within the same millisecond. */
+let handoffSequence = 0;
+
 /** The second instance drops its request here; the running core picks it up. */
 export function writeHandoff(paths: BotPaths, message: Omit<HandoffMessage, 'id' | 'at'>): HandoffMessage {
   mkdirSync(paths.handoff, { recursive: true });
   const full: HandoffMessage = { id: randomUUID(), at: new Date().toISOString(), ...message };
-  writeJsonAtomic(join(paths.handoff, `${full.at.replace(/[:.]/gu, '-')}-${full.id}.json`), full);
+  handoffSequence += 1;
+  const name = `${full.at.replace(/[:.]/gu, '-')}-${String(handoffSequence).padStart(6, '0')}-${full.id}.json`;
+  writeJsonAtomic(join(paths.handoff, name), full);
   return full;
 }
 
