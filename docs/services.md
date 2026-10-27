@@ -10,7 +10,7 @@ listeners whose ports are chosen by the operating system at startup:
 
 | Service Name | Port | Protocol | Description | Start Command |
 |--------------|------|----------|-------------|---------------|
-| cats-runtime (app-managed child) | dynamic (`--port 0`, loopback only) | HTTP | The bot's private `@cats-inc/cats-runtime` instance; the bot core reads the bound port from the `runtime.ready` stdout event and confirms it with `GET /health` | spawned by the bot core (SPEC-001 FR-5); never started by hand |
+| cats-runtime (app-managed child) | dynamic (a free loopback port reserved by the core at each start) | HTTP | The bot's private `@cats-inc/cats-runtime` instance; the bot core reads the bound port from the `runtime.ready` stdout event and confirms it with `GET /health` | spawned by the bot core (SPEC-001 FR-5); never started by hand |
 | bot tool server (PLAN-001 Phase 2) | dynamic (loopback only) | HTTP (MCP Streamable HTTP) | The bot's session MCP server (`schedule_create`, `schedule_list`, `schedule_cancel`, `ask_owner`), handed to the provider CLI through the runtime's `mcpServers` field | spawned in-process by the bot core |
 
 Both listeners bind `127.0.0.1` only, carry a per-bot random bearer token, and
@@ -27,7 +27,9 @@ are never reachable from the shell's renderer (SPEC-001 FR-32).
 | `CATS_RUNTIME_WSL_DISCOVERY_POLICY`, `CATS_RUNTIME_DOCKER_DISCOVERY_POLICY` | `manual_only` | cats-runtime child | Same reason |
 
 The runtime's own `CATS_RUNTIME_HOST` / `CATS_RUNTIME_PORT` are not used: the
-bot passes `--host 127.0.0.1 --port 0` on the command line.
+bot passes `--host 127.0.0.1 --port <port>` on the command line, where the port
+was just reserved by binding and closing a loopback listener (cats-runtime 0.6.1
+rejects `--port 0`).
 
 ## Cross-Project Port Coordination
 

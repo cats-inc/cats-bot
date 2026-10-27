@@ -16,7 +16,7 @@ These important documents live in the project root:
 | Document | Status | Description |
 |----------|--------|-------------|
 | [requirements.md](./requirements.md) | Template | Requirements specification |
-| [architecture.md](./architecture.md) | Template | System architecture |
+| [architecture.md](./architecture.md) | Complete | Components, data flow and patterns of the bot core |
 | [api.md](./api.md) | Template | API specification (REST/WebSocket) |
 
 ## Development Guides

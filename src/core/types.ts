@@ -68,9 +68,9 @@ export interface SessionAttachment {
 
 export type ConversationRole = 'home' | 'note';
 
-/** SPEC-001 FR-12: what a replacement session receives as handoff context. */
+/** SPEC-001 FR-12: what a replacement session received as handoff context. */
 export interface HandoffCheckpoint {
-  /** Lossy digest of the transcript before `throughSeq`. */
+  /** The handoff text that was sent; lossy for long conversations. */
   digest: string;
   /** Transcript sequence number the digest covers, inclusive. */
   throughSeq: number;
@@ -209,6 +209,16 @@ export type JournalEntry =
 
 export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 
+/** SPEC-001 FR-3: what a second instance of the same bot hands to the running one. */
+export interface HandoffMessage {
+  id: string;
+  at: string;
+  kind: 'open' | 'say' | 'args';
+  conversationId?: string;
+  text?: string;
+  args?: string[];
+}
+
 /** SPEC-001 FR-32 commands, as plain serializable calls. */
 export interface BotHostApi {
   getProfile(): Promise<BotProfile>;
@@ -241,6 +251,8 @@ export type BotHostEvent =
   | { type: 'conversation.updated'; conversation: ConversationRecord }
   | { type: 'turn.delta'; conversationId: string; workItemId: string; entry: TranscriptEntry }
   | { type: 'turn.completed'; conversationId: string; workItem: WorkItem }
+  | { type: 'work.updated'; workItem: WorkItem }
   | { type: 'work.awaitingOwner'; workItem: WorkItem }
   | { type: 'presence.changed'; conversationId: string; presence: PresenceState; reason: PresenceReason }
-  | { type: 'runtime.status'; state: RuntimeState; detail?: string };
+  | { type: 'runtime.status'; state: RuntimeState; detail?: string }
+  | { type: 'host.handoff'; message: HandoffMessage };

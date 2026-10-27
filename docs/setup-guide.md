@@ -36,13 +36,31 @@ All three must pass on Windows and on Linux; CI runs them on both.
 
 ## Running a bot
 
-The headless entry point `cats-bot` (`npm run bot -- <command>`) arrives with
-PLAN-001 Phase 1 (`init`, `run`, `say`, `status`, `conversations`). Until it
-lands, there is no runnable bot.
+The headless entry point is `cats-bot` (`node src/cli/main.ts …` from the
+checkout, or `npm run bot -- …` after `npm run build`):
+
+```bash
+node src/cli/main.ts init --name Mochi --provider claude --instructions "You are Mochi."
+node src/cli/main.ts run                 # foreground; Ctrl+C stops the runtime and the CLI
+node src/cli/main.ts say home hello      # to the running bot, or one turn when none runs
+node src/cli/main.ts status
+node src/cli/main.ts conversations
+```
+
+`init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
+the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.
+The provider is the CLI's product name as cats-runtime knows it (`claude`,
+`codex`, `copilot`, `pi`, …); that CLI must be installed and logged in.
 
 Bot data lives under `~/.cats/bots/<bot-id>/` unless `CATS_BOTS_HOME` points
 elsewhere (`docs/services.md`). Never point a test or an experiment at your
 real `~/.cats`.
+
+For development without a real CLI, `CATS_BOTS_PROVIDER_COMMAND` points the
+provider at another executable (for example
+`tests/support/fixture-cli/claude-fixture.cmd`) and
+`CATS_BOTS_PROVIDER_PROJECTS_DIR` moves its discovery directory; both are read
+by `run` and `say` only.
 
 ## Common Issues
 

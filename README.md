@@ -5,11 +5,14 @@ wrapping an agent CLI through `cats-runtime`.
 
 ## Current status
 
-Implementation has started: PLAN-001 Phase 0 (toolchain and architecture boundaries)
-is in place, the bot itself is not implemented yet and nothing is released.
+PLAN-001 Phases 0 and 1 are in place: the headless bot core and the `cats-bot` CLI run a
+provider CLI through a private cats-runtime child, with conversations, transcripts, a work
+journal, cancel, resume and restart recovery. The alive mechanisms (Phase 2) and the tray and
+sticky-note shell (Phase 3) are next. Nothing is released.
 
 - `npm ci && npm run typecheck && npm test && npm run build` passes on Windows and Linux
-  (CI); `src/` holds the SPEC-001 contract types and `tests/` the boundary test.
+  (CI). The suite includes an integration test that starts the real pinned cats-runtime with a
+  scripted fixture CLI; see `docs/testing.md`.
 - The feasibility survey of `cats-runtime` 0.6.2, `cats-platform` 0.11.1 and a
   sticky-note desktop host is in
   [docs/research/2026-10-27-standalone-living-bot-feasibility.md](docs/research/2026-10-27-standalone-living-bot-feasibility.md).
@@ -53,7 +56,9 @@ Decided in ADR-001:
 | --- | --- |
 | `docs/research/` | Two independent 2026-10-27 research notes (Claude and Codex) |
 | `docs/decisions/`, `docs/specs/`, `docs/plans/` | ADR-001, SPEC-001 and PLAN-001 (proposed and draft) plus the templates |
-| `src/`, `tests/` | `src/core/types.ts` (SPEC-001 contract types) and `src/index.ts`; the architecture boundary test |
+| `src/core/` | The bot core: profile, store, runtime supervisor and client, conversations, queue, `BotCore` |
+| `src/cli/` | The headless `cats-bot` entry point |
+| `tests/` | Boundary, unit, fake-runtime core and real-runtime integration tests |
 | `scripts/` | Skill sync and merged-branch sweep helpers from the bootstrap |
 
 ## Development
@@ -65,6 +70,12 @@ npm ci
 npm run typecheck
 npm test
 npm run build
+```
+
+```bash
+node src/cli/main.ts init --name Mochi --provider claude --instructions "You are Mochi."
+node src/cli/main.ts run            # keeps the bot in the foreground and prints its events
+node src/cli/main.ts say home hello # hands the message to the running bot, or runs one turn
 ```
 
 See `docs/setup-guide.md` and `docs/testing.md`. The `@cats-inc/cats-runtime` dependency is

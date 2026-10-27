@@ -90,8 +90,8 @@ Accepted — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫；同日
 - `@cats-inc/cats-bots` 的唯一執行依賴是 `@cats-inc/cats-runtime`，在 `package.json` 釘**精確版本**
   （撰寫時 npm 上是 0.6.1；0.6.2 尚未發布）。升級 runtime 是一個獨立、要跑契約測試的變更。
 - bot 以 app-managed 子程序啟動 runtime：`--startup-mode app-managed --managed-by cats-bots
-  --ready-output json --host 127.0.0.1 --port 0`，從 `runtime.ready` 取得實際 port，再以 `GET /health`
-  確認；私有 `CATS_RUNTIME_DIR` 在 bot 的資料根目錄下；`CATS_RUNTIME_API_KEY` 由 bot 產生；
+  --ready-output json --host 127.0.0.1 --port <port>`，port 由 core 啟動前預留（0.6.1 拒絕 `--port 0`，
+  PLAN-001 Phase 1 實測），從 `runtime.ready` 取得實際 port，再以 `GET /health` 確認；私有 `CATS_RUNTIME_DIR` 在 bot 的資料根目錄下；`CATS_RUNTIME_API_KEY` 由 bot 產生；
   關閉時先關 stdin，逾時再 SIGTERM。
 - 隔離外部 session 要對準 runtime 的每一條 discovery 通道，不能只處理一條：
   - 背景的 native CLI `listSessions()` 掃描與 agent（ACP）discovery 同受

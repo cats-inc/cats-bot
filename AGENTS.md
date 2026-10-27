@@ -22,17 +22,20 @@
   (accepted), `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md` and `docs/plans/PLAN-001-resident-bot-core-foundation.md` before any
   implementation; the two notes under `docs/research/` are their evidence. Does not
   import `@cats-inc/cats-platform`.
-- Entry points: none runnable yet. ADR-001 defines a headless `cats-bot` CLI over the
-  bot core and an Electron shell as the first presentation host; after PLAN-001 Phase 0,
-  `src/` holds `index.ts` and the `src/core/types.ts` contract until Phase 1 lands.
+- Entry points: `src/cli/main.ts` is the headless `cats-bot` CLI (`init`, `run`, `say`,
+  `status`, `conversations`; run it as `node src/cli/main.ts …` or `npm run bot -- …` after
+  a build). `src/core/bot.ts` exports `BotCore`, the `BotHostApi` every host uses. The
+  Electron shell is PLAN-001 Phase 3 and does not exist yet.
 - Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5, ESM (`NodeNext`), erasable
   TypeScript syntax only (Node runs `.ts` tests by type stripping: no `enum`, `namespace`
   or parameter properties; relative imports end in `.ts`), `@cats-inc/cats-runtime` pinned
   to the exact version in `package.json` and consumed over its process + HTTP contract.
   Electron is the first shell; desktop-layer hosts need a later ADR.
 - Test command: `npm ci && npm run typecheck && npm test && npm run build`. `npm test`
-  runs `node --test` over `tests/**/*.test.ts`; tests only write under temporary
-  directories and never touch the real `~/.cats` (`docs/testing.md`).
+  runs `node --test` over `tests/**/*.test.ts`, including `tests/integration/` which starts
+  the real pinned cats-runtime from `node_modules` with the scripted fixture CLI; tests
+  only write under temporary directories and never touch the real `~/.cats`
+  (`docs/testing.md`).
 - Subprojects: none declared; nested AGENTS.md files provide scoped instructions
   and do not by themselves prove a monorepo architecture.
 

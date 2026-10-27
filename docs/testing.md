@@ -21,22 +21,38 @@ last step, not the first.
   imports `src/core/runtime/`; no file reaches outside the repository
   (SPEC-001 A6).
 
-### Unit tests (PLAN-001 Phase 1 onward)
+### Unit tests
 
-- **Location**: `tests/core/*.test.ts`
-- **Scope**: profile defaults, atomic writes and journal rebuild, attachment and
-  work-item state machines, the session gate, retry and backoff, handoff-pack
-  truncation, schedule due/missed policies, heartbeat deferral and `[quiet]`.
-- **Doubles**: a fake runtime client and an injectable clock; no network, no
-  child processes.
+- **Location**: `tests/core/profile.test.ts`, `store.test.ts`, `handoff.test.ts`,
+  `queue.test.ts`
+- **Scope**: profile defaults and field-by-field normalisation, atomic writes,
+  the instance lock and handoff files, journal rebuild, handoff-pack
+  truncation, queue ordering and the session gate. Pure functions and the
+  file system only.
 
-### Integration tests (PLAN-001 Phase 1 onward)
+### Core tests on the fake runtime
 
-- **Location**: `tests/integration/*.test.ts`
-- **Scope**: the real `cats-runtime` bin from `node_modules`, started the way
-  the bot starts it (`--startup-mode app-managed --port 0`, private
-  `CATS_RUNTIME_DIR`), with a scripted fixture CLI registered as the provider.
-  Covers create, streaming, cancel, resume, runtime restart and core restart.
+- **Location**: `tests/core/bot.test.ts` with `tests/support/fake-runtime.mjs`
+- **Scope**: `BotCore` through the real supervisor and client against a small
+  HTTP stand-in for cats-runtime whose behaviour the message text scripts
+  (`busy-once`, `noworker-once`, `exit-once`, `slow:<ms>`, `interrupt`,
+  `error`, `tool`, `instructions?`). Covers streaming, retry on 409, resume on
+  404, rebuild on 410, cancel, restart recovery (`interrupted`), stale
+  attachments after a target change, the single-instance lock and handoff,
+  note deletion and runtime crash restarts with backoff.
+
+### Integration tests
+
+- **Location**: `tests/integration/runtime.test.ts` with
+  `tests/support/fixture-cli/`
+- **Scope**: the real pinned `cats-runtime` bin from `node_modules`, started
+  the way the bot starts it (`--startup-mode app-managed`, a reserved loopback
+  port, private `CATS_RUNTIME_DIR`, discovery flags off), with the scripted
+  fixture CLI registered as `claude` (it speaks Claude Code's stream-json,
+  answers the runtime's `--version`/`--help` probes and honours `--resume`).
+  Covers session creation with persona instructions, streaming, tool events,
+  cancel, resume with `--resume`, `history`, and that a discovered entry in
+  the private registry changes nothing for the bot (SPEC-001 A1).
 - Every test starts its own runtime in a temporary directory and stops it in
   `after`, so no child process outlives the test run.
 
@@ -52,6 +68,7 @@ last step, not the first.
 npm test                                      # everything
 node --test tests/architecture-boundaries.test.ts
 node --test "tests/core/*.test.ts"
+node --test tests/integration/runtime.test.ts   # about 20 s; starts the real runtime
 ```
 
 `npm run typecheck` type-checks tests as well as sources (`tsconfig.test.json`).

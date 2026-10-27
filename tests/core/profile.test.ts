@@ -1,0 +1,104 @@
+import assert from 'node:assert/strict';
+import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { after, before, test } from 'node:test';
+
+import {
+  applyProfilePatch,
+  createProfile,
+  HEARTBEAT_DEFAULTS,
+  loadProfile,
+  normalizeProfile,
+  saveProfile,
+} from '../../src/core/profile/profile.ts';
+import { botPathsFor } from '../../src/core/store/paths.ts';
+import { makeTempHome, type TempHome } from '../support/harness.ts';
+
+let home: TempHome;
+before(() => {
+  home = makeTempHome('cats-bots-profile-');
+});
+after(() => home.cleanup());
+
+const now = new Date('2026-10-27T10:00:00.000Z');
+
+test('createProfile applies the SPEC-001 FR-1 defaults', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.configRevision, 1);
+  assert.deepEqual(profile.executionTarget, { provider: 'claude', model: null });
+  assert.deepEqual(profile.heartbeat, HEARTBEAT_DEFAULTS);
+  assert.equal(profile.idleSleepMinutes, 15);
+  assert.equal(profile.permissions.permissionMode, 'default');
+  assert.equal(profile.permissions.workspaceAccess, 'read_write');
+  assert.equal(profile.updatedAt, now.toISOString());
+});
+
+test('normalizeProfile fills every missing or invalid field from the fallback (FR-4)', () => {
+  const fallback = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  const normalized = normalizeProfile(
+    {
+      id: 'kept',
+      name: 42,
+      executionTarget: { provider: 'codex', model: 7 },
+      heartbeat: { enabled: 'yes', wakeMinMinutes: 20, wakeMaxMinutes: 5 },
+      permissions: { permissionMode: 'everything', cwd: 'D:/elsewhere' },
+      configRevision: -3,
+      idleSleepMinutes: 'soon',
+    },
+    fallback,
+  );
+  assert.equal(normalized.id, 'kept');
+  assert.equal(normalized.name, 'Bot');
+  assert.deepEqual(normalized.executionTarget, { provider: 'codex', model: null });
+  assert.equal(normalized.heartbeat.enabled, true);
+  assert.equal(normalized.heartbeat.wakeMinMinutes, 20);
+  assert.equal(normalized.heartbeat.wakeMaxMinutes, 20, 'max is lifted to min');
+  assert.equal(normalized.permissions.permissionMode, 'default');
+  assert.equal(normalized.permissions.cwd, 'D:/elsewhere');
+  assert.equal(normalized.configRevision, 1);
+  assert.equal(normalized.idleSleepMinutes, 15);
+});
+
+test('loadProfile never rewrites the file and reports corruption without replacing it', () => {
+  const paths = botPathsFor(`${home.botsHome}/load`);
+  const fallback = createProfile({ id: 'load', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  mkdirSync(paths.root, { recursive: true });
+  writeFileSync(paths.profile, '{"id":"load","name":"Partial"}\n');
+  const loaded = loadProfile(paths, fallback);
+  assert.ok(loaded.ok);
+  assert.equal(loaded.profile.name, 'Partial');
+  assert.equal(loaded.profile.executionTarget.provider, 'claude');
+  assert.equal(readFileSync(paths.profile, 'utf8'), '{"id":"load","name":"Partial"}\n');
+
+  writeFileSync(paths.profile, '{not json');
+  const corrupt = loadProfile(paths, fallback);
+  assert.equal(corrupt.ok, false);
+  assert.equal(!corrupt.ok && corrupt.reason, 'corrupt');
+  assert.equal(readFileSync(paths.profile, 'utf8'), '{not json');
+
+  saveProfile(paths, fallback);
+  const saved = loadProfile(paths, fallback);
+  assert.ok(saved.ok && saved.profile.id === 'load');
+});
+
+test('applyProfilePatch bumps configRevision only for a real target change (FR-27)', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', model: 'opus', cwd: 'C:/work', now });
+  const same = applyProfilePatch(profile, { executionTarget: { provider: 'claude', model: 'opus' } }, now);
+  assert.equal(same.targetChanged, false);
+  assert.equal(same.profile.configRevision, 1);
+
+  const model = applyProfilePatch(profile, { executionTarget: { provider: 'claude', model: 'sonnet' } }, now);
+  assert.equal(model.targetChanged, true);
+  assert.equal(model.providerChanged, false);
+  assert.equal(model.profile.configRevision, 2);
+
+  const provider = applyProfilePatch(profile, { executionTarget: { provider: 'codex', model: null } }, now);
+  assert.equal(provider.providerChanged, true);
+  assert.equal(provider.profile.configRevision, 2);
+
+  const renamed = applyProfilePatch(profile, { name: 'Other', heartbeat: { enabled: false } }, now);
+  assert.equal(renamed.targetChanged, false);
+  assert.equal(renamed.profile.name, 'Other');
+  assert.equal(renamed.profile.heartbeat.enabled, false);
+  assert.equal(renamed.profile.heartbeat.wakeMinMinutes, 2);
+});
