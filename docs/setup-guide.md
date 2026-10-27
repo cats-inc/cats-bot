@@ -1,102 +1,62 @@
 # Setup Guide
 
-> Environment setup and installation instructions.
+> How to build, test and run the bot core from a fresh checkout.
 
 ## Prerequisites
 
-- [ ] Prerequisite 1 (e.g., Python 3.10+)
-- [ ] Prerequisite 2 (e.g., Node.js 24 LTS)
-- [ ] Prerequisite 3 (e.g., Docker)
+- Node.js 24 (`.nvmrc`). Tests run `.ts` files directly through Node's type
+  stripping, so an older Node cannot run them.
+- npm 10 or newer (bundled with Node 24).
+- For manual acceptance with a real provider: the provider CLI (for example
+  Claude Code or Codex) installed and logged in on this machine. The bot never
+  reads the CLI's credential files; it only runs the CLI through cats-runtime.
 
 ## Installation
 
-### 1. Clone Repository
-
 ```bash
-git clone https://github.com/username/project-name.git
-cd project-name
+git clone https://github.com/cats-inc/cats-bots.git
+cd cats-bots
+npm ci
 ```
 
-### 2. Environment Setup
+`npm ci` installs the exact `@cats-inc/cats-runtime` version pinned in
+`package.json`; the bot starts that package's `cats-runtime` bin as its private
+child process. Upgrading the pin is a deliberate change with its own PR and
+integration-test run (ADR-001 §1).
+
+## Verify the toolchain
 
 ```bash
-# Copy environment template
-cp .env.example .env
-
-# Edit .env with your values
-# (Add specific variables that need to be configured)
+npm run typecheck   # tsc over src/ and tests/
+npm test            # node --test over tests/**/*.test.ts
+npm run build       # tsc -> dist/
 ```
 
-### 3. Dependencies
+All three must pass on Windows and on Linux; CI runs them on both.
 
-#### Python Project
+## Running a bot
 
-```bash
-# Create virtual environment
-python -m venv .venv
+The headless entry point `cats-bot` (`npm run bot -- <command>`) arrives with
+PLAN-001 Phase 1 (`init`, `run`, `say`, `status`, `conversations`). Until it
+lands, there is no runnable bot.
 
-# Activate (Windows)
-.venv\Scripts\activate
-
-# Activate (Linux/macOS)
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-# or
-pip install -e ".[dev]"
-```
-
-#### Node.js Project
-
-```bash
-npm install
-# or
-yarn install
-```
-
-### 4. Database Setup (if applicable)
-
-```bash
-# (Add database setup commands)
-```
-
-### 5. Verify Installation
-
-```bash
-# Run tests to verify setup
-pytest  # Python
-npm test  # Node.js
-```
-
-## Running the Project
-
-### Development Mode
-
-```bash
-# Python
-python main.py
-
-# Node.js
-npm run dev
-```
-
-### Production Mode
-
-```bash
-# (Add production run commands)
-```
+Bot data lives under `~/.cats/bots/<bot-id>/` unless `CATS_BOTS_HOME` points
+elsewhere (`docs/services.md`). Never point a test or an experiment at your
+real `~/.cats`.
 
 ## Common Issues
 
-### Issue 1: [Problem Description]
+### `node --test` reports a syntax error inside a `.ts` file
 
-**Solution**: (How to fix)
+Node only strips erasable TypeScript syntax. `enum`, `namespace`, parameter
+properties and `import x = require()` are rejected; `tsc` enforces the same
+rule through `erasableSyntaxOnly`, so run `npm run typecheck` first.
 
-### Issue 2: [Problem Description]
+### Relative imports end in `.ts`
 
-**Solution**: (How to fix)
+That is intentional: Node resolves the file that exists on disk, and
+`rewriteRelativeImportExtensions` makes `tsc` emit `.js` in `dist/`.
 
 ---
 
-*Last updated: YYYY-MM-DD*
+*Last updated: 2026-10-27*

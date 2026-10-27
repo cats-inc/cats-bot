@@ -21,34 +21,25 @@
     "agent",
     "cli"
   ],
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "dev": "ts-node src/index.ts",
-    "start": "node dist/index.js",
-    "test": "jest",
-    "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage",
-    "lint": "eslint src --ext .ts,.tsx",
-    "lint:fix": "eslint src --ext .ts,.tsx --fix",
-    "format": "prettier --write \"src/**/*.{ts,tsx,json}\"",
-    "typecheck": "tsc --noEmit"
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.test.json",
+    "test": "node --test \"tests/**/*.test.ts\"",
+    "bot": "node dist/cli/main.js",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\""
   },
-  "devDependencies": {
-    "@types/jest": "^29.5.0",
-    "@types/node": "^24.0.0",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "eslint": "^8.0.0",
-    "jest": "^29.0.0",
-    "prettier": "^3.0.0",
-    "ts-jest": "^29.0.0",
-    "ts-node": "^10.0.0",
-    "typescript": "^5.0.0"
+  "dependencies": {
+    "@cats-inc/cats-runtime": "0.6.1"
   },
-  "dependencies": {},
   "engines": {
     "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "prettier": "^3.9.10",
+    "typescript": "^5.9.3"
   }
 }

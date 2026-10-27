@@ -1,99 +1,42 @@
-# CI/CD Pipeline
-# Customize this workflow based on your project's tech stack
-
 name: CI
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
   pull_request:
-    branches: [main, master]
+    branches: [main]
 
 jobs:
-  # ============================================
-  # Python Project (uncomment if using Python)
-  # ============================================
-  # python:
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     matrix:
-  #       python-version: ['3.10', '3.11', '3.12']
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Set up Python ${{ matrix.python-version }}
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: ${{ matrix.python-version }}
-  #
-  #     - name: Install dependencies
-  #       run: |
-  #         python -m pip install --upgrade pip
-  #         pip install -e ".[dev]"
-  #
-  #     - name: Lint with ruff
-  #       run: |
-  #         ruff check .
-  #         ruff format --check .
-  #
-  #     - name: Test with pytest
-  #       run: |
-  #         pytest --cov=src --cov-report=xml
-  #
-  #     - name: Upload coverage
-  #       uses: codecov/codecov-action@v4
-  #       with:
-  #         file: ./coverage.xml
+  # ADR-001 §9 / PLAN-001 Task 0.3: the bot core is built and tested on both
+  # platforms the first shell targets. Tests run `.ts` files directly through
+  # Node 24 type stripping, so the source stays limited to erasable syntax.
+  node:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
 
-  # ============================================
-  # Node.js Project (uncomment if using Node.js)
-  # ============================================
-  # nodejs:
-  #   runs-on: ubuntu-latest
-  #   strategy:
-  #     matrix:
-  #       node-version: ['24']
-  #
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Use Node.js ${{ matrix.node-version }}
-  #       uses: actions/setup-node@v4
-  #       with:
-  #         node-version: ${{ matrix.node-version }}
-  #         cache: 'npm'
-  #
-  #     - name: Install dependencies
-  #       run: npm ci
-  #
-  #     - name: Lint
-  #       run: npm run lint
-  #
-  #     - name: Test
-  #       run: npm test
-  #
-  #     - name: Build
-  #       run: npm run build
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
 
-  # ============================================
-  # Docker Build (uncomment if using Docker)
-  # ============================================
-  # docker:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Build Docker image
-  #       run: docker build -t ${{ github.repository }}:${{ github.sha }} .
-  #
-  #     - name: Run container tests
-  #       run: |
-  #         docker run --rm ${{ github.repository }}:${{ github.sha }} pytest
+      - name: Install dependencies
+        run: npm ci
 
-  # ============================================
-  # Basic validation (always runs)
-  # ============================================
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
   validate:
     runs-on: ubuntu-latest
     steps:

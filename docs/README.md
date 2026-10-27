@@ -23,12 +23,12 @@ These important documents live in the project root:
 
 | Document | Status | Description |
 |----------|--------|-------------|
-| [setup-guide.md](./setup-guide.md) | Template | Environment setup |
-| [testing.md](./testing.md) | Template | Testing strategy |
+| [setup-guide.md](./setup-guide.md) | Complete | Install, verify, build and run commands |
+| [testing.md](./testing.md) | Complete | Test types, commands and state-hygiene rules |
 | [deployment.md](./deployment.md) | Template | Deployment instructions |
 | [security-guidelines.md](./security-guidelines.md) | Template | Security policies |
 | [mcp-config.md](./mcp-config.md) | Template | MCP server configuration |
-| [services.md](./services.md) | Template | Service registry and port assignments |
+| [services.md](./services.md) | Complete | Dynamic loopback listeners and the environment variables that place them |
 | [SCRIPT-STANDARDS.md](./SCRIPT-STANDARDS.md) | Template | Script standards and naming |
 
 ## Scripts
@@ -76,9 +76,9 @@ Add your project-specific automation scripts here.
 
 | Document | Status | Description |
 |----------|--------|-------------|
-| [ADR-001](./decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Draft | Proposed: resident bot core over cats-runtime, disposable presentation, one global execution target; fuses both research documents |
-| [SPEC-001](./specs/SPEC-001-resident-bot-core-and-global-execution.md) | Draft | Behavioural contract for the bot core, alive mechanisms, global retarget and the presentation API |
-| [PLAN-001](./plans/PLAN-001-resident-bot-core-foundation.md) | Draft | Phases 0 to 5 from toolchain to minimal shell; desktop presence reserved for a later ADR |
+| [ADR-001](./decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Accepted | Resident bot core over cats-runtime, disposable presentation, one global execution target; fuses both research documents |
+| [SPEC-001](./specs/SPEC-001-resident-bot-core-and-global-execution.md) | Accepted | Behavioural contract for the bot core, alive mechanisms, global retarget and the presentation API |
+| [PLAN-001](./plans/PLAN-001-resident-bot-core-foundation.md) | In progress | Phases 0 to 5 from toolchain to minimal shell; desktop presence reserved for a later ADR |
 
 ## Context-Driven Development
 

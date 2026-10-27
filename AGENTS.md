@@ -18,21 +18,21 @@
 - Purpose: standalone, always-alive desktop bots for the Cats ecosystem. One
   process per bot wraps an agent CLI through `@cats-inc/cats-runtime` (app-managed
   child process, loopback HTTP), with a tray icon, sticky-note conversations and one
-  global provider/model per bot. Decision phase: read `docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md`
-  (proposed), `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md` and `docs/plans/PLAN-001-resident-bot-core-foundation.md` before any
+  global provider/model per bot. Read `docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md`
+  (accepted), `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md` and `docs/plans/PLAN-001-resident-bot-core-foundation.md` before any
   implementation; the two notes under `docs/research/` are their evidence. Does not
   import `@cats-inc/cats-platform`.
-- Entry points: none implemented. ADR-001 defines a headless `cats-bot` CLI over the
-  bot core and an Electron shell as the first presentation host; `src/` still holds
-  only the placeholder until PLAN-001 Phase 1.
-- Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5. ADR-001 selects ESM
-  (`NodeNext`), erasable TypeScript syntax and an exact pin of `@cats-inc/cats-runtime`
-  consumed over its process + HTTP contract; `tsconfig.json` and `package.json` remain
-  the CommonJS bootstrap template until PLAN-001 Phase 0 lands. Electron is the first
-  shell; desktop-layer hosts need a later ADR.
-- Test command: none verified. ADR-001 chooses `node:test` with Node 24 type
-  stripping, but the template `npm test` (jest) is still in place with no installed
-  dependencies and no tests; report tests as missing until PLAN-001 Phase 0 lands.
+- Entry points: none runnable yet. ADR-001 defines a headless `cats-bot` CLI over the
+  bot core and an Electron shell as the first presentation host; after PLAN-001 Phase 0,
+  `src/` holds `index.ts` and the `src/core/types.ts` contract until Phase 1 lands.
+- Stack and versions: Node.js 24 (`.nvmrc`), TypeScript 5, ESM (`NodeNext`), erasable
+  TypeScript syntax only (Node runs `.ts` tests by type stripping: no `enum`, `namespace`
+  or parameter properties; relative imports end in `.ts`), `@cats-inc/cats-runtime` pinned
+  to the exact version in `package.json` and consumed over its process + HTTP contract.
+  Electron is the first shell; desktop-layer hosts need a later ADR.
+- Test command: `npm ci && npm run typecheck && npm test && npm run build`. `npm test`
+  runs `node --test` over `tests/**/*.test.ts`; tests only write under temporary
+  directories and never touch the real `~/.cats` (`docs/testing.md`).
 - Subprojects: none declared; nested AGENTS.md files provide scoped instructions
   and do not by themselves prove a monorepo architecture.
 

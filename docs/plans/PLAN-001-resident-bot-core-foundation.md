@@ -4,9 +4,9 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft — starts after the owner approves ADR-001 and SPEC-001 |
+| **Status** | In progress — owner 於 2026-10-27 指示開始實作；Phase 0 已完成 |
 | **Owner** | Claude |
-| **Assigned To** | Unassigned |
+| **Assigned To** | Claude |
 | **Reviewer** | Owner |
 | **Related decision** | [ADR-001](../decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) |
 
@@ -25,19 +25,19 @@
 
 ### Phase 0: 工具鏈與邊界（ADR-001 §9）
 
-- [ ] Task 0.1：`tsconfig.json` 改為 ESM（`module: NodeNext`、`moduleResolution: NodeNext`、
+- [x] Task 0.1：`tsconfig.json` 改為 ESM（`module: NodeNext`、`moduleResolution: NodeNext`、
       `target: ES2022`、`erasableSyntaxOnly: true`、輸出 `dist/`），`package.json` 加 `"type": "module"`。
-- [ ] Task 0.2：`package.json` scripts 改為 `build`（tsc）、`typecheck`（tsc --noEmit）、
+- [x] Task 0.2：`package.json` scripts 改為 `build`（tsc）、`typecheck`（tsc --noEmit）、
       `test`（`node --test "tests/**/*.test.ts"`）、`bot`（`node dist/cli/main.js`）；移除 jest、ts-jest、
       ts-node、eslint 樣板依賴；保留 prettier；`dependencies` 加 `@cats-inc/cats-runtime` 精確版本 0.6.1。
-- [ ] Task 0.3：打開 `.github/workflows/ci.yaml` 的 Node job：Node 24、ubuntu 與 windows、
+- [x] Task 0.3：打開 `.github/workflows/ci.yaml` 的 Node job：Node 24、ubuntu 與 windows、
       `npm ci`、typecheck、test、build。
-- [ ] Task 0.4：`tests/architecture-boundaries.test.ts`：`src/core/**` 與 `src/cli/**` 不得 import
+- [x] Task 0.4：`tests/architecture-boundaries.test.ts`：`src/core/**` 與 `src/cli/**` 不得 import
       `electron`、任何 `cats-platform` 路徑或兄弟 checkout 的相對路徑；`src/shell/**` 不得 import
       `src/core/runtime/client`。
-- [ ] Task 0.5：`docs/services.md` 記下 runtime 子程序以 `--port 0` 動態綁 loopback，本 repo 沒有固定
+- [x] Task 0.5：`docs/services.md` 記下 runtime 子程序以 `--port 0` 動態綁 loopback，本 repo 沒有固定
       listener；`docs/setup-guide.md` 與 `docs/testing.md` 填入實際命令。
-- [ ] Task 0.6：`src/index.ts` 佔位改為匯出 core 的公開型別；`.gitkeep` 依 mbf 規則清理。
+- [x] Task 0.6：`src/index.ts` 佔位改為匯出 core 的公開型別；`.gitkeep` 依 mbf 規則清理。
 
 **Deliverables**：乾淨 checkout 與 CI 上 `npm ci && npm run typecheck && npm test && npm run build`
 全部通過；邊界測試存在且通過。
@@ -149,8 +149,9 @@
   與 platform `processSupervisor` 相同。
 - core 在第一階段於 Electron 主程序內掛載（ADR-001 §2）；`BotHostApi` 定義為可序列化的
   JSON 命令與事件，不綁 Electron IPC 的型別，讓日後改成 loopback 或 named pipe 不動 core。
-- bot 的 MCP server 走 stdio；第二階段決定自寫最小 JSON-RPC 還是採用官方 SDK，依 runtime
-  `mcpServers` 的 command 契約而定。
+- bot 的 MCP server 走 Streamable HTTP（loopback、bearer token）：runtime 的 `mcpServers` 只接受
+  `transport: http`，`stdio` 會被 400 拒絕（runtime api.md「Session MCP servers」）；第二階段自寫
+  最小的 JSON-RPC over HTTP，不引入 SDK。
 - 整合測試的 fixture provider 是一支腳本化 CLI，講 runtime 某個 adapter 期待的 stream-json，
   透過暫存 runtime 的 `providers.yaml` 註冊；真的 provider 只在手動驗收使用。
 - Windows 優先；core 內所有路徑經 `node:path`，不寫平台假設。
@@ -185,6 +186,7 @@
 |------|--------|
 | 2026-10-27 | PLAN-001 與 ADR-001、SPEC-001 一起建立；兩份研究文件融合；沒有任何程式碼 |
 | 2026-10-27 | 依 Codex 審閱修訂：discovery 隔離改為 runtime 旗標而非改目錄（ADR-001 §1、SPEC-001 FR-5）；對帳依 session 狀態分類並保護 `initializing` 與 `busy`（ADR-001 §5、SPEC-001 FR-20）；分支清理腳本改為驗證已落地才刪除；CI 的 YAML 驗證改為會失敗 |
+| 2026-10-27 | Phase 0 完成：ESM 工具鏈（`NodeNext`、`erasableSyntaxOnly`、`rewriteRelativeImportExtensions`）、`node:test` 直接跑 `.ts`、CI Node job（ubuntu 與 windows）、釘定 `@cats-inc/cats-runtime` 0.6.1、架構邊界測試、`src/core/types.ts` 契約型別、services／setup／testing 文件；修正：bot 的 MCP server 必須走 Streamable HTTP（runtime 拒絕 stdio） |
 
 ---
 

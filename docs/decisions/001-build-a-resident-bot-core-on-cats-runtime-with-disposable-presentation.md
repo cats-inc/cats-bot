@@ -2,8 +2,8 @@
 
 ## Status
 
-Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 owner 核准。
-核准只代表方向與分段被接受；本 repo 目前沒有任何可執行程式。
+Accepted — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫；同日 owner 指示依 PLAN-001 開始實作，視為核准。
+核准只代表方向與分段被接受；實作進度見 PLAN-001。
 同日依 Codex 的審閱修訂：§1 的 discovery 隔離改為對準 runtime 的每條通道（不改 session 目錄），
 §5 的對帳改為依 runtime 的 session 狀態分類，`initializing` 與 `busy` 受保護。
 規格見 [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md)，
@@ -331,5 +331,5 @@ Proposed — 2026-10-27 由 Claude 融合兩份獨立研究文件撰寫，待 ow
 
 ---
 
-*Decision made: 2026-10-27 (proposed)*
-*Decision makers: Product owner (approval pending), Claude (author; fuses the Claude and Codex research)*
+*Decision made: 2026-10-27 (accepted)*
+*Decision makers: Product owner (approved by authorizing PLAN-001 on 2026-10-27), Claude (author; fuses the Claude and Codex research)*
