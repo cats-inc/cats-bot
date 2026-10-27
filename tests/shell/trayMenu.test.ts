@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -111,13 +111,13 @@ test('note view state normalises what it reads and round-trips what it writes', 
   assert.deepEqual(empty, { schemaVersion: 1, views: {}, openAtLogin: false, floatingBot: { visible: true } });
   writeFileSync(shellStatePath(root), JSON.stringify({ views: { home: { x: 10, y: 20, width: 50, height: 'tall', alwaysOnTop: true, open: true }, bad: null }, openAtLogin: 'yes' }));
   const read = readShellState(root);
-  assert.deepEqual(read.views.home, { x: 10, y: 20, width: 340, height: 460, alwaysOnTop: true, open: true });
+  assert.deepEqual(read.views.home, { x: 10, y: 20, width: 340, height: 460, layer: 'top', alwaysOnTop: true, open: true });
   assert.equal(read.views.bad, undefined);
   assert.equal(read.openAtLogin, false);
   assert.deepEqual(read.floatingBot, { visible: true });
   writeShellState(root, {
     schemaVersion: 1,
-    views: { 'conv-1': { x: 1, y: 2, width: 300, height: 400, alwaysOnTop: false, open: false } },
+    views: { 'conv-1': { x: 1, y: 2, width: 300, height: 400, layer: 'normal', alwaysOnTop: false, open: false } },
     openAtLogin: true,
     floatingBot: { visible: false, x: -1500, y: 40 },
   });
@@ -138,4 +138,31 @@ test('the floating bot keeps its place on a live display and says one short line
   const long = bubbleText('word '.repeat(100), 40);
   assert.equal(long.length, 40);
   assert.ok(long.endsWith('…'));
+});
+
+test('note layers: a file from before layers keeps its pinned notes on top, and layers round-trip (SPEC-002 FR-8)', () => {
+  const dir = join(root, 'layers');
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(shellStatePath(dir), JSON.stringify({
+    schemaVersion: 1,
+    views: {
+      pinned: { width: 300, height: 300, alwaysOnTop: true, open: true },
+      plain: { width: 300, height: 300, alwaysOnTop: false, open: true },
+      odd: { width: 300, height: 300, layer: 'ceiling', open: false },
+    },
+    openAtLogin: false,
+  }));
+  const read = readShellState(dir);
+  assert.equal(read.views.pinned?.layer, 'top');
+  assert.equal(read.views.plain?.layer, 'normal');
+  assert.equal(read.views.odd?.layer, 'normal', 'an unknown layer falls back to normal');
+  read.views.pinned!.layer = 'desktop';
+  read.views.plain!.layer = 'wallpaper';
+  read.views.odd!.layer = 'top';
+  writeShellState(dir, read);
+  const raw = JSON.parse(readFileSync(shellStatePath(dir), 'utf8')) as { views: Record<string, { layer: string; alwaysOnTop: boolean }> };
+  assert.deepEqual(raw.views.pinned, { ...raw.views.pinned, layer: 'desktop', alwaysOnTop: false });
+  assert.deepEqual(raw.views.odd, { ...raw.views.odd, layer: 'top', alwaysOnTop: true }, 'older builds still float it');
+  const again = readShellState(dir);
+  assert.deepEqual([again.views.pinned?.layer, again.views.plain?.layer, again.views.odd?.layer], ['desktop', 'wallpaper', 'top']);
 });

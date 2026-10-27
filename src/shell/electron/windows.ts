@@ -5,12 +5,27 @@ import { BrowserWindow, screen } from 'electron';
 
 import type { BotCore } from '../../core/bot.ts';
 import type { BotHostEvent } from '../../core/types.ts';
-import { DEFAULT_NOTE_SIZE, readShellState, writeShellState, type NoteViewState, type ShellState } from './viewState.ts';
+import {
+  DEFAULT_NOTE_SIZE,
+  readShellState,
+  writeShellState,
+  type NoteLayer,
+  type NoteViewState,
+  type ShellState,
+} from './viewState.ts';
+import type { DesktopHost } from './win32Desktop.ts';
 
 /**
  * SPEC-001 FR-33 / FR-34: one frameless sticky-note window per conversation.
  * Closing a note hides it (the conversation and the bot keep running);
  * deleting a conversation and quitting the bot are separate actions.
+ *
+ * SPEC-002 FR-8: each note has a layer. A desktop or wallpaper note is a
+ * child of Explorer's desktop window, which never takes the keyboard, so a
+ * desktop note that gets focus is lifted to an ordinary window while it is
+ * used and goes back when it loses focus (desktop-work-fleet ADR-030 projects
+ * an operated scene to floating the same way). Explorer destroys its children
+ * when it restarts; such notes are opened again in their layer.
  */
 
 export interface NoteWindowsOptions {
@@ -19,6 +34,24 @@ export interface NoteWindowsOptions {
   preloadPath: string;
   rendererDir: string;
   isQuitting(): boolean;
+  /** Windows only; without it notes offer the normal and top layers. */
+  desktop?: DesktopHost | null;
+  log?(line: string): void;
+}
+
+const ATTACHED: readonly NoteLayer[] = ['desktop', 'wallpaper'];
+const SETTLE_MS = 400;
+const HEALTH_MS = 5_000;
+const REOPEN_MS = 3_000;
+const REOPEN_TRIES = 20;
+
+function isAttachedLayer(layer: NoteLayer): layer is 'desktop' | 'wallpaper' {
+  return ATTACHED.includes(layer);
+}
+
+function handleOf(window: BrowserWindow): number {
+  const buffer = window.getNativeWindowHandle();
+  return buffer.length >= 8 ? Number(buffer.readBigUInt64LE(0)) : buffer.readUInt32LE(0);
 }
 
 function clampToScreen(bounds: { x: number; y: number; width: number; height: number }) {
@@ -36,10 +69,34 @@ export class NoteWindows {
   private readonly windows = new Map<string, BrowserWindow>();
   private state: ShellState;
   private saveTimer: NodeJS.Timeout | null = null;
+  /** Desktop or wallpaper notes taken out of their layer while the owner uses them. */
+  private readonly lifted = new Set<string>();
+  private healthTimer: NodeJS.Timeout | null = null;
 
   constructor(options: NoteWindowsOptions) {
     this.options = options;
     this.state = readShellState(options.botRoot);
+    if (options.desktop) {
+      this.healthTimer = setInterval(() => this.checkDesktopHosts(), HEALTH_MS);
+      this.healthTimer.unref?.();
+    }
+  }
+
+  private log(line: string): void {
+    this.options.log?.(line);
+  }
+
+  /** The layers this host can offer. */
+  availableLayers(): NoteLayer[] {
+    return this.options.desktop ? ['normal', 'top', 'desktop', 'wallpaper'] : ['normal', 'top'];
+  }
+
+  layerOf(conversationId: string): NoteLayer {
+    return this.viewState(conversationId).layer;
+  }
+
+  layers(): Record<string, NoteLayer> {
+    return Object.fromEntries(Object.entries(this.state.views).map(([id, view]) => [id, view.layer]));
   }
 
   get shellState(): ShellState {
@@ -64,7 +121,7 @@ export class NoteWindows {
   private viewState(conversationId: string): NoteViewState {
     let view = this.state.views[conversationId];
     if (!view) {
-      view = { ...DEFAULT_NOTE_SIZE, alwaysOnTop: false, open: false };
+      view = { ...DEFAULT_NOTE_SIZE, layer: 'normal', alwaysOnTop: false, open: false };
       this.state.views[conversationId] = view;
     }
     return view;
@@ -82,8 +139,15 @@ export class NoteWindows {
   async open(conversationId: string): Promise<BrowserWindow> {
     const existing = this.windows.get(conversationId);
     if (existing && !existing.isDestroyed()) {
-      existing.show();
-      existing.focus();
+      const handle = handleOf(existing);
+      if (this.options.desktop?.isAttached(handle)) {
+        // Opening a note on the desktop or the wallpaper is asking to use it.
+        existing.show();
+        this.lift(conversationId, existing);
+      } else {
+        existing.show();
+        existing.focus();
+      }
       this.viewState(conversationId).open = true;
       this.persist();
       await this.options.core.openView(conversationId);
@@ -100,7 +164,7 @@ export class NoteWindows {
       frame: false,
       show: false,
       skipTaskbar: false,
-      alwaysOnTop: view.alwaysOnTop,
+      alwaysOnTop: view.layer === 'top',
       autoHideMenuBar: true,
       backgroundColor: '#fff8d6',
       title: 'Cats Bot',
@@ -125,7 +189,16 @@ export class NoteWindows {
       void this.options.core.closeView(conversationId);
     });
     window.on('closed', () => {
-      this.windows.delete(conversationId);
+      if (this.windows.get(conversationId) === window) this.windows.delete(conversationId);
+      this.lifted.delete(conversationId);
+      // Not closed by us: Explorer restarted and took its children down.
+      if (!this.options.isQuitting() && view.open && isAttachedLayer(view.layer)) this.reopenLater(conversationId, REOPEN_TRIES);
+    });
+    window.webContents.on('focus', () => {
+      if (view.layer === 'desktop' && this.options.desktop?.isAttached(handleOf(window))) this.lift(conversationId, window);
+    });
+    window.on('blur', () => {
+      if (this.lifted.has(conversationId)) this.settle(conversationId, window);
     });
     const remember = () => {
       if (window.isDestroyed() || !window.isVisible()) return;
@@ -140,9 +213,97 @@ export class NoteWindows {
       this.persist();
     });
     await window.loadURL(url.href);
-    window.show();
+    if (isAttachedLayer(view.layer) && this.options.desktop) window.showInactive();
+    else window.show();
+    this.applyLayer(conversationId, window);
     await this.options.core.openView(conversationId);
     return window;
+  }
+
+  /** Puts a window where its note's layer says, unless the owner is using it right now. */
+  private applyLayer(conversationId: string, window: BrowserWindow): void {
+    const view = this.viewState(conversationId);
+    const desktop = this.options.desktop;
+    const handle = handleOf(window);
+    if (isAttachedLayer(view.layer) && desktop) {
+      window.setAlwaysOnTop(false);
+      if (this.lifted.has(conversationId) || desktop.attachedLayer(handle) === view.layer) return;
+      // attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other.
+      if (!desktop.attach(handle, view.layer)) {
+        this.log(`note ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`);
+      }
+      return;
+    }
+    if (desktop?.isAttached(handle)) desktop.detach(handle);
+    window.setAlwaysOnTop(view.layer === 'top', 'floating');
+  }
+
+  setLayer(conversationId: string, layer: NoteLayer): NoteLayer {
+    if (!this.availableLayers().includes(layer)) throw new Error(`The ${layer} layer is not available here`);
+    const view = this.viewState(conversationId);
+    view.layer = layer;
+    this.lifted.delete(conversationId);
+    this.persist();
+    const window = this.windows.get(conversationId);
+    if (window && !window.isDestroyed()) {
+      this.applyLayer(conversationId, window);
+      window.webContents.send('note:layer', layer);
+    }
+    return layer;
+  }
+
+  /** Takes an attached note out of its layer so it can be typed into and dragged. */
+  private lift(conversationId: string, window: BrowserWindow): void {
+    const desktop = this.options.desktop;
+    if (!desktop) return;
+    const handle = handleOf(window);
+    this.lifted.add(conversationId);
+    desktop.detach(handle);
+    desktop.bringToFront(handle);
+    window.focus();
+    window.webContents.focus();
+    window.webContents.send('note:lifted');
+  }
+
+  /** Returns a lifted note to its layer once the owner has moved on to another window. */
+  private settle(conversationId: string, window: BrowserWindow): void {
+    setTimeout(() => {
+      if (window.isDestroyed() || window.isFocused() || !this.lifted.has(conversationId)) return;
+      this.lifted.delete(conversationId);
+      if (window.isVisible()) this.applyLayer(conversationId, window);
+    }, SETTLE_MS);
+  }
+
+  private reopenLater(conversationId: string, tries: number): void {
+    const timer = setTimeout(() => {
+      if (this.options.isQuitting() || this.windows.has(conversationId)) return;
+      const view = this.state.views[conversationId];
+      if (!view || !view.open) return;
+      this.options.desktop?.refresh();
+      void this.open(conversationId).then(
+        () => this.log(`note ${conversationId}: reopened in the ${view.layer} layer after Explorer restarted`),
+        () => {
+          if (tries > 1) this.reopenLater(conversationId, tries - 1);
+        },
+      );
+    }, REOPEN_MS);
+    timer.unref?.();
+  }
+
+  /** Explorer can recreate its hosts without destroying our windows (a wallpaper change); attach again. */
+  private checkDesktopHosts(): void {
+    const desktop = this.options.desktop;
+    if (!desktop) return;
+    desktop.refresh();
+    for (const [conversationId, window] of this.windows) {
+      const view = this.state.views[conversationId];
+      if (!view || window.isDestroyed() || !window.isVisible() || !isAttachedLayer(view.layer) || this.lifted.has(conversationId)) continue;
+      const handle = handleOf(window);
+      if (!desktop.isAttached(handle) || !desktop.hostAlive(handle)) {
+        desktop.detach(handle);
+        if (desktop.attach(handle, view.layer)) this.log(`note ${conversationId}: attached to the ${view.layer} layer again`);
+      }
+    }
   }
 
   hide(conversationId: string): void {
@@ -150,23 +311,10 @@ export class NoteWindows {
     if (window && !window.isDestroyed()) window.close();
   }
 
-  togglePin(conversationId: string): boolean {
-    const window = this.windows.get(conversationId);
-    const view = this.viewState(conversationId);
-    view.alwaysOnTop = !view.alwaysOnTop;
-    if (window && !window.isDestroyed()) window.setAlwaysOnTop(view.alwaysOnTop, 'floating');
-    this.persist();
-    return view.alwaysOnTop;
-  }
-
   /** Whether the note of a conversation is the window the owner is looking at. */
   isFocused(conversationId: string): boolean {
     const window = this.windows.get(conversationId);
     return window !== undefined && !window.isDestroyed() && window.isVisible() && window.isFocused();
-  }
-
-  isPinned(conversationId: string): boolean {
-    return this.viewState(conversationId).alwaysOnTop;
   }
 
   windowFor(webContentsId: number): { conversationId: string; window: BrowserWindow } | null {
@@ -191,6 +339,10 @@ export class NoteWindows {
   }
 
   destroyAll(): void {
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
       this.saveTimer = null;

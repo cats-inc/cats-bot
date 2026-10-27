@@ -8,11 +8,32 @@ import { readJsonFile, writeJsonAtomic } from '../../core/store/atomicFile.ts';
  * the renderer, so reopening a note lands where it was.
  */
 
+/**
+ * SPEC-002 FR-8: where a note lives. `normal` is an ordinary window, `top`
+ * floats above other windows, `desktop` sits on the desktop above the icons
+ * and below every window, `wallpaper` sits below the icons and takes no input.
+ */
+export type NoteLayer = 'normal' | 'top' | 'desktop' | 'wallpaper';
+
+export const NOTE_LAYERS: readonly NoteLayer[] = ['normal', 'top', 'desktop', 'wallpaper'];
+
+export const NOTE_LAYER_LABELS: Record<NoteLayer, string> = {
+  normal: 'Normal window',
+  top: 'Always on top',
+  desktop: 'On the desktop (below windows, above icons)',
+  wallpaper: 'On the wallpaper (below icons, display only)',
+};
+
 export interface NoteViewState {
   x?: number;
   y?: number;
   width: number;
   height: number;
+  layer: NoteLayer;
+  /**
+   * Written as `layer === 'top'` so a build that predates layers still floats
+   * the note; a file without `layer` is read through it.
+   */
   alwaysOnTop: boolean;
   open: boolean;
 }
@@ -37,6 +58,13 @@ export function shellStatePath(botRoot: string): string {
   return join(botRoot, 'shell-state.json');
 }
 
+function layerFields(raw: Partial<NoteViewState>): { layer: NoteLayer; alwaysOnTop: boolean } {
+  const layer: NoteLayer = NOTE_LAYERS.includes(raw.layer as NoteLayer)
+    ? (raw.layer as NoteLayer)
+    : raw.alwaysOnTop === true ? 'top' : 'normal';
+  return { layer, alwaysOnTop: layer === 'top' };
+}
+
 export function readShellState(botRoot: string): ShellState {
   const read = readJsonFile<Partial<ShellState>>(shellStatePath(botRoot));
   const views: Record<string, NoteViewState> = {};
@@ -48,7 +76,7 @@ export function readShellState(botRoot: string): ShellState {
         ...(typeof raw.y === 'number' ? { y: raw.y } : {}),
         width: typeof raw.width === 'number' && raw.width >= 200 ? raw.width : DEFAULT_NOTE_SIZE.width,
         height: typeof raw.height === 'number' && raw.height >= 200 ? raw.height : DEFAULT_NOTE_SIZE.height,
-        alwaysOnTop: raw.alwaysOnTop === true,
+        ...layerFields(raw),
         open: raw.open === true,
       };
     }
@@ -69,5 +97,7 @@ export function readShellState(botRoot: string): ShellState {
 }
 
 export function writeShellState(botRoot: string, state: ShellState): void {
-  writeJsonAtomic(shellStatePath(botRoot), state);
+  const views: Record<string, NoteViewState> = {};
+  for (const [id, view] of Object.entries(state.views)) views[id] = { ...view, alwaysOnTop: view.layer === 'top' };
+  writeJsonAtomic(shellStatePath(botRoot), { ...state, views });
 }

@@ -39,7 +39,10 @@ provider、model、個性、權限、生活節奏、Telegram 與開機啟動，�
 8. FR-8：每張便箋的層：`normal`、`top`、`desktop`、`wallpaper`，存在 `shell-state.json`；Windows 上
    `desktop` 與 `wallpaper` 掛到 Explorer 的桌面視窗下（尋找規則同 desktop-work-fleet
    `NativeShellLayers`），Explorer 重啟後重新掛載，找不到時退回 `normal` 並記錄原因；其他平台只提供
-   `normal` 與 `top`。拖曳在各層都可用；桌布層不收輸入。
+   `normal` 與 `top`。拖曳在各層都可用；桌布層不收輸入。桌面層的便箋被點到時暫時成為一般視窗以便
+   打字（含輸入法），失去焦點後回到原層；桌布層的便箋從 tray 或設定開啟時同樣處理。舊的
+   `shell-state.json` 沒有 `layer` 時以 `alwaysOnTop` 推得（`top` 或 `normal`），寫入時仍保留
+   `alwaysOnTop`，讓尚未支援層的版本照舊把 `top` 便箋浮在最上層。
 9. FR-9：CI 在 main 更新時建置 Windows NSIS 安裝檔與免安裝檔並上傳為 artifact；安裝後的捷徑啟動即進入
    FR-1 或既有的 bot。
 

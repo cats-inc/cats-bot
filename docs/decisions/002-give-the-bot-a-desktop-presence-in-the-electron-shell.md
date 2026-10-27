@@ -52,7 +52,15 @@ runtime 回答（含本機覆寫）；其他 provider 與尚未啟動時讀 runt
 ### 5. 每張便箋自己選層
 
 層是便箋的視圖狀態（與位置、大小同一處，存在 `shell-state.json`）：`normal`、`top`、`desktop`、
-`wallpaper`。桌布層的便箋不收輸入（在圖示之下），要互動時從 tray 或設定把它換回別層。
+`wallpaper`。Explorer 的桌面視窗不會因為點擊其子視窗而成為前景，鍵盤因此不會到掛在它底下的便箋；
+所以桌面層的便箋一被點到就暫時抬成一般視窗（可打字、可用輸入法），點到別處後放回原層，與
+desktop-work-fleet ADR-030 把操作中的 scene 投射到 floating 的作法相同。桌布層的便箋不收輸入
+（在圖示之下），從 tray 或設定開啟時同樣先抬起來，用完放回。拖曳在掛載狀態下由 Windows 對子視窗的
+標題列拖曳處理，不必抬起。
+
+2026-10-28 實測補充：Electron 41 的視窗是 per-monitor v1（DPI awareness context 0x12），Explorer 的
+桌面視窗是 per-monitor v2（0x22）；fleet 要求兩者 context 相同，這裡改為只比較 awareness 等級
+（兩者都是 per-monitor），在 3840×2160、150% 縮放下顯示、輸入與拖曳都正確。
 
 ### 6. 安裝包
 

@@ -35,8 +35,22 @@ contextBridge.exposeInMainWorld('catsBot', {
     hide() {
       return ipcRenderer.invoke('window:hide');
     },
-    togglePin() {
-      return ipcRenderer.invoke('window:togglePin');
+    layerMenu() {
+      return ipcRenderer.invoke('window:layerMenu');
+    },
+    onLayer(listener) {
+      const wrapped = (_event, layer) => listener(layer);
+      ipcRenderer.on('note:layer', wrapped);
+      return () => {
+        ipcRenderer.removeListener('note:layer', wrapped);
+      };
+    },
+    onLifted(listener) {
+      const wrapped = () => listener();
+      ipcRenderer.on('note:lifted', wrapped);
+      return () => {
+        ipcRenderer.removeListener('note:lifted', wrapped);
+      };
     },
     state() {
       return ipcRenderer.invoke('window:state');
@@ -63,6 +77,12 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
     setFloatingVisible(visible) {
       return ipcRenderer.invoke('shell:setFloatingVisible', visible);
+    },
+    noteLayers() {
+      return ipcRenderer.invoke('shell:noteLayers');
+    },
+    setNoteLayer(conversationId, layer) {
+      return ipcRenderer.invoke('shell:setNoteLayer', conversationId, layer);
     },
   },
   floating: {

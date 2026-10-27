@@ -34,8 +34,9 @@
 
 ### Slice 4：便箋的層（FR-8）
 
-- [ ] Windows：FFI 呼叫 user32，移植 fleet 的 WorkerW／DefView 尋找、掛載與 Explorer 重啟復原；
-      便箋標題列與設定的層選單；其他平台只有一般與最上層。
+- [x] Windows：koffi 2.16.3 呼叫 user32（`win32Desktop.ts`），移植 fleet 的 WorkerW／DefView 尋找
+      （`shellHosts.ts`，以假視窗樹測試）、掛載、被點到時抬起、失焦放回、Explorer 重啟後重開與定期重新掛載；
+      便箋標題列的層選單與設定 Notes 分頁的層選擇；其他平台只有一般與最上層；打包只帶 koffi 的 win32_x64。
 
 ## Testing Strategy
 
@@ -47,6 +48,7 @@
 
 | Date | Update |
 |------|--------|
+| 2026-10-28 | Slice 4：先以獨立的 Electron 小程式驗證 Electron 視窗掛到 Explorer 桌面視窗後能顯示、能拖曳；也發現點擊掛載中的子視窗不會讓它成為前景（鍵盤仍在原本的視窗），因此改為被點到就抬成一般視窗、失焦放回。真機驗收（3840×2160、150%，注入的滑鼠與鍵盤，打字前先確認前景視窗）：設為桌面層後父視窗是 Explorer 的圖示宿主、點輸入框後抬起並成為前景、打字與 Enter 送出且收到回覆、點桌面後放回、掛載中拖曳標題列可移動且位置寫回；桌布層掛在 WorkerW 之下、從設定開啟時抬起、失焦回到桌布；重開後依存檔的層重新掛載；Win+D 顯示桌面時桌面層便箋仍在，再按一次 Win+D 視窗全部還原。修正：Electron 視窗與 Explorer 的 DPI context 不同（v1 對 v2），改比較 awareness 等級；已掛載在一層時換到另一層要重新掛載。未驗證：真的重啟 Explorer（會打斷 owner 的桌面，沒有做）、多螢幕與不同縮放的螢幕之間 |
 | 2026-10-28 | Slice 3：圖示改為貓臉（安裝檔、視窗、tray 1x／2x）；build resources 從 `assets/build` 改到 `assets/installer`，因為 `.gitignore` 的 `build/` 會吃掉前者；`Package` workflow 只在 main 與手動觸發時跑，不是必要檢查 |
 | 2026-10-28 | Slice 2：浮動的貓在 Windows 真機（3840×2160、150%）以注入的滑鼠事件驗收：透明視窗疊在其他視窗上、回合中顯示思考中、home 便箋沒有焦點時回覆以泡泡顯示並出現未讀數、拖曳後位置寫入 `shell-state.json` 且重開後不變、點一下開 home 便箋、右鍵是 tray 選單、透明處的點擊穿透到下面。修正：Electron 的 `setPosition` 在 150% 縮放下每次把視窗撐大一個像素，改用固定大小的 `setBounds`；切換忽略滑鼠時 Chromium 立刻回報 mouseleave，所以改以每次滑鼠移動的命中測試決定是否接收輸入；`SetCursorPos` 不經過 Electron 轉送滑鼠移動所用的 low-level hook，驗收要用注入的移動 |
 | 2026-10-28 | Slice 1：首次啟動頁與設定視窗在真的殼裡以 fixture CLI 走過：建立 bot、home 便箋可對話、改 model 存檔後對話標為下一回合換 session、新增／改名／刪除便箋（刪除同時關掉視窗）、Life／Telegram／App 分頁。修正：antigravity、cursor、kiro 的指令名稱與 provider 名稱不同，`providers.yaml` 之前會叫錯指令 |
