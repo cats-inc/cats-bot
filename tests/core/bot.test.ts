@@ -292,6 +292,73 @@ test('a running turn finishes under its admitted target and the next one uses th
     assert.equal(creates.length, 2);
     assert.equal(creates[1]!.body.model, 'sonnet');
     assert.ok(!state.calls.some((call) => call.op === 'resume'), 'the old attachment was never resumed');
+    const replaced = finished.type === 'turn.completed' ? finished.workItem.run?.sessionId : undefined;
+    assert.ok(
+      state.calls.some((call) => call.op === 'close' && call.id === replaced),
+      'the replaced session was closed once its turn had ended',
+    );
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a tick and an owner message racing for the home session bind it once (FR-11)', async () => {
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'bind-race',
+    core: fastRetries,
+    runtimeEnv: { FAKE_CREATE_DELAY_MS: '400' },
+  });
+  await core.start();
+  try {
+    const [, item] = await Promise.all([core.tick(), sendAndWait(core, 'home', 'remember the kettle')]);
+    assert.equal(item.state, 'completed');
+    const state = await fetchFakeState(core);
+    const creates = state.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>;
+    assert.equal(creates.length, 1, 'one session for one conversation');
+    assert.ok(
+      !String(creates[0]!.body.instructions ?? '').includes('remember the kettle'),
+      'a prompt still waiting for its turn is sent as the message, not in the handoff pack',
+    );
+    const homeRecord = (await core.listConversations()).find((record) => record.role === 'home')!;
+    assert.equal(homeRecord.attachment.sessionId, item.run?.sessionId, 'the attachment is the session the turn ran in');
+    const followUp = await sendAndWait(core, 'home', 'and the follow-up');
+    assert.equal(followUp.run?.sessionId, item.run?.sessionId, 'the next turn continues in the same session');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('tightened permissions or new instructions replace the session before the next turn (FR-27)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'tighten', core: fastRetries });
+  await core.start();
+  try {
+    const first = await sendAndWait(core, 'home', 'the password hint is teapot');
+    const before = first.run?.sessionId;
+    const profile = await core.updateProfile({ permissions: { workspaceAccess: 'read_only' } });
+    assert.equal(profile.configRevision, 2);
+    assert.equal((await core.listConversations()).find((record) => record.role === 'home')!.attachment.state, 'stale');
+    const second = await sendAndWait(core, 'home', 'instructions?');
+    assert.equal(second.configRevision, 2);
+    assert.notEqual(second.run?.sessionId, before, 'the read_write session was not reused');
+    assert.match(second.result?.text ?? '', /teapot/u, 'the new session received the handoff pack');
+    let state = await fetchFakeState(core);
+    let creates = state.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>;
+    assert.equal(creates.at(-1)!.body.workspaceAccess, 'read_only');
+    assert.ok(state.calls.some((call) => call.op === 'close' && call.id === before), 'the old session was closed');
+    assert.ok(core.transcript('home').some((entry) => entry.kind === 'system' && /instructions or permissions changed/u.test(entry.text)));
+
+    await core.updateProfile({ instructions: 'You are Kettle.' });
+    const third = await sendAndWait(core, 'home', 'instructions?');
+    assert.notEqual(third.run?.sessionId, second.run?.sessionId);
+    assert.match(third.result?.text ?? '', /You are Kettle\./u);
+    state = await fetchFakeState(core);
+    creates = state.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>;
+    assert.equal(creates.length, 3);
+
+    await core.updateProfile({ name: 'Renamed', heartbeat: { enabled: false } });
+    const fourth = await sendAndWait(core, 'home', 'still here?');
+    assert.equal(fourth.run?.sessionId, third.run?.sessionId, 'a name or heartbeat change keeps the session');
   } finally {
     await core.stop();
   }
