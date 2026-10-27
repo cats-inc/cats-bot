@@ -202,6 +202,37 @@ test('a due schedule runs with no view open, its result persists and duplicates 
   }
 });
 
+test('cancelling a schedule also cancels its occurrence waiting out a busy retry (FR-21)', async () => {
+  const time = clock();
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'sched-retry',
+    core: { ...fast, turnRetry: { ...fast.turnRetry, backgroundBusyMs: 700 }, now: time.now },
+  });
+  await core.start();
+  try {
+    await core.tick();
+    const cron = core.createSchedule({ conversationId: 'home', prompt: 'busy-once stretch', kind: 'cron', cron: '* * * * *', timezone: 'UTC', createdBy: 'agent' });
+    const deferred = waitForEvent(core, (event) => event.type === 'work.updated' && event.workItem.coalesceKey === cron.id
+      && event.workItem.state === 'queued' && event.workItem.attempts === 1);
+    time.advance(61_000);
+    assert.deepEqual((await core.tick()).firedSchedules, [cron.id]);
+    const waiting = await deferred;
+    const itemId = waiting.type === 'work.updated' ? waiting.workItem.id : '';
+    time.advance(61_000);
+    assert.deepEqual((await core.tick()).firedSchedules, [], 'the occurrence waiting out its retry still coalesces');
+    await core.cancelSchedule(cron.id);
+    assert.equal(core.getWorkItem(itemId)?.state, 'cancelled');
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    assert.equal(core.getWorkItem(itemId)?.state, 'cancelled', 'the retry timer did not bring it back');
+    const state = await fetchFakeState(core);
+    assert.equal(state.calls.filter((call) => call.op === 'message' && call.message === 'busy-once stretch').length, 1, 'the retry never ran');
+    assert.equal((await core.listSchedules()).find((record) => record.id === cron.id)?.state, 'cancelled');
+  } finally {
+    await core.stop();
+  }
+});
+
 test('downtime settles missed schedules by policy and allows one catch-up heartbeat (FR-22, FR-23)', async () => {
   const time = clock();
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'missed', core: { ...fast, now: time.now, life: { intervalMs: 60_000, random: () => 0 } } });
