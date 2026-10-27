@@ -19,6 +19,7 @@ export interface BotPaths {
   lock: string;
   handoff: string;
   life: string;
+  telegramState: string;
 }
 
 export function resolveBotsHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -43,6 +44,7 @@ export function botPathsFor(root: string): BotPaths {
     lock: join(root, 'instance.lock.json'),
     handoff: join(root, 'handoff'),
     life: join(root, 'life.json'),
+    telegramState: join(root, 'telegram-state.json'),
   };
 }
 

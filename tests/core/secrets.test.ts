@@ -1,9 +1,13 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
+import { writeHandoff } from '../../src/core/store/lock.ts';
+import { resolveBotRoot } from '../../src/core/store/paths.ts';
+
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN, secretsPath, type SecretCipher } from '../../src/core/secrets.ts';
-import { makeTempHome, type TempHome } from '../support/harness.ts';
+import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts';
 
 let home: TempHome;
 before(() => {
@@ -42,4 +46,49 @@ test('a cipher-backed store encrypts, and a host without that cipher cannot read
   assert.equal(plain.get('apiKey'), null);
   assert.equal(plain.has('apiKey'), true);
   assert.match(warnings[0] ?? '', /protected with test-flip/u);
+});
+
+test('a host with a cipher re-stores plain entries encrypted and reports what is actually stored', () => {
+  const root = join(home.botsHome, 'upgrade');
+  mkdirSync(root, { recursive: true });
+  const cli = new FileSecretStore(root);
+  cli.set(SECRET_TELEGRAM_TOKEN, '777:plain-token');
+  assert.equal(cli.protectionOf(SECRET_TELEGRAM_TOKEN), 'file');
+  assert.equal(cli.protectionOf('missing'), null);
+  assert.equal(cli.protectAtRest(), 0, 'without a cipher nothing can be upgraded');
+
+  const shell = new FileSecretStore(root, { cipher: flipCipher });
+  assert.equal(shell.protectionOf(SECRET_TELEGRAM_TOKEN), 'file', 'capability is not protection');
+  assert.equal(shell.protectAtRest(), 1);
+  assert.equal(shell.protectAtRest(), 0, 'an encrypted entry is left alone');
+  const raw = readFileSync(secretsPath(root), 'utf8');
+  assert.doesNotMatch(raw, /"cipher": "none"/u);
+  assert.match(raw, /"cipher": "test-flip"/u);
+  assert.equal(shell.get(SECRET_TELEGRAM_TOKEN), '777:plain-token');
+  assert.equal(shell.protectionOf(SECRET_TELEGRAM_TOKEN), 'os');
+  assert.equal(cli.protectionOf(SECRET_TELEGRAM_TOKEN), 'os', 'a host without the cipher still reports the stored protection');
+});
+
+test('telegramStatus reports the stored token protection, and a reloadToken handoff encrypts a token the CLI wrote', async () => {
+  const id = 'sealed';
+  const root = resolveBotRoot(id, { CATS_BOTS_HOME: home.botsHome });
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id,
+    core: { secrets: new FileSecretStore(root, { cipher: flipCipher }) },
+  });
+  new FileSecretStore(root).set(SECRET_TELEGRAM_TOKEN, '888:from-the-cli');
+  assert.equal(core.telegramStatus().protection, 'file', 'the CLI stored it without encryption');
+  await core.start();
+  try {
+    writeHandoff(core.paths, { kind: 'telegram', payload: { reloadToken: true } });
+    const deadline = Date.now() + 10_000;
+    while (core.telegramStatus().protection !== 'os') {
+      if (Date.now() > deadline) throw new Error('the handoff did not re-store the token encrypted');
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    assert.doesNotMatch(readFileSync(secretsPath(root), 'utf8'), /"cipher": "none"/u);
+  } finally {
+    await core.stop();
+  }
 });

@@ -125,6 +125,7 @@ through `BotHostApi`.
   of its descriptor. Tools: `schedule_create`, `schedule_list`, `schedule_cancel`,
   `ask_owner`. A schedule exists only once journaled and the receipt is written
   into the conversation; a question becomes an `awaiting_owner` work item.
+  Listing and cancelling see only the calling conversation's schedules.
 
 ### `src/shell/electron` and `assets/`
 
@@ -144,12 +145,17 @@ through `BotHostApi`.
 - **Purpose**: the optional Telegram binding (FR-19, FR-26) and where its
   token lives.
 - **Responsibilities**: one long-polling `getUpdates` consumer per bot with
-  exponential backoff and 409-conflict handling; the first private chat that
+  exponential backoff and 409-conflict handling; an update is acknowledged
+  only after it was accepted (a failed one is polled again, one that fails
+  five times is skipped by id), and the last accepted `update_id` is kept in
+  `telegram-state.json` so a restart neither replays nor loses one; the first private chat that
   writes becomes the owner and is persisted in the profile; inbound text
   becomes an owner message in the home conversation; every completed home
   reply is mirrored back in order, split at 4,000 characters. The token is
   kept in `secrets.json` by `FileSecretStore`, encrypted through Electron's
-  `safeStorage` when the shell runs, as a file otherwise. Loop shape adapted
+  `safeStorage` when the shell runs, as a file otherwise; the shell re-stores
+  a file-protected token encrypted when it starts and when the CLI hands over
+  a new one, and status reports the stored protection. Loop shape adapted
   from cats-platform's Telegram polling with attribution.
 
 ### Later (PLAN-001 Phase 5, separate ADR)

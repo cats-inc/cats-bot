@@ -99,6 +99,8 @@
 
   sendEl.addEventListener('click', () => { void send(); });
   inputEl.addEventListener('keydown', (event) => {
+    // Enter that confirms an IME candidate (Chinese, Japanese, …) is not a send.
+    if (event.isComposing || event.keyCode === 229) return;
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
       void send();

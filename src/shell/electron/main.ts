@@ -77,10 +77,11 @@ async function main(): Promise<void> {
       decrypt: (buffer) => safeStorage.decryptString(buffer),
     }
     : undefined;
+  const secrets = new FileSecretStore(root, { ...(cipher ? { cipher } : {}), warn: (line) => process.stderr.write(`${line}\n`) });
   const openCore = () => BotCore.open({
     root,
     runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
-    secrets: new FileSecretStore(root, { ...(cipher ? { cipher } : {}), warn: (line) => process.stderr.write(`${line}\n`) }),
+    secrets,
     log: (line) => process.stderr.write(`${line}\n`),
   });
   let core: BotCore;
@@ -100,6 +101,8 @@ async function main(): Promise<void> {
       return;
     }
   }
+  // A token the CLI stored as a file is re-stored with the OS facility before Telegram reads it.
+  core.protectSecretsAtRest();
 
   const appPath = app.getAppPath();
   const assetsDir = join(appPath, 'assets');

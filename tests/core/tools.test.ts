@@ -115,3 +115,27 @@ test('a wrong or missing token is refused', async () => {
   const get = await fetch(`${server.url}/conv-1`, { headers: { Authorization: `Bearer ${server.token}` } });
   assert.equal(get.status, 405);
 });
+
+test('schedule_list and schedule_cancel only see schedules of the calling conversation (FR-24)', async () => {
+  const call = async (conversationId: string, name: string, args: Record<string, unknown>) => {
+    const reply = await rpc(`/mcp/${conversationId}`, { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+    return (reply.json as { result: { isError?: boolean; content: Array<{ text: string }> } }).result;
+  };
+  const made = await call('note-a', 'schedule_create', { prompt: 'the vault code is 0451', delayMinutes: 60 });
+  const id = /Scheduled (sch-\d+)/u.exec(made.content[0]!.text)?.[1];
+  assert.ok(id, 'note A got a receipt');
+
+  const listedByB = await call('note-b', 'schedule_list', {});
+  assert.doesNotMatch(listedByB.content[0]!.text, /0451|sch-/u, 'note B does not see note A\'s schedule');
+  const cancelledByB = await call('note-b', 'schedule_cancel', { id });
+  const unknownToB = await call('note-b', 'schedule_cancel', { id: 'sch-999' });
+  assert.equal(cancelledByB.isError, true);
+  assert.equal(cancelledByB.content[0]!.text.replace(id!, 'ID'), unknownToB.content[0]!.text.replace('sch-999', 'ID'), 'a foreign schedule reads like an unknown one');
+  assert.equal(created.find((schedule) => schedule.id === id)?.state, 'active', 'note B could not cancel it');
+
+  const listedByA = await call('note-a', 'schedule_list', {});
+  assert.match(listedByA.content[0]!.text, /0451/u);
+  const cancelledByA = await call('note-a', 'schedule_cancel', { id });
+  assert.notEqual(cancelledByA.isError, true);
+  assert.equal(created.find((schedule) => schedule.id === id)?.state, 'cancelled');
+});

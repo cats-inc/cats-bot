@@ -1,8 +1,16 @@
+import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
+
 /**
  * SPEC-001 FR-19 / FR-26: optional Telegram long polling. One consumer per
  * bot token, inbound private messages from the owner's chat become owner
  * messages in the home conversation, replies are mirrored back in order and
  * split at 4,000 characters. Webhooks are out of scope (ADR-001 §10).
+ *
+ * An update is acknowledged (the next `offset`) only after it was accepted:
+ * the owner message is journaled, or the update needs no work. A failed
+ * update is polled again; one that fails `MAX_UPDATE_ATTEMPTS` times in a row
+ * is skipped so it cannot wedge polling. The last accepted `update_id` is
+ * persisted so a restart neither replays nor loses updates.
  *
  * Loop shape (offset, backoff, conflict handling) adapted from cats-platform
  * `src/platform/transports/telegram/polling.ts` at revision 595e9ca (MIT),
@@ -12,6 +20,7 @@
 export const TELEGRAM_CHUNK_LIMIT = 4_000;
 const DEFAULT_API_BASE_URL = 'https://api.telegram.org';
 const DEFAULT_POLL_TIMEOUT_SECONDS = 25;
+export const MAX_UPDATE_ATTEMPTS = 5;
 
 export type TelegramHealth = 'healthy' | 'degraded' | 'failed';
 
@@ -31,9 +40,42 @@ export interface TelegramTransportOptions {
   pollTimeoutSeconds?: number;
   now(): Date;
   log(line: string): void;
+  /** Tests shorten the wait after a failed poll or update; production backs off exponentially. */
+  retryDelayMs?: number;
+  /** The last `update_id` accepted before this transport started (persisted by the core). */
+  lastUpdateId?: number | null;
+  /** Called once per accepted (or finally skipped) update, after `onOwnerMessage` resolved. */
+  onUpdateAccepted?(updateId: number): void;
   /** The first private chat that writes becomes the owner; the core persists it. */
   onOwnerBound(chatId: number, name: string): void;
+  /** Resolves once the message is durably accepted; a rejection leaves the update unacknowledged. */
   onOwnerMessage(message: TelegramInbound): Promise<void>;
+}
+
+/** Non-secret polling state next to the profile: the bot id part of the token and the last accepted update. */
+interface TelegramStateFile {
+  botId: string;
+  lastUpdateId: number;
+}
+
+function telegramBotId(token: string): string {
+  return token.split(':', 1)[0] ?? '';
+}
+
+/** The last accepted update of this token's bot, or null (another bot's ids do not apply). */
+export function readTelegramLastUpdateId(path: string, token: string): number | null {
+  const read = readJsonFile<Partial<TelegramStateFile>>(path);
+  if (!read.ok || typeof read.value !== 'object' || read.value === null) return null;
+  const { botId, lastUpdateId } = read.value;
+  if (botId !== telegramBotId(token) || typeof lastUpdateId !== 'number' || !Number.isSafeInteger(lastUpdateId)) {
+    return null;
+  }
+  return lastUpdateId;
+}
+
+export function writeTelegramLastUpdateId(path: string, token: string, updateId: number): void {
+  const state: TelegramStateFile = { botId: telegramBotId(token), lastUpdateId: updateId };
+  writeJsonAtomic(path, state);
 }
 
 export interface TelegramStatus {
@@ -91,6 +133,8 @@ export class TelegramTransport {
   private controller: AbortController | null = null;
   private loop: Promise<void> | null = null;
   private offset: number | null = null;
+  private lastUpdateId: number | null;
+  private failingUpdate: { id: number; attempts: number } | null = null;
   private ownerChatId: number | null;
   private lastPollAt: string | null = null;
   private lastError: string | null = null;
@@ -103,6 +147,9 @@ export class TelegramTransport {
     this.fetchImpl = options.fetch ?? fetch;
     this.baseUrl = (options.apiBaseUrl ?? DEFAULT_API_BASE_URL).replace(/\/+$/u, '');
     this.ownerChatId = options.ownerChatId;
+    this.lastUpdateId = options.lastUpdateId ?? null;
+    // Confirm what was accepted before a restart on the first poll.
+    if (this.lastUpdateId !== null) this.offset = this.lastUpdateId + 1;
   }
 
   private url(method: string): string {
@@ -166,15 +213,16 @@ export class TelegramTransport {
         this.consecutiveFailures = 0;
         this.lastError = null;
         for (const update of payload.result) {
-          this.offset = Math.max(this.offset ?? 0, update.update_id + 1);
-          await this.handle(update);
+          await this.accept(update);
         }
       } catch (error) {
         if (signal.aborted) return;
         this.consecutiveFailures += 1;
         this.lastError = error instanceof Error ? error.message : String(error);
         this.options.log(`telegram poll failed (${this.consecutiveFailures}): ${this.lastError}`);
-        const delay = /409 Conflict/u.test(this.lastError) ? 30_000 : backoffMs(this.consecutiveFailures);
+        const delay = /409 Conflict/u.test(this.lastError)
+          ? 30_000
+          : this.options.retryDelayMs ?? backoffMs(this.consecutiveFailures);
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, delay);
           signal.addEventListener('abort', () => {
@@ -184,6 +232,33 @@ export class TelegramTransport {
         });
       }
     }
+  }
+
+  /**
+   * Handles one update and only then moves the offset past it. A redelivered
+   * update that was already accepted is skipped; a failure propagates so the
+   * batch stops here and the same update is polled again after the backoff.
+   */
+  private async accept(update: TelegramUpdate): Promise<void> {
+    const updateId = update.update_id;
+    if (this.lastUpdateId !== null && updateId <= this.lastUpdateId) {
+      this.offset = Math.max(this.offset ?? 0, updateId + 1);
+      return;
+    }
+    try {
+      await this.handle(update);
+    } catch (error) {
+      const attempts = this.failingUpdate?.id === updateId ? this.failingUpdate.attempts + 1 : 1;
+      this.failingUpdate = { id: updateId, attempts };
+      if (attempts < MAX_UPDATE_ATTEMPTS) throw error;
+      // The text stays out of the log; the id and the reason are enough to look into it.
+      this.options.log(`telegram: skipped update ${updateId} after ${attempts} failed attempts: `
+        + `${error instanceof Error ? error.message : String(error)}`);
+    }
+    this.failingUpdate = null;
+    this.lastUpdateId = updateId;
+    this.offset = Math.max(this.offset ?? 0, updateId + 1);
+    this.options.onUpdateAccepted?.(updateId);
   }
 
   private async handle(update: TelegramUpdate): Promise<void> {
