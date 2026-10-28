@@ -88,6 +88,24 @@ last step, not the first.
   `.ts` modules so `node:test` can run it; components are checked in the
   real shell (below).
 
+### Windows desktop control helper
+
+- **Location**: `tests/shell/windowsDesktopControl.test.ts` and
+  `native/windows-desktop-control/native-check/`
+- **Scope**: the test covers the packaging scripts without running dotnet,
+  PowerShell or electron-builder, so it runs on every CI platform: one
+  self-contained `dotnet publish` per architecture, stale helper removal, the
+  .NET runtime license staging and its failure when a runtime pack is missing,
+  the packaged architecture check against `Cats Bot.exe`, the no-op on macOS and
+  Linux, the Windows-only `extraResources` mapping, and the frozen SPEC-133
+  exclusion lists in `Exclusions.cs` (SPEC-006 BDC-11, PLAN-006 P1).
+- **Native check** (Windows only, manual): run `dotnet build -c Release` in the
+  helper folder, then `node native/windows-desktop-control/native-check/check.mjs
+  [helper.exe]`. It opens two throwaway PowerShell windows for about 10 s, never
+  sends keyboard or mouse input, and checks the handshake, window listing, app
+  resolution, capture under a covering window (B4), UI reading without password
+  values, the lock state and self exclusion. CI never starts the helper.
+
 ### Manual acceptance
 
 - A real provider CLI on Windows for SPEC-001 A1 to A4.
@@ -166,4 +184,4 @@ screenshots/results stay in ignored `tmp/updates-renderer-*` directories.
 
 ---
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-29*

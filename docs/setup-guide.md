@@ -10,6 +10,8 @@
 - For manual acceptance with a real provider: the provider CLI (for example
   Claude Code or Codex) installed and logged in on this machine. The bot never
   reads the CLI's credential files; it only runs the CLI through cats-runtime.
+- For Windows packaging only: the .NET 8 SDK or newer (`dotnet`), which
+  publishes the desktop control helper. macOS and Linux never need it.
 
 ## Installation
 
@@ -107,6 +109,12 @@ starts the app; a bot that was never set up opens the first-run page
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the
 runtime bin stays a plain file.
+Before electron-builder runs, `dist:win` and `dist:dir` publish the desktop
+control helper (`native/windows-desktop-control/`, SPEC-006 BDC-11)
+self-contained for the host architecture with `dotnet publish`; afterwards they
+check that the package carries it at `resources/native/windows-desktop-control/`
+for the app's architecture, with the .NET runtime's license texts. Both steps
+do nothing on macOS and Linux.
 
 `init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
 the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.

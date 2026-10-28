@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress; P0 complete, P1–P4 authorized, P5 needs owner sign-off after P4 |
+| Status | In progress; P0 complete, P1 in review, P2–P4 authorized, P5 needs owner sign-off after P4 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -39,13 +39,34 @@ not need them, which covers this exit's confirmation. Fixtures land with the cod
 
 ### P1 — Helper (observe)
 
-- [ ] Create `native/windows-desktop-control/` with the observation ops, exclusions
-  (including BDC-08), UIPI checks, per-monitor DPI awareness v2 and lock detection.
-- [ ] Package it as a Windows-only electron-builder extra resource and sign it under
-  ADR-004.
-- [ ] Helper tests, including the covering-window capture check (B4).
+- [x] Create `native/windows-desktop-control/` with the observation ops (`hello`,
+  `resolve_apps`, `list_windows`, `capture_window`, `read_ui`, `open_app`, `state` and
+  `cancel`), the SPEC-133 exclusion lists, per-monitor DPI awareness v2 and lock detection.
+  The sources are the Bot's own copy of the Platform helper with the same protocol, behavior
+  and lists; nothing is built or loaded from Platform. BDC-08 adds no list entries: the
+  Bot's own processes and executables, and Cats Desktop's, reach the helper through `hello`
+  at runtime, which the P2 supervisor supplies. UIPI only blocks input, so the
+  `elevated_target` check moves to P5 with the input ops.
+- [x] Package it as a Windows-only electron-builder extra resource.
+  `scripts/windows-desktop-control.mjs` publishes it self-contained per architecture into
+  `build/native-windows/<arch>/` and stages the .NET runtime's license texts beside it;
+  `dist:win`, `dist:dir` and `build-preview.mjs` publish it before electron-builder and read
+  the package back (helper present, same PE architecture as `Cats Bot.exe`, notices complete).
+  macOS and Linux packaging never run dotnet. electron-builder signs the helper with the app
+  when Windows credentials exist (ADR-004), and signed releases check its Authenticode
+  signature; no signed build has run yet.
+- [x] Helper tests, including the covering-window capture check (B4).
 
 **Exit:** the helper alone passes B4 on Windows.
+
+P1 record (2026-10-29): `dotnet build -c Release` reported 0 warnings and 0 errors.
+`native-check/check.mjs` passed 13/13 on Windows 11, against the Release build and again
+against the helper inside a packaged x64 `--dir` candidate: the overlap of a red covering
+window contained 0 red pixels (B4), password values were absent, the localized name 記事本
+resolved to the packaged Notepad, and PowerShell resolved as observe only.
+`tests/shell/windowsDesktopControl.test.ts` covers publishing, notice staging, the packaged
+architecture check, the non-Windows path and the frozen exclusion lists without running dotnet.
+arm64 publishing and the installer targets run only in CI and release builds.
 
 ### P2 — Bot core
 
