@@ -159,13 +159,19 @@ and the renderer (`tsconfig.renderer.json`).
 ## CI/CD Integration
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
-`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
+`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-15-intel` with Node 24 for every
 pull request and every push to `main`.
 
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and
 checksums. Candidate identity disables updates. Publication is a separate manual
 workflow documented in [deployment.md](deployment.md).
+
+The signed macOS release job routes Apple's ticket requests over TCP before
+packaging to avoid the hosted runner's HTTP/3 failure. Candidate CI has no signing
+credentials and does not exercise that workaround. Only a signed release run
+passing codesign, Gatekeeper and stapled-ticket validation establishes that path;
+YAML checks and unsigned candidate packages do not.
 
 `tests/shell/updates.test.ts` covers native-operation timeout fencing, completion
 identity, explicit consent, Settings main-frame ownership, drain order, multiple
