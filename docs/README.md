@@ -84,8 +84,6 @@ Add your project-specific automation scripts here.
 
 The [0.2.0 Standard Preview release notes](releases/v0.2.0.md) define its exact
 download matrix, signing policy, Runtime pin and migration/recovery instructions.
-The [0.2.1 Standard Preview release notes](releases/v0.2.1.md) add Windows desktop control
-with the same matrix, signing profile and Runtime pin.
 
 Standard Preview delivery and host-owned Check for Updates are defined by
 [ADR-004](decisions/004-publish-standard-previews-with-host-owned-updates.md),
