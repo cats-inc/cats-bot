@@ -43,13 +43,22 @@ Bot + pinned Runtime source ZIP with a source/checksum manifest. Portable assets
 are not updater targets. Candidate CI artifacts carry a different distribution
 identity and cannot self-update.
 
-Configure repository or applicable organization secrets before requesting signed
-builds:
+macOS uses the existing Cats Desktop credentials through `cats-inc` organization
+secrets. All five secrets grant **Selected repositories** access only to
+`cats-platform` and `cats-bots`; no new Apple certificate, API key or per-repository
+upload is needed. Windows signing is configured separately with repository or
+applicable organization secrets.
 
 | Platform | Secrets |
 | --- | --- |
 | Windows | WIN_CSC_LINK (PFX file as base64 or supported certificate URL), WIN_CSC_KEY_PASSWORD |
 | macOS | CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER |
+
+Rotate the shared macOS values in the organization's **Settings → Secrets and
+variables → Actions**, retaining the selected-repository access. Do not create
+same-name repository or environment overrides, which take precedence and can
+keep Bots on stale credentials. Pause signed releases during rotation, then verify
+signing and notarization authentication in both repositories before resuming.
 
 Windows certificates may have an empty password; a password without a certificate
 is rejected. macOS requires all certificate and notarization credentials together.
