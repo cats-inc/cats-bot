@@ -4,52 +4,61 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress — owner 於 2026-10-28 要求補齊 |
+| **Status** | In progress — the owner asked for the missing parts on 2026-10-28 |
 | **Owner** | Claude |
 | **Related spec** | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
 | **Related decision** | [ADR-002](../decisions/002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) |
 
 ## Overview
 
-每個 slice 一個 PR，CI 綠燈後自動合併。順序依「owner 能不能拿來試」排：先讓安裝後能設定與使用，
-再加浮動 bot，然後交出安裝包，最後是需要原生呼叫的桌面層。
+One PR per slice, merged automatically once CI is green. The order follows "can the owner try it":
+first make it configurable and usable after installation, then add the floating bot, then deliver the
+installer, and last the desktop layers that need native calls.
 
 ## Implementation Phases
 
-### Slice 1：設定與首次啟動（SPEC-002 FR-1–FR-6）
+### Slice 1: Settings and first run (SPEC-002 FR-1–FR-6)
 
-- [x] core：`listProviders`、`listModels`、`renameConversation`；runtime client 的 `providerModels`；
-      `providers.yaml` 使用 provider 的預設指令。
-- [x] 殼：首次啟動頁、設定視窗（Bot、Notes、Life、Telegram、App）、tray 的「Manage notes…」與「Settings…」、
-      便箋標題列的 ⚙。
-- [x] 測試：provider 與 catalog、PATH 偵測、runtime 回答與退回、改名、首次輸入驗證、tray 選單。
+- [x] core: `listProviders`, `listModels`, `renameConversation`; `providerModels` in the runtime
+      client; `providers.yaml` uses each provider's default command.
+- [x] shell: first-run page, settings window (Bot, Notes, Life, Telegram, App), the tray's "Manage notes…"
+      and "Settings…", and the ⚙ in the note's title bar.
+- [x] tests: providers and catalog, PATH detection, runtime answer and fallback, rename, first-run
+      input validation, tray menu.
 
-### Slice 2：浮動 bot（FR-7）
+### Slice 2: Floating bot (FR-7)
 
-- [x] 透明最上層視窗、狀態、拖曳與位置、點擊與右鍵、泡泡、顯示／隱藏（tray 的「Show floating cat」與設定的 App 分頁）。
+- [x] Transparent topmost window, state, dragging and position, click and right-click, bubble, show/hide
+      (the tray's "Show floating cat" and the settings App tab).
 
-### Slice 3：安裝包（FR-9）
+### Slice 3: Installer (FR-9)
 
-- [x] 應用程式圖示（`npm run icons` 由 `cat.svg` 產生安裝檔、視窗與 tray 圖示）；`Package` workflow 在 main 更新時建置 Windows 安裝檔與免安裝檔並上傳 artifact；安裝檔建立開始功能表與桌面捷徑、裝完即啟動。
+- [x] Application icons (`npm run icons` generates the installer, window and tray icons from `cat.svg`);
+      the `Package` workflow builds the Windows installer and portable build on every main update and
+      uploads the artifact; the installer creates Start menu and desktop shortcuts and launches the app
+      after installation.
 
-### Slice 4：便箋的層（FR-8）
+### Slice 4: Note layers (FR-8)
 
-- [x] Windows：koffi 2.16.3 呼叫 user32（`win32Desktop.ts`），移植 fleet 的 WorkerW／DefView 尋找
-      （`shellHosts.ts`，以假視窗樹測試）、掛載、被點到時抬起、失焦放回、Explorer 重啟後重開與定期重新掛載；
-      便箋標題列的層選單與設定 Notes 分頁的層選擇；其他平台只有一般與最上層；打包只帶 koffi 的 win32_x64。
+- [x] Windows: koffi 2.16.3 calls user32 (`win32Desktop.ts`), porting the fleet's WorkerW/DefView lookup
+      (`shellHosts.ts`, tested with a fake window tree), attaching, raising when clicked, putting back
+      on blur, reopening after an Explorer restart and periodic re-attachment; the layer menu in the
+      note's title bar and the layer choice in the settings Notes tab; other platforms have only normal
+      and topmost; packaging includes only koffi's win32_x64.
 
 ## Testing Strategy
 
-- core 與殼的無 Electron 部分用 `node:test`。
-- 殼以 `--remote-debugging-port` 啟動，經 CDP 操作頁面並截圖（docs/testing.md 的手動驗收）；桌面層另外用
-  desktop-ui-automation 在 Windows 真機檢查。
+- The Electron-free parts of the core and the shell use `node:test`.
+- The shell is started with `--remote-debugging-port`, operated through CDP with screenshots (manual
+  acceptance in docs/testing.md); the desktop layers are additionally checked on a real Windows machine
+  with desktop-ui-automation.
 
 ## Progress Log
 
 | Date | Update |
 |------|--------|
-| 2026-10-28 | Codex 對 #14、#15、#17、#18 的 7 條審閱全部修正（#19–#22）：設定頁與首次啟動頁快速切換 provider 時只採用最新一次的 model 清單，載入中不能存檔，切回原 provider 時預選已存的 model；主人開啟的桌面／桌布便箋一律抬起並取得焦點（含隱藏後再開與本次執行尚未建立視窗），只有啟動還原與 Explorer 重啟後的重開直接放回原層；需要的 Explorer 容器缺席時最多每 10 秒再找一次；浮動貓的位置以貓本體是否可抓判斷並在螢幕變動時重新檢查；未讀改看焦點而非視窗是否存在；services.md 更正 discovery 的隔離範圍。舊版與修正版在 Windows 真機（只用 CDP 與唯讀視窗查詢，不注入輸入）比對：model 選單 8/8 輪重現後 8/8 輪正確；隱藏後再開的桌面便箋舊版 7 秒後被掛回、修正後仍抬起；重啟後第一次開啟桌布便箋舊版直接回桌布、修正後抬起並取得前景；背景桌面便箋收到回覆時未讀 1、浮動貓顯示 1，開啟後歸零。未驗證：真的移除螢幕、Explorer 晚建立容器（以單元測試涵蓋） |
-| 2026-10-28 | Slice 4：先以獨立的 Electron 小程式驗證 Electron 視窗掛到 Explorer 桌面視窗後能顯示、能拖曳；也發現點擊掛載中的子視窗不會讓它成為前景（鍵盤仍在原本的視窗），因此改為被點到就抬成一般視窗、失焦放回。真機驗收（3840×2160、150%，注入的滑鼠與鍵盤，打字前先確認前景視窗）：設為桌面層後父視窗是 Explorer 的圖示宿主、點輸入框後抬起並成為前景、打字與 Enter 送出且收到回覆、點桌面後放回、掛載中拖曳標題列可移動且位置寫回；桌布層掛在 WorkerW 之下、從設定開啟時抬起、失焦回到桌布；重開後依存檔的層重新掛載；Win+D 顯示桌面時桌面層便箋仍在，再按一次 Win+D 視窗全部還原。修正：Electron 視窗與 Explorer 的 DPI context 不同（v1 對 v2），改比較 awareness 等級；已掛載在一層時換到另一層要重新掛載。未驗證：真的重啟 Explorer（會打斷 owner 的桌面，沒有做）、多螢幕與不同縮放的螢幕之間 |
-| 2026-10-28 | Slice 3：圖示改為貓臉（安裝檔、視窗、tray 1x／2x）；build resources 從 `assets/build` 改到 `assets/installer`，因為 `.gitignore` 的 `build/` 會吃掉前者；`Package` workflow 只在 main 與手動觸發時跑，不是必要檢查 |
-| 2026-10-28 | Slice 2：浮動的貓在 Windows 真機（3840×2160、150%）以注入的滑鼠事件驗收：透明視窗疊在其他視窗上、回合中顯示思考中、home 便箋沒有焦點時回覆以泡泡顯示並出現未讀數、拖曳後位置寫入 `shell-state.json` 且重開後不變、點一下開 home 便箋、右鍵是 tray 選單、透明處的點擊穿透到下面。修正：Electron 的 `setPosition` 在 150% 縮放下每次把視窗撐大一個像素，改用固定大小的 `setBounds`；切換忽略滑鼠時 Chromium 立刻回報 mouseleave，所以改以每次滑鼠移動的命中測試決定是否接收輸入；`SetCursorPos` 不經過 Electron 轉送滑鼠移動所用的 low-level hook，驗收要用注入的移動 |
-| 2026-10-28 | Slice 1：首次啟動頁與設定視窗在真的殼裡以 fixture CLI 走過：建立 bot、home 便箋可對話、改 model 存檔後對話標為下一回合換 session、新增／改名／刪除便箋（刪除同時關掉視窗）、Life／Telegram／App 分頁。修正：antigravity、cursor、kiro 的指令名稱與 provider 名稱不同，`providers.yaml` 之前會叫錯指令 |
+| 2026-10-28 | All 7 Codex review comments on #14, #15, #17 and #18 are fixed (#19–#22): when the provider is switched quickly on the settings page and the first-run page, only the latest model list is used, saving is blocked while loading, and switching back to the original provider preselects the saved model; desktop/wallpaper notes opened by the owner are always raised and given focus (including reopening after hiding, and when no window has yet been created in this run), and only startup restore and the reopen after an Explorer restart put them straight back on their layer; when a required Explorer container is absent it is looked for again at most every 10 seconds; the floating Cat's position is judged by whether the Cat itself can be grabbed and is rechecked when the screens change; unread now looks at focus rather than whether a window exists; services.md corrects the isolation scope of discovery. The old and fixed versions were compared on a real Windows machine (only CDP and read-only window queries, no injected input): the model menu reproduced the bug in 8/8 rounds before and was correct in 8/8 rounds after; a desktop note reopened after hiding was re-attached after 7 seconds in the old version and stays raised after the fix; the first wallpaper note opened after a restart went straight back to the wallpaper in the old version and is raised and takes the foreground after the fix; when a background desktop note received a reply, unread was 1 and the floating Cat showed 1, and both reset to zero after opening. Not verified: actually removing a screen, and Explorer creating the container late (covered by unit tests) |
+| 2026-10-28 | Slice 4: first verified with a standalone small Electron program that an Electron window attached to Explorer's desktop window can display and be dragged; also found that clicking an attached child window does not make it the foreground window (the keyboard stays in the original window), so it is now raised to a normal window when clicked and put back on blur. Real-machine acceptance (3840×2160, 150%, injected mouse and keyboard, foreground window confirmed before typing): after setting the desktop layer the parent window was Explorer's icon host, clicking the input raised it and made it the foreground, typing and Enter sent and a reply was received, clicking the desktop put it back, dragging the title bar while attached moved it and the position was written back; the wallpaper layer is attached under WorkerW, raised when opened from settings, and returned to the wallpaper on blur; after reopening it re-attached according to the saved layer; with Win+D showing the desktop the desktop-layer note was still there, and pressing Win+D again restored all windows. Fixes: the Electron window and Explorer have different DPI contexts (v1 vs v2), so the awareness level is compared instead; switching from one layer to another while attached requires re-attaching. Not verified: actually restarting Explorer (it would interrupt the owner's desktop, so it was not done), multiple monitors and monitors with different scaling |
+| 2026-10-28 | Slice 3: the icon is now a Cat face (installer, window, tray 1x/2x); build resources moved from `assets/build` to `assets/installer`, because `build/` in `.gitignore` swallows the former; the `Package` workflow runs only on main and on manual trigger and is not a required check |
+| 2026-10-28 | Slice 2: the floating Cat was accepted on a real Windows machine (3840×2160, 150%) with injected mouse events: the transparent window overlays other windows, shows thinking during a turn, shows replies as a bubble with an unread count when the home note has no focus, after dragging the position is written to `shell-state.json` and does not change after reopening, one click opens the home note, right-click is the tray menu, and clicks on transparent areas pass through to what is below. Fixes: at 150% scaling Electron's `setPosition` grew the window by one pixel each time, so the fixed-size `setBounds` is used; when toggling mouse ignoring Chromium immediately reported mouseleave, so a hit test on every mouse move now decides whether to accept input; `SetCursorPos` does not go through the low-level hook Electron uses to forward mouse moves, so acceptance must use injected moves |
+| 2026-10-28 | Slice 1: the first-run page and settings window were walked through in the real shell with the fixture CLI: create the bot, chat in the home note, after changing the model and saving the conversation is marked to switch session on the next turn, add/rename/delete notes (deleting also closes the window), Life/Telegram/App tabs. Fix: the command names of antigravity, cursor and kiro differ from their provider names, and `providers.yaml` used to call the wrong command |

@@ -1,5 +1,10 @@
 # Implementation Plans
 
+- [PLAN-006: Desktop control session MCP](PLAN-006-desktop-control-session-mcp.md)
+  — planned, 2026-10-29; contract and profile, observe-only helper, core server,
+  note/tray/CLI and native phase A acceptance, then input tools after owner sign-off.
+  Implementation not authorized.
+
 - [PLAN-004: Provider interactions and tool visibility](PLAN-004-provider-interactions-and-tool-visibility.md)
   — ready, 2026-10-28; core/CLI, life loop/recovery, shell
   and isolated native/packaged acceptance. All phases pending.
