@@ -178,3 +178,33 @@ test('applyProfilePatch bumps configRevision for instructions, permissions and c
   const telegram = applyProfilePatch(profile, { telegram: { enabled: true }, idleSleepMinutes: 5 }, now);
   assert.equal(telegram.sessionChanged, false);
 });
+
+test('desktop control is off by default, off when absent or invalid, and its patch never bumps the revision (SPEC-006 BDC-02)', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  assert.deepEqual(profile.desktopControl, { enabled: false });
+
+  const on = applyProfilePatch(profile, { desktopControl: { enabled: true } }, now);
+  assert.deepEqual(on.profile.desktopControl, { enabled: true });
+  assert.equal(on.sessionChanged, false, 'not a session setting: the descriptor follows per send');
+  assert.equal(on.profile.configRevision, profile.configRevision);
+  assert.deepEqual(applyProfilePatch(on.profile, { name: 'Renamed' }, now).profile.desktopControl, { enabled: true },
+    'other edits keep it');
+  assert.deepEqual(applyProfilePatch(on.profile, { desktopControl: { enabled: 'yes' as unknown as boolean } }, now).profile.desktopControl,
+    { enabled: false }, 'an invalid value is off');
+
+  // A profile rewritten by an older Bot has no field: it reads as off even when the fallback is on.
+  const { desktopControl: _dropped, ...older } = on.profile;
+  assert.deepEqual(normalizeProfile(older, on.profile).desktopControl, { enabled: false });
+  assert.deepEqual(normalizeProfile({ ...older, desktopControl: { enabled: 1 } }, on.profile).desktopControl, { enabled: false });
+
+  const paths = botPathsFor(`${home.botsHome}/desktop-control`);
+  mkdirSync(paths.root, { recursive: true });
+  writeFileSync(paths.profile, JSON.stringify(older));
+  const loaded = loadProfile(paths, on.profile, true);
+  assert.ok(loaded.ok && loaded.profile.desktopControl.enabled === false);
+  assert.equal(JSON.parse(readFileSync(paths.profile, 'utf8')).desktopControl, undefined, 'schema 2 needs no upgrade step');
+  saveProfile(paths, on.profile);
+  const saved = loadProfile(paths, profile);
+  assert.ok(saved.ok && saved.profile.desktopControl.enabled === true);
+  assert.equal(saved.ok && saved.profile.schemaVersion, 2);
+});

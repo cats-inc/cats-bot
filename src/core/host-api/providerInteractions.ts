@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RuntimeClient, RuntimeStreamEvent } from '../runtime/client.ts';
 import { writeJsonAtomic } from '../store/atomicFile.ts';
-import type { BotInteraction, BotInteractionResponse, BotInteractionSnapshot, WorkItem } from '../types.ts';
+import { INTERACTION_KINDS, type BotInteraction, type BotInteractionResponse, type BotInteractionSnapshot,
+  type WorkItem } from '../types.ts';
 
 const live = (i: BotInteraction) => i.status === 'pending' || i.status === 'responding';
 const receipt = (i: BotInteraction): BotInteraction => {
@@ -25,7 +26,7 @@ function readReceipts(file: string, botId: string): BotInteraction[] | null {
       || Object.keys(i).some(k => !keys.includes(k)) || keys.slice(0, 7).some(k => typeof (i as unknown as Record<string, unknown>)[k] !== 'string')
       || !Number.isSafeInteger(i.revision) || i.revision < 1 || !Number.isFinite(Date.parse(i.createdAt)) || !Number.isFinite(Date.parse(i.expiresAt))
       || !['pending', 'responding', 'resolved', 'expired', 'cancelled', 'interrupted', 'unsupported'].includes(i.status)
-      || !['command_approval', 'file_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url'].includes(i.kind))) {
+      || !INTERACTION_KINDS.includes(i.kind))) {
     throw new Error('Unsupported provider interaction receipt store; original data was preserved.');
   }
   return data.receipts;

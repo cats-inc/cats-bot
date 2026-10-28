@@ -151,6 +151,23 @@ does not establish browser/desktop helper availability or successful invocation.
   into the conversation; a question becomes an `awaiting_owner` work item.
   Listing and cancelling see only the calling conversation's schedules.
 
+### `src/core/desktopControl`
+
+- **Purpose**: owner-consented desktop control on Windows (ADR-005, SPEC-006 phase A).
+- **Responsibilities**: `helper.ts` supervises the native helper
+  (`native/windows-desktop-control/`): lazy start, `hello` with the Bot's own process and
+  executables plus Cats Desktop's install paths, idle exit, crash limit, and where the helper
+  lives (packaged resource, or the checkout's Release build). `policy.ts` is the DC-04 gate
+  on Runtime's capability snapshot. `tools.ts` holds SPEC-133's phase A tool names, schemas
+  and error codes. `switches.ts` stores the per-conversation switch in
+  `desktop-control.json`. `service.ts` serves `cats-desktop` with the `src/core/tools`
+  server class: before every send it decides whether the conversation's session carries
+  the descriptor, a tool call is served only while the running work item is an owner
+  message from a local surface, and app grants are answered only through `BotHostApi`
+  (`desktopControlState`, `setConversationDesktopControl`, `respondDesktopGrant`,
+  `stopDesktopControl`). Grants stay in memory; while one waits, background work does not
+  start (BDC-09).
+
 ### `src/shell/electron` and `assets/`
 
 - **Purpose**: the first presentation host (ADR-001 §2, §8; FR-32 to FR-34).
@@ -237,4 +254,4 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ---
 
-*Last updated: 2026-10-27*
+*Last updated: 2026-10-29*

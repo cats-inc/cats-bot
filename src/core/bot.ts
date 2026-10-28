@@ -2,6 +2,15 @@ import { mkdirSync } from 'node:fs';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { ConversationStore } from './conversations/store.ts';
+import {
+  catsDesktopExecutables,
+  createDesktopControlHelperClient,
+  resolveDesktopControlHelper,
+  type DesktopControlSpawn,
+} from './desktopControl/helper.ts';
+import { DesktopControlService } from './desktopControl/service.ts';
+import { DesktopControlSwitches } from './desktopControl/switches.ts';
+import { DESKTOP_CONTROL_SERVER_NAME } from './desktopControl/tools.ts';
 import { BotEventBus, type BotEventListener } from './host-api/events.ts';
 import { BotInteractions } from './host-api/providerInteractions.ts';
 import { HostControlServer } from './host-api/control.ts';
@@ -51,6 +60,8 @@ import type {
   WorkItem,
   BotInteractionResponse,
   BotInteractionSnapshot,
+  DesktopControlState,
+  DesktopGrantDecision,
   SessionCapabilitiesSnapshot,
 } from './types.ts';
 
@@ -82,6 +93,21 @@ export interface BotLifeOptions {
   random?: () => number;
 }
 
+/** SPEC-006: where the desktop control helper is and what it must never grant. */
+export interface BotDesktopControlOptions {
+  /** The helper executable; null when this host offers none. Defaults to the development build in this checkout. */
+  helperPath?: string | null;
+  platform?: NodeJS.Platform;
+  /** Added to this process's id, which the helper never grants (BDC-08). */
+  selfProcessIds?: number[];
+  /** Added to this process's executable and Cats Desktop's install paths (BDC-08). */
+  selfExecutables?: string[];
+  /** Tests replace the helper process; no file needs to exist then. */
+  spawn?: DesktopControlSpawn;
+  grantWaitMs?: number;
+  requestTtlMs?: number;
+}
+
 export interface BotCoreOptions {
   root: string;
   now?: () => Date;
@@ -101,6 +127,8 @@ export interface BotCoreOptions {
   secrets?: SecretStore;
   /** SPEC-001 FR-26: Telegram long polling knobs; tests point `apiBaseUrl` at a fake API. */
   telegram?: { apiBaseUrl?: string; fetch?: typeof fetch; pollTimeoutSeconds?: number };
+  /** SPEC-006: desktop control helper; without `tools`, the helper is off unless this is given. */
+  desktopControl?: BotDesktopControlOptions;
 }
 
 export type { BotStatus } from './types.ts';
@@ -174,6 +202,10 @@ export class BotCore implements BotHostApi {
   private readonly binder: SessionBinder;
   private readonly runner: TurnRunner;
   private readonly toolServer: BotToolServer | null;
+  private readonly desktopSwitches: DesktopControlSwitches;
+  private readonly desktop: DesktopControlService;
+  /** Runtime sessions whose MCP server set currently includes `cats-desktop`. */
+  private readonly desktopSessions = new Set<string>();
   private readonly life: LifeLoop;
   private readonly secrets: SecretStore;
   private telegram: TelegramTransport | null = null;
@@ -234,12 +266,14 @@ export class BotCore implements BotHostApi {
           now: this.now,
         }),
       });
+    this.desktopSwitches = new DesktopControlSwitches(this.paths.desktopControl, (line) => this.log(`warn ${line}`));
+    this.desktop = this.createDesktopControl();
     this.binder = new SessionBinder({
       client: () => this.client(),
       profile: () => this.profile,
       conversations: this.conversations,
       now: this.now,
-      mcpServers: (conversationId) => this.mcpServersFor(conversationId),
+      mcpServers: (conversationId, sessionId) => this.sessionMcpServers(conversationId, sessionId),
       isPendingWorkItem: (workItemId) => {
         const state = this.workItems.get(workItemId)?.state;
         return state === 'queued' || state === 'running';
@@ -259,6 +293,7 @@ export class BotCore implements BotHostApi {
         if (client) this.interactions.track(item, client);
       },
       providerEvent: (item, event) => this.interactions.notice(item, event),
+      prepareSend: (item, sessionId) => this.prepareSend(item.conversationId, sessionId),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
@@ -273,7 +308,8 @@ export class BotCore implements BotHostApi {
       // While the runtime is being replaced for a new provider the tick leaves it alone.
       runtimeState: () => (this.runtimeSwitching() ? 'starting' : this.runtimeState()),
       ensureRuntime: async () => (this.runtimeSwitching() ? false : this.ensureRuntime()),
-      isTurnRunning: (conversationId) => this.isTurnRunning(conversationId),
+      // BDC-09: a grant request waiting for the owner keeps the session busy for the life loop.
+      isTurnRunning: (conversationId) => this.isTurnRunning(conversationId) || this.desktop.pendingRequests(conversationId) > 0,
       hasQueuedWork: (key) => this.queue.findByCoalesceKey(key) !== undefined
         || this.running?.item.coalesceKey === key
         || [...this.deferred.values()].some((entry) => entry.item.coalesceKey === key),
@@ -365,8 +401,98 @@ export class BotCore implements BotHostApi {
     return this.options.runtimeClient ?? this.supervisor?.client ?? null;
   }
 
-  private mcpServersFor(conversationId: string): RuntimeMcpServer[] {
-    return this.toolServer?.descriptorFor(conversationId) ?? [];
+  /**
+   * SPEC-001 FR-24 and SPEC-006 BDC-04: `cats-bot`, plus `cats-desktop` once the conversation's
+   * session qualified on its capability snapshot. A session about to be created (no id yet)
+   * has no snapshot, so it never starts with `cats-desktop`.
+   */
+  private mcpServersFor(conversationId: string, sessionId: string | null = null): RuntimeMcpServer[] {
+    return [...(this.toolServer?.descriptorFor(conversationId) ?? []), ...this.desktop.descriptorFor(conversationId, sessionId)];
+  }
+
+  /** The set a session is given on resume or send; remembers which sessions carry `cats-desktop`. */
+  private sessionMcpServers(conversationId: string, sessionId: string | null): RuntimeMcpServer[] {
+    const servers = this.mcpServersFor(conversationId, sessionId);
+    if (sessionId) {
+      if (servers.some((server) => server.name === DESKTOP_CONTROL_SERVER_NAME)) this.desktopSessions.add(sessionId);
+      else this.desktopSessions.delete(sessionId);
+    }
+    return servers;
+  }
+
+  /**
+   * SPEC-006 BDC-04 / BDC-05: re-decided before every send. A qualifying conversation sends
+   * the same set each turn, so Runtime recycles its worker only when the set changes; the
+   * turn's owner-presence is decided when a tool is called, not here.
+   */
+  private async prepareSend(conversationId: string, sessionId: string): Promise<{ mcpServers?: RuntimeMcpServer[] }> {
+    const carried = this.desktopSessions.has(sessionId);
+    try {
+      await this.desktop.refresh(conversationId, sessionId);
+    } catch (error) {
+      this.log(`desktop control: eligibility check failed: ${error instanceof Error ? error.name : 'error'}`);
+    }
+    if (!carried && !this.desktop.isAttached(conversationId, sessionId) && !this.profile.desktopControl.enabled) return {};
+    return { mcpServers: this.sessionMcpServers(conversationId, sessionId) };
+  }
+
+  private createDesktopControl(): DesktopControlService {
+    const options = this.options.desktopControl;
+    const resolution = this.options.tools === false && !options
+      ? { path: null, unavailableReason: 'no_helper' }
+      : resolveDesktopControlHelper({
+        ...(options?.platform ? { platform: options.platform } : {}),
+        ...(options?.helperPath !== undefined ? { helperPath: options.helperPath } : {}),
+        skipExistenceCheck: Boolean(options?.spawn),
+      });
+    // BDC-08: the core runs inside the Electron main process (or the CLI's node), so this
+    // process and its executable cover the shell, its renderer and GPU children and the
+    // runtime child, which runs the same executable. The parent is the launcher, not the Bot.
+    const selfExecutables = [process.execPath, ...catsDesktopExecutables(), ...(options?.selfExecutables ?? [])];
+    const helper = resolution.path === null ? null : createDesktopControlHelperClient({
+      path: resolution.path,
+      selfProcessIds: [process.pid, ...(options?.selfProcessIds ?? [])],
+      selfExecutables,
+      ...(options?.spawn ? { spawn: options.spawn } : {}),
+    });
+    return new DesktopControlService({
+      helper,
+      unavailableReason: resolution.unavailableReason,
+      switches: this.desktopSwitches,
+      profileEnabled: () => this.profile.desktopControl.enabled,
+      capabilities: async (sessionId) => {
+        const client = this.client();
+        if (!client) return null;
+        const snapshot = await client.capabilities(sessionId);
+        return snapshot?.version === 1 ? snapshot : null;
+      },
+      turn: (conversationId) => {
+        const running = this.running;
+        if (!running || this.stopped || running.item.conversationId !== conversationId || running.controller.signal.aborted) {
+          return null;
+        }
+        return {
+          sessionId: running.item.run?.sessionId ?? null,
+          ownerPresent: running.item.kind === 'owner_message' && running.item.source === 'owner',
+        };
+      },
+      changed: (change) => {
+        this.bus.emit({ type: 'desktop.control', ...change });
+        // BDC-07 / BDC-12: Telegram only learns that something waits, never what or how to answer.
+        if (change.notify && this.telegram && change.conversationId
+          && this.conversations.get(change.conversationId)?.role === 'home') {
+          void this.telegram.send('A desktop control request is waiting for you. Open the Bot note or use cats-bot desktop; '
+            + 'Telegram cannot answer it.');
+        }
+        // BDC-09: background work held for a waiting grant request resumes once it is answered.
+        this.pump();
+      },
+      log: this.log,
+      serverVersion: PACKAGE_VERSION,
+      selfExecutables,
+      ...(options?.grantWaitMs !== undefined ? { grantWaitMs: options.grantWaitMs } : {}),
+      ...(options?.requestTtlMs !== undefined ? { requestTtlMs: options.requestTtlMs } : {}),
+    });
   }
 
   private journal(entry: JournalEntry): void {
@@ -421,6 +547,7 @@ export class BotCore implements BotHostApi {
     this.conversations.load();
     this.conversations.home();
     this.loadJournal();
+    this.desktopSwitches.load();
 
     // SPEC-001 FR-28: whatever was running when the core died is interrupted, never rerun.
     const pending: WorkItem[] = [];
@@ -684,10 +811,13 @@ export class BotCore implements BotHostApi {
     if (running) this.interactions.end(running.item.id, 'bot_stopped');
     } finally {
       running?.controller.abort();
+      // BDC-07: grants live in memory only; the helper ends with the core.
+      this.desktop.close();
       try {
         await Promise.allSettled([
           Promise.resolve().then(() => this.supervisor?.stop()),
           Promise.resolve().then(() => this.toolServer?.stop()),
+          Promise.resolve().then(() => this.desktop.stopServer()),
           Promise.resolve().then(() => this.control.stop()),
         ]);
       } finally { this.releaseLock?.(); this.releaseLock = null; }
@@ -737,13 +867,56 @@ export class BotCore implements BotHostApi {
     const sessionId = record.attachment.sessionId;
     const client = this.client();
     const unavailable = (reason: string): SessionCapabilitiesSnapshot => ({ version: 1, sessionId: sessionId ?? '',
-      workerGeneration: null, supported: false, reason });
+      workerGeneration: null, supported: false, reason, desktopControl: this.desktop.capability(record.id, sessionId) });
     if (!sessionId || !client) return unavailable('no_live_session');
     try {
       const result = await client.capabilities(sessionId, refresh);
       if (this.client() !== client || this.conversations.get(record.id)?.attachment.sessionId !== sessionId) return unavailable('session_changed');
-      return result.version === 1 ? result : unavailable('unsupported_runtime');
+      if (result.version !== 1) return unavailable('unsupported_runtime');
+      // BDC-13: a Bot entry beside Runtime's observation; provider computer use stays in `dependencies`.
+      return { ...result, desktopControl: this.desktop.capability(record.id, sessionId, result) };
     } catch { return unavailable('runtime_or_capability_unavailable'); }
+  }
+
+  // ---- desktop control (SPEC-006) ------------------------------------------
+
+  async desktopControlState(conversationId?: string): Promise<DesktopControlState> {
+    if (!conversationId) return this.desktop.state();
+    const record = this.conversations.require(this.resolveConversationId(conversationId));
+    return this.desktop.state(record.id, record.attachment.sessionId);
+  }
+
+  async setConversationDesktopControl(conversationId: string, enabled: boolean): Promise<DesktopControlState> {
+    if (typeof enabled !== 'boolean') throw new Error('enabled must be true or false');
+    const id = this.resolveConversationId(conversationId);
+    this.withWriteLock(() => this.desktop.setConversation(id, enabled));
+    return this.desktopControlState(id);
+  }
+
+  async respondDesktopGrant(conversationId: string, requestId: string, decision: DesktopGrantDecision): Promise<void> {
+    if (decision !== 'allow' && decision !== 'deny') throw new Error('decision must be allow or deny');
+    const id = this.resolveConversationId(conversationId);
+    if (!this.desktop.decide(id, requestId, decision)) {
+      throw new Error('No desktop control grant request with that id waits in this conversation.');
+    }
+  }
+
+  async stopDesktopControl(conversationId?: string): Promise<void> {
+    this.desktop.stop(conversationId ? this.resolveConversationId(conversationId) : undefined);
+  }
+
+  /** A write a host makes while no core runs takes the instance lock for its duration, like `updateProfile`. */
+  private withWriteLock(write: () => void): void {
+    if (this.releaseLock) {
+      write();
+      return;
+    }
+    const lock = acquireInstanceLock(this.paths);
+    if (!lock.held) throw new BotInstanceRunningError(lock.owner);
+    try {
+      this.desktopSwitches.load();
+      write();
+    } finally { lock.release(); }
   }
 
   getWorkItem(id: string): WorkItem | undefined {
@@ -854,7 +1027,8 @@ export class BotCore implements BotHostApi {
     if (item.source === 'recovery') {
       if (decision === 'approve') {
         this.record(transitionWorkItem(item, 'completed', now, { result: { text: `owner asked to rerun`, completedAt: now.toISOString() } }));
-        await this.sendOwnerMessage(item.conversationId, item.prompt);
+        // The rerun is not a message the owner sent, so it is not an owner-present turn (SPEC-006 BDC-05).
+        await this.sendOwnerMessage(item.conversationId, item.prompt, 'recovery');
       } else {
         this.record(transitionWorkItem(item, 'cancelled', now, { error: 'owner declined to rerun the interrupted turn' }));
       }
@@ -952,8 +1126,13 @@ export class BotCore implements BotHostApi {
       && !result.providerChanged && this.runtimeState() === 'ready') {
       await client.sessionControls(result.profile.executionTarget.provider, policy);
     }
+    const desktopWas = this.profile.desktopControl.enabled;
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
+    if (this.profile.desktopControl.enabled !== desktopWas) {
+      this.log(`desktop control ${this.profile.desktopControl.enabled ? 'enabled' : 'disabled'} in the profile`);
+      this.desktop.profileChanged(this.profile.desktopControl.enabled);
+    }
     if (result.sessionChanged) {
       this.journal({
         type: 'config',
@@ -1058,6 +1237,11 @@ export class BotCore implements BotHostApi {
       await client.closeSession(record.attachment.sessionId).catch(() => undefined);
       await client.deleteSession(record.attachment.sessionId).catch(() => undefined);
     }
+    try {
+      this.desktop.forget(record.id);
+    } catch (error) {
+      this.log(`desktop control switch of deleted conversation ${record.id} kept: ${error instanceof Error ? error.message : 'error'}`);
+    }
     this.conversations.remove(record.id);
     this.views.delete(record.id);
     this.focusedViews.delete(record.id);
@@ -1088,7 +1272,7 @@ export class BotCore implements BotHostApi {
   async sendOwnerMessage(
     conversationId: string,
     text: string,
-    source: 'owner' | 'telegram' = 'owner',
+    source: 'owner' | 'telegram' | 'recovery' = 'owner',
     sourceRef?: string,
   ): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
@@ -1215,6 +1399,9 @@ export class BotCore implements BotHostApi {
       void this.swapRuntime();
       return;
     }
+    // SPEC-006 BDC-09: while a desktop grant request waits for the owner, only owner messages
+    // run (they sort first); heartbeats, schedules and events wait until it is answered or expires.
+    if (this.desktop.pendingRequests() > 0 && this.queue.peek()?.kind !== 'owner_message') return;
     const item = this.queue.take();
     if (!item) return;
     const controller = new AbortController();

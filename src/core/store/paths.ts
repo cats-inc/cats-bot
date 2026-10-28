@@ -20,6 +20,8 @@ export interface BotPaths {
   handoff: string;
   life: string;
   telegramState: string;
+  /** SPEC-006 BDC-03: conversations whose desktop control switch is on. */
+  desktopControl: string;
 }
 
 export function resolveBotsHome(env: NodeJS.ProcessEnv = process.env): string {
@@ -45,6 +47,7 @@ export function botPathsFor(root: string): BotPaths {
     handoff: join(root, 'handoff'),
     life: join(root, 'life.json'),
     telegramState: join(root, 'telegram-state.json'),
+    desktopControl: join(root, 'desktop-control.json'),
   };
 }
 
