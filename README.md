@@ -17,6 +17,11 @@ them, and an optional Telegram binding (long polling, one consumer per bot) mirr
 home conversation to the owner's phone. Desktop presence (Phase 5) needs its own ADR.
 Nothing is released.
 
+Manual **Bots Standard Preview** publication and host-owned **Check for Updates**
+support Windows x64/arm64, macOS universal and Linux x64/arm64 packages. See the
+[release and update guide](docs/deployment.md) for signing, candidate builds,
+manual-update limitations and the separately authorized first release.
+
 - `npm ci && npm run typecheck && npm test && npm run build` passes on Windows and Linux
   (CI). The suite includes an integration test that starts the real pinned cats-runtime with a
   scripted fixture CLI; see `docs/testing.md`.

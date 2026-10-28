@@ -10,9 +10,9 @@
 
 ## Slices
 
-- [ ] P1: immutable release inputs, platform packaging, Standard signing,
+- [x] P1: immutable release inputs, platform packaging, Standard signing,
   workflow_dispatch draft/build/validate/publish pipeline and release SOP.
-- [ ] P2: host-owned updater, distribution capabilities, installation exclusion,
+- [x] P2: host-owned updater, distribution capabilities, installation exclusion,
   explicit download/install, drain and failure recovery.
 - [ ] P3: Settings/tray/preload wiring, focused and CI tests, isolated Windows
   renderer/package acceptance and independent review.
@@ -31,3 +31,12 @@ existing schema-2 migration requires the next authorized release to be at least
   Existing protected Runtime pin is `e38e56bfd54fe783df22a5e0d914b14d186ee6bf`.
   Desktop updater/signing behavior and electron-builder v26 documentation were
   checked; implementation and acceptance follow below.
+- Local validation: typecheck, build and 148 tests pass. Isolated Windows
+  unpacked packaging and real Electron renderer/preload checks pass (check
+  failure/retry, download/progress, reload and install cancellation/confirmation
+  using a fixture installer). Independent review ran 44 tests and reproduced
+  native cache recovery using pinned electron-updater; no open blockers.
+- Review corrections include monotonic release serialization, explicit Windows
+  architecture installers, non-Windows Koffi exclusion, Runtime startup/stop
+  fencing, persistent installation recovery and trusted SHA512 cache revalidation
+  before draining the Bot. Three-OS CI packaging remains the merge gate.

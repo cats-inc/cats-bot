@@ -60,6 +60,17 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
   },
   shell: {
+    updateState() {
+      return ipcRenderer.invoke('shell:updateState');
+    },
+    updateAction(action) {
+      return ipcRenderer.invoke('shell:updateAction', action);
+    },
+    onUpdate(listener) {
+      const wrapped = (_event, state) => listener(state);
+      ipcRenderer.on('shell:update', wrapped);
+      return () => ipcRenderer.removeListener('shell:update', wrapped);
+    },
     state() {
       return ipcRenderer.invoke('shell:state');
     },

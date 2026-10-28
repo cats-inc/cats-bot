@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
@@ -18,6 +18,12 @@ import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from 
 import { NOTE_LAYER_LABELS, NOTE_LAYERS, type NoteLayer } from './viewState.ts';
 import { loadDesktopHost } from './win32Desktop.ts';
 import { NoteWindows } from './windows.ts';
+import { configureUpdater, createUpdaterAdapter, installDebianUpdate } from './update/adapter.ts';
+import { BotUpdateController } from './update/controller.ts';
+import { BotInstallation, InstallationRecoveryRequired, processIsAlive } from './update/installation.ts';
+import { isUpdateSender, updateAction } from './update/ipc.ts';
+import { assertNoOtherUsers } from './update/otherUsers.ts';
+import { initialUpdateState, parseBotRelease, type BotRelease } from './update/release.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The bot
@@ -64,7 +70,8 @@ function errorMessage(error: unknown): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(1));
-  const botId = args.id ?? readBotIdFromEnv() ?? 'mochi';
+  const installation = app.isPackaged ? new BotInstallation(app.getPath('appData'), process.execPath, app.getVersion()) : null;
+  const botId = args.id ?? readBotIdFromEnv() ?? installation?.pendingBotId() ?? 'mochi';
   const botsHome = resolveBotsHome();
   const root = resolveBotRoot(botId);
   app.setName('Cats Bot');
@@ -80,6 +87,19 @@ async function main(): Promise<void> {
   }
 
   await app.whenReady();
+  try {
+    installation?.register(botId);
+  } catch (error) {
+    if (error instanceof InstallationRecoveryRequired && dialog.showMessageBoxSync({ type: 'warning', title: 'Cats Bot update',
+      message: error.message, buttons: ['Keep closed', 'Installer finished — reopen'], defaultId: 0, cancelId: 0 }) === 1) {
+      installation!.acknowledgeFinishedInstaller();
+      installation!.register(botId);
+    } else {
+      if (!(error instanceof InstallationRecoveryRequired)) dialog.showErrorBox('Cats Bot update', errorMessage(error));
+      app.quit(); return;
+    }
+  }
+  app.on('quit', () => { try { installation?.unregister(); } catch (error) { process.stderr.write(`${errorMessage(error)}\n`); } });
   // ADR-001 §2: all notes closed is not quitting; the bot keeps running from the tray.
   // Registered before first-run setup, whose window closes before the first note opens.
   app.on('window-all-closed', () => undefined);
@@ -223,6 +243,43 @@ async function main(): Promise<void> {
     });
   };
 
+  let release: BotRelease | null = null;
+  try {
+    const contents = readFileSync(join(process.resourcesPath, 'bot-release.json'), 'utf8');
+    if (contents.length <= 16_384) release = parseBotRelease(JSON.parse(contents), app.getVersion(), process.platform, process.arch);
+  } catch { /* Missing or invalid identity leaves local builds update-disabled. */ }
+  const initialUpdate = initialUpdateState({ packaged: app.isPackaged, version: app.getVersion(), release,
+    portable: process.platform === 'win32' && Boolean(process.env.PORTABLE_EXECUTABLE_FILE) });
+  const autoUpdater = initialUpdate.canCheck ? (require('electron-updater') as typeof import('electron-updater')).autoUpdater : null;
+  if (autoUpdater) configureUpdater(autoUpdater);
+  const updates = new BotUpdateController(initialUpdate, autoUpdater ? createUpdaterAdapter(autoUpdater, {
+    onQuit: listener => { app.once('quit', listener); return () => { app.removeListener('quit', listener); }; },
+    ...(process.platform === 'linux' ? { installDeb: (file: string) => installDebianUpdate(file, () => {
+      app.relaunch({ args: [...process.argv.slice(1), '--id', botId] }); app.quit();
+    }) } : {}),
+  }) : null, {
+    acquireInstall: version => {
+      if (!installation) throw new Error('This installation cannot update itself.');
+      assertNoOtherUsers(process.execPath);
+      return installation.acquire(version);
+    },
+    drain: async () => {
+      quitting = true;
+      const runtimePid = core.status().runtime.pid;
+      await core.stop();
+      if (core.status().runtime.pid || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
+      assertNoOtherUsers(process.execPath);
+    },
+    recover: async (uncertain, error) => {
+      dialog.showErrorBox('Cats Bot update', `${error.message}\n\n${uncertain
+        ? 'Check the installer before reopening Cats Bot.' : 'Cats Bot will restart the current installation.'}`);
+      if (!uncertain) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+      app.quit();
+    },
+    openRelease: url => shell.openExternal(url),
+    changed: state => { settings.browserWindow?.webContents.send('shell:update', state); },
+  });
+
   const trayActions: TrayMenuActions = {
     onOpenConversation: (conversationId) => {
       void windows.open(conversationId).then(refreshTray).catch((error: unknown) => {
@@ -233,6 +290,7 @@ async function main(): Promise<void> {
       void core.createConversation().then((record) => windows.open(record.id)).then(refreshTray);
     },
     onOpenSettings: openSettings,
+    onCheckForUpdates: () => { openSettings('app'); void updates.check(); },
     onToggleHeartbeat: (enabled) => {
       void core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
@@ -246,7 +304,19 @@ async function main(): Promise<void> {
   const fromSettings = (event: Electron.IpcMainInvokeEvent) => settings.owns(event.sender.id);
   const fromFloating = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => floating.owns(event.sender.id);
 
+  ipcMain.handle('shell:updateState', event => {
+    if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
+    return updates.snapshot();
+  });
+  ipcMain.handle('shell:updateAction', (event, action: unknown) => {
+    if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
+    return updateAction(updates, action, async () => (await dialog.showMessageBox({ type: 'question', title: 'Install Cats Bot update',
+      message: 'Stop this bot and install the downloaded update?', detail: 'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.',
+      buttons: ['Cancel', 'Restart and install'], defaultId: 0, cancelId: 0 })).response === 1);
+  });
+
   ipcMain.handle('bot:invoke', async (event, command: unknown, args: unknown) => {
+    if (quitting) throw new Error('Cats Bot is shutting down.');
     if (typeof command !== 'string' || !HOST_COMMANDS.includes(command as never)) {
       throw new Error(`Unknown host command ${String(command)}`);
     }
