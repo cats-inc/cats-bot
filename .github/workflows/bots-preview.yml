@@ -73,7 +73,7 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-          - os: macos-latest
+          - os: macos-15-intel
             platform: macos
           - os: ubuntu-latest
             platform: linux
