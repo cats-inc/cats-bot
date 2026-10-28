@@ -96,6 +96,7 @@ export class SessionBinder {
     } else if (attachment.sessionId && attachment.state === 'sleeping' && current) {
       try {
         const view = await client.resumeSession(attachment.sessionId, {
+          ...await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy),
           ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
         });
         this.deps.conversations.setAttachment(conversation.id, {
@@ -141,13 +142,14 @@ export class SessionBinder {
       cwd: profile.permissions.cwd,
       workspaceKind: 'source',
       workspaceAccess: profile.permissions.workspaceAccess,
-      permissionMode: profile.permissions.permissionMode,
-      ...(profile.permissions.allowedTools ? { allowedTools: profile.permissions.allowedTools } : {}),
+      ...(!profile.providerPolicy ? { permissionMode: profile.permissions.permissionMode } : {}),
+      ...(!profile.providerPolicy && profile.permissions.allowedTools ? { allowedTools: profile.permissions.allowedTools } : {}),
       instructions: composeInstructions(profile.instructions, pack),
       ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
     };
     const replaced = conversation.attachment.sessionId;
     try {
+      Object.assign(request, await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy));
       const view = await client.createSession(request);
       this.deps.conversations.setAttachment(conversation.id, {
         state: view.status === 'ready' ? 'ready' : 'initializing',

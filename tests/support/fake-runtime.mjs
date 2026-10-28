@@ -108,7 +108,24 @@ async function handleMessage(req, res, session, body) {
     write({ type: 'text', text });
     write({ type: 'content_block', block: { id: 'b1', index: 0, kind: 'text', status: 'complete', text } });
   };
-  if (message.startsWith('slow:')) {
+  if (message === 'provider-question') {
+    const request = {
+      interactionId: randomUUID(), sessionId: session.id, workerGeneration: session.generation,
+      executionId: randomUUID(), revision: 1, createdAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60_000).toISOString(), status: 'pending', kind: 'user_input',
+      prompt: { kind: 'user_input', title: 'Fixture question', fields: [{ id: 'answer', label: 'Answer',
+        type: 'string', required: true, secret: true }] },
+    };
+    session.interaction = request;
+    const { prompt: _prompt, ...receipt } = request;
+    write({ type: 'progress', metadata: { kind: 'interaction_requested', interaction: receipt } });
+    const deadline = Date.now() + 10_000;
+    while (request.status === 'pending' && Date.now() < deadline && !aborted()) await sleep(10);
+    if (aborted()) return finish(false);
+    if (request.status === 'pending') throw new Error('fixture response timed out');
+    write({ type: 'progress', metadata: { kind: 'interaction_updated', interaction: request } });
+    reply('provider continued');
+  } else if (message.startsWith('slow:')) {
     const ms = Number(message.slice('slow:'.length)) || 1000;
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
@@ -160,6 +177,13 @@ const server = createServer(async (req, res) => {
     });
   }
   // Like cats-runtime 0.6.1: only the configured provider (claude for the fake) has a catalog.
+  if (path === '/providers/config' && process.env.FAKE_PROVIDER_INTERACTIONS === '1') {
+    return json(res, 200, { providers: Object.fromEntries(['claude', 'codex'].map(provider => [provider, {
+      defaultInstance: 'native', defaultBackend: 'cli', instances: [{ id: 'native', backend: 'cli', continuity: {
+        interactions: { version: 1, kinds: ['user_input'] }, sessionCapabilities: { version: 1, executionPolicy: true, inventory: true },
+      } }],
+    }])) });
+  }
   const models = /^\/providers\/([^/]+)\/models$/u.exec(path);
   if (req.method === 'GET' && models) {
     if (models[1] !== 'claude') {
@@ -182,10 +206,25 @@ const server = createServer(async (req, res) => {
     const session = {
       id: `fake-${counter}`, status: 'initializing', provider: body.provider ?? 'claude', model: body.model,
       cwd: body.cwd, instructions: body.instructions, providerSessionId: randomUUID(), turns: [], initialized: false,
-      abort: null, mcpServers: body.mcpServers,
+      abort: null, mcpServers: body.mcpServers, generation: randomUUID(),
     };
     sessions.set(session.id, session);
     return json(res, 200, view(session));
+  }
+  const control = /^\/sessions\/([^/]+)\/interactions(?:\/([^/]+)\/responses)?$/u.exec(path);
+  if (control && process.env.FAKE_PROVIDER_INTERACTIONS === '1') {
+    const session = sessions.get(control[1]);
+    if (!session) return json(res, 404, {});
+    if (req.method === 'GET') return json(res, 200, { version: 1, sessionId: session.id, workerGeneration: session.generation,
+      revision: session.interaction?.revision ?? 0, interactions: session.interaction ? [session.interaction] : [] });
+    const body = await readBody(req);
+    const i = session.interaction;
+    if (!i || control[2] !== i.interactionId || body.expectedRevision !== i.revision || i.status !== 'pending') return json(res, 409, { error: 'stale' });
+    if (typeof body.answer?.values?.answer !== 'string') return json(res, 400, { error: 'invalid answer' });
+    calls.push({ op: 'provider_response', id: i.interactionId });
+    delete i.prompt;
+    i.status = 'resolved'; i.revision += 1;
+    return json(res, 200, i);
   }
   const match = /^\/sessions\/([^/]+)(?:\/(messages|resume|close|cancel|history|observe))?$/u.exec(path);
   if (!match) return json(res, 404, { error: 'not found' });

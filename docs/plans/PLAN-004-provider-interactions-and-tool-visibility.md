@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Ready；2026-10-28 owner 授權切片實作，所有階段待開始 |
+| Status | In progress；headless 控制、政策與復原已實作，renderer／原生操作驗收進行中 |
 | Owner | Bot core、CLI、Electron shell |
 | Assigned To | Unassigned |
 | Reviewer | Product owner、Runtime maintainers |
@@ -91,5 +91,6 @@ Runtime PLAN-049 是共同前置，Platform PLAN-124 不構成 Bot 的執行依�
 | --- | --- |
 | 2026-10-28 | 依 Bots `7951c28` 與 Runtime 0.6.1 現況建立草稿；P0–P4 尚未開始，套件／profile 未改。 |
 | 2026-10-28 | 同時合併的 renderer 工作 `6598b9c` 已使用 SPEC-003／PLAN-003；本案編為 SPEC-004／PLAN-004。實作前整合該 renderer 基線。 |
+| 2026-10-28 | P0–P2 headless slice：精確 pin Runtime b75da37b candidate（未發布），CLI stdin/local pipe 控制、same-turn 回覆、全域 gate、去敏感 receipts、schema 1→2 鎖內備份／原子升級、policy negotiation 與 session inventory。49 項 affected core/life/shell/boundary 測試與 build/typecheck 通過；packed Runtime + scripted Codex native input 整合通過。獨立審閱的 snapshot race、空 allowlist、升級 single-writer、未知 backup 與失敗 cleanup 缺口已修正並重驗。真正 Chrome／桌面操作、renderer／packaged candidate 驗收尚待完成。Schema 2 的正式發布需下一 Bot minor 0.2；本工作不 bump／publish。 |
 
 *Created / last updated: 2026-10-28*

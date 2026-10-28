@@ -12,6 +12,7 @@ listeners whose ports are chosen by the operating system at startup:
 |--------------|------|----------|-------------|---------------|
 | cats-runtime (app-managed child) | dynamic (a free loopback port reserved by the core at each start) | HTTP | The bot's private `@cats-inc/cats-runtime` instance; the bot core reads the bound port from the `runtime.ready` stdout event and confirms it with `GET /health` | spawned by the bot core (SPEC-001 FR-5); never started by hand |
 | bot tool server (PLAN-001 Phase 2) | dynamic (loopback only) | HTTP (MCP Streamable HTTP) | The bot's session MCP server (`schedule_create`, `schedule_list`, `schedule_cancel`, `ask_owner`), handed to the provider CLI through the runtime's `mcpServers` field | spawned in-process by the bot core |
+| owner control (PLAN-004) | none | HTTP over random Windows named pipe / Unix socket | Authenticated local `interactions`, `respond`, and `capabilities`; descriptor contains only this host's token, never the Runtime key. Request bodies are bounded and never logged or handed off on disk. Unix socket/descriptor are owner-only; Windows uses the current account's pipe and profile access. | started and stopped by BotCore under its instance lock |
 
 Both listeners bind `127.0.0.1` only, carry a per-bot random bearer token, and
 are never reachable from the shell's renderer (SPEC-001 FR-32).

@@ -38,13 +38,15 @@ export interface TelegramPolicy {
 
 /** SPEC-001 FR-1. */
 export interface BotProfile {
-  schemaVersion: 1;
+  schemaVersion: 2;
   id: string;
   name: string;
   instructions: string;
   executionTarget: ExecutionTarget;
   configRevision: number;
   permissions: BotPermissions;
+  /** Null retains the original permissionMode behavior; never inferred from skip. */
+  providerPolicy: SessionExecutionPolicy | null;
   heartbeat: HeartbeatPolicy;
   idleSleepMinutes: number;
   telegram: TelegramPolicy;
@@ -260,6 +262,9 @@ export interface BotHostApi {
   listSchedules(): Promise<ScheduleRecord[]>;
   cancelSchedule(scheduleId: string): Promise<void>;
   resolveApproval(workItemId: string, decision: 'approve' | 'deny'): Promise<void>;
+  providerInteractions(conversationId: string): Promise<BotInteractionSnapshot>;
+  respondProviderInteraction(conversationId: string, interactionId: string, response: BotInteractionResponse): Promise<void>;
+  sessionCapabilities(conversationId: string, refresh?: boolean): Promise<SessionCapabilitiesSnapshot>;
   quit(): Promise<void>;
 }
 
@@ -272,11 +277,13 @@ export interface BotProfilePatch {
   heartbeat?: Partial<HeartbeatPolicy>;
   idleSleepMinutes?: number;
   permissions?: Partial<BotPermissions>;
+  providerPolicy?: SessionExecutionPolicy | null;
   telegram?: Partial<TelegramPolicy>;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */
 export type BotHostEvent =
+  | { type: 'provider.interactions'; conversationId: string; pending: number; notify?: boolean }
   | { type: 'conversation.updated'; conversation: ConversationRecord }
   | { type: 'turn.delta'; conversationId: string; workItemId: string; entry: TranscriptEntry }
   | { type: 'turn.completed'; conversationId: string; workItem: WorkItem }
@@ -304,6 +311,7 @@ export interface BotStatus {
   root: string;
   runtime: { state: RuntimeState; pid: number | null };
   queue: { queued: number; running: WorkItem | null };
+  pendingInteractions: number;
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null };
@@ -358,4 +366,168 @@ export interface TelegramSettingsStatus {
   tokenStored: boolean;
   protection: 'os' | 'file';
   transport: TelegramStatus | null;
+}
+
+// SPEC-039 wire contract, owned by Runtime; no provider protocol details.
+/** Host-facing interaction contract. Native provider request IDs stay in the adapter. */
+export const INTERACTION_KINDS = [
+  'command_approval', 'file_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url',
+] as const;
+export type InteractionKind = typeof INTERACTION_KINDS[number];
+export type InteractionStatus = 'pending' | 'responding' | 'resolved' | 'expired'
+  | 'cancelled' | 'interrupted' | 'unsupported';
+
+export interface InteractionHost {
+  version: 1;
+  kinds: InteractionKind[];
+  timeoutMs: number;
+}
+
+export interface InteractionOption {
+  id: string;
+  label: string;
+  description?: string;
+}
+
+export interface InteractionField {
+  id: string;
+  label: string;
+  description?: string;
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'strings';
+  required: boolean;
+  secret?: boolean;
+  options?: InteractionOption[];
+  allowOther?: boolean;
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+}
+
+export interface InteractionPrompt {
+  kind: InteractionKind;
+  title: string;
+  message?: string;
+  command?: string;
+  cwd?: string;
+  server?: string;
+  url?: string;
+  choices?: InteractionOption[];
+  fields?: InteractionField[];
+  /** Provider-normalized permission units. Granting one never grants another unit. */
+  permissions?: InteractionOption[];
+  scopes?: ('turn' | 'session')[];
+}
+
+export interface ProviderInteraction {
+  interactionId: string;
+  sessionId: string;
+  workerGeneration: string;
+  executionId: string;
+  revision: number;
+  createdAt: string;
+  expiresAt: string;
+  status: InteractionStatus;
+  prompt?: InteractionPrompt;
+  /** Terminal receipts retain the kind, but discard prompt and answer contents. */
+  kind: InteractionKind;
+  reason?: string;
+  decision?: InteractionAnswer['action'];
+  providerConfirmed?: boolean;
+}
+
+export interface InteractionAnswer {
+  action: 'accept' | 'decline' | 'cancel';
+  choice?: string;
+  values?: Record<string, string | number | boolean | string[]>;
+  grants?: string[];
+  scope?: 'turn' | 'session';
+}
+
+export interface InteractionResponse {
+  expectedRevision: number;
+  idempotencyKey: string;
+  answer: InteractionAnswer;
+}
+
+export interface InteractionSnapshot {
+  version: 1;
+  sessionId: string;
+  workerGeneration: string | null;
+  revision: number;
+  interactions: ProviderInteraction[];
+}
+
+export type ExecutionAccess = 'read-only' | 'workspace-write' | 'full-access';
+export type ExecutionApproval = 'never' | 'untrusted' | 'on-request';
+export type SessionExecutionPolicy = { version: 1; mode: 'provider';
+  constraints: { maxAccess: ExecutionAccess; network: boolean } }
+  | { version: 1; mode: 'explicit'; access: ExecutionAccess; network: boolean; approval: ExecutionApproval };
+
+export interface EffectiveExecutionPolicy {
+  requested?: SessionExecutionPolicy;
+  source: 'legacy' | 'provider' | 'explicit';
+  status: 'not_observed' | 'verified' | 'mismatch' | 'unsupported';
+  observed?: { access: ExecutionAccess; network: boolean; approval: string; reviewer: string };
+  coverage: 'local-process-only';
+  reason?: string;
+  configurationSources: string[];
+}
+
+export interface SessionToolServer {
+  name: string;
+  source: 'provider-configured' | 'session-injected';
+  connection: 'notStarted' | 'starting' | 'connected' | 'authenticationRequired' | 'failed' | 'cancelled' | 'disabled' | 'unknown';
+  /** An unsupported auth mechanism does not imply unsupported tools. */
+  auth: 'unknown' | 'unsupported' | 'notLoggedIn' | 'bearerToken' | 'oAuth';
+  tools: Array<{ name: string; qualifiedName: string }>;
+  discovery: 'advertised' | 'failed' | 'truncated';
+  invocation: 'not_verified';
+}
+
+export interface SessionToolInventory {
+  state: 'not_observed' | 'observed' | 'partial' | 'unavailable';
+  observedAt: string | null;
+  stale: boolean;
+  /** Top-level discovery cannot enumerate tools lazily exposed inside code-mode hosts. */
+  coverage: 'top-level-mcp';
+  pages: number;
+  servers: SessionToolServer[];
+  dynamicTools: Array<{ name: string; source: 'runtime-dynamic' }>;
+  builtins: 'not_exposed_by_provider';
+  reason?: string;
+}
+
+export interface ProviderSessionCapabilities {
+  interactions: { version: 1; supported: InteractionKind[]; host?: InteractionHost };
+  policy: EffectiveExecutionPolicy;
+  inventory: SessionToolInventory;
+  dependencies: Array<{ kind: 'computer_use' | 'browser'; status: 'available' | 'unavailable' | 'unknown';
+    evidence: string; remediation: string }>;
+}
+
+export interface SessionCapabilitiesSnapshot {
+  version: 1;
+  sessionId: string;
+  workerGeneration: string | null;
+  supported: boolean;
+  observation?: ProviderSessionCapabilities;
+  reason?: string;
+}
+
+export interface BotInteraction extends ProviderInteraction {
+  botId: string;
+  conversationId: string;
+  workItemId: string;
+}
+export interface BotInteractionSnapshot {
+  version: 1;
+  supported: boolean;
+  reason?: string;
+  interactions: BotInteraction[];
+}
+export interface BotInteractionResponse extends InteractionResponse {
+  workerGeneration: string;
+  executionId: string;
+  workItemId: string;
 }

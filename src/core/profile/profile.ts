@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
+import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
 
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
 import type { BotPaths } from '../store/paths.ts';
@@ -26,7 +28,7 @@ export const IDLE_SLEEP_MINUTES_DEFAULT = 15;
 
 export const TELEGRAM_DEFAULTS: TelegramPolicy = { enabled: false, ownerChatId: null };
 
-export const PROFILE_SCHEMA_VERSION = 1 as const;
+export const PROFILE_SCHEMA_VERSION = 2 as const;
 
 export interface CreateProfileInput {
   id?: string;
@@ -56,6 +58,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
       ...(input.allowedTools ? { allowedTools: [...input.allowedTools] } : {}),
       cwd: input.cwd,
     },
+    providerPolicy: null,
     heartbeat: { ...HEARTBEAT_DEFAULTS },
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
     telegram: { ...TELEGRAM_DEFAULTS },
@@ -152,6 +155,8 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     executionTarget: normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget),
     configRevision: Math.max(1, Math.floor(configRevision)),
     permissions: normalizePermissions(raw.permissions, fallback.permissions),
+    providerPolicy: raw.schemaVersion === 1 || raw.providerPolicy === undefined
+      ? null : parseProviderPolicy(raw.providerPolicy),
     heartbeat: normalizeHeartbeat(raw.heartbeat, fallback.heartbeat),
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
     telegram: normalizeTelegram(raw.telegram, fallback.telegram),
@@ -164,10 +169,36 @@ export type ProfileLoadResult =
   | { ok: false; reason: 'missing' }
   | { ok: false; reason: 'corrupt'; error: string };
 
-export function loadProfile(paths: BotPaths, fallback: BotProfile): ProfileLoadResult {
+export function loadProfile(paths: BotPaths, fallback: BotProfile, migrate = false): ProfileLoadResult {
   const read = readJsonFile<unknown>(paths.profile);
   if (!read.ok) return read;
-  return { ok: true, profile: normalizeProfile(read.value, fallback) };
+  try {
+    const raw = read.value;
+    if (!isRecord(raw) || ![1, 2].includes(raw.schemaVersion as number)
+      || raw.schemaVersion === 2 && !Object.hasOwn(raw, 'providerPolicy')) {
+      throw new Error('Unsupported profile schema; restore a compatible backup or use a newer Bot.');
+    }
+    // Never use defaults to broaden a malformed access boundary during upgrade.
+    if (!isRecord(raw.permissions) || typeof raw.permissions.cwd !== 'string'
+      || !PERMISSION_MODES.includes(raw.permissions.permissionMode as PermissionMode)
+      || !WORKSPACE_ACCESS.includes(raw.permissions.workspaceAccess as WorkspaceAccess)
+      || raw.permissions.allowedTools !== undefined && (!Array.isArray(raw.permissions.allowedTools)
+        || raw.permissions.allowedTools.some(t => typeof t !== 'string'))) {
+      throw new Error('Invalid profile permissions; original data was preserved.');
+    }
+    const profile = normalizeProfile(raw, fallback);
+    assertPolicyBoundary(profile.providerPolicy, profile.permissions);
+    if (raw.schemaVersion === 1 && migrate) {
+      const backup = `${paths.profile}.v1.bak`;
+      if (existsSync(backup)) {
+        if (!readFileSync(backup).equals(readFileSync(paths.profile))) throw new Error('Profile upgrade backup differs; manual recovery required.');
+      } else copyFileSync(paths.profile, backup, constants.COPYFILE_EXCL);
+      writeJsonAtomic(paths.profile, profile);
+    }
+    return { ok: true, profile };
+  } catch (error) {
+    return { ok: false, reason: 'corrupt', error: error instanceof Error ? error.message : 'Profile upgrade failed' };
+  }
 }
 
 export function saveProfile(paths: BotPaths, profile: BotProfile): void {
@@ -206,9 +237,12 @@ export function applyProfilePatch(
   const nextPermissions = patch.permissions
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
+  const nextProviderPolicy = patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy);
+  assertPolicyBoundary(nextProviderPolicy, nextPermissions);
   const sessionChanged = targetChanged
     || nextInstructions !== profile.instructions
-    || !samePermissions(nextPermissions, profile.permissions);
+    || !samePermissions(nextPermissions, profile.permissions)
+    || JSON.stringify(nextProviderPolicy) !== JSON.stringify(profile.providerPolicy);
   const next: BotProfile = {
     ...profile,
     name: patch.name ?? profile.name,
@@ -216,6 +250,7 @@ export function applyProfilePatch(
     executionTarget: nextTarget,
     configRevision: sessionChanged ? profile.configRevision + 1 : profile.configRevision,
     permissions: nextPermissions,
+    providerPolicy: nextProviderPolicy,
     heartbeat: patch.heartbeat
       ? normalizeHeartbeat({ ...profile.heartbeat, ...patch.heartbeat }, profile.heartbeat)
       : profile.heartbeat,

@@ -3,6 +3,8 @@ import { mkdirSync } from 'node:fs';
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { ConversationStore } from './conversations/store.ts';
 import { BotEventBus, type BotEventListener } from './host-api/events.ts';
+import { BotInteractions } from './host-api/providerInteractions.ts';
+import { HostControlServer } from './host-api/control.ts';
 import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
 import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
@@ -47,6 +49,9 @@ import type {
   ScheduleRecord,
   TelegramSettingsStatus,
   WorkItem,
+  BotInteractionResponse,
+  BotInteractionSnapshot,
+  SessionCapabilitiesSnapshot,
 } from './types.ts';
 
 /**
@@ -160,6 +165,8 @@ export class BotCore implements BotHostApi {
   private readonly now: () => Date;
   private readonly log: Logger;
   private readonly bus = new BotEventBus();
+  private readonly interactions: BotInteractions;
+  private readonly control: HostControlServer;
   private readonly conversations: ConversationStore;
   private readonly queue = new WorkQueue();
   private readonly workItems = new Map<string, WorkItem>();
@@ -198,6 +205,13 @@ export class BotCore implements BotHostApi {
     this.profile = profile;
     this.now = options.now ?? (() => new Date());
     this.log = createFileLogger(this.paths.logs, options.log);
+    this.interactions = new BotInteractions(this.paths.root, profile.id, (conversationId, pending, notify) => {
+      this.bus.emit({ type: 'provider.interactions', conversationId, pending, ...(notify ? { notify } : {}) });
+      if (notify && this.telegram && this.conversations.get(conversationId)?.role === 'home') {
+        void this.telegram.send('The provider is waiting for your response. Open the Bot note or use cats-bot interactions; Telegram text cannot approve this request.');
+      }
+    });
+    this.control = new HostControlServer(this.paths.root, this);
     this.conversations = new ConversationStore({
       paths: this.paths,
       now: this.now,
@@ -241,7 +255,10 @@ export class BotCore implements BotHostApi {
       emit: (event) => this.bus.emit(event),
       persistRun: (item) => {
         this.record({ ...item, ...(item.run ? { run: { ...item.run } } : {}) });
+        const client = this.client();
+        if (client) this.interactions.track(item, client);
       },
+      providerEvent: (item, event) => this.interactions.notice(item, event),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
@@ -382,11 +399,20 @@ export class BotCore implements BotHostApi {
 
   async start(): Promise<void> {
     if (this.started) throw new Error('Bot core already started');
-    this.started = true;
     const lock = acquireInstanceLock(this.paths);
     if (!lock.held) throw new BotInstanceRunningError(lock.owner);
+    this.started = true;
     this.releaseLock = lock.release;
+    try {
+    const loaded = loadProfile(this.paths, this.profile, true);
+    if (!loaded.ok) {
+      this.releaseLock(); this.releaseLock = null; this.started = false;
+      throw new Error('Profile upgrade failed; original data and backup were preserved.');
+    }
+    this.profile = loaded.profile;
+    if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
+    await this.control.start();
 
     this.conversations.load();
     this.conversations.home();
@@ -423,6 +449,14 @@ export class BotCore implements BotHostApi {
     this.life.start();
     this.startTelegram();
     this.pump();
+    } catch (error) {
+      try { await this.stop(); }
+      finally {
+        await this.control.stop();
+        this.releaseLock?.(); this.releaseLock = null;
+      }
+      throw error;
+    }
   }
 
   // ---- Telegram (SPEC-001 FR-19, FR-26) ---------------------------------
@@ -627,13 +661,14 @@ export class BotCore implements BotHostApi {
     if (this.stopped) return;
     this.stopped = true;
     this.log('core stop');
+    const running = this.running;
+    try {
     this.life.stop();
     await this.stopTelegram();
     if (this.handoffTimer) clearInterval(this.handoffTimer);
     for (const timer of this.timers) clearTimeout(timer);
     this.timers.clear();
     this.deferred.clear();
-    const running = this.running;
     if (running) {
       running.controller.abort();
       const sessionId = running.item.run?.sessionId;
@@ -642,10 +677,17 @@ export class BotCore implements BotHostApi {
         await client.cancelSession(sessionId).catch(() => undefined);
       }
     }
-    if (this.supervisor) await this.supervisor.stop();
-    if (this.toolServer) await this.toolServer.stop();
-    this.releaseLock?.();
-    this.releaseLock = null;
+    if (running) this.interactions.end(running.item.id, 'bot_stopped');
+    } finally {
+      running?.controller.abort();
+      try {
+        await Promise.allSettled([
+          Promise.resolve().then(() => this.supervisor?.stop()),
+          Promise.resolve().then(() => this.toolServer?.stop()),
+          Promise.resolve().then(() => this.control.stop()),
+        ]);
+      } finally { this.releaseLock?.(); this.releaseLock = null; }
+    }
   }
 
   status(): BotStatus {
@@ -655,6 +697,7 @@ export class BotCore implements BotHostApi {
       root: this.paths.root,
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
+      pendingInteractions: this.interactions.pending(),
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
@@ -670,6 +713,33 @@ export class BotCore implements BotHostApi {
 
   listWorkItems(): WorkItem[] {
     return [...this.workItems.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
+    const record = this.conversations.require(this.resolveConversationId(conversationId));
+    return this.interactions.snapshot(record.id);
+  }
+
+  async respondProviderInteraction(conversationId: string, interactionId: string, response: BotInteractionResponse): Promise<void> {
+    const record = this.conversations.require(this.resolveConversationId(conversationId));
+    if (this.stopped || this.running?.item.conversationId !== record.id || this.running.controller.signal.aborted) {
+      throw new Error('No live provider turn in this conversation.');
+    }
+    await this.interactions.respond(record.id, interactionId, response);
+  }
+
+  async sessionCapabilities(conversationId: string, refresh = false): Promise<SessionCapabilitiesSnapshot> {
+    const record = this.conversations.require(this.resolveConversationId(conversationId));
+    const sessionId = record.attachment.sessionId;
+    const client = this.client();
+    const unavailable = (reason: string): SessionCapabilitiesSnapshot => ({ version: 1, sessionId: sessionId ?? '',
+      workerGeneration: null, supported: false, reason });
+    if (!sessionId || !client) return unavailable('no_live_session');
+    try {
+      const result = await client.capabilities(sessionId, refresh);
+      if (this.client() !== client || this.conversations.get(record.id)?.attachment.sessionId !== sessionId) return unavailable('session_changed');
+      return result.version === 1 ? result : unavailable('unsupported_runtime');
+    } catch { return unavailable('runtime_or_capability_unavailable'); }
   }
 
   getWorkItem(id: string): WorkItem | undefined {
@@ -859,9 +929,20 @@ export class BotCore implements BotHostApi {
    * the revision and makes attachments of older revisions stale.
    */
   async updateProfile(patch: BotProfilePatch): Promise<BotProfile> {
+    if (!this.releaseLock) {
+      const lock = acquireInstanceLock(this.paths);
+      if (!lock.held) throw new BotInstanceRunningError(lock.owner);
+      this.releaseLock = lock.release;
+      try {
+        const loaded = loadProfile(this.paths, this.profile, true);
+        if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
+        this.profile = loaded.profile;
+        return await this.updateProfile(patch);
+      } finally { this.releaseLock(); this.releaseLock = null; }
+    }
     const result = applyProfilePatch(this.profile, patch, this.now());
+    saveProfile(this.paths, result.profile);
     this.profile = result.profile;
-    saveProfile(this.paths, this.profile);
     if (result.sessionChanged) {
       this.journal({
         type: 'config',
@@ -1128,9 +1209,12 @@ export class BotCore implements BotHostApi {
     const controller = new AbortController();
     this.running = { item, controller };
     void this.runItem(item, controller).finally(() => {
-      if (this.running?.item.id === item.id) this.running = null;
-      this.pump();
-    });
+      try { this.interactions.end(item.id); }
+      finally {
+        if (this.running?.item.id === item.id) this.running = null;
+        this.pump();
+      }
+    }).catch(() => this.log('turn finalization failed; provider interaction receipts may need recovery'));
   }
 
   private async runItem(queued: WorkItem, controller: AbortController): Promise<void> {
