@@ -454,7 +454,7 @@ test('P5: an owner turn holds control from its first input action until it ends,
     'the end of the work item releases control');
   assert.ok(holdingEvents().includes(true));
   assert.equal(holdingEvents().at(-1), false, 'the shell hears of the release and refreshes the tray and note');
-  assert.equal(h.helper.calls.includes('cancel'), false, 'the end of a turn sends no cancel');
+  assert.equal(h.helper.calls.includes('cancel'), false, 'a normal end of a turn sends no cancel');
 
   // Grants outlive the turn; the next turn holds control again, until the owner stops it with cats-bot desktop --stop.
   const codes: Record<string, string | undefined> = {};

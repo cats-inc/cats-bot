@@ -216,8 +216,8 @@ P5 record (2026-10-29, fixtures only):
   - Holding starts with the first input tool and ends with that work item; the clipboard holds
     nothing.
   - Stop sends `cancel` only for a conversation that held control and cuts typing in progress.
-    Later calls return `stopped`, and turning the conversation off while it holds control also
-    cancels.
+    Later calls return `stopped`. A turn that ends while its typing still runs, and turning the
+    conversation off while it holds control, also cancel.
 - **Core tests** in `tests/core/desktopControlCore.test.ts` (9 tests): a real work item holds
   control (`holding` in the capability entry, the state and the events) and releases it when
   it ends. `cats-bot desktop home --stop` during a held turn cancels the helper op and revokes

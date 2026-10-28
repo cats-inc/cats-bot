@@ -128,7 +128,7 @@ function describeEvent(event: BotHostEvent): string | null {
     case 'desktop.control':
       // BDC-12: no app, path or reason here; `cats-bot desktop` shows the request and the held app to the owner.
       return `[desktop] ${event.conversationId ?? 'all conversations'}: ${event.pendingRequests} grant request(s) waiting`
-        + (event.holding ? '; the bot holds desktop control (stop: cats-bot desktop --stop)' : '')
+        + (event.holding ? `; the bot holds desktop control (stop: cats-bot desktop ${event.conversationId ?? '--all'} --stop)` : '')
         + (event.notify ? `; see cats-bot desktop ${event.conversationId ?? 'home'}` : '');
     default:
       return null;

@@ -414,7 +414,7 @@ test('phase B tools convert coordinates, keep the guards and hold control until 
   f.turn.current = owner('session-1', 'item-2');
   assert.equal((await callDesktopTool(descriptor, 'clipboard_read')).isError, undefined);
   assert.equal(f.service.capability('conv-1', 'session-1').status, 'active_turn', 'the clipboard holds no control');
-  assert.equal(f.helper.calls.includes('cancel'), false, 'the end of a turn sends no cancel');
+  assert.equal(f.helper.calls.includes('cancel'), false, 'a normal end of a turn sends no cancel');
 });
 
 test('Stop cancels the helper op only for a conversation that holds control; later calls return stopped', async (t) => {
@@ -454,13 +454,25 @@ test('Stop cancels the helper op only for a conversation that holds control; lat
   f.service.stop('conv-1');
   assert.equal(cancels(), 1, 'a conversation that no longer holds control sends no second cancel');
 
-  // Turning the conversation off while it holds control also ends the input in progress.
+  // A turn that ends while its input still runs (the owner cancelled the turn) cancels that input too.
   await grant(f, descriptor, '記事本');
   const [third] = (await callDesktopTool(descriptor, 'list_windows')).structuredContent.windows;
+  f.world.holdOps = ['type'];
+  const cut = callDesktopTool(descriptor, 'type_text', { windowId: third.windowId, text: 'more text' });
+  await waitUntil(() => f.helper.calls.filter((op) => op === 'type').length === 2, 5_000, 'second typing');
+  f.service.turnEnded('conv-1', 'item-1');
+  await waitUntil(() => cancels() === 2, 5_000, 'cancel at the end of the turn');
+  assert.deepEqual(f.service.state().holding, [], 'the end of the turn releases control');
+  f.helper.release();
+  f.world.holdOps = [];
+  await cut;
+
+  // Turning the conversation off while it holds control also ends the input in progress.
+  f.turn.current = owner('session-1', 'item-2');
   await callDesktopTool(descriptor, 'key', { windowId: third.windowId, keys: 'enter' });
   assert.equal(f.service.state().holding.length, 1);
   f.service.setConversation('conv-1', false);
-  await waitUntil(() => cancels() === 2, 5_000, 'cancel on revoke');
+  await waitUntil(() => cancels() === 3, 5_000, 'cancel on revoke');
   assert.deepEqual(f.service.state().holding, []);
 });
 

@@ -165,7 +165,10 @@ SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
   helper's `cancel` is global, so it is sent only when a stopped conversation held control. A
   stop that lands while an input tool checks its window sends nothing to the helper. Turning the
   conversation's switch off while it holds control also sends `cancel`, since BDC-03 revokes
-  control.
+  control. A turn that ends while one of its input ops is still in the helper (the owner
+  cancelled the turn) sends `cancel` too, and a later Stop sends it while such an op is still
+  in progress. The queue runs one turn at a time, so this `cancel` reaches only that
+  conversation's op.
 - **Indicator (BDC-10)**: the Bot has no topmost notice window. While control is held:
   - The tray's first item is "Stop desktop control (app)" and its tooltip says the bot is
     operating the app.

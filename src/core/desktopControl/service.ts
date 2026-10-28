@@ -165,6 +165,8 @@ interface Attachment {
   uiReads: Map<string, { windowId: string; hwnd: number; readId: number }>;
   /** The app the running turn holds control of, and that turn (DC-11). */
   holding: { app: string; workItemId: string } | null;
+  /** Input ops sent to the helper and not answered yet; they may outlive a cancelled turn. */
+  inputsInFlight: number;
 }
 
 interface GrantRequest {
@@ -278,7 +280,7 @@ export class DesktopControlService {
     if (current) this.revoke(conversationId, 'the conversation moved to a new session');
     this.attachments.set(conversationId, {
       conversationId, sessionId, token: randomBytes(24).toString('base64url'), apps: new Map(), windows: new Map(),
-      windowIdsByHwnd: new Map(), reads: 0, snapshots: new Map(), uiReads: new Map(), holding: null,
+      windowIdsByHwnd: new Map(), reads: 0, snapshots: new Map(), uiReads: new Map(), holding: null, inputsInFlight: 0,
     });
     this.options.log(`desktop control injected into conversation ${conversationId}`);
     this.emit(conversationId);
@@ -374,7 +376,7 @@ export class DesktopControlService {
   /**
    * SPEC-133 DC-12: revoke grants, release control, cancel what is in progress; later calls
    * return `stopped`. The helper's `cancel` is global, so it is sent only when a stopped
-   * conversation held control.
+   * conversation held control or still has input in progress.
    */
   stop(conversationId?: string): void {
     const conversations = conversationId ? [conversationId]
@@ -386,7 +388,7 @@ export class DesktopControlService {
       this.denyPending((request) => request.conversationId === id);
       const attachment = this.attachments.get(id);
       if (attachment) {
-        held ||= attachment.holding !== null;
+        held ||= attachment.holding !== null || attachment.inputsInFlight > 0;
         attachment.holding = null;
         attachment.apps.clear();
         attachment.windows.clear();
@@ -400,11 +402,16 @@ export class DesktopControlService {
     if (held) this.cancelHelper();
   }
 
-  /** SPEC-133 DC-11: the end of the work item releases the control it held. */
+  /**
+   * SPEC-133 DC-11: the end of the work item releases the control it held. A turn that ends
+   * while its input still runs (the owner cancelled it) cancels that input too: the queue runs
+   * one turn at a time, so the global `cancel` reaches only this conversation's op.
+   */
   turnEnded(conversationId: string, workItemId: string): void {
     const attachment = this.attachments.get(conversationId);
     if (!attachment?.holding || attachment.holding.workItemId !== workItemId) return;
     attachment.holding = null;
+    if (attachment.inputsInFlight > 0) this.cancelHelper();
     this.options.log(`desktop control released in conversation ${conversationId}: the turn ended`);
     this.emit(conversationId);
   }
@@ -520,7 +527,7 @@ export class DesktopControlService {
       this.attachments.delete(conversationId);
       this.options.log(`desktop control revoked in conversation ${conversationId}: ${why}`);
       // Revoking a conversation that holds control also ends the input in progress (DC-03, DC-11).
-      if (attachment.holding) this.cancelHelper();
+      if (attachment.holding || attachment.inputsInFlight > 0) this.cancelHelper();
     }
     this.denyPending((request) => request.conversationId === conversationId);
     this.emit(conversationId);
@@ -619,6 +626,16 @@ export class DesktopControlService {
 
   private generation(conversationId: string): number {
     return this.generations.get(conversationId) ?? 0;
+  }
+
+  /** Sends one input op, counting it while the helper works on it. */
+  private async sendInput(attachment: Attachment, op: string, params: Record<string, unknown>, timeoutMs: number): Promise<void> {
+    attachment.inputsInFlight += 1;
+    try {
+      await this.options.helper!.call(op, params, timeoutMs);
+    } finally {
+      attachment.inputsInFlight -= 1;
+    }
   }
 
   /** A grant request only the owner answers; denied when unanswered after the TTL (SPEC-133 DC-08). */
@@ -765,7 +782,7 @@ export class DesktopControlService {
         // The capture-time bounds make the helper refuse a window that moved since the screenshot.
         const rest = 'button' in parsed ? { button: parsed.button, count: parsed.count }
           : { direction: parsed.direction, amount: parsed.amount };
-        await helper.call(name, { hwnd, bounds: point.snapshot.bounds, x: point.x, y: point.y, ...rest }, INPUT_TIMEOUT_MS);
+        await this.sendInput(attachment, name, { hwnd, bounds: point.snapshot.bounds, x: point.x, y: point.y, ...rest }, INPUT_TIMEOUT_MS);
         return toolResult({ done: true }, `${name === 'click' ? 'Clicked' : 'Scrolled'} in ${app.name}.`);
       }
       case 'invoke_element': {
@@ -774,19 +791,19 @@ export class DesktopControlService {
         const read = dot > 0 ? attachment.uiReads.get(elementId.slice(0, dot)) : undefined;
         if (!read) throw new DesktopControlToolError('window_changed', 'Unknown or old elementId; call read_ui again.');
         const { hwnd, app } = await this.inputTarget(attachment, read.windowId, operatorIdleMs, generation);
-        await helper.call('invoke', { hwnd, readId: read.readId, elementId: elementId.slice(dot + 1), action }, INPUT_TIMEOUT_MS);
+        await this.sendInput(attachment, 'invoke', { hwnd, readId: read.readId, elementId: elementId.slice(dot + 1), action }, INPUT_TIMEOUT_MS);
         return toolResult({ done: true }, `${action} done in ${app.name}.`);
       }
       case 'type_text': {
         const { windowId, text } = parseTypeText(args);
         const { hwnd, app } = await this.inputTarget(attachment, windowId, operatorIdleMs, generation);
-        await helper.call('type', { hwnd, text }, TYPE_TIMEOUT_MS);
+        await this.sendInput(attachment, 'type', { hwnd, text }, TYPE_TIMEOUT_MS);
         return toolResult({ done: true }, `Typed ${text.length} character(s) in ${app.name}.`);
       }
       case 'key': {
         const { windowId, keys } = parseKey(args);
         const { hwnd, app } = await this.inputTarget(attachment, windowId, operatorIdleMs, generation);
-        await helper.call('key', { hwnd, keys }, INPUT_TIMEOUT_MS);
+        await this.sendInput(attachment, 'key', { hwnd, keys }, INPUT_TIMEOUT_MS);
         return toolResult({ done: true }, `Pressed ${keys} in ${app.name}.`);
       }
       // The clipboard needs no app grant and holds no control.
