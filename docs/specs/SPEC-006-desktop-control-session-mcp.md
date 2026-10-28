@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Draft; direction accepted, implementation not authorized |
+| Status | Contract frozen (P0, 2026-10-29); implementation in progress under PLAN-006 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Reviewer | Product owner, Platform and Runtime maintainers |
 | Baseline | Bots `a0a9ec5`; 2026-10-29 |
@@ -60,6 +60,32 @@ Bot's own requirements.
 | BDC-11 | The helper lives in `native/windows-desktop-control/` in this repository and is packaged as an electron-builder extra resource for Windows builds only, signed under ADR-004's Standard signing rules. Its internal protocol may follow SPEC-133 R7 but is this repository's own |
 | BDC-12 | The journal, receipts, logs and Telegram notices contain no screenshot bytes, UIA values, typed text or clipboard content (SPEC-133 DC-17) |
 | BDC-13 | The session capability snapshot adds a "Cats desktop control" entry with the SPEC-133 DC-18 state values, separate from the provider-native `computer_use` dependency |
+
+## P0 Decisions (2026-10-29)
+
+These follow the contract version frozen in Platform SPEC-133 on 2026-10-29, including its
+"Frozen contract details".
+
+- **Profile field (BDC-02)**: `desktopControl: { enabled: boolean }` inside profile schema 2.
+  `normalizeProfile` already fills a missing field with its default, so the default
+  `{ enabled: false }` needs no schema bump or upgrade step. An older Bot that rewrites the
+  profile drops the field, which turns the feature off, so a downgrade fails closed.
+- **Conversation switch (BDC-03)**: `desktop-control.json` in the Bot's data directory,
+  `{ "version": 1, "conversations": [] }`, written atomically. Conversation records keep
+  schema 1.
+- **Policy gate (BDC-04)**: the same rule as SPEC-133 DC-04, read from the Bot's
+  `sessionCapabilities` snapshot: `interactions.host` lists `tool_approval`, the policy source is
+  `explicit`, the requested approval is `on-request` or `untrusted`, and the status is
+  `verified` or `not_observed`. Anything else, or no snapshot, injects nothing.
+- **Owner-present turn (BDC-05)**: the running work item has `kind: 'owner_message'` and
+  `source: 'owner'`.
+- **Host API (BDC-07)**: `BotHostApi` gains `desktopControlState(conversationId)`,
+  `setConversationDesktopControl(conversationId, enabled)`,
+  `respondDesktopGrant(conversationId, requestId, decision)` and
+  `stopDesktopControl(conversationId?)`. The profile switch uses `updateProfile`.
+- **CLI (BDC-07, BDC-10)**: `cats-bot desktop <conversation> --id <bot>` shows state;
+  `--enable`/`--disable` set the conversation switch; `--grant <requestId> allow|deny` answers
+  a grant; `--stop` stops control.
 
 ## Acceptance Criteria
 

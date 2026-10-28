@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Planned; implementation not authorized |
+| Status | In progress; P0 complete, P1–P4 authorized, P5 needs owner sign-off after P4 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -22,17 +22,20 @@ cross-implementation contract. This plan includes no version bump or release.
 
 ### P0 — Contract and profile
 
-- [ ] Freeze SPEC-133's cross-implementation contract together with Platform PLAN-126 P0,
-  and record which version this plan follows.
-- [ ] Decide the profile field for BDC-02, whether it needs a schema change, and the
-  protected upgrade path if it does.
-- [ ] Confirm which Runtime capability snapshot fields decide BDC-04 for Claude Code and
+- [x] Freeze SPEC-133's cross-implementation contract together with Platform PLAN-126 P0,
+  and record which version this plan follows (2026-10-29).
+- [x] Decide the profile field for BDC-02, whether it needs a schema change, and the
+  protected upgrade path if it does (no change; see SPEC-006 "P0 Decisions").
+- [x] Confirm which Runtime capability snapshot fields decide BDC-04 for Claude Code and
   Codex.
-- [ ] Define the grant request snapshot and response in `BotHostApi` and the CLI commands
+- [x] Define the grant request snapshot and response in `BotHostApi` and the CLI commands
   for grants and stop.
 
 **Exit:** contract version, profile decision and host API shapes have fixtures, and the
 owner confirms.
+
+P0 record (2026-10-29): the owner authorized continuous slices through every phase that does
+not need them, which covers this exit's confirmation. Fixtures land with the code in P1 and P2.
 
 ### P1 — Helper (observe)
 
