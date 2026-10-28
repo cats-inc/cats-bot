@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Approved；2026-10-28 owner 授權切片實作，尚未開始 |
+| Status | Implemented；驗收範圍與上游 helper 限制見 PLAN-004 |
 | Owner | Bot core、headless CLI、Electron shell |
 | Reviewer | Product owner、Runtime maintainers |
 | Baseline | Bots `7951c28`；Runtime 套件 pin 0.6.1；2026-10-28 |
@@ -19,7 +19,8 @@ CLI、便箋與 tray 只是同一個 host API 的呈現，不依賴 cats-platfor
 
 共用契約以 `cats-runtime/docs/specs/SPEC-039-provider-session-capabilities-and-interactions.md`
 為準；對應 Runtime PLAN-049，Platform SPEC-132／PLAN-124 是另一個獨立消費者。
-這些文件位於各 repo `docs/provider-session-capabilities` 分支上，尚未發布。
+契約文件已合併；目前精確採用 Runtime source `50ef02b4686c1fff6b60819d292acc5b2e1ef773`
+的 0.6.2 candidate artifact，digest 見 vendor/README，尚未發布新版套件。
 本案沿用 ADR-001 的獨立常駐核心，不重複建立 Bot 架構 ADR。
 
 ## Goals and User Stories
@@ -36,11 +37,11 @@ CLI、便箋與 tray 只是同一個 host API 的呈現，不依賴 cats-platfor
 - 改成多個回合同時執行、搬動使用者 Codex home／憑證或建立通用插件安裝器。
 - 本期提供 Telegram 原生表單／批准回覆；Telegram 可送通知，回覆使用本機 CLI／殼。
 
-## Current State
+## Before implementation
 
 Bot 已有 `awaiting_owner`、`ask_owner`、中斷復原與 `approve` 操作，但 Runtime 目前不會把
 Codex 原生問題／MCP elicitation 交給這條管線。原生 callback 尚未接通。
-目前 Bot 權限與 cwd 由 profile 提供，Runtime 套件固定為 0.6.1；不是因為有 tray 或使用
+當時 Bot 權限與 cwd 由 profile 提供，Runtime 套件固定為 0.6.1；不是因為有 tray 或使用
 spawn 就自動具有 Terminal 的全部能力。此文件不改動任何既有 bot 的 provider 或設定。
 
 ## Requirements

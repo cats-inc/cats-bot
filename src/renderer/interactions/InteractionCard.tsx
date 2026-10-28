@@ -18,7 +18,9 @@ function Field({ field }: { field: InteractionField }) {
       </select>
         : field.type === 'strings' ? <textarea {...common} rows={3} placeholder="One value per line" />
           : <input {...common} type={field.secret ? 'password' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
-            min={field.min} max={field.max} step={field.type === 'integer' ? 1 : 'any'} minLength={field.minLength} maxLength={field.maxLength} />}
+            min={field.type === 'integer' && field.min !== undefined ? Math.ceil(field.min) : field.min}
+            max={field.type === 'integer' && field.max !== undefined ? Math.floor(field.max) : field.max}
+            step={field.type === 'integer' ? 1 : 'any'} minLength={field.minLength} maxLength={field.maxLength} />}
     {field.allowOther && field.options && <small>Suggestions: {field.options.map(o => o.label).join(', ')}. You may enter another value.</small>}
   </label>;
 }

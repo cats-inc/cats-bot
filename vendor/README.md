@@ -2,7 +2,10 @@
 
 The Bot consumes a packed Runtime artifact over its process/HTTP boundary, never
 source imports from another checkout. This candidate contains the merged Runtime
-source `b75da37b5e79f1f9831406ab5017359ce47cf0e6` (PR #194), package version 0.6.2.
+source `50ef02b4686c1fff6b60819d292acc5b2e1ef773` (interaction implementation from
+PR #194 plus exact Codex thread admission and transcript-preserving failure
+cleanup), package version 0.6.2. The tarball is 1,770,749 bytes, SHA-1
+`5f360927ece194dc3e0abbd690fb7b43cb292fc3`.
 It is not an npm publication. `package-lock.json` pins the tarball integrity.
 
 Build the exact Runtime source with its lockfile, run `npm run build`, then
