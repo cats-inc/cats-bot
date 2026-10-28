@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
 import { readProviderOverrides } from '../core/hostEnv.ts';
-import { callHostControl } from '../core/host-api/control.ts';
+import { callHostControl, HostControlRejectedError } from '../core/host-api/control.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
@@ -74,6 +74,9 @@ Commands:
   interactions [conversation|home]      list live provider requests as JSON
   respond <conversation|home> <request>  read typed response JSON from stdin
   capabilities [conversation|home] [--refresh]  inspect the current session without a model turn
+  desktop [conversation|home] [--enable | --disable | --grant <requestId> allow|deny | --stop [--all]]
+                                         desktop control (Windows) as JSON: the conversation switch, an
+                                         app grant request's answer, or stop (--all: every conversation)
   heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
   tick                                   run one reconcile pass (only when no instance is running)
   quit                                   ask the running instance (CLI or shell) to stop
@@ -122,6 +125,10 @@ function describeEvent(event: BotHostEvent): string | null {
       return `[handoff] ${event.message.kind}`;
     case 'work.awaitingOwner':
       return `[approval] ${event.workItem.id} awaits the owner: ${event.workItem.prompt}`;
+    case 'desktop.control':
+      // BDC-12: no app, path or reason here; `cats-bot desktop` shows the request to the owner.
+      return `[desktop] ${event.conversationId ?? 'all conversations'}: ${event.pendingRequests} grant request(s) waiting`
+        + (event.notify ? `; see cats-bot desktop ${event.conversationId ?? 'home'}` : '');
     default:
       return null;
   }
@@ -500,6 +507,71 @@ async function commandProviderControl(parsed: ParsedArgs, env: NodeJS.ProcessEnv
   return 0;
 }
 
+/**
+ * SPEC-006 BDC-07 / BDC-10: desktop control through the running Bot's control endpoint. Grants and
+ * requests live only in the running core, so every action needs it, and a grant is answered here
+ * or in the note, never through `respond` or `approve`.
+ */
+async function commandDesktop(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const positional = [...parsed.positional];
+  // `--enable conv-1`: the parser reads the next word as the flag's value; it is the conversation.
+  const switchFlag = (name: string): boolean => {
+    const value = parsed.flags.get(name);
+    if (typeof value === 'string') positional.push(value);
+    return value !== undefined;
+  };
+  const enable = switchFlag('enable');
+  const disable = switchFlag('disable');
+  const stop = switchFlag('stop');
+  const all = switchFlag('all');
+  const grant = parsed.flags.get('grant');
+  if ([enable, disable, stop, grant !== undefined].filter(Boolean).length > 1 || (all && !stop)) {
+    process.stderr.write('desktop takes one of --enable, --disable, --grant or --stop; --all goes only with --stop\n');
+    return 2;
+  }
+  let decision: 'allow' | 'deny' | undefined;
+  if (grant !== undefined) {
+    const index = positional.findLastIndex((word) => word === 'allow' || word === 'deny');
+    if (typeof grant !== 'string' || index === -1) {
+      process.stderr.write('desktop --grant needs the request id and allow|deny\n');
+      return 2;
+    }
+    decision = positional.splice(index, 1)[0] as 'allow' | 'deny';
+  }
+  if (positional.length > 1 || (all && positional.length > 0)) {
+    process.stderr.write('desktop takes one conversation (or home); --stop --all takes none\n');
+    return 2;
+  }
+  const conversationId = positional[0] ?? 'home';
+  const target = resolveTarget(parsed, env);
+  if (!target.running) {
+    if (stop) {
+      // Grants and requests end with the core, so a stopped Bot has nothing to stop.
+      process.stdout.write('No running instance; desktop control is not active.\n');
+      return 0;
+    }
+    throw new Error('Start the bot before using desktop control; its state, grants and requests live in the running bot.');
+  }
+  const body: Record<string, unknown> = enable || disable ? { operation: 'desktop_switch', conversationId, enabled: enable }
+    : decision ? { operation: 'desktop_grant', conversationId, requestId: grant, decision }
+      : stop ? { operation: 'desktop_stop', ...(all ? { all: true } : { conversationId }) }
+        : { operation: 'desktop_state', conversationId };
+  let result: unknown;
+  try {
+    result = await callHostControl(target.root, body);
+  } catch (error) {
+    if (!(error instanceof HostControlRejectedError)) throw error;
+    throw new Error(decision
+      ? `No grant request ${String(grant)} waits in ${conversationId}; run cats-bot desktop ${conversationId} for the requests that wait.`
+      : `Desktop control request rejected; check the conversation id (cats-bot conversations).`);
+  }
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  if (enable && (result as { enabled?: boolean }).enabled === false) {
+    process.stderr.write('The profile switch is off: turn on desktop control in Settings > Bot before the conversation can use it.\n');
+  }
+  return 0;
+}
+
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const parsed = parseArgs(argv);
   try {
@@ -522,6 +594,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
       case 'respond':
       case 'capabilities':
         return await commandProviderControl(parsed, env);
+      case 'desktop':
+        return await commandDesktop(parsed, env);
       case 'heartbeat':
         return await commandHeartbeat(parsed, env);
       case 'tick':

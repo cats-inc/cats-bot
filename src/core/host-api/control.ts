@@ -40,18 +40,35 @@ export class HostControlServer {
           if (size > MAX_REQUEST_BYTES) throw new Error('Control request exceeds its size limit.');
           chunks.push(Buffer.from(chunk));
         }
-        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown>;
-        if (!body || typeof body.conversationId !== 'string' || !body.conversationId || body.conversationId.length > 200) {
+        const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown> | null;
+        // Stopping desktop control everywhere (`desktop_stop` with `all`) is the only operation without a conversation.
+        const everyConversation = body?.operation === 'desktop_stop' && body.all === true;
+        if (!body || (!everyConversation
+          && (typeof body.conversationId !== 'string' || !body.conversationId || body.conversationId.length > 200))) {
           throw new Error('Invalid conversation.');
         }
+        const conversationId = body.conversationId as string;
         let result: unknown;
         switch (body.operation) {
-          case 'interactions': result = await this.api.providerInteractions(body.conversationId); break;
-          case 'capabilities': result = await this.api.sessionCapabilities(body.conversationId, body.refresh === true); break;
+          case 'interactions': result = await this.api.providerInteractions(conversationId); break;
+          case 'capabilities': result = await this.api.sessionCapabilities(conversationId, body.refresh === true); break;
           case 'respond':
             if (typeof body.interactionId !== 'string' || !body.interactionId) throw new Error('Invalid interaction.');
-            await this.api.respondProviderInteraction(body.conversationId, body.interactionId, body.response as BotInteractionResponse);
+            await this.api.respondProviderInteraction(conversationId, body.interactionId, body.response as BotInteractionResponse);
             result = { accepted: true }; break;
+          // SPEC-006 BDC-07 / BDC-10: desktop control has its own operations; `respond` never answers a grant.
+          case 'desktop_state': result = await this.api.desktopControlState(conversationId); break;
+          case 'desktop_switch':
+            if (typeof body.enabled !== 'boolean') throw new Error('Invalid switch.');
+            result = await this.api.setConversationDesktopControl(conversationId, body.enabled); break;
+          case 'desktop_grant':
+            if (typeof body.requestId !== 'string' || !body.requestId || body.requestId.length > 200
+              || (body.decision !== 'allow' && body.decision !== 'deny')) throw new Error('Invalid grant answer.');
+            await this.api.respondDesktopGrant(conversationId, body.requestId, body.decision);
+            result = await this.api.desktopControlState(conversationId); break;
+          case 'desktop_stop':
+            await this.api.stopDesktopControl(everyConversation ? undefined : conversationId);
+            result = await this.api.desktopControlState(everyConversation ? undefined : conversationId); break;
           default: throw new Error('Unsupported control operation.');
         }
         res.end(JSON.stringify(result));
@@ -91,6 +108,9 @@ export class HostControlServer {
   }
 }
 
+/** The live Bot refused the request (an unknown or answered id, a bad answer); it says no more on purpose. */
+export class HostControlRejectedError extends Error {}
+
 export async function callHostControl(root: string, body: Record<string, unknown>): Promise<unknown> {
   const descriptor = JSON.parse(readFileSync(descriptorFile(root), 'utf8')) as Descriptor;
   if (descriptor.version !== 1 || typeof descriptor.socket !== 'string' || !/^[a-f0-9]{64}$/u.test(descriptor.token)) {
@@ -110,7 +130,7 @@ export async function callHostControl(root: string, body: Record<string, unknown
       });
       res.on('error', reject);
       res.on('end', () => {
-        if (res.statusCode !== 200) { reject(new Error('Control request rejected. Refresh the live interaction before retrying.')); return; }
+        if (res.statusCode !== 200) { reject(new HostControlRejectedError('Control request rejected. Refresh the live interaction before retrying.')); return; }
         try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { reject(new Error('Invalid control response.')); }
       });
     });

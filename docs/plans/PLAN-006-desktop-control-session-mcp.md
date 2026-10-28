@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress; P0 complete, P1 and P2 in review, P3–P4 authorized, P5 needs owner sign-off after P4 |
+| Status | Phase A delivered (P0–P3 merged or in review, P4 recorded); waiting for owner sign-off before P5 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -111,19 +111,74 @@ provider CLI or desktop was used; the real-desktop checks are P4.
 
 ### P3 — Note, tray and CLI
 
-- [ ] Note: conversation switch, grant prompts, the control banner with "Stop".
-- [ ] Tray: control state and stop.
-- [ ] CLI: grant answers, stop, and the new capability entry in `cats-bot capabilities`.
+- [x] Note: conversation switch, grant prompts, the control banner with "Stop". A strip under
+  the header appears while the profile switch is on, or while the conversation has grants or
+  waiting requests; it holds the conversation switch, the DC-18 status with its reason, the
+  granted apps and Stop whenever there are grants or waiting requests (phase A has no hold).
+  Grant cards sit beside the provider requests with the app, its path, its publisher or
+  "unsigned", the observe-only limit and the bot's reason; Allow and Deny call only
+  `respondDesktopGrant`. Settings > Bot gains the profile switch, hidden off Windows and
+  disabled with the reason where the helper cannot run, but always switchable off.
+- [x] Tray: control state and stop. "Desktop control requests (N)" opens the note that waits,
+  "Stop desktop control" stops every conversation while the profile switch is on, the tooltip
+  says when desktop control is on or a request waits, and a new request in an unfocused note
+  shows a bubble that names no app.
+- [x] CLI: grant answers, stop, and the new capability entry in `cats-bot capabilities`.
+  `cats-bot desktop <conversation>` prints the state as JSON; `--enable`/`--disable`,
+  `--grant <requestId> allow|deny` and `--stop` (`--all` for every conversation) go through
+  the running Bot's control endpoint. `cats-bot capabilities` already prints P2's
+  `desktopControl` entry.
 
 **Exit:** renderer and CLI tests pass, and an isolated shell smoke test passes.
 
+P3 record (2026-10-29): host commands and control endpoint operations carry the four
+`BotHostApi` methods; a note acts only on its own conversation, and Settings reads only the
+profile-level state, so Settings, the floating cat and the provider path cannot answer a
+grant. `tests/shell/desktopControlIpc.test.ts` covers argument checks and which window may
+send each command; `tests/shell/trayMenu.test.ts` the tray items; `tests/renderer/desktopControl.test.ts`
+the note and Settings wording and visibility rules; `tests/core/desktopControlCore.test.ts` runs
+`cats-bot desktop` as a child process against a running core with the fake helper (state,
+switch, grant, unknown request, usage errors, `--stop --all`, the stopped-Bot path) and checks
+that `respond` cannot answer a grant. The isolated shell smoke test started the unpackaged
+shell with a temporary `CATS_BOTS_HOME` and `userData`, the scripted fixture CLI and no helper
+build, so the real helper could not start, and drove the note and settings pages only through
+the DevTools protocol: 20 of 20 checks passed (Settings shows the switch disabled with
+`helper_missing`, the note shows the unavailable reason once the profile switch is on, the
+window rules hold, `cats-bot desktop` and `capabilities` read the running shell, a turn still
+completes, and `cats-bot quit` ends the shell). Grant cards and Stop were therefore not seen
+in the real shell; their rendering is part of P4. The tray menu was checked only through its
+builder. The repository has no localization, so the strings are English only.
+`npm run typecheck`, `npm test` (186 tests) and `npm run build` pass on Windows.
+
 ### P4 — Phase A native acceptance
 
-- [ ] Run B1–B6 and B8 on a real Windows machine with a real Claude Code, in a test Bot with
-  an isolated data root.
-- [ ] Record the Defender result, redacted samples and any items that did not pass.
+- [x] Run B1–B6 and B8 on a real Windows machine with a real Claude Code, in a test Bot with
+  an isolated data root. See the record below.
+- [x] Record the Defender result, redacted samples and any items that did not pass.
 
 **Exit:** the owner confirms phase A and authorizes phase B.
+
+P4 record (2026-10-29, Windows 11, Claude Code 2.1.312 `haiku` with the owner's own sign-in):
+
+- **Setup**:
+  - A test Bot was created with `cats-bot init` under a temporary `CATS_BOTS_HOME`.
+  - Its profile was edited to set an explicit full-access/network/`on-request` `providerPolicy` and `desktopControl.enabled`, since no CLI path changes the profile switch.
+  - `cats-bot run` started it with its own private Runtime, and the P3 build's helper ran against two throwaway windows.
+  - A script acted as the owner only through the CLI: `respond` with "Allow once", and `desktop --grant ... allow`.
+- **Results**: 12/12 checks passed.
+  - B2: `desktop home --enable` turned the conversation on. Each of the 4 desktop tool calls in the owner turn produced a `tool_approval` naming server `cats-desktop`. A scheduled turn got `not_owner_present`.
+  - B3: the app grant came only through `desktop --grant`.
+  - Phase A tools: the reply named the blue background, "Probe button" and "visible text", and reported the masked field's value as null. The password never reached the model.
+  - B8: the transcript kept 5 tool-result summaries and no screenshot bytes.
+  - BDC-13: `capabilities` carried `desktopControl` with status `injected`.
+  - B5: `desktop --stop` cleared the grants, and the next owner turn got `stopped`. `quit` revoked the conversation and the Runtime exited cleanly.
+  - Defender recorded no detection.
+- **Not exercised natively**:
+  - B1 off Windows.
+  - B6, the global gate while a grant waits (covered by core tests).
+  - The lock pause.
+  - The note and tray UI with a live helper (P3's shell smoke ran without one).
+  - A packaged installer's helper and Codex.
 
 ### P5 — Phase B (act)
 

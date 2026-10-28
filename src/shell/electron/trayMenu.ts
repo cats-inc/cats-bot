@@ -9,6 +9,16 @@ import type { ConversationRecord } from '../../core/types.ts';
  * revision 595e9ca (MIT), per ADR-001 §1.
  */
 
+/** SPEC-006 BDC-10: what the tray shows of desktop control. */
+export interface TrayDesktopControl {
+  /** The profile switch (BDC-02). */
+  enabled: boolean;
+  /** Grant requests waiting for the owner, in every conversation. */
+  pendingRequests: number;
+  /** A conversation with a request waiting, so the tray can open its note. */
+  waitingConversationId: string | null;
+}
+
 export interface TrayMenuModel {
   botName: string;
   status: BotStatus;
@@ -19,6 +29,7 @@ export interface TrayMenuModel {
   awaitingOwner: number;
   /** SPEC-002 FR-7. */
   floatingVisible: boolean;
+  desktopControl: TrayDesktopControl;
 }
 
 export interface TrayMenuActions {
@@ -30,6 +41,8 @@ export interface TrayMenuActions {
   onToggleHeartbeat(enabled: boolean): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onToggleFloating(visible: boolean): void;
+  /** SPEC-006 BDC-10: stops desktop control in every conversation. */
+  onStopDesktopControl(): void;
   onQuit(): void;
 }
 
@@ -59,9 +72,15 @@ export function unreadTotal(conversations: ConversationRecord[]): number {
   return conversations.reduce((sum, record) => sum + record.unreadCount, 0);
 }
 
+export function desktopControlLabel(desktop: TrayDesktopControl): string {
+  if (desktop.pendingRequests) return 'desktop control request waiting';
+  return desktop.enabled ? 'desktop control on' : '';
+}
+
 export function buildTrayTooltip(model: TrayMenuModel): string {
   const unread = unreadTotal(model.conversations);
-  return `${model.botName} (${runtimeLabel(model.status)})${unread ? ` - ${unread} unread` : ''}`;
+  const desktop = desktopControlLabel(model.desktopControl);
+  return `${model.botName} (${runtimeLabel(model.status)})${unread ? ` - ${unread} unread` : ''}${desktop ? ` - ${desktop}` : ''}`;
 }
 
 export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuActions): TrayMenuItem[] {
@@ -84,6 +103,14 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
     const conversationId = model.status.queue.running.conversationId;
     template.push({ label: `Provider requests (${model.status.pendingInteractions})`, click: () => actions.onOpenConversation(conversationId) });
   }
+  const desktop = model.desktopControl;
+  if (desktop.pendingRequests) {
+    // Only the note (or the CLI) answers a grant request; the tray opens the note that waits.
+    template.push({
+      label: `Desktop control requests (${desktop.pendingRequests})`,
+      click: () => actions.onOpenConversation(desktop.waitingConversationId ?? home?.id ?? 'home'),
+    });
+  }
   if (notes.length > 0) {
     template.push({
       label: 'Notes',
@@ -102,6 +129,9 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       click: () => actions.onToggleHeartbeat(!model.heartbeatEnabled),
     },
   );
+  if (desktop.enabled || desktop.pendingRequests) {
+    template.push({ label: 'Stop desktop control', click: () => actions.onStopDesktopControl() });
+  }
   template.push({
     label: 'Show floating cat',
     type: 'checkbox',

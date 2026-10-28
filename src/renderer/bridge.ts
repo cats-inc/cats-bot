@@ -14,6 +14,8 @@ import type {
   BotInteractionSnapshot,
   BotInteractionResponse,
   SessionCapabilitiesSnapshot,
+  DesktopControlState,
+  DesktopGrantDecision,
 } from '../core/types.ts';
 import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 
@@ -50,6 +52,11 @@ export interface HostCommands {
   renameConversation: { args: [conversationId: string, title: string]; result: ConversationRecord };
   telegramStatus: { args: []; result: TelegramSettingsStatus };
   setTelegramToken: { args: [token: string | null]; result: TelegramSettingsStatus };
+  /** SPEC-006: without a conversation (Settings), only the profile-level state. */
+  desktopControlState: { args: [conversationId?: string]; result: DesktopControlState };
+  setConversationDesktopControl: { args: [conversationId: string, enabled: boolean]; result: DesktopControlState };
+  respondDesktopGrant: { args: [conversationId: string, requestId: string, decision: DesktopGrantDecision]; result: DesktopControlState };
+  stopDesktopControl: { args: [conversationId: string]; result: DesktopControlState };
 }
 
 export type HostCommandName = keyof HostCommands;
@@ -76,6 +83,7 @@ export const BRIDGE_COMMANDS = [
   'renameConversation',
   'telegramStatus',
   'setTelegramToken',
+  'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
 ] as const satisfies readonly HostCommandName[];
 
 /** Where a note lives (SPEC-002 FR-8); the shell's `NOTE_LAYERS`. */

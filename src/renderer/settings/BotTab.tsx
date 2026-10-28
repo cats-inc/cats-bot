@@ -5,6 +5,7 @@ import { errorText } from '../errors.ts';
 import { ModelField, useModelMenu } from './ModelField.tsx';
 import { botForm, botPatch, providerChoices, providerHint, providerLabel, saveNotice, type BotForm } from './settingsLogic.ts';
 import { useToast } from './toast.ts';
+import { DesktopControlSettings } from './DesktopControlSettings.tsx';
 import { ProviderSettings } from './ProviderSettings.tsx';
 
 /**
@@ -156,6 +157,7 @@ export function BotTab({ profile, onSaved }: { profile: BotProfile; onSaved(prof
         </div>
       </form>
       <ProviderSettings profile={profile} onSaved={onSaved} />
+      <DesktopControlSettings onSaved={onSaved} />
     </section>
   );
 }

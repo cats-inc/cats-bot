@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from '../../core/types.ts';
+import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
 import { InteractionCard } from '../interactions/InteractionCard.tsx';
 import type { NoteLayer } from '../bridge.ts';
 import { Markdown } from '../markdown/Markdown.tsx';
@@ -149,6 +150,8 @@ export function NoteApp() {
   const [runtimeNote, setRuntimeNote] = useState('');
   const [draft, setDraft] = useState('');
   const [interactions, setInteractions] = useState<BotInteraction[]>([]);
+  const desktop = useDesktopControl(conversation);
+  const refreshDesktop = desktop.refresh;
   const refreshInteractions = useCallback(async () => {
     const snapshot = await api.invoke('providerInteractions', conversation.current);
     setInteractions(snapshot.interactions);
@@ -194,6 +197,9 @@ export function NoteApp() {
         case 'provider.interactions':
           if (event.conversationId === id) void refreshInteractions();
           return;
+        case 'desktop.control':
+          if (event.conversationId === null || event.conversationId === id) void refreshDesktop();
+          return;
         case 'turn.delta':
           if (event.conversationId !== id) return;
           if (event.entry.kind === 'bot') setPending((current) => appendDelta(current, event.workItemId, event.entry.text));
@@ -203,11 +209,16 @@ export function NoteApp() {
         case 'work.awaitingOwner':
           if (event.workItem.conversationId !== id) return;
           setWorkItems((current) => upsertWorkItem(current, event.workItem));
-          if (event.type === 'work.updated' && event.workItem.state === 'running') setRunning(true);
+          if (event.type === 'work.updated' && event.workItem.state === 'running') {
+            setRunning(true);
+            // The desktop control status follows the turn (SPEC-133 DC-18 `active_turn`).
+            void refreshDesktop();
+          }
           return;
         case 'turn.completed':
           if (event.conversationId !== id) return;
           setRunning(false);
+          void refreshDesktop();
           void reload()
             .then(() => setPending(null))
             .then(markSeenIfFocused)
@@ -217,6 +228,7 @@ export function NoteApp() {
           if (event.conversation.id !== id) return;
           void refreshHeader();
           void reload();
+          void refreshDesktop();
           return;
         case 'runtime.status':
           setRuntimeNote(event.state === 'ready' ? '' : `runtime ${event.state}`);
@@ -232,9 +244,11 @@ export function NoteApp() {
     });
     const onFocus = () => {
       void api.invoke('markSeen', conversation.current).then(refreshHeader);
+      void refreshDesktop();
     };
     window.addEventListener('focus', onFocus);
     void refreshHeader().then(reload).then(refreshInteractions).then(markSeenIfFocused).then(refreshHeader);
+    void refreshDesktop();
     const interactionPoll = setInterval(() => { void refreshInteractions().catch(() => {}); }, 3000);
     return () => {
       offEvent();
@@ -243,11 +257,12 @@ export function NoteApp() {
       window.removeEventListener('focus', onFocus);
       clearInterval(interactionPoll);
     };
-  }, [markSeenIfFocused, refreshHeader, reload, setRunning, refreshInteractions]);
+  }, [markSeenIfFocused, refreshHeader, reload, setRunning, refreshInteractions, refreshDesktop]);
 
   const items = useMemo(() => buildNoteItems(entries, workItems), [entries, workItems]);
   const activeRequests = interactions.filter(i => i.status === 'pending' || i.status === 'responding');
-  const activeRequestIds = activeRequests.map(i => i.interactionId).join(',');
+  const grantRequests = desktop.state?.conversation?.pendingRequests ?? [];
+  const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
   const recentInteractions = interactions.filter(i => i.status !== 'pending' && i.status !== 'responding').slice(-4);
 
   useLayoutEffect(() => {
@@ -288,7 +303,9 @@ export function NoteApp() {
         <span className="note-unread" id="unread" hidden={unread === 0}>
           {unread}
         </span>
-        <span className="note-state" id="state">{interactions.some(i => i.status === 'pending') ? 'waiting for you' : running ? 'thinking…' : runtimeNote}</span>
+        <span className="note-state" id="state">
+          {interactions.some(i => i.status === 'pending') || grantRequests.length > 0 ? 'waiting for you' : running ? 'thinking…' : runtimeNote}
+        </span>
         <span className="note-spacer" />
         <button className="note-button" id="settings" title="Settings and notes" onClick={() => void api.shell.openSettings()}>
           ⚙
@@ -300,6 +317,7 @@ export function NoteApp() {
           ✕
         </button>
       </header>
+      <DesktopControlBar model={desktop} />
       <main className="note-transcript" id="transcript" ref={transcriptRef} aria-live="polite">
         {items.map((item) => {
           if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
@@ -314,6 +332,7 @@ export function NoteApp() {
         {recentInteractions.map(i => <InteractionCard key={`${i.workerGeneration}:${i.interactionId}`} interaction={i} refresh={refreshInteractions} />)}
         <div ref={interactionAnchor}>
           {activeRequests.map(i => <InteractionCard key={`${i.workerGeneration}:${i.interactionId}`} interaction={i} refresh={refreshInteractions} />)}
+          {grantRequests.map(r => <DesktopGrantCard key={r.requestId} request={r} model={desktop} />)}
         </div>
       </main>
       <footer className="note-composer">
