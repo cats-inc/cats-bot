@@ -1,5 +1,5 @@
 import type { BotCore } from '../../core/bot.ts';
-import type { ApprovalDecision, BotProfilePatch } from '../../core/types.ts';
+import type { ApprovalDecision, BotProfilePatch, BotInteractionResponse } from '../../core/types.ts';
 
 /**
  * SPEC-001 FR-32 / FR-34: the command side of `BotHostApi` as the renderer
@@ -11,6 +11,10 @@ import type { ApprovalDecision, BotProfilePatch } from '../../core/types.ts';
  */
 
 export type HostCommand =
+  | 'providerInteractions'
+  | 'respondProviderInteraction'
+  | 'sessionCapabilities'
+  | 'openProviderInteractionUrl'
   | 'getProfile'
   | 'updateProfile'
   | 'listConversations'
@@ -32,6 +36,7 @@ export type HostCommand =
   | 'setTelegramToken';
 
 export const HOST_COMMANDS: readonly HostCommand[] = [
+  'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities', 'openProviderInteractionUrl',
   'getProfile',
   'updateProfile',
   'listConversations',
@@ -58,8 +63,24 @@ function asString(value: unknown, name: string): string {
   return value;
 }
 
-export async function runHostCommand(core: BotCore, command: string, args: unknown[]): Promise<unknown> {
+export async function runHostCommand(core: BotCore, command: string, args: unknown[], openExternal?: (url: string) => Promise<void>): Promise<unknown> {
   switch (command as HostCommand) {
+    case 'providerInteractions': return core.providerInteractions(asString(args[0], 'conversationId'));
+    case 'respondProviderInteraction':
+      await core.respondProviderInteraction(asString(args[0], 'conversationId'), asString(args[1], 'interactionId'), args[2] as BotInteractionResponse);
+      return null;
+    case 'sessionCapabilities': return core.sessionCapabilities(asString(args[0], 'conversationId'), args[1] === true);
+    case 'openProviderInteractionUrl': {
+      const snapshot = await core.providerInteractions(asString(args[0], 'conversationId'));
+      if (!snapshot.supported) throw new Error('The provider request cannot currently be verified.');
+      const interaction = snapshot.interactions.find(i => i.interactionId === asString(args[1], 'interactionId'));
+      if (!interaction?.prompt?.url || interaction.kind !== 'mcp_url' || interaction.status !== 'pending'
+        || Date.parse(interaction.expiresAt) <= Date.now() || !openExternal) throw new Error('No active URL request.');
+      const url = new URL(interaction.prompt.url);
+      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported request URL.');
+      await openExternal(url.href);
+      return null;
+    }
     case 'getProfile':
       return core.getProfile();
     case 'updateProfile':

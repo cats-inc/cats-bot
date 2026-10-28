@@ -5,6 +5,7 @@ import { errorText } from '../errors.ts';
 import { ModelField, useModelMenu } from './ModelField.tsx';
 import { botForm, botPatch, providerChoices, providerHint, providerLabel, saveNotice, type BotForm } from './settingsLogic.ts';
 import { useToast } from './toast.ts';
+import { ProviderSettings } from './ProviderSettings.tsx';
 
 /**
  * SPEC-002 FR-2–FR-3: name, agent CLI, model, personality and permissions.
@@ -111,6 +112,7 @@ export function BotTab({ profile, onSaved }: { profile: BotProfile; onSaved(prof
             <span>Tool permissions</span>
             <select
               id="bot-permission"
+              disabled={profile.providerPolicy !== null}
               value={form.permissionMode}
               onChange={(event) => update({ permissionMode: event.target.value as BotForm['permissionMode'] })}
             >
@@ -119,12 +121,14 @@ export function BotTab({ profile, onSaved }: { profile: BotProfile; onSaved(prof
               <option value="skip">Allow every tool without asking</option>
             </select>
           </label>
+          {profile.providerPolicy && <p className="hint">Legacy tool permissions are inactive. Change approval and access in Provider access and tools below. File access above remains a host limit.</p>}
           <label className="field" id="bot-tools-field" hidden={form.permissionMode !== 'whitelist'}>
             <span>
               Allowed tools <em>(comma separated)</em>
             </span>
             <input
               id="bot-tools"
+              disabled={profile.providerPolicy !== null}
               placeholder="Read, Grep, WebSearch"
               value={form.allowedTools}
               onChange={(event) => update({ allowedTools: event.target.value })}
@@ -140,6 +144,7 @@ export function BotTab({ profile, onSaved }: { profile: BotProfile; onSaved(prof
           </button>
         </div>
       </form>
+      <ProviderSettings profile={profile} onSaved={onSaved} />
     </section>
   );
 }

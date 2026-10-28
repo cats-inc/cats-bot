@@ -71,7 +71,7 @@ async function main(): Promise<void> {
   // Electron keys its single-instance lock by the userData path, so each bot
   // gets its own: two bots are two instances, a second launch of the same bot
   // is not (ADR-001 §8).
-  app.setPath('userData', join(app.getPath('appData'), 'Cats Bot', 'bots', botId));
+  app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot', 'bots', botId));
   if (process.platform === 'win32') app.setAppUserModelId(`io.catsinc.cats-bot.${botId}`);
 
   if (!app.requestSingleInstanceLock({ botId })) {
@@ -256,7 +256,11 @@ async function main(): Promise<void> {
       throw new Error('Command from an unknown window');
     }
     const list = Array.isArray(args) ? args : [];
-    const result = await runHostCommand(core, command, list);
+    if (['providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl'].includes(command)) {
+      const note = windows.windowFor(event.sender.id);
+      if (!note || list[0] !== note.conversationId) throw new Error('Provider request belongs to another note.');
+    }
+    const result = await runHostCommand(core, command, list, url => shell.openExternal(url));
     if (command === 'deleteConversation' && typeof list[0] === 'string') windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
       || command === 'renameConversation' || command === 'createConversation') {
@@ -379,6 +383,12 @@ async function main(): Promise<void> {
     windows.broadcast(event);
     settings.broadcast(event);
     floating.broadcast(event);
+    if (event.type === 'provider.interactions') {
+      if (event.notify && !windows.isFocused(event.conversationId)) {
+        void showBubble(event.conversationId, 'The provider is waiting for your response.');
+      }
+      void refreshTray();
+    }
     if (event.type === 'turn.completed' && event.workItem.state === 'completed' && event.workItem.result?.text
       && !windows.isFocused(event.conversationId)) {
       void showBubble(event.conversationId, event.workItem.result.text);

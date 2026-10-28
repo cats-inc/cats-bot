@@ -23,7 +23,8 @@ const now = new Date('2026-10-27T10:00:00.000Z');
 
 test('createProfile applies the SPEC-001 FR-1 defaults', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
-  assert.equal(profile.schemaVersion, 1);
+  assert.equal(profile.schemaVersion, 2);
+  assert.equal(profile.providerPolicy, null);
   assert.equal(profile.configRevision, 1);
   assert.deepEqual(profile.executionTarget, { provider: 'claude', model: null });
   assert.deepEqual(profile.heartbeat, HEARTBEAT_DEFAULTS);
@@ -59,15 +60,13 @@ test('normalizeProfile fills every missing or invalid field from the fallback (F
   assert.equal(normalized.idleSleepMinutes, 15);
 });
 
-test('loadProfile never rewrites the file and reports corruption without replacing it', () => {
+test('loadProfile protects unknown and corrupt data instead of replacing it with defaults', () => {
   const paths = botPathsFor(`${home.botsHome}/load`);
   const fallback = createProfile({ id: 'load', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
   mkdirSync(paths.root, { recursive: true });
   writeFileSync(paths.profile, '{"id":"load","name":"Partial"}\n');
   const loaded = loadProfile(paths, fallback);
-  assert.ok(loaded.ok);
-  assert.equal(loaded.profile.name, 'Partial');
-  assert.equal(loaded.profile.executionTarget.provider, 'claude');
+  assert.equal(loaded.ok, false);
   assert.equal(readFileSync(paths.profile, 'utf8'), '{"id":"load","name":"Partial"}\n');
 
   writeFileSync(paths.profile, '{not json');
@@ -79,6 +78,44 @@ test('loadProfile never rewrites the file and reports corruption without replaci
   saveProfile(paths, fallback);
   const saved = loadProfile(paths, fallback);
   assert.ok(saved.ok && saved.profile.id === 'load');
+});
+
+test('v1 upgrade preserves legacy permissions, backs up original bytes and replaces atomically', () => {
+  const paths = botPathsFor(`${home.botsHome}/upgrade`);
+  mkdirSync(paths.root, { recursive: true });
+  const current = createProfile({ id: 'old', name: 'Old', provider: 'codex', cwd: 'C:/work', permissionMode: 'skip' });
+  const { providerPolicy: _policy, ...old } = current;
+  const original = JSON.stringify({ ...old, schemaVersion: 1 });
+  writeFileSync(paths.profile, original);
+  assert.ok(loadProfile(paths, current).ok, 'read-only inspection can project the old shape');
+  assert.equal(readFileSync(paths.profile, 'utf8'), original, 'read-only inspection never migrates');
+  const loaded = loadProfile(paths, current, true);
+  assert.ok(loaded.ok);
+  assert.equal(loaded.profile.providerPolicy, null);
+  assert.equal(loaded.profile.permissions.permissionMode, 'skip');
+  assert.equal(loaded.profile.configRevision, 1);
+  assert.equal(readFileSync(`${paths.profile}.v1.bak`, 'utf8'), original);
+  assert.equal(JSON.parse(readFileSync(paths.profile, 'utf8')).schemaVersion, 2);
+  assert.ok(loadProfile(paths, current).ok);
+  writeFileSync(paths.profile, JSON.stringify({ ...current, schemaVersion: 99 }));
+  assert.equal(loadProfile(paths, current).ok, false, 'unknown primary never recovers from an older backup');
+});
+
+test('failed upgrade preserves original and backup; invalid policy cannot widen a boundary', () => {
+  const paths = botPathsFor(`${home.botsHome}/failed-upgrade`);
+  mkdirSync(paths.root, { recursive: true });
+  const current = createProfile({ id: 'old', name: 'Old', provider: 'codex', cwd: 'C:/work' });
+  const original = JSON.stringify({ ...current, schemaVersion: 1 });
+  writeFileSync(paths.profile, original);
+  writeFileSync(`${paths.profile}.v1.bak`, 'different backup');
+  assert.equal(loadProfile(paths, current, true).ok, false);
+  assert.equal(readFileSync(paths.profile, 'utf8'), original);
+  assert.equal(readFileSync(`${paths.profile}.v1.bak`, 'utf8'), 'different backup');
+  assert.throws(() => applyProfilePatch(current, { providerPolicy: { version: 2 } as never }, now));
+  const policy = { version: 1, mode: 'explicit', access: 'workspace-write', network: false, approval: 'on-request' } as const;
+  const next = applyProfilePatch(current, { providerPolicy: policy }, now);
+  assert.equal(next.profile.configRevision, 2);
+  assert.throws(() => applyProfilePatch(next.profile, { permissions: { workspaceAccess: 'read_only' } }, now));
 });
 
 test('applyProfilePatch bumps configRevision only for a real target change (FR-27)', () => {

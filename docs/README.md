@@ -4,7 +4,9 @@
 is approved for sliced implementation (2026-10-28) for headless owner replies, safe waiting
 and recovery, note/tray UI and effective tool/permission diagnostics.
 [PLAN-004](plans/PLAN-004-provider-interactions-and-tool-visibility.md) integrates
-Runtime SPEC-039 independently of Platform. Implementation has not started.
+Runtime SPEC-039 independently of Platform. The headless control, policy and
+receipt lifecycle are implemented; native operation and renderer acceptance
+remain tracked in the plan. See [provider control API](provider-interactions.md).
 
 > This directory contains all project documentation.
 

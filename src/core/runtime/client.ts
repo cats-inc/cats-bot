@@ -3,6 +3,9 @@
  * runtime's docs/api.md (sessions, messages, resume, cancel, close, delete,
  * observe, history, health). Nothing here imports runtime source (ADR-001 §1).
  */
+import type { InteractionHost, InteractionSnapshot, InteractionResponse, ProviderInteraction,
+  SessionCapabilitiesSnapshot, SessionExecutionPolicy } from '../types.ts';
+import { INTERACTION_HOST } from './providerPolicy.ts';
 
 export type RuntimeSessionStatus = 'initializing' | 'ready' | 'busy' | 'closing' | 'closed';
 
@@ -45,6 +48,8 @@ export interface CreateSessionRequest {
   permissionMode?: 'skip' | 'whitelist' | 'default';
   allowedTools?: string[];
   mcpServers?: RuntimeMcpServer[];
+  interactionHost?: InteractionHost;
+  executionPolicy?: SessionExecutionPolicy;
 }
 
 export interface SendMessageRequest {
@@ -176,7 +181,7 @@ export class RuntimeClient {
     return this.request<RuntimeSessionView>('GET', `/sessions/${encodeURIComponent(id)}`);
   }
 
-  resumeSession(id: string, body: { mcpServers?: RuntimeMcpServer[] } = {}): Promise<RuntimeSessionView> {
+  resumeSession(id: string, body: Pick<CreateSessionRequest, 'mcpServers' | 'interactionHost' | 'executionPolicy'> = {}): Promise<RuntimeSessionView> {
     return this.request<RuntimeSessionView>('POST', `/sessions/${encodeURIComponent(id)}/resume`, body);
   }
 
@@ -198,6 +203,37 @@ export class RuntimeClient {
 
   getHistory(id: string): Promise<RuntimeHistory> {
     return this.request<RuntimeHistory>('GET', `/sessions/${encodeURIComponent(id)}/history`);
+  }
+
+  async sessionControls(provider: string, policy: SessionExecutionPolicy | null): Promise<Pick<CreateSessionRequest, 'interactionHost' | 'executionPolicy'>> {
+    try {
+      const result = await this.request<{ providers: Record<string, { defaultInstance?: string; defaultBackend?: string;
+        instances: Array<{ id: string; backend: string; continuity?: {
+          interactions?: { version: number; kinds: string[] };
+          sessionCapabilities?: { version: number; executionPolicy: boolean };
+        } }> }> }>('GET', '/providers/config');
+      const configured = result.providers?.[provider];
+      const target = configured?.instances.find(t => t.id === configured.defaultInstance && t.backend === configured.defaultBackend);
+      const c = target?.continuity;
+      if (c?.interactions?.version === 1 && (!policy || c.sessionCapabilities?.version === 1 && c.sessionCapabilities.executionPolicy)) {
+        return { interactionHost: { ...INTERACTION_HOST, kinds: INTERACTION_HOST.kinds.filter(k => c.interactions!.kinds.includes(k)) },
+          ...(policy ? { executionPolicy: policy } : {}) };
+      }
+    } catch { /* Old Runtime remains usable only with the unchanged legacy policy. */ }
+    if (policy) throw new Error('Selected Runtime/provider does not support provider policy v1. Upgrade Runtime or select legacy settings.');
+    return {};
+  }
+
+  interactions(id: string): Promise<InteractionSnapshot> {
+    return this.request('GET', `/sessions/${encodeURIComponent(id)}/interactions`);
+  }
+
+  respondInteraction(id: string, interactionId: string, body: InteractionResponse): Promise<ProviderInteraction> {
+    return this.request('POST', `/sessions/${encodeURIComponent(id)}/interactions/${encodeURIComponent(interactionId)}/responses`, body);
+  }
+
+  capabilities(id: string, refresh = false): Promise<SessionCapabilitiesSnapshot> {
+    return this.request('GET', `/sessions/${encodeURIComponent(id)}/capabilities${refresh ? '?refresh=true' : ''}`);
   }
 
   /** `GET /providers/{provider}/models`: the catalog of a configured provider (400 otherwise). */

@@ -40,6 +40,7 @@ const status: BotStatus = {
   root: 'C:/tmp/mochi',
   runtime: { state: 'ready', pid: 1 },
   queue: { queued: 0, running: null },
+  pendingInteractions: 0,
   conversations: 2,
   schedules: 0,
   heartbeat: { enabled: true, nextAt: null },

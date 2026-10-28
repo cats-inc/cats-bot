@@ -12,6 +12,27 @@ provider CLI the runtime runs. Presentation (the `cats-bot` CLI today, an
 Electron tray and sticky notes later) is a disposable client of the core
 through `BotHostApi`.
 
+Provider-native questions and approvals use Runtime SPEC-039. The core keeps the
+active work item and global turn gate while waiting; authenticated responses use a
+separate control path. CLI responses arrive on stdin and travel through a random,
+authenticated local pipe/socket, never the file handoff queue. Live prompts stay
+in memory; the bounded provider-interaction receipt store contains identity,
+deadline and terminal state only. Restart invalidates pending receipts.
+
+Profile schema 2 adds an explicitly selected provider policy, separate from legacy
+tool permission mode. Schema 1 projects to `providerPolicy: null` without changing
+permissions. Only the instance-lock owner upgrades: validate, preserve original
+bytes in `profile.json.v1.bak`, then atomically replace. Invalid/unknown schemas or
+a conflicting backup stop the upgrade and preserve data. Restore the v1 backup
+only while the Bot is stopped when returning to an older binary. This persisted
+boundary requires the next Bot minor (0.2) before publication; the current task
+does not publish or bump a release.
+
+The private candidate Runtime package is pinned by source commit and lockfile
+integrity; see [candidate provenance](../vendor/README.md). Inspection uses the
+current session's worker without starting a model turn. Top-level MCP discovery
+does not establish browser/desktop helper availability or successful invocation.
+
 ## Architecture Diagram
 
 ```text

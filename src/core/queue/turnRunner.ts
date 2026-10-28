@@ -70,6 +70,7 @@ export interface TurnRunnerDependencies {
   emit(event: BotHostEvent): void;
   /** FR-28: journals the item with its run before the prompt leaves, so a crash mid-turn keeps the evidence. */
   persistRun(item: WorkItem): void;
+  providerEvent?(item: WorkItem, event: RuntimeStreamEvent): void;
   log(line: string): void;
   delays?: Partial<TurnRetryDelays>;
 }
@@ -219,6 +220,10 @@ export class TurnRunner {
       });
     };
     const onEvent = (event: RuntimeStreamEvent) => {
+      if (event.metadata?.kind === 'interaction_requested' || event.metadata?.kind === 'interaction_updated') {
+        this.deps.providerEvent?.(item, event);
+        return;
+      }
       switch (event.type) {
         case 'init':
         case 'result': {

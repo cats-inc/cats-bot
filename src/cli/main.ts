@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
 import { readProviderOverrides } from '../core/hostEnv.ts';
+import { callHostControl } from '../core/host-api/control.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
@@ -70,6 +71,9 @@ Commands:
   schedule list [--json]
   schedule cancel <id>
   approve <workItemId> <approve|deny>    answer a question the bot asked
+  interactions [conversation|home]      list live provider requests as JSON
+  respond <conversation|home> <request>  read typed response JSON from stdin
+  capabilities [conversation|home] [--refresh]  inspect the current session without a model turn
   heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
   tick                                   run one reconcile pass (only when no instance is running)
   quit                                   ask the running instance (CLI or shell) to stop
@@ -469,6 +473,33 @@ async function commandTick(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
   }
 }
 
+async function commandProviderControl(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  if (!target.running) throw new Error('Start the bot before inspecting or answering a live provider request.');
+  const conversationId = parsed.positional[0] ?? 'home';
+  const operation = parsed.command;
+  const body: Record<string, unknown> = { operation, conversationId, refresh: parsed.flags.has('refresh') };
+  if (operation === 'respond') {
+    const interactionId = parsed.positional[1];
+    if (!interactionId || parsed.positional.length > 2 || process.stdin.isTTY) {
+      throw new Error('respond needs a conversation, request ID and typed JSON on stdin; answers must not be passed in argv.');
+    }
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of process.stdin) {
+      size += Buffer.byteLength(chunk);
+      if (size > 36_864) throw new Error('Provider response exceeds its size limit.');
+      chunks.push(Buffer.from(chunk));
+    }
+    try { body.response = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+    catch { throw new Error('Expected typed JSON on stdin.'); }
+    body.interactionId = interactionId;
+  }
+  const result = await callHostControl(target.root, body);
+  process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  return 0;
+}
+
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const parsed = parseArgs(argv);
   try {
@@ -487,6 +518,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandSchedule(parsed, env);
       case 'approve':
         return await commandApprove(parsed, env);
+      case 'interactions':
+      case 'respond':
+      case 'capabilities':
+        return await commandProviderControl(parsed, env);
       case 'heartbeat':
         return await commandHeartbeat(parsed, env);
       case 'tick':
