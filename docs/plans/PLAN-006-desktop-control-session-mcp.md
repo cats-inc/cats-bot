@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Phase A delivered (P0–P3 merged or in review, P4 recorded); waiting for owner sign-off before P5 |
+| Status | Phase A delivered and recorded (P0–P4); phase B (P5): helper, server, hold state and indicator in review, native acceptance (B7) pending |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -182,11 +182,51 @@ P4 record (2026-10-29, Windows 11, Claude Code 2.1.312 `haiku` with the owner's 
 
 ### P5 — Phase B (act)
 
-- [ ] Add the input ops and tools from SPEC-133 R5 to the helper and the server.
-- [ ] Hold state, operator-active pause and the control banner during input.
+- [x] Add the input ops and tools from SPEC-133 R5 to the helper and the server. The helper's
+  sources now match Platform's phase B helper (cats-platform#341): `Input.cs`, `Clipboard.cs`,
+  the `Native.cs`, `Uia.cs` and `Program.cs` changes, and `native-check/input-check.mjs` with its
+  probe app. The README and both native checks keep the Bot's own wording. The server adds
+  `click`, `invoke_element`, `type_text`, `key`, `scroll`, `clipboard_read` and `clipboard_write`
+  with SPEC-133's schemas, key allowlist and "Phase B server rules". Helper codes that are tool
+  codes reach the model unchanged.
+- [x] Hold state, operator-active pause and the control banner during input. The first input
+  tool of an owner turn holds control until the core finishes that work item. Stop from the
+  note's banner, the tray or `cats-bot desktop --stop` revokes grants and releases control, and
+  sends the helper `cancel` only for a conversation that held control. The tray's first item
+  and tooltip and a banner in the note name the held app. See SPEC-006 "P5 Implementation
+  Details".
 - [ ] Guard fixtures and native acceptance against a throwaway test window (B7).
 
 **Exit:** B7 passes and is recorded; anything that did not pass is stated as such.
+
+P5 record (2026-10-29, fixtures only):
+
+- **Helper**: `dotnet build -c Release` of the helper and of the probe app reported 0 warnings and
+  0 errors. Neither native check ran, so no input was sent to a real desktop.
+- **Service tests** in `tests/core/desktopControl.test.ts` (14 tests) port Platform's two phase B
+  scenarios to a fake helper:
+  - Coordinates convert with the capture-time bounds; points outside the image, unknown
+    snapshots and snapshots older than 60 seconds give `stale_snapshot`.
+  - Element ids map to the helper's `readId`, and an unknown prefix gives `window_changed`.
+  - An observe-only app gives `observe_only`. `operator_active`, `locked` and a turn that is not
+    the owner's send nothing to the helper.
+  - `password_field` and `covered` from the helper reach the model unchanged.
+  - The clipboard round-trips without reaching state or logs. The parsers use the shared
+    argument error wording.
+  - Holding starts with the first input tool and ends with that work item; the clipboard holds
+    nothing.
+  - Stop sends `cancel` only for a conversation that held control and cuts typing in progress.
+    Later calls return `stopped`, and turning the conversation off while it holds control also
+    cancels.
+- **Core tests** in `tests/core/desktopControlCore.test.ts` (9 tests): a real work item holds
+  control (`holding` in the capability entry, the state and the events) and releases it when
+  it ends. `cats-bot desktop home --stop` during a held turn cancels the helper op and revokes
+  the grant. B8 now also covers typed and clipboard text in tool inputs and results.
+- **UI tests**: `tests/renderer/desktopControl.test.ts` (6 tests) covers the note's banner and
+  Stop; `tests/shell/trayMenu.test.ts` (6 tests) covers the tray's first Stop item, the app
+  name and the tooltip.
+- **Full checks**: `npm run typecheck`, `npm test` (191 of 191) and `npm run build` pass on
+  Windows. The repository has no lint script.
 
 ## Validation
 
