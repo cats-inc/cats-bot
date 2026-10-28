@@ -43,6 +43,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [002](./002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) | Give the Bot a Desktop Presence in the Electron Shell | Accepted | 2026-10-28 |
 | [003](./003-build-the-renderer-with-react-and-vite-like-cats-desktop.md) | Build the Renderer with React and Vite, Like Cats Desktop | Accepted | 2026-10-28 |
 | [004](./004-publish-standard-previews-with-host-owned-updates.md) | Publish Standard Previews with Host-Owned Updates | Accepted | 2026-10-28 |
+| [005](./005-give-the-bot-owner-consented-desktop-control.md) | Give the Bot Owner-Consented Desktop Control | Accepted | 2026-10-29 |
 <!-- Add new ADRs above this line -->
 
 ## For AI Agents
