@@ -351,3 +351,73 @@ textarea {
   margin-top: 4px;
   color: #c0392b;
 }
+
+/* SPEC-006 P3: desktop control under the header, and its grant requests. */
+.desktop-bar {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--paper-edge);
+  background: #fbf1c4;
+  font-size: 12px;
+}
+
+.desktop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.desktop-switch {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-weight: 600;
+}
+
+.desktop-stop {
+  border: 0;
+  border-radius: 6px;
+  padding: 2px 10px;
+  background: #b5452f;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.desktop-stop:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.desktop-status,
+.desktop-granted {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.desktop-error {
+  color: #c0392b;
+}
+
+.desktop-grant > p {
+  margin: 6px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.desktop-grant .desktop-path {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+}
+
+.desktop-grant .provider-actions button {
+  border: 0;
+  border-radius: 6px;
+  padding: 4px 12px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.desktop-grant .provider-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
