@@ -82,6 +82,9 @@ Add your project-specific automation scripts here.
 
 ## Decision Records
 
+The [0.2.0 Standard Preview release notes](releases/v0.2.0.md) define its exact
+download matrix, signing policy, Runtime pin and migration/recovery instructions.
+
 Standard Preview delivery and host-owned Check for Updates are defined by
 [ADR-004](decisions/004-publish-standard-previews-with-host-owned-updates.md),
 [SPEC-005](specs/SPEC-005-standard-preview-releases-and-updates.md) and
