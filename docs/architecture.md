@@ -166,7 +166,9 @@ does not establish browser/desktop helper availability or successful invocation.
   message from a local surface, and app grants are answered only through `BotHostApi`
   (`desktopControlState`, `setConversationDesktopControl`, `respondDesktopGrant`,
   `stopDesktopControl`). Grants stay in memory; while one waits, background work does not
-  start (BDC-09).
+  start (BDC-09). The note, Settings and the tray reach these through `ipc.ts`, where a note
+  acts only on its own conversation; `cats-bot desktop` reaches them through the host control
+  endpoint (`src/core/host-api/control.ts`).
 
 ### `src/shell/electron` and `assets/`
 

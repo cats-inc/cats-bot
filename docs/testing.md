@@ -86,7 +86,11 @@ last step, not the first.
   `architecture-boundaries.test.ts` that the renderer takes only types from
   `core/types.ts`. Renderer logic that does not touch the DOM lives in plain
   `.ts` modules so `node:test` can run it; components are checked in the
-  real shell (below).
+  real shell (below). For desktop control (SPEC-006),
+  `tests/shell/desktopControlIpc.test.ts` covers the host commands and which
+  window may send them, `tests/renderer/desktopControl.test.ts` the note and
+  Settings wording and visibility, and `tests/core/desktopControlCore.test.ts`
+  runs `cats-bot desktop` against a running core with a fake helper.
 
 ### Windows desktop control helper
 

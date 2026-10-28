@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress; P0 complete, P1 and P2 in review, P3–P4 authorized, P5 needs owner sign-off after P4 |
+| Status | In progress; P0 and P1 complete, P2 and P3 in review, P4 authorized, P5 needs owner sign-off after P4 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -111,11 +111,44 @@ provider CLI or desktop was used; the real-desktop checks are P4.
 
 ### P3 — Note, tray and CLI
 
-- [ ] Note: conversation switch, grant prompts, the control banner with "Stop".
-- [ ] Tray: control state and stop.
-- [ ] CLI: grant answers, stop, and the new capability entry in `cats-bot capabilities`.
+- [x] Note: conversation switch, grant prompts, the control banner with "Stop". A strip under
+  the header appears while the profile switch is on, or while the conversation has grants or
+  waiting requests; it holds the conversation switch, the DC-18 status with its reason, the
+  granted apps and Stop whenever there are grants or waiting requests (phase A has no hold).
+  Grant cards sit beside the provider requests with the app, its path, its publisher or
+  "unsigned", the observe-only limit and the bot's reason; Allow and Deny call only
+  `respondDesktopGrant`. Settings > Bot gains the profile switch, hidden off Windows and
+  disabled with the reason where the helper cannot run, but always switchable off.
+- [x] Tray: control state and stop. "Desktop control requests (N)" opens the note that waits,
+  "Stop desktop control" stops every conversation while the profile switch is on, the tooltip
+  says when desktop control is on or a request waits, and a new request in an unfocused note
+  shows a bubble that names no app.
+- [x] CLI: grant answers, stop, and the new capability entry in `cats-bot capabilities`.
+  `cats-bot desktop <conversation>` prints the state as JSON; `--enable`/`--disable`,
+  `--grant <requestId> allow|deny` and `--stop` (`--all` for every conversation) go through
+  the running Bot's control endpoint. `cats-bot capabilities` already prints P2's
+  `desktopControl` entry.
 
 **Exit:** renderer and CLI tests pass, and an isolated shell smoke test passes.
+
+P3 record (2026-10-29): host commands and control endpoint operations carry the four
+`BotHostApi` methods; a note acts only on its own conversation, and Settings reads only the
+profile-level state, so Settings, the floating cat and the provider path cannot answer a
+grant. `tests/shell/desktopControlIpc.test.ts` covers argument checks and which window may
+send each command; `tests/shell/trayMenu.test.ts` the tray items; `tests/renderer/desktopControl.test.ts`
+the note and Settings wording and visibility rules; `tests/core/desktopControlCore.test.ts` runs
+`cats-bot desktop` as a child process against a running core with the fake helper (state,
+switch, grant, unknown request, usage errors, `--stop --all`, the stopped-Bot path) and checks
+that `respond` cannot answer a grant. The isolated shell smoke test started the unpackaged
+shell with a temporary `CATS_BOTS_HOME` and `userData`, the scripted fixture CLI and no helper
+build, so the real helper could not start, and drove the note and settings pages only through
+the DevTools protocol: 20 of 20 checks passed (Settings shows the switch disabled with
+`helper_missing`, the note shows the unavailable reason once the profile switch is on, the
+window rules hold, `cats-bot desktop` and `capabilities` read the running shell, a turn still
+completes, and `cats-bot quit` ends the shell). Grant cards and Stop were therefore not seen
+in the real shell; their rendering is part of P4. The tray menu was checked only through its
+builder. The repository has no localization, so the strings are English only.
+`npm run typecheck`, `npm test` (186 tests) and `npm run build` pass on Windows.
 
 ### P4 — Phase A native acceptance
 

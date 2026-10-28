@@ -29,6 +29,19 @@ permission requests use an explicit subset in `grants` and an offered `scope`;
 Expired requests and different work/generation/conversation identities cannot
 reach a new worker. URL opening is separate from completion.
 
+Desktop control (SPEC-006, Windows) has its own command; `respond` and `approve`
+never answer an app grant request:
+
+```text
+cats-bot desktop home --id <bot>                        # state, grants and waiting requests as JSON
+cats-bot desktop home --enable --id <bot>               # or --disable: the conversation switch
+cats-bot desktop home --grant <requestId> allow --id <bot>   # or deny
+cats-bot desktop home --stop --id <bot>                 # --stop --all: every conversation
+```
+
+The profile switch is in Settings > Bot. `capabilities` shows a `desktopControl`
+entry ("Cats desktop control") beside Runtime's observation.
+
 BotHostApi exposes `providerInteractions`, `respondProviderInteraction`, and
 `sessionCapabilities`. The control path remains available while a model turn is
 waiting. Pending requests keep the global gate, so ticks and queued work cannot

@@ -124,6 +124,26 @@ cross-implementation contract is unchanged.
   a desktop tool's result (errors stay readable). Telegram gets one generic notice per new
   grant request in the home conversation, naming no app and no request.
 
+## P3 Implementation Details (2026-10-29)
+
+- **Who may act (BDC-07)**: the shell accepts `setConversationDesktopControl`,
+  `respondDesktopGrant` and `stopDesktopControl` only from the note of the named
+  conversation, and `desktopControlState` from that note or, without a conversation, from
+  Settings. Settings, the floating cat and the tray never answer a grant; the tray opens the
+  note that waits.
+- **CLI (BDC-07, BDC-10)**: every `cats-bot desktop` action goes through the running Bot's
+  control endpoint (`desktop_state`, `desktop_switch`, `desktop_grant`, `desktop_stop`) and
+  prints the resulting state as JSON. `--stop --all` stops every conversation, like the
+  tray. Without a running Bot only `--stop` succeeds, since grants and requests end with the
+  core.
+- **Visibility (BDC-01, BDC-10)**: the note shows desktop control while the profile switch is
+  on, including the unavailable reason, and always while the conversation has grants or
+  waiting requests. Settings hides the profile switch off Windows unless it is on. In phase A,
+  Stop appears in the note whenever the conversation has grants or waiting requests, and in
+  the tray whenever the profile switch is on.
+- **Notices (BDC-12)**: the shell's bubble for a new grant request, the tray and `cats-bot run`
+  output name no app, path or reason.
+
 ## Acceptance Criteria
 
 | ID | Required evidence |
