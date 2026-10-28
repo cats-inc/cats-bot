@@ -1,12 +1,14 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test, type TestContext } from 'node:test';
 
 import { BotCore, initializeBot } from '../../src/core/bot.ts';
+import { callHostControl, HostControlRejectedError } from '../../src/core/host-api/control.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import type { RuntimeClient, RuntimeMcpServer, RuntimeStreamEvent, SendMessageRequest } from '../../src/core/runtime/client.ts';
-import type { BotHostEvent, SessionCapabilitiesSnapshot, WorkItem } from '../../src/core/types.ts';
+import type { BotHostEvent, DesktopControlState, SessionCapabilitiesSnapshot, WorkItem } from '../../src/core/types.ts';
 import {
   callDesktopTool,
   defaultWorld,
@@ -425,4 +427,96 @@ test('deleting a conversation forgets its switch and grants; a recovery rerun is
   const rerun = await h.core.sendOwnerMessage('home', 'interrupted prompt', 'recovery');
   await h.completed(rerun.id);
   assert.equal(code, 'not_owner_present');
+});
+
+/** `cats-bot … --id desk` against the harness's running core, the way the owner runs it. */
+function cli(root: string, ...args: string[]): Promise<{ code: number | null; out: string; error: string }> {
+  return new Promise((resolveResult, reject) => {
+    const env: NodeJS.ProcessEnv = { ...process.env, CATS_BOTS_HOME: dirname(root) };
+    delete env.CATS_BOT_ID;
+    const child = spawn(process.execPath, [resolve('src/cli/main.ts'), ...args, '--id', 'desk'], {
+      env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,
+    });
+    let out = '';
+    let error = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { error += chunk; });
+    child.on('error', reject);
+    child.on('exit', (code) => resolveResult({ code, out, error }));
+  });
+}
+
+test('P3: cats-bot desktop and the control endpoint show state, set the switch, answer a grant and stop', async (t) => {
+  const h = await harness(t, { grantWaitMs: 50 });
+  const note = await h.core.createConversation('Desk');
+  const control = (body: Record<string, unknown>) => callHostControl(h.root, body) as Promise<DesktopControlState>;
+
+  // The profile switch is off: the conversation switch is stored, and the owner is told why nothing happens yet.
+  const early = await cli(h.root, 'desktop', '--enable', note.id);
+  assert.equal(early.code, 0, early.error);
+  assert.equal((JSON.parse(early.out) as DesktopControlState).conversation?.conversationId, note.id, '--enable <conversation> names it');
+  assert.match(early.error, /profile switch is off/u);
+  await h.core.updateProfile({ desktopControl: { enabled: true } });
+  const enabled = await control({ operation: 'desktop_switch', conversationId: 'home', enabled: true });
+  assert.deepEqual([enabled.enabled, enabled.conversation?.enabled, [...enabled.conversations].sort()], [true, true, ['home', note.id].sort()]);
+  await assert.rejects(control({ operation: 'desktop_switch', conversationId: 'home', enabled: 'yes' }), HostControlRejectedError);
+
+  h.during(async ({ desktop }) => { await callDesktopTool(desktop, 'request_app_access', { apps: ['記事本'], reason: 'Read the note' }); });
+  await h.turn('ask for notepad');
+  const state = await cli(h.root, 'desktop', 'home');
+  assert.equal(state.code, 0, state.error);
+  const waiting = JSON.parse(state.out) as DesktopControlState;
+  const request = waiting.conversation!.pendingRequests[0]!;
+  assert.equal(waiting.pendingRequests, 1);
+  assert.deepEqual({ name: request.name, path: request.path, publisher: request.publisher, tier: request.tier, reason: request.reason },
+    { name: '記事本', path: NOTEPAD, publisher: 'Microsoft Corporation', tier: 'full', reason: 'Read the note' });
+
+  // Only `desktop_grant` answers it: not the provider path, not another conversation, not a word other than allow|deny.
+  await assert.rejects(control({ operation: 'respond', conversationId: 'home', interactionId: request.requestId,
+    response: { answer: { action: 'accept' } } }), HostControlRejectedError);
+  await assert.rejects(control({ operation: 'desktop_grant', conversationId: note.id, requestId: request.requestId, decision: 'allow' }),
+    HostControlRejectedError);
+  await assert.rejects(control({ operation: 'desktop_grant', conversationId: 'home', requestId: request.requestId, decision: 'approve' }),
+    HostControlRejectedError);
+  const usage = await cli(h.root, 'desktop', 'home', '--grant', request.requestId, 'yes');
+  assert.equal(usage.code, 2);
+  const unknown = await cli(h.root, 'desktop', 'home', '--grant', 'grant_unknown', 'allow');
+  assert.equal(unknown.code, 1);
+  assert.match(unknown.error, /No grant request grant_unknown waits in home/u);
+  assert.equal((await h.core.desktopControlState()).pendingRequests, 1, 'still waiting');
+
+  const granted = await cli(h.root, 'desktop', 'home', '--grant', request.requestId, 'allow');
+  assert.equal(granted.code, 0, granted.error);
+  const after = JSON.parse(granted.out) as DesktopControlState;
+  assert.deepEqual(after.conversation?.grants.map((app) => app.name), ['記事本']);
+  assert.deepEqual(after.conversation?.pendingRequests, []);
+  // PLAN-006 P3: `cats-bot capabilities` prints the Bot's own entry beside Runtime's observation.
+  const capabilities = await callHostControl(h.root, { operation: 'capabilities', conversationId: 'home' }) as SessionCapabilitiesSnapshot;
+  assert.deepEqual(capabilities.desktopControl, { name: 'Cats desktop control', status: 'injected', reason: null });
+
+  // `--stop --all` is the tray's stop: every conversation, grants revoked.
+  await assert.rejects(control({ operation: 'desktop_stop' }), HostControlRejectedError, 'a stop names a conversation or all');
+  const stopped = await cli(h.root, 'desktop', '--stop', '--all');
+  assert.equal(stopped.code, 0, stopped.error);
+  assert.equal((JSON.parse(stopped.out) as DesktopControlState).conversation, undefined);
+  const home = (await h.core.desktopControlState('home')).conversation!;
+  assert.deepEqual([home.grants.length, home.stopped], [0, true]);
+
+  const disabled = await control({ operation: 'desktop_switch', conversationId: 'home', enabled: false });
+  assert.equal(disabled.conversation?.enabled, false);
+  assert.equal((await cli(h.root, 'desktop', 'home', '--enable', '--disable')).code, 2, 'one action at a time');
+  assert.ok(h.events.some((event) => event.type === 'desktop.control' && event.notify === true), 'the shell bubble and tray follow this event');
+});
+
+test('P3: cats-bot desktop needs the running bot, except for a stop', async () => {
+  const home = makeTempHome('cats-desktop-cli-');
+  try {
+    const { root } = initializeBot(home.botsHome, { id: 'desk', name: 'Desk', provider: 'claude' });
+    const state = await cli(root, 'desktop', 'home');
+    assert.equal(state.code, 1);
+    assert.match(state.error, /Start the bot before using desktop control/u);
+    const stop = await cli(root, 'desktop', '--stop');
+    assert.equal(stop.code, 0, stop.error);
+    assert.match(stop.out, /desktop control is not active/u);
+  } finally { home.cleanup(); }
 });
