@@ -101,6 +101,19 @@ jobs:
             chmod 600 "$key_path"
             echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
           fi
+      # Hosted runners can drop stapler's HTTP/3 connection (actions/runner-images#14924).
+      # Use the same TCP workaround as desktop-work-fleet, only in this disposable VM.
+      # Remove when the upstream issue is fixed and native notarization checks pass.
+      - name: Send Apple notarization ticket requests over TCP
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          HAS_CERT: ${{ secrets.CSC_LINK != '' }}
+        run: |
+          if [ "$HAS_CERT" = 'true' ]; then
+            echo "block return out quick proto udp from any to any port 443" | sudo pfctl -f -
+            sudo pfctl -E
+          fi
       - name: Build Standard Preview packages
         env:
           RELEASE_TAG: ${{ needs.guard.outputs.tag }}

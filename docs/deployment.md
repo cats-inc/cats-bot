@@ -78,6 +78,16 @@ release assets. Missing signing configuration is reported as unsigned; incomplet
 configuration fails. Signed builds additionally validate Authenticode or
 codesign/spctl/stapler before uploading. Unsigned macOS cannot self-install.
 
+Signed macOS release jobs apply the same temporary workaround as
+`desktop-work-fleet`: block outbound UDP 443 in the disposable GitHub runner before
+electron-builder runs, so Apple's notarization ticket requests use HTTPS over TCP.
+This avoids the hosted-runner HTTP/3 connection loss reported in
+[actions/runner-images#14924](https://github.com/actions/runner-images/issues/14924)
+(`stapler` error 68). The rule lasts only for that job's VM and is not installed
+on users' Macs. Signing, Gatekeeper and stapled-ticket checks still gate publication.
+Remove the step after the upstream issue is fixed and native release verification
+passes without it.
+
 ## Check for Updates
 
 Use the tray/floating cat menu **Check for Updates…**, or Settings → App →
