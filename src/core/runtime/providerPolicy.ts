@@ -2,7 +2,7 @@ import type { BotPermissions, InteractionHost, SessionExecutionPolicy } from '..
 
 export const INTERACTION_HOST: InteractionHost = {
   version: 1,
-  kinds: ['command_approval', 'file_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url'],
+  kinds: ['command_approval', 'file_approval', 'tool_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url'],
   timeoutMs: 30 * 60_000,
 };
 

@@ -312,12 +312,16 @@ export class BotCore implements BotHostApi {
 
   private createSupervisor(): RuntimeSupervisor {
     const { options } = this;
+    const target = this.profile.executionTarget;
+    // Claude in Chrome needs `--chrome` on every Claude Code launch the runtime makes.
+    const launchArgs = [...(options.runtime?.providerLaunchArgs ?? []),
+      ...(target.provider === 'claude' && target.claudeInChrome ? ['--chrome'] : [])];
     return new RuntimeSupervisor({
       runtimeDir: this.paths.runtime,
       providers: {
         provider: this.profile.executionTarget.provider,
         ...(options.runtime?.providerCommand ? { command: options.runtime.providerCommand } : {}),
-        ...(options.runtime?.providerLaunchArgs ? { launchArgs: options.runtime.providerLaunchArgs } : {}),
+        ...(launchArgs.length ? { launchArgs } : {}),
         ...(options.runtime?.instanceExtras ? { instanceExtras: options.runtime.instanceExtras } : {}),
       },
       ...(options.runtime?.nodeExecPath ? { nodeExecPath: options.runtime.nodeExecPath } : {}),
@@ -941,6 +945,13 @@ export class BotCore implements BotHostApi {
       } finally { this.releaseLock(); this.releaseLock = null; }
     }
     const result = applyProfilePatch(this.profile, patch, this.now());
+    const policy = result.profile.providerPolicy;
+    const client = this.client();
+    // Refuse a ceiling the running provider cannot enforce now, not at the next session.
+    if (policy && JSON.stringify(policy) !== JSON.stringify(this.profile.providerPolicy) && client
+      && !result.providerChanged && this.runtimeState() === 'ready') {
+      await client.sessionControls(result.profile.executionTarget.provider, policy);
+    }
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
     if (result.sessionChanged) {

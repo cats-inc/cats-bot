@@ -115,6 +115,21 @@ Computer use／Chrome 的 helper、瀏覽器擴充及 OS 權限顯示實際觀�
 可能依賴上游 Desktop-only host；不能因 Bot 自帶 Electron 就宣稱能取代它。
 Runtime 的 private data dir 不代表必須換掉 provider home；不搬移登入資料來達成清單一致。
 
+### B8. Claude Code
+
+Runtime SPEC-039 R8 讓 Claude Code 成為第二個原生 target，Bot 依 provider 回報的能力自動啟用。
+新增 `tool_approval`：MCP、Claude in Chrome 等不是指令、也不是檔案修改的工具呼叫，
+在便箋上沿用通用卡片顯示工具名稱、MCP server 與輸入摘要。Claude Code 沒有 `permission_grant`。
+
+Claude Code 在原生 Windows 沒有 sandbox，只能接受「完整存取＋網路」這個上限。
+設定頁會說明這點；Runtime ready 時，儲存較窄上限會先被拒絕，不會等到下一個 session 才失敗。
+想逐一核准動作，選「Ask when requested by the agent」。
+
+Bot 設定可為 Claude bot 開啟 Claude in Chrome：runtime 以 `--chrome` 重新啟動 CLI，
+並把它視同 provider 變更（configRevision 前進、等目前回合結束後才重啟）。
+這個欄位存在 `executionTarget.claudeInChrome`，沒有就是關閉，所以舊 profile 的啟動方式不變。
+瀏覽器實際是否可用要等工具真的執行才知道；computer use 不在 Claude Code 無頭模式內。
+
 ### B7. 升級與資料保護
 
 精確更新 Runtime dependency 的工作在實作階段處理；能力讀取失敗時不能假設新 API 存在。

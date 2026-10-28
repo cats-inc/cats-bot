@@ -40,7 +40,7 @@
     "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
-    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-50ef02b4.tgz",
+    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-e38e56bf.tgz",
     "koffi": "2.16.3"
   },
   "devDependencies": {

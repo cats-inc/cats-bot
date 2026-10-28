@@ -99,9 +99,12 @@ const WORKSPACE_ACCESS: readonly WorkspaceAccess[] = ['read_write', 'read_only']
 function normalizeExecutionTarget(value: unknown, fallback: ExecutionTarget): ExecutionTarget {
   if (!isRecord(value)) return { ...fallback };
   const model = value.model;
+  const chrome = typeof value.claudeInChrome === 'boolean' ? value.claudeInChrome : fallback.claudeInChrome === true;
   return {
     provider: stringOr(value.provider, fallback.provider),
     model: typeof model === 'string' && model.trim() ? model : model === null ? null : fallback.model,
+    // Absent means off, so profiles written before this option keep their launch.
+    ...(chrome ? { claudeInChrome: true } : {}),
   };
 }
 
@@ -206,7 +209,8 @@ export function saveProfile(paths: BotPaths, profile: BotProfile): void {
 }
 
 export function sameExecutionTarget(a: ExecutionTarget, b: ExecutionTarget): boolean {
-  return a.provider === b.provider && (a.model ?? null) === (b.model ?? null);
+  return a.provider === b.provider && (a.model ?? null) === (b.model ?? null)
+    && (a.claudeInChrome === true) === (b.claudeInChrome === true);
 }
 
 function samePermissions(a: BotPermissions, b: BotPermissions): boolean {
@@ -263,7 +267,9 @@ export function applyProfilePatch(
   return {
     profile: next,
     targetChanged,
-    providerChanged: nextTarget.provider !== profile.executionTarget.provider,
+    // The runtime's launch arguments change with the provider and with Claude in Chrome.
+    providerChanged: nextTarget.provider !== profile.executionTarget.provider
+      || (nextTarget.claudeInChrome === true) !== (profile.executionTarget.claudeInChrome === true),
     sessionChanged,
   };
 }

@@ -53,6 +53,15 @@ Runtime dynamic tools. Nested/lazy tools, built-ins and successful invocation ar
 not inferred. Helper/browser status remains unknown unless separately measured.
 The exact Runtime candidate is recorded in [vendor provenance](../vendor/README.md).
 
+Claude Code bots use the same control (Runtime SPEC-039 R8). Questions arrive as
+`user_input`, shell commands and file edits as command/file approvals, and every
+other tool, including Claude in Chrome, as `tool_approval`; MCP forms and URL
+requests work as for Codex. Claude Code has no native-Windows sandbox, so only the
+full-access-with-network policy can be selected for it, and a narrower one is
+refused when it is saved while the runtime is ready. The Bot tab's Claude in Chrome
+option adds `--chrome` to the CLI launch and restarts the runtime after the
+current turn. Computer use is not available to headless Claude Code.
+
 The note displays native requests near the current turn, separate from `ask_owner`.
 Closing/reloading a note leaves the core request alive. The tray's pending-request
 entry opens the waiting note; floating/Telegram notifications contain no prompt.

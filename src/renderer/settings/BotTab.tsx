@@ -75,6 +75,17 @@ export function BotTab({ profile, onSaved }: { profile: BotProfile; onSaved(prof
             {hint.text}
           </small>
         </label>
+        {form.provider === 'claude' && (
+          <label className="check">
+            <input
+              type="checkbox"
+              id="bot-chrome"
+              checked={form.claudeInChrome}
+              onChange={(event) => update({ claudeInChrome: event.target.checked })}
+            />{' '}
+            Claude in Chrome: let the bot use Chrome or Edge through the Claude extension
+          </label>
+        )}
         <ModelField idPrefix="bot" menu={menu} onChange={setMenu} showSource />
         <label className="field">
           <span>Personality and instructions</span>
