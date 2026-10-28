@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { descriptor, signingTrust, validateInputs } from './release-contract.mjs';
+import { publishWindowsDesktopControl, verifyPackagedWindowsDesktopControl } from './windows-desktop-control.mjs';
 
 const require = createRequire(import.meta.url);
 const args = process.argv.slice(2);
@@ -33,6 +34,13 @@ const config = {
 };
 await writeFile(join(stage, 'builder.json'), JSON.stringify(config));
 const flag = { windows: '--win', macos: '--mac', linux: '--linux' }[platform];
+// SPEC-006 BDC-11: Windows packages carry the desktop control helper for each architecture they build.
+if (platform === 'windows') {
+  if (process.platform !== 'win32') throw new Error('Windows packages are built on Windows: the desktop control helper needs dotnet publish.');
+  for (const helper of await publishWindowsDesktopControl(root, args.includes('--dir') ? ['x64'] : ['x64', 'arm64'])) {
+    console.log(`Published the desktop control helper for ${helper.arch} with ${helper.runtime.id} ${helper.runtime.version} notices`);
+  }
+}
 const buildArgs = [require.resolve('electron-builder/out/cli/cli.js'), '--config', join(stage, 'builder.json'), flag,
   ...(args.includes('--dir') ? ['--dir', '--x64'] : platform === 'macos' ? ['--universal'] : ['--x64', '--arm64']), '--publish', 'never'];
 const built = spawnSync(process.execPath, buildArgs, { cwd: root, stdio: 'inherit', env: { ...process.env,
@@ -56,5 +64,6 @@ for (const directory of packaged) {
   if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error('Packaged descriptor differs from the release identity.');
   const runtime = JSON.parse(await readFile(join(resources, 'app', 'node_modules', '@cats-inc', 'cats-runtime', 'package.json'), 'utf8'));
   if (runtime.version !== input.runtime.version) throw new Error('Packaged Runtime version differs from the pin.');
+  if (platform === 'windows') console.log(`Verified the ${(await verifyPackagedWindowsDesktopControl(resources)).arch} desktop control helper in ${directory.name}`);
 }
 await writeFile(resolve('release', `Cats-Bot-${tag}-${platform}-build.json`), `${JSON.stringify(release, null, 2)}\n`);

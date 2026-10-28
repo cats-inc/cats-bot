@@ -124,6 +124,11 @@ jobs:
             Get-ChildItem release -Filter *.exe | ForEach-Object {
               if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid') { throw "Invalid signature: $($_.Name)" }
             }
+            # SPEC-006 BDC-11: electron-builder signs the desktop control helper with the app.
+            Get-ChildItem release -Directory -Filter 'win*-unpacked' | ForEach-Object {
+              $helper = Join-Path $_.FullName 'resources/native/windows-desktop-control/cats-desktop-control-windows.exe'
+              if ((Get-AuthenticodeSignature -LiteralPath $helper).Status -ne 'Valid') { throw "Invalid signature: $helper" }
+            }
           }
       - name: Verify macOS signature and notarization
         if: matrix.platform == 'macos'
