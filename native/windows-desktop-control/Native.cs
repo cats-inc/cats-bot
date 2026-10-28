@@ -97,6 +97,83 @@ internal static partial class Native
         [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 80)] public string TypeName;
     }
 
+    // Phase B input (SPEC-133 R5). MOUSEINPUT is the largest INPUT member, so the union fixes the native size.
+    [StructLayout(LayoutKind.Sequential)] public struct Point { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] public struct MouseInput { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
+    [StructLayout(LayoutKind.Sequential)] public struct KeyboardInput { public ushort Vk, Scan; public uint Flags, Time; public UIntPtr Extra; }
+    [StructLayout(LayoutKind.Explicit)] public struct InputUnion
+    {
+        [FieldOffset(0)] public MouseInput Mouse;
+        [FieldOffset(0)] public KeyboardInput Keyboard;
+    }
+    [StructLayout(LayoutKind.Sequential)] public struct Input { public uint Type; public InputUnion Data; }
+
+    public const uint InputMouse = 0, InputKeyboard = 1;
+    public const uint MouseLeftDown = 0x2, MouseLeftUp = 0x4, MouseRightDown = 0x8, MouseRightUp = 0x10;
+    public const uint MouseMiddleDown = 0x20, MouseMiddleUp = 0x40, MouseWheel = 0x800, MouseHWheel = 0x1000;
+    public const uint KeyExtended = 0x1, KeyUp = 0x2, KeyUnicode = 0x4;
+    public const uint GaRoot = 2, GaRootOwner = 3;
+    public const int SmSwapButton = 23;
+    public const uint TokenQuery = 0x8;
+    public const int TokenIntegrityLevel = 25;
+    public const uint CfUnicodeText = 13, GmemMoveable = 0x2;
+
+    [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint count, Input[] inputs, int size);
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out Point point);
+    [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(Point point);
+    [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+    [DllImport("user32.dll")] public static extern int GetSystemMetrics(int index);
+    [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll", SetLastError = true)] public static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")] public static extern bool CloseClipboard();
+    [DllImport("user32.dll")] public static extern bool EmptyClipboard();
+    [DllImport("user32.dll")] public static extern bool IsClipboardFormatAvailable(uint format);
+    [DllImport("user32.dll")] public static extern IntPtr GetClipboardData(uint format);
+    [DllImport("user32.dll")] public static extern IntPtr SetClipboardData(uint format, IntPtr data);
+    [DllImport("kernel32.dll")] public static extern IntPtr GlobalAlloc(uint flags, UIntPtr bytes);
+    [DllImport("kernel32.dll")] public static extern IntPtr GlobalLock(IntPtr handle);
+    [DllImport("kernel32.dll")] public static extern bool GlobalUnlock(IntPtr handle);
+    [DllImport("kernel32.dll")] public static extern IntPtr GlobalFree(IntPtr handle);
+
+    [DllImport("advapi32.dll", SetLastError = true)] public static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern bool GetTokenInformation(IntPtr token, int infoClass, IntPtr info, int length, out int returned);
+    [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint index);
+    [DllImport("advapi32.dll")] public static extern IntPtr GetSidSubAuthorityCount(IntPtr sid);
+    [DllImport("kernel32.dll")] public static extern IntPtr GetCurrentProcess();
+
+    public static IntPtr RootOf(IntPtr hwnd) => hwnd == IntPtr.Zero ? IntPtr.Zero : GetAncestor(hwnd, GaRoot);
+
+    /// <summary>The integrity RID of a process token, or null when the token cannot be read (treated as elevated).</summary>
+    public static int? IntegrityLevel(IntPtr process)
+    {
+        if (!OpenProcessToken(process, TokenQuery, out var token)) return null;
+        try
+        {
+            GetTokenInformation(token, TokenIntegrityLevel, IntPtr.Zero, 0, out var size);
+            if (size <= 0) return null;
+            var buffer = Marshal.AllocHGlobal(size);
+            try
+            {
+                if (!GetTokenInformation(token, TokenIntegrityLevel, buffer, size, out _)) return null;
+                var sid = Marshal.ReadIntPtr(buffer);
+                var count = Marshal.ReadByte(GetSidSubAuthorityCount(sid));
+                return Marshal.ReadInt32(GetSidSubAuthority(sid, (uint)(count - 1)));
+            }
+            finally
+            {
+                Marshal.FreeHGlobal(buffer);
+            }
+        }
+        finally
+        {
+            CloseHandle(token);
+        }
+    }
+
     public static string? ProcessPath(uint processId)
     {
         var handle = OpenProcess(ProcessQueryLimitedInformation, false, processId);

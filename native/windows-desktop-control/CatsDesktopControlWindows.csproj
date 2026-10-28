@@ -8,5 +8,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>cats-desktop-control-windows</AssemblyName>
     <RootNamespace>Cats.DesktopControl.Windows</RootNamespace>
+    <!-- The native check and its probe app are test tools, not part of the helper. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);native-check/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

@@ -18,6 +18,12 @@ its COM client; password values are never read), `open_app`, `state` and `cancel
 processes and executables, and Cats Desktop's (BDC-08), are excluded at runtime through
 `hello.selfProcessIds` and `hello.selfExecutables`; the helper always excludes itself.
 
+Phase B ops send input: `click`, `scroll`, `type`, `key`, `invoke`, `clipboard_read` and
+`clipboard_write`. Each re-checks its target first (owner idle for 3 seconds, not observe-only
+or elevated, in front, unmoved, uncovered) and `cancel` stops typing between chunks; SPEC-133
+"Phase B helper rules" has the details. Ops run one at a time in arrival order, except
+`cancel`, which is answered at once.
+
 Build: `dotnet build -c Release` (.NET 8 SDK or newer, Windows only). Windows packages publish
 it self-contained per architecture through `scripts/windows-desktop-control.mjs`, which
 `npm run dist:win`, `npm run dist:dir` and `scripts/build-preview.mjs` call before
@@ -25,6 +31,9 @@ electron-builder; the package carries it at `resources/native/windows-desktop-co
 .NET runtime's license texts under `licenses/`. electron-builder signs it with the installer when
 Windows signing credentials exist (ADR-004).
 
-Native check (Windows only, observe-only): `node native-check/check.mjs` opens two throwaway
-windows, checks capture under a covering window (B4), UI reading and exclusions, and closes them.
-It never sends keyboard or mouse input. macOS and Linux CI never build or start this helper.
+Native checks (Windows only): `node native-check/check.mjs` opens two throwaway windows, checks
+capture under a covering window (B4), UI reading and exclusions, and closes them; it never sends
+keyboard or mouse input. `node native-check/input-check.mjs` sends real input (B7), but only to
+its own probe app (`native-check/probe/`, built on first use and never packaged), and waits for 5
+quiet seconds from the owner before each action. macOS and Linux CI never build or start this
+helper.
