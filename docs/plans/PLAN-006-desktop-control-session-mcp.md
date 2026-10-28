@@ -276,6 +276,10 @@ default, persisted format, package version or publication changes in this slice.
   Typecheck, all 193 Bots tests and the build passed. After the final Runtime label
   adjustment, both provider integration tests and all four release/provenance tests
   passed again. Runtime reports 102 unique focused tests and a successful build.
+  macOS CI exposed an existing busy-turn test race: the running journal precedes
+  HTTP delivery. Its exact call-count assertion now runs after completion, while
+  preserving the immediate busy/no-resume checks; all nine life tests and typecheck
+  passed after the correction.
 - **Native Cats tools:** Windows 11, Codex 0.165.0 / `gpt-6.1-sol`, a temporary Bot
   and Electron profile, and one newly opened Paint window. The real note sent a
   request to use Cats desktop control. CDP clicked each actual provider consent
