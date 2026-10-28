@@ -2,84 +2,107 @@
 
 ## Status
 
-Accepted — 2026-10-28。owner 問便箋裡的畫面是否與 Cats Desktop 對話畫面同一套技術（React），得到
-「不是」的答覆後，同意整合並要求切 slice 實作。規格見
-[SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md)，實作見
-[PLAN-003](../plans/PLAN-003-react-renderer.md)。
+Accepted — 2026-10-28. The owner asked whether the screen inside the note uses the same technology as
+the Cats Desktop conversation screen (React). Told that it did not, the owner agreed to unify them
+and asked for the work to be cut into slices. See
+[SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) for the specification and
+[PLAN-003](../plans/PLAN-003-react-renderer.md) for the implementation.
 
 ## Context
 
-- PLAN-001 與 PLAN-002 的頁面（便箋、設定與首次啟動、浮動貓）是 `assets/renderer/` 下的純 HTML、CSS
-  與無型別的 JS，由 Electron 直接載入，沒有建置步驟。
-- 便箋以 `textContent` 顯示訊息：agent CLI 的回覆幾乎都是 markdown，粗體、清單、表格與程式碼區塊都以
-  原始字元出現；工具呼叫只有一行「⚙ 名稱 參數」。
-- renderer 讀的資料型別（`BotHostEvent`、`ConversationRecord` 等）在 core 有定義，但 JS 頁面看不到；
-  core 改了欄位，頁面不會報錯。renderer 也沒有任何自動測試：2026-10-28 Codex 審閱的設定頁 model
-  選單競態就是在這裡漏掉的。`settings.js` 已 573 行命令式 DOM 程式。
-- Cats Desktop（cats-platform）的對話畫面是 React 18.3.1 + Vite 7，訊息以 `react-markdown` 10 加
-  `remark-gfm`、`remark-breaks` 渲染，連結與圖片的處理規則在 `MessageBodyMarkdown.tsx`。
-- ADR-001 規定 bot 只透過 HTTP 依賴 cats-runtime，不依賴 cats-platform；Desktop 的元件也綁著
-  react-router、貓的 mention 解析與 platform API。
+- The pages of PLAN-001 and PLAN-002 (note, settings and first run, floating Cat) are plain HTML, CSS
+  and untyped JS under `assets/renderer/`, loaded directly by Electron with no build step.
+- The note shows messages with `textContent`: agent CLI replies are almost always markdown, so bold,
+  lists, tables and code blocks appear as raw characters; a tool call is only one line, "⚙ name
+  arguments".
+- The data types the renderer reads (`BotHostEvent`, `ConversationRecord`, etc.) are defined in the
+  core but invisible to the JS pages; when the core changes a field, the pages report no error. The
+  renderer also has no automated tests: the settings-page model-menu race reviewed by Codex on
+  2026-10-28 slipped through here. `settings.js` is already 573 lines of imperative DOM code.
+- The Cats Desktop (cats-platform) conversation screen is React 18.3.1 + Vite 7; messages are rendered
+  with `react-markdown` 10 plus `remark-gfm` and `remark-breaks`, and the link and image handling
+  rules are in `MessageBodyMarkdown.tsx`.
+- ADR-001 requires the bot to depend on cats-runtime only through HTTP and not on cats-platform;
+  Desktop's components are also tied to react-router, Cat mention parsing and the platform API.
 
 ## Decision
 
-### 1. 同一套技術，自己的實作
+### 1. The same technology, our own implementation
 
-renderer 改用 React 18.3.1 + Vite 7 + TypeScript，版本與 Desktop 相同；markdown 用 `react-markdown`
-10、`remark-gfm` 4、`remark-breaks` 4。不 import cats-platform 的任何程式或套件；Desktop 的規則
-（例如連結與圖片的處理）照著移植並註明出處。日後若要跨 repo 共用 UI，另寫 ADR 拆成共用套件。
+The renderer moves to React 18.3.1 + Vite 7 + TypeScript, with the same versions as Desktop; markdown
+uses `react-markdown` 10, `remark-gfm` 4 and `remark-breaks` 4. No code or package of cats-platform is
+imported; Desktop's rules (for example link and image handling) are ported and their source noted. If
+UI is to be shared across repos later, another ADR will split it into a shared package.
 
-### 2. 建置與載入
+### 2. Build and loading
 
-- 原始碼在 `src/renderer/`，Vite 多頁建置到 `dist/renderer/`（`base: './'`），殼以 file:// 載入。
-  頁面名稱（`note.html`、`settings.html`、`floating.html`）與查詢字串（`?conversation=`、
-  `?mode=setup`、`?tab=`）不變，是殼與頁面之間的契約。
-- preload 仍是 `assets/preload.cjs`（sandbox 的 preload 不能是 ES module），圖示仍在 `assets/`。
-- `npm run build` 依序跑 `tsc` 與 `vite build`；Package workflow 與 CI 不必改。
-- 2026-10-28 實測：Vite 輸出的 `<script type="module" crossorigin>` 在 Electron 41 以 file:// 載入正常，
-  頁面的 CSP（`script-src 'self'`、`style-src 'self'`）不必放寬。
+- The source is in `src/renderer/`; Vite builds multiple pages to `dist/renderer/` (`base: './'`), and
+  the shell loads them via file://. The page names (`note.html`, `settings.html`, `floating.html`) and
+  query strings (`?conversation=`, `?mode=setup`, `?tab=`) are unchanged; they are the contract
+  between the shell and the pages.
+- The preload remains `assets/preload.cjs` (a sandboxed preload cannot be an ES module), and the icons
+  remain in `assets/`.
+- `npm run build` runs `tsc` and then `vite build`; the Package workflow and CI need no change.
+- Measured 2026-10-28: the `<script type="module" crossorigin>` that Vite emits loads normally from
+  file:// in Electron 41, and the page CSP (`script-src 'self'`, `style-src 'self'`) does not need to
+  be relaxed.
 
-### 3. 型別與邊界
+### 3. Types and boundaries
 
-- renderer 在執行期只透過 `window.catsBot`；它的型別寫在 `src/renderer/bridge.ts`。
-- renderer 只能從 core 取型別，而且只能 `import type` 自 `src/core/types.ts`（被抹除、不進 bundle）。
-  殼要給頁面看的命令結果型別（`BotStatus`、`ProviderInfo`、`ModelCatalog`、`TelegramStatus` 等）
-  因此搬進 `types.ts`，原模組改為轉出。不 import `electron` 或 `node:*`。架構邊界測試檢查這些規則，
-  另一個測試比對 bridge 的命令與層清單和殼的 `HOST_COMMANDS`、`NOTE_LAYERS`，以及 preload 是否實作
-  bridge 的每個方法。
-- `tsc -p tsconfig.renderer.json`（DOM、JSX）檢查 renderer；Node 端的設定排除 `src/renderer`。
+- At run time the renderer goes only through `window.catsBot`; its type is written in
+  `src/renderer/bridge.ts`.
+- The renderer may take types from the core only, and only via `import type` from
+  `src/core/types.ts` (erased, not in the bundle). The command result types the shell exposes to the
+  pages (`BotStatus`, `ProviderInfo`, `ModelCatalog`, `TelegramStatus`, etc.) are therefore moved into
+  `types.ts`, and the original modules re-export them. `electron` and `node:*` are not imported. The
+  architecture boundary test checks these rules; another test compares the bridge's command and layer
+  lists with the shell's `HOST_COMMANDS` and `NOTE_LAYERS`, and checks that the preload implements
+  every method of the bridge.
+- `tsc -p tsconfig.renderer.json` (DOM, JSX) checks the renderer; the Node-side configuration excludes
+  `src/renderer`.
 
-### 4. 哪些頁面用 React
+### 4. Which pages use React
 
-便箋與設定（含首次啟動）用 React。浮動貓維持不用框架的 TypeScript：它很小，又依賴每次滑鼠移動的
-命中測試，多一層框架沒有好處。
+The note and settings (including first run) use React. The floating Cat stays frameworkless
+TypeScript: it is small and depends on a hit test on every mouse move, so an extra framework layer
+brings no benefit.
 
-### 5. 可測試的邏輯
+### 5. Testable logic
 
-不碰 DOM 的邏輯（連結規則、逐字稿整理成卡片、model 清單的請求序號等）寫成獨立的 `.ts` 模組，以
-`node:test` 測試；Node 的 type stripping 不支援 JSX，所以元件本身以 CDP 在真的殼裡驗收。
+Logic that does not touch the DOM (link rules, arranging the transcript into cards, the request
+sequence number of the model list, etc.) is written as standalone `.ts` modules and tested with
+`node:test`; Node's type stripping does not support JSX, so the components themselves are accepted by
+CDP in the real shell.
 
-### 6. 第三方授權
+### 6. Third-party licenses
 
-React 等套件被打包進 `dist/renderer`，列為 devDependencies，不經 node_modules 出貨。建置時產生
-`dist/renderer/THIRD-PARTY-NOTICES.txt`，列出每個被打包的套件、版本、授權與其授權檔全文。
+React and the other packages are bundled into `dist/renderer`, listed as devDependencies, and not
+shipped through node_modules. The build generates `dist/renderer/THIRD-PARTY-NOTICES.txt`, listing
+every bundled package, its version, its license and the full text of its license file.
 
-### 7. 內容安全
+### 7. Content security
 
-- 不渲染 agent 回覆裡的原始 HTML（以文字顯示）；`react-markdown` 預設會丟掉不安全的 URL 協定。
-- http(s) 連結交給系統瀏覽器，其他連結（本機檔案、錨點）不可點並以 title 顯示目標；遠端圖片不自動
-  載入，只顯示為連結。殼拒絕頁面開新視窗與換頁。
-- 不使用 inline style（CSP 的 `style-src 'self'` 會擋），一律用 class。
+- Raw HTML in agent replies is not rendered (it is shown as text); `react-markdown` drops unsafe URL
+  protocols by default.
+- http(s) links are handed to the system browser; other links (local files, anchors) are not
+  clickable and show their target in the title; remote images are not loaded automatically and are
+  shown only as links. The shell refuses to let a page open a new window or navigate.
+- No inline style is used (the CSP's `style-src 'self'` would block it); classes are used throughout.
 
 ## Consequences
 
-- 便箋可以讀 markdown、看工具卡片、按 approval；設定頁的邏輯有型別與測試。
-- 多一個建置步驟與兩份 tsconfig；改頁面要重跑 `npm run build`（或 `npm run build:renderer`）。
-- 安裝檔多出 React 與 markdown 套件約數百 KB，相對 Electron 本體可忽略。
+- The note can read markdown, show tool cards and take an approval; the settings page logic has types
+  and tests.
+- One more build step and two tsconfig files; changing a page requires rerunning `npm run build` (or
+  `npm run build:renderer`).
+- The installer grows by a few hundred KB for React and the markdown packages, negligible compared
+  with Electron itself.
 
 ## Alternatives Considered
 
-- **維持純 JS，只加一個 markdown 函式庫（例如 marked + DOMPurify）**：能解決 markdown，但型別、測試與
-  設定頁的維護問題不變，也與 Desktop 分歧。
-- **直接 import Desktop 的元件**：會讓 bot 依賴 cats-platform，違反 ADR-001。
-- **浮動貓也改 React**：沒有收益，反而要重新驗證滑鼠命中與拖曳。
+- **Keep plain JS and add only a markdown library (for example marked + DOMPurify)**: solves
+  markdown, but the typing, testing and settings-page maintenance problems remain, and it still
+  diverges from Desktop.
+- **Import Desktop's components directly**: makes the bot depend on cats-platform, violating ADR-001.
+- **Move the floating Cat to React too**: no benefit, and mouse hit testing and dragging would have to
+  be verified again.

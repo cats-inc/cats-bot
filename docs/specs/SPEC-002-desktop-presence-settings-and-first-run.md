@@ -12,55 +12,77 @@
 
 ## Summary
 
-安裝好的 Cats Bot 第一次開就能設定並使用：首次啟動頁選名字、agent CLI 與 model；設定視窗可以改
-provider、model、個性、權限、生活節奏、Telegram 與開機啟動，並管理所有便箋；一隻浮動的貓在最上層
-顯示 bot 的狀態；每張便箋可以放在一般、最上層、桌面或桌布層。core 的行為仍由 SPEC-001 定義，
-本文件只定義殼與它新增的 `BotHostApi` 命令。
+An installed Cats Bot can be configured and used the first time it is opened: the first-run page
+chooses a name, an agent CLI and a model; the settings window can change the provider, model,
+personality, permissions, life rhythm, Telegram and start at login, and manages all notes; a floating
+Cat shows the bot's state on top; each note can be placed on the normal, topmost, desktop or wallpaper
+layer. The core's behavior is still defined by SPEC-001; this document defines only the shell and the
+`BotHostApi` commands it adds.
 
 ## Functional Requirements
 
-1. FR-1：沒有 profile 的 bot 啟動時開首次啟動頁（名字、agent CLI、model、選填個性）；送出後建立 bot
-   並開啟 core 與 home 便箋；關掉頁面就結束程式，不留下半套 bot。輸入在主程序再驗證一次。
-2. FR-2：設定頁的每個變更都走 `updateProfile`；provider、model、個性與權限的變更依 SPEC-001 FR-27
-   讓既有對話在下一回合換新 session（含承接摘要），頁面告訴主人這件事；換 provider 時 runtime 在進行中的
-   回合結束後才重啟。
-3. FR-3：`listProviders` 列出 cats-runtime 0.6.1 支援的 CLI provider、各自的預設指令（例如
-   antigravity 是 `agy`）與該指令是否在 PATH 上；`listModels(provider)` 對 bot 目前的 provider 問執行中的
-   runtime，其他情況讀 runtime 套件附的 catalog；永遠可以留空（provider 預設）或輸入其他 model id。
-   產生的 `providers.yaml` 使用 provider 的預設指令，不再把 provider 名稱當指令。
-4. FR-4：設定視窗一個 bot 一個，從 tray（「Settings…」「Manage notes…」）與便箋標題列的 ⚙ 開啟；分頁為
-   Bot、Notes、Life、Telegram、App。
-5. FR-5：Notes 分頁列出所有對話（home 在前，其餘依最後活動排序），顯示未讀與 session 狀態；可以開啟、
-   新增、改名（`renameConversation`，不得為空）與刪除（非 home，需要第二次確認；刪除時關掉它的便箋視窗）。
-6. FR-6：Telegram 分頁可以存入或移除 token（`setTelegramToken`，token 不回傳給頁面）、開關 polling，並顯示
-   保護方式、polling 狀態與 owner chat。
-7. FR-7：浮動 bot：透明、無邊框、最上層、不出現在工作列的貓；顯示醒著／思考中／睡著／未讀數；可拖曳且
-   記住位置；點一下開 home 便箋；右鍵與 tray 相同的選單；有新回覆時顯示簡短泡泡；可從 tray 與設定隱藏。
-   記住的位置只在貓本體（不是整個透明視窗）至少一半落在某個螢幕上時沿用，否則回到主螢幕右下角；螢幕
-   增減或縮放改變時同樣檢查。未讀數跟著焦點：桌面、桌布層或被其他視窗擋住的便箋開著但沒有焦點時，新回覆
-   照樣算未讀，聚焦時才標為已讀。
-8. FR-8：每張便箋的層：`normal`、`top`、`desktop`、`wallpaper`，存在 `shell-state.json`；Windows 上
-   `desktop` 與 `wallpaper` 掛到 Explorer 的桌面視窗下（尋找規則同 desktop-work-fleet
-   `NativeShellLayers`），Explorer 重啟後重新掛載，找不到時退回 `normal` 並記錄原因，有便箋需要該層時
-   最多每 10 秒再找一次（Explorer 可能晚一點才建立容器）；其他平台只提供
-   `normal` 與 `top`。拖曳在各層都可用；桌布層不收輸入。桌面層的便箋被點到時暫時成為一般視窗以便
-   打字（含輸入法），失去焦點後回到原層。主人從 tray、設定或浮動 bot 開啟桌面或桌布層的便箋時同樣
-   抬起並取得焦點，不論它當時是否掛著、這次執行是否已建立過視窗；只有啟動還原與 Explorer 重啟後的
-   重開直接放回原層、不搶焦點。舊的
-   `shell-state.json` 沒有 `layer` 時以 `alwaysOnTop` 推得（`top` 或 `normal`），寫入時仍保留
-   `alwaysOnTop`，讓尚未支援層的版本照舊把 `top` 便箋浮在最上層。
-9. FR-9：CI 在 main 更新時建置 Windows NSIS 安裝檔與免安裝檔並上傳為 artifact；安裝後的捷徑啟動即進入
-   FR-1 或既有的 bot。
+1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
+   optional personality); after submission it creates the bot and opens the core and the home note;
+   closing the page exits the program and leaves no half-built bot. The input is validated again in
+   the main process.
+2. FR-2: Every change on the settings page goes through `updateProfile`; changes to the provider,
+   model, personality and permissions make existing conversations switch to a new session on the next
+   turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
+   provider changes, the runtime restarts only after the turn in progress ends.
+3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
+   command (for example antigravity is `agy`) and whether that command is on PATH; `listModels(provider)`
+   asks the running runtime for the bot's current provider and reads the catalog shipped with the
+   runtime package in every other case; it can always be left empty (provider default) or given
+   another model id. The generated `providers.yaml` uses the provider's default command and no longer
+   uses the provider name as the command.
+4. FR-4: There is one settings window per bot, opened from the tray ("Settings…", "Manage notes…") and
+   from the ⚙ in a note's title bar; the tabs are Bot, Notes, Life, Telegram, App.
+5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
+   unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
+   empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
+6. FR-6: The Telegram tab can save or remove the token (`setTelegramToken`; the token is not returned
+   to the page), toggle polling, and shows the protection method, the polling state and the owner chat.
+7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar;
+   it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
+   opens the home note; right-click gives the same menu as the tray; a short bubble is shown on a new
+   reply; it can be hidden from the tray and from settings. The remembered position is reused only if
+   at least half of the Cat itself (not the whole transparent window) falls on some screen, otherwise it
+   returns to the bottom-right corner of the primary screen; the same check is made when screens are
+   added or removed or the scaling changes. Unread follows focus: when a note on the desktop or
+   wallpaper layer, or one covered by other windows, is open but not focused, a new reply still counts
+   as unread, and is marked as read only when it is focused.
+8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
+   `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
+   window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer
+   restart; when it cannot be found it falls back to `normal` and the reason is recorded, and while a
+   note needs that layer it is looked for again at most every 10 seconds (Explorer may create the
+   container a little later); other platforms provide only `normal` and `top`. Dragging works on every
+   layer; the wallpaper layer takes no input. A desktop-layer note temporarily becomes an ordinary
+   window when clicked so that it can be typed into (including IME), and returns to its layer after it
+   loses focus. When the owner opens a desktop- or wallpaper-layer note from the tray, settings or the
+   floating bot, it is likewise raised and given focus, whether or not it was attached at the time and
+   whether or not a window has been created in this run; only startup restore and the reopen after an
+   Explorer restart put it straight back on its layer without taking focus. An old `shell-state.json`
+   without `layer` derives it from `alwaysOnTop` (`top` or `normal`), and writing still keeps
+   `alwaysOnTop`, so that versions that do not support layers still float a `top` note on top as
+   before.
+9. FR-9: CI builds the Windows NSIS installer and portable build on every main update and uploads them
+   as artifacts; starting from the shortcut after installation enters FR-1 or the existing bot.
 
 ## Acceptance
 
-- A1：全新資料夾啟動打包版：出現首次啟動頁，送出後 home 便箋開啟且可以對話（fixture CLI 與真的 CLI 各一次）。
-- A2：設定頁改 model 後下一回合用新 model；Notes 分頁新增、改名、刪除都反映在 tray 與便箋視窗。
-- A3：浮動 bot 在其他應用程式之上、可拖曳、重開後位置不變；回合進行中顯示思考中。
-- A4：Windows 上一張便箋切到桌面層後按 Win+D 仍在、仍可輸入；切到桌布層後在圖示之下；重啟 Explorer 後
-  回到原層。
+- A1: Start the packaged build in a brand-new folder: the first-run page appears, and after
+  submission the home note opens and can chat (once with the fixture CLI and once with a real CLI).
+- A2: After changing the model on the settings page, the next turn uses the new model; adding,
+  renaming and deleting in the Notes tab are all reflected in the tray and the note windows.
+- A3: The floating bot is above other applications, can be dragged, and its position is unchanged
+  after reopening; it shows thinking while a turn is in progress.
+- A4: On Windows, after a note is switched to the desktop layer, it is still there after Win+D and can
+  still be typed into; after switching to the wallpaper layer it is below the icons; after Explorer
+  restarts it returns to its layer.
 
 ## Non-Goals
 
-- macOS 與 Linux 的桌面層與桌布層。
-- 程式碼簽章、自動更新與 GitHub Release 發佈（依 release SOP 另外授權）。
+- Desktop and wallpaper layers on macOS and Linux.
+- Code signing, automatic update and GitHub Release publishing (authorized separately per the release
+  SOP).

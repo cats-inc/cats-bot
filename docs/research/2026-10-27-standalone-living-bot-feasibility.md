@@ -1,21 +1,24 @@
 # Standalone Living Bot Feasibility
 
 Date: 2026-10-27
-Scope: 唯讀的原始碼與文件盤點，對象是 cats-inc 現有成員與 `../sammykenny2/desktop-work-fleet`。
-本輪沒有執行任何程式、沒有建立 Runtime session、沒有呼叫 provider、沒有寫入任何既有 repo。
-這是研究紀錄，不是 ADR：下列「候選拓樸」與「建議」都是待決議的提案，沒有任何一項已被採納。
+Scope: A read-only inventory of source code and documents, covering the existing cats-inc members and `../sammykenny2/desktop-work-fleet`.
+This round ran no program, created no Runtime session, called no provider and wrote to no existing repo.
+This is a research record, not an ADR: the "candidate topology" and "suggestions" below are proposals awaiting decision, and none of them has been adopted.
 
-勘誤（2026-10-27，Codex 審閱後；本文其餘內容保留原狀）：
+Errata (2026-10-27, after Codex review; the rest of this document is kept as it was):
 
-- 「候選拓樸」裡的「把 discovery 目錄指向空資料夾」不足也不對：runtime 還有背景的 native／agent
-  掃描（`CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS`）與 WSL／Docker policy，而 provider 的 session
-  目錄同時是 `history` 與 resume 的讀取來源，改目錄會弄壞自己的 session。正確政策見 ADR-001 §1。
-- 「session 不是 ready 就 resume 或重建」太粗：runtime 的狀態是 `initializing | ready | busy |
-  closing | closed`；`initializing` 可由第一個回合（含心跳）帶到 ready，`busy` 是進行中的回合，
-  兩者都不能重建。正確判定見 ADR-001 §5 與 SPEC-001 FR-20。
-- 「以 runtime wakeup 當 cron 計時器」已被 ADR-001 §5 否決；排程真相在 bot 自己的 journal。
+- "Point the discovery directory at an empty folder" in the "Candidate topology" is insufficient and wrong:
+  the runtime also has background native/agent scanning (`CATS_RUNTIME_NATIVE_DISCOVERY_INTERVAL_MS`) and
+  WSL/Docker policy, and the provider's session directory is the read source for both `history` and resume,
+  so changing the directory would break its own sessions. The correct policy is in ADR-001 §1.
+- "If the session is not ready, resume or rebuild it" is too coarse: the runtime states are
+  `initializing | ready | busy | closing | closed`; `initializing` can be brought to ready by the first turn
+  (including a heartbeat), and `busy` is a turn in progress; neither may be rebuilt. The correct decision is in
+  ADR-001 §5 and SPEC-001 FR-20.
+- "Use runtime wakeup as the cron timer" has been rejected by ADR-001 §5; the truth of the schedule is in the
+  bot's own journal.
 
-Baseline（皆為各 checkout 的 `main`）：
+Baseline (all on each checkout's `main`):
 
 | Repo | Version | HEAD |
 | --- | --- | --- |
@@ -28,282 +31,281 @@ Baseline（皆為各 checkout 的 `main`）：
 
 ## User direction
 
-owner 想在 cats-inc 下新開一個成員（暫名 `cats-bots` 或 `cats-agents`），目標是：
+The owner wants to open a new member under cats-inc (tentatively `cats-bots` or `cats-agents`), with these goals:
 
-- 一個 process（一個 exe）就是一隻 bot，背後包著一個 agent CLI。
-- bot 要「活著」：不論靠 heartbeat、scheduler 或 event driven，隨時可以被喚醒回話或做事。
-- 有 tray icon 可以 dock；能在桌面上被拖來拖去；最好能嵌在桌布層、桌面層或最上層至少其一，做不到就一般視窗。
-- 對話介面大幅輕量化：一個 conversation 像一張便箋，可有多張；只有一組全域 provider/model，代表這隻 bot 背後的 agent，不按 conversation 儲存。
-- 不確定新成員應該像 cats-platform 一樣直接依賴 cats-runtime，還是依賴 cats-platform。
-- 優先順序：先要一個活著的、包著 CLI 的 bot；桌面層與拖曳是其次。
+- One process (one exe) is one bot, wrapping one agent CLI.
+- The bot must be "alive": whether by heartbeat, scheduler or event driven, it can be woken at any time to reply or do something.
+- It has a tray icon it can dock to; it can be dragged around the desktop; ideally it can be embedded in at least one of the wallpaper layer, the desktop layer or the topmost layer, and failing that it is an ordinary window.
+- A greatly lightened conversation interface: a conversation is like a note, and there can be several; there is only one global provider/model, representing the agent behind this bot, and it is not stored per conversation.
+- It is uncertain whether the new member should depend directly on cats-runtime like cats-platform does, or depend on cats-platform.
+- Priority: first a living bot wrapping a CLI; the desktop layers and dragging come second.
 
 ## Terminology: Catlas is not the companion
 
-owner 以「Catlas 類似的 Bot」描述需求，但在 cats-platform 的程式碼裡這是兩個不同的東西：
+The owner described the requirement as "a Bot similar to Catlas", but in the cats-platform code these are two different things:
 
-- **Catlas = Guide Cat**。`GUIDE_CAT_SYSTEM_NAME = 'Catlas'`
-  （[guideCatIdentity.ts](../../../cats-platform/src/shared/guideCatIdentity.ts)）。它是平台層唯一一筆
-  `core.guideCat: GuideCatRecord { executionTarget, modelSelection, status }`，也就是**全平台唯一一組全域
-  provider/model 綁定**。它的推論走 [inference.ts](../../../cats-platform/src/platform/catlas/inference.ts)：
-  每次問答開一個 `sharingMode: 'isolated'`、`workspaceAccess: 'read_only'` 的一次性 session，要求嚴格 JSON
-  輸出，用完即關。沒有 DM lane、沒有 Telegram、沒有心跳。視窗內可拖動的 pill 是
-  [GuideCatSidecar.tsx](../../../cats-platform/src/design/components/GuideCatSidecar.tsx)，放置模型在 ADR-070。
-- **活著的是 companion role 的 Cat**（ADR-124）。它的生命單位是「該 Cat 私訊 lane 上的那一個 Runtime session」，
-  由 platform 伺服器程序裡的 life loop 維持，並經 Telegram bridge 共用同一個 lane（ADR-127、SPEC-124、PLAN-117）。
-- owner 要的 bot 是兩者合體：Catlas 的形狀（一組全域綁定、可拖動的存在感），加上 companion 的生命機制。
+- **Catlas = Guide Cat**. `GUIDE_CAT_SYSTEM_NAME = 'Catlas'`
+  ([guideCatIdentity.ts](../../../cats-platform/src/shared/guideCatIdentity.ts)). It is the platform layer's only
+  `core.guideCat: GuideCatRecord { executionTarget, modelSelection, status }`, that is, **the only global
+  provider/model binding on the whole platform**. Its inference goes through [inference.ts](../../../cats-platform/src/platform/catlas/inference.ts):
+  each question opens a one-shot session with `sharingMode: 'isolated'` and `workspaceAccess: 'read_only'`, requires strict JSON
+  output, and closes it after use. It has no DM lane, no Telegram and no heartbeat. The draggable pill inside the window is
+  [GuideCatSidecar.tsx](../../../cats-platform/src/design/components/GuideCatSidecar.tsx), and the placement model is in ADR-070.
+- **What is alive is the Cat with the companion role** (ADR-124). Its unit of life is "the one Runtime session on that Cat's DM lane",
+  kept up by the life loop inside the platform server process, and sharing the same lane through the Telegram bridge (ADR-127, SPEC-124, PLAN-117).
+- The bot the owner wants is the two combined: Catlas's shape (one global binding, a draggable presence), plus the companion's life mechanisms.
 
 ## Local baseline
 
 ### cats-runtime 0.6.2
 
-嵌入與消費契約：
+Embedding and consumption contract:
 
-- loopback HTTP 服務（預設 `127.0.0.1:3110`，可選 Bearer `CATS_RUNTIME_API_KEY`），路由註冊在
-  [http/app.ts](../../../cats-runtime/src/http/app.ts)，完整介面在 [docs/api.md](../../../cats-runtime/docs/api.md)。
-- 受管啟動：`--startup-mode app-managed --managed-by <name> --ready-output json`，`--port 0` 由 OS 選 port，
-  實際 port 從 stdout 的 `runtime.ready` 事件取得；關閉走 SIGINT/SIGTERM 或關掉子程序 stdin。
+- A loopback HTTP service (default `127.0.0.1:3110`, optional Bearer `CATS_RUNTIME_API_KEY`), with routes registered in
+  [http/app.ts](../../../cats-runtime/src/http/app.ts) and the full interface in [docs/api.md](../../../cats-runtime/docs/api.md).
+- Managed startup: `--startup-mode app-managed --managed-by <name> --ready-output json`; `--port 0` lets the OS choose the port,
+  and the actual port is obtained from the `runtime.ready` event on stdout; shutdown is via SIGINT/SIGTERM or closing the child process's stdin.
 - [runtime ADR-009](../../../cats-runtime/docs/decisions/009-keep-cats-runtime-separately-packageable-with-app-managed-local-startup.md)
-  要求 host 走 process + HTTP 邊界，不走 source import。`src/index.ts` 雖然匯出
-  `loadConfig`、`createRuntimeServer`、`createRuntimeApp`，測試以 `app.request()` in-process 嵌入，但文件把它定位為
-  tests/dev embedding，不是產品契約。
-- Desktop 的先例：[processSupervisor.ts](../../../cats-platform/desktop/host/processSupervisor.ts) 用 Electron
-  自己的執行檔加 `ELECTRON_RUN_AS_NODE=1` 啟動 runtime bundle，並設定 `CATS_RUNTIME_DIR`、
-  `CATS_RUNTIME_PACKAGE_ROOT`、host 與 port。
-- MCP（`POST /mcp`，約 85 個工具）與 ACP（`POST /acp`）是附加門面；`cats-runtime mcp|acp` stdio 子命令只是代理到
-  已在執行的 runtime。
+  requires the host to use the process + HTTP boundary and not source import. Although `src/index.ts` exports
+  `loadConfig`, `createRuntimeServer` and `createRuntimeApp`, and tests embed in-process with `app.request()`, the documents position it as
+  tests/dev embedding, not a product contract.
+- Desktop's precedent: [processSupervisor.ts](../../../cats-platform/desktop/host/processSupervisor.ts) starts the runtime bundle with Electron's
+  own executable plus `ELECTRON_RUN_AS_NODE=1`, and sets `CATS_RUNTIME_DIR`,
+  `CATS_RUNTIME_PACKAGE_ROOT`, the host and the port.
+- MCP (`POST /mcp`, about 85 tools) and ACP (`POST /acp`) are additional facades; the `cats-runtime mcp|acp` stdio subcommands only proxy to
+  an already running runtime.
 
-Provider 執行：
+Provider execution:
 
-- `KNOWN_PROVIDERS` 共 16 個 CLI：claude、codex、antigravity、cursor、copilot、opencode、kilo、goose、pi、auggie、
-  junie、kiro、grok、cline、devin、muse（[providers/types.ts](../../../cats-runtime/src/backends/cli/providers/types.ts)）。
-  Gemini CLI 已由 Antigravity 取代（runtime ADR-032），Gemini 模型只剩 API backend。
-- claude（`-p --input-format stream-json --output-format stream-json`，`--resume`/`--fork-session`）、
-  codex（`app-server` JSON-RPC，`thread/start|resume|fork`）與 pi（`--mode rpc`）是每個 session 一個常駐子程序；
-  其餘 13 個是 `ephemeral`，每回合重新 spawn 並帶回 `resumeSessionId`。
-- 回合契約：`POST /sessions/{id}/messages`，回應預設 SSE，`Accept: application/x-ndjson` 改為 NDJSON；
-  事件種類 init/text/tool_use/tool_result/result/error/raw/progress/workspace_activity。
-  session 忙碌回 409 且**沒有佇列**；沒有 active worker 回 404「Resume the session first」；worker 已退出回 410。
-- 每個 session 可注入 `mcpServers`；MCP server set 變更時 worker 在下一回合邊界被回收。
-- 連續性：CLI backend 由 CLI 保存原生 transcript，runtime 只存 `providerSessionId`；API/local backend 由 runtime
-  重播自己的 JSONL。`instructions` 與 skills 每回合前置。
+- `KNOWN_PROVIDERS` has 16 CLIs in all: claude, codex, antigravity, cursor, copilot, opencode, kilo, goose, pi, auggie,
+  junie, kiro, grok, cline, devin, muse ([providers/types.ts](../../../cats-runtime/src/backends/cli/providers/types.ts)).
+  Gemini CLI has been replaced by Antigravity (runtime ADR-032), and Gemini models remain only in the API backend.
+- claude (`-p --input-format stream-json --output-format stream-json`, `--resume`/`--fork-session`),
+  codex (`app-server` JSON-RPC, `thread/start|resume|fork`) and pi (`--mode rpc`) each have one resident child process per session;
+  the other 13 are `ephemeral`, respawned every turn with `resumeSessionId` carried back.
+- Turn contract: `POST /sessions/{id}/messages`, with an SSE response by default and `Accept: application/x-ndjson` switching to NDJSON;
+  event kinds are init/text/tool_use/tool_result/result/error/raw/progress/workspace_activity.
+  A busy session returns 409 with **no queue**; no active worker returns 404 "Resume the session first"; a worker that has exited returns 410.
+- Each session can inject `mcpServers`; when the MCP server set changes, the worker is recycled at the next turn boundary.
+- Continuity: for the CLI backend the CLI keeps the native transcript and the runtime stores only `providerSessionId`; for the API/local backend the runtime
+  replays its own JSONL. `instructions` and skills are prepended every turn.
 
-活性原語，這是本題最關鍵的限制：
+Liveness primitives, the most critical constraint for this topic:
 
-- [RuntimeWakeupService](../../../cats-runtime/src/core/wakeup/RuntimeWakeupService.ts)：1 秒 tick、每 tick 最多
-  處理 8 筆、持久化於 `data/wakeups.json`，支援 coalesceKey、一次性 `scheduleAt` 與五欄 cron，**timezone 只接受 UTC**，
-  目標只能是 `{kind:'session'}`，沒有 retry/backoff。
-- 觸發時只呼叫 `ensureSessionAwake`（[sessionWakeup.ts](../../../cats-runtime/src/core/runtime/sessionWakeup.ts)）：
-  用 `--resume` 重新接回 worker，**不送任何訊息**，`metadata` 也不會交給 agent。
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md) 明文「not a general scheduler,
-  heartbeat system, or product workflow engine」。
-- NDJSON 串流每 30 秒靜默送一個 `progress kind:"heartbeat"`，那是 keep-alive，不是產品心跳。
-- runtime 內沒有 webhook、event bus、Telegram、idle reclaim；唯一的事件訂閱是 `GET /sessions/{id}/stream`。
-- 其他計時器（CLI transcript 目錄的 FileWatcher、每 5 秒的 native/agent discovery、browser/worktree TTL）都是內務，
-  不是 agent 的觸發來源。
+- [RuntimeWakeupService](../../../cats-runtime/src/core/wakeup/RuntimeWakeupService.ts): a 1-second tick, at most 8 entries
+  handled per tick, persisted in `data/wakeups.json`, supporting coalesceKey, one-shot `scheduleAt` and five-field cron, with **timezone accepting only UTC**,
+  and the target can only be `{kind:'session'}`, with no retry/backoff.
+- When triggered it only calls `ensureSessionAwake` ([sessionWakeup.ts](../../../cats-runtime/src/core/runtime/sessionWakeup.ts)):
+  it reconnects the worker with `--resume`, **sends no message**, and the `metadata` is not handed to the agent.
+  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md) states explicitly "not a general scheduler,
+  heartbeat system, or product workflow engine".
+- The NDJSON stream silently sends a `progress kind:"heartbeat"` every 30 seconds; that is a keep-alive, not a product heartbeat.
+- The runtime has no webhook, event bus, Telegram or idle reclaim; the only event subscription is `GET /sessions/{id}/stream`.
+- The other timers (the FileWatcher of the CLI transcript directory, native/agent discovery every 5 seconds, browser/worktree TTL) are all housekeeping
+  and not trigger sources for the agent.
 
-程序、儲存與封裝：
+Process, storage and packaging:
 
-- `WorkerPool` 每個 runtime session 一個 `WorkerProcess`，上限由 `CATS_RUNTIME_MAX_SESSIONS` 控制
-  （ADR-127 盤點時預設 10，runtime release guide 記錄後來調高為 50；本輪未重新驗證數字）。
-  取消為 SIGTERM 後 5 秒 SIGKILL；常駐型 CLI 被取消後 session 變 `closed`，需要 resume。閒置 worker 不會被回收。
-- 所有狀態是 `~/.cats/runtime`（`CATS_RUNTIME_DIR`）下的 JSON/JSONL：`config/providers.yaml`、`management.yaml`、
-  `data/sessions.json`、`data/wakeups.json`、`sessions/history/<id>.jsonl` 等，沒有資料庫。
-  runtime 擁有 session id、resume id、每 session transcript 與 wakeup；conversation、room、task、companion memory、
-  presence 都在 platform。
-- [bundle-runtime.mjs](../../../cats-runtime/scripts/bundle-runtime.mjs) 以 esbuild 產出單一 ESM 檔，但仍需要
-  `node_modules/yaml`、`runtime-skills/`、`config/*.example` 與 catalog JSON，由 `CATS_RUNTIME_PACKAGE_ROOT` 定位。
-  沒有需要編譯的原生依賴；Node `>=22.12.0`。
-- 遙測只有 `progress` 事件、in-memory metering、`/diagnostics/*` 與被動的 `/usage/snapshot`；
-  `POST /usage/refresh` 走各 CLI 自己的控制協定，不讀取任何憑證檔。
+- `WorkerPool` has one `WorkerProcess` per runtime session, with the cap controlled by `CATS_RUNTIME_MAX_SESSIONS`
+  (the default was 10 when ADR-127 took inventory, and the runtime release guide records that it was later raised to 50; the number was not re-verified in this round).
+  Cancellation is SIGTERM followed by SIGKILL after 5 seconds; after a resident CLI is cancelled the session becomes `closed` and needs resume. Idle workers are not reclaimed.
+- All state is JSON/JSONL under `~/.cats/runtime` (`CATS_RUNTIME_DIR`): `config/providers.yaml`, `management.yaml`,
+  `data/sessions.json`, `data/wakeups.json`, `sessions/history/<id>.jsonl` and so on, with no database.
+  The runtime owns the session id, resume id, per-session transcript and wakeup; conversation, room, task, companion memory and
+  presence are all in the platform.
+- [bundle-runtime.mjs](../../../cats-runtime/scripts/bundle-runtime.mjs) produces a single ESM file with esbuild, but it still needs
+  `node_modules/yaml`, `runtime-skills/`, `config/*.example` and the catalog JSON, located by `CATS_RUNTIME_PACKAGE_ROOT`.
+  There are no native dependencies that need compiling; Node `>=22.12.0`.
+- Telemetry is only the `progress` events, in-memory metering, `/diagnostics/*` and the passive `/usage/snapshot`;
+  `POST /usage/refresh` goes through each CLI's own control protocol and reads no credential file.
 
 ### cats-platform 0.11.1
 
-Companion life loop（owner 要的「活著」在這裡）：
+Companion life loop (the owner's "alive" is here):
 
-- 入口 `startCompanionLifeLoop`（[life/loop.ts](../../../cats-platform/src/products/chat/companion/life/loop.ts)）
-  由正式入口 `src/index.ts` 依 `CATS_COMPANION_LIFE_LOOP` 開啟，測試用的 `createServer` 預設不啟動；
-  啟動後 5 秒跑第一次，之後每 60 秒 tick 一次且不重疊。
-- 每次 tick 對每隻有 DM lane 的 companion Cat：由 `CompanionBox.life` 作息（`rhythm.ts`、`profile.ts`，預設就寢
-  23:00、起床窗 07:00 到 09:00）算出期望狀態，向 runtime 查 session 是否存活，該醒而不在就走既有的 channel activation
-  路徑喚醒，該睡且 lane 閒置就 deactivate。
-- `loop.ts` 的常數：閒置 15 分鐘入睡、`Max sessions` 時退避 5 分鐘、主人 10 分鐘內講過話就延後心跳、
-  心跳撞上 busy 4 分鐘後重試、失敗 30 分鐘後重試、剛醒 3 小時內算 greetable。
-- 心跳（[heartbeat.ts](../../../cats-platform/src/products/chat/companion/life/heartbeat.ts)、
-  [companionLifeLoop.ts](../../../cats-platform/src/products/chat/api/companionLifeLoop.ts)）：剛醒後 2 到 10 分鐘、
-  之後每 30 到 120 分鐘隨機一次，送一個不顯示給使用者的回合進**同一個** DM runtime session；回 `[quiet]` 就丟棄，
-  其他內容以 Cat 一般訊息寫入 DM lane 並鏡像到 Telegram。持有以 runtime session 為鍵的程序內 gate
-  （[sessionTurnGate.ts](../../../cats-platform/src/products/chat/state/runtime-dispatch/sessionTurnGate.ts)），
-  讓主人訊息排隊而不是吃到 409。
-- 睡眠只關 worker、保留 DM lease 的 session id；醒來且 execution target 相容時經 Runtime resume 接回同一個
-  provider-native session；retarget 不 resume 舊 provider。2026-10-26 起每個主動回合都帶同一 DM 的對話承接包
-  （12,000 字元上限）、角色、回覆語言、checkpoint 與篩選後的記憶（PR #319、#321）。
-- 明文的非目標：沒有 OS 層級背景啟動，Cats 沒開或電腦睡著時貓不會醒（ADR-127 Negative）。
+- The entry `startCompanionLifeLoop` ([life/loop.ts](../../../cats-platform/src/products/chat/companion/life/loop.ts))
+  is turned on by the official entry `src/index.ts` according to `CATS_COMPANION_LIFE_LOOP`, and the test `createServer` does not start it by default;
+  after starting it runs the first time at 5 seconds and then ticks every 60 seconds without overlap.
+- On each tick, for every companion Cat that has a DM lane: the rhythm in `CompanionBox.life` (`rhythm.ts`, `profile.ts`, default bedtime
+  23:00, wake window 07:00 to 09:00) computes the desired state, asks the runtime whether the session is alive, wakes it through the existing channel activation
+  path when it should be awake but is not, and deactivates it when it should sleep and the lane is idle.
+- Constants in `loop.ts`: fall asleep after 15 minutes idle, back off 5 minutes on `Max sessions`, defer the heartbeat when the owner spoke within 10 minutes,
+  retry 4 minutes after a heartbeat hits busy, retry 30 minutes after a failure, and count as greetable within 3 hours of waking.
+- The heartbeat ([heartbeat.ts](../../../cats-platform/src/products/chat/companion/life/heartbeat.ts),
+  [companionLifeLoop.ts](../../../cats-platform/src/products/chat/api/companionLifeLoop.ts)): 2 to 10 minutes after waking,
+  then at a random 30 to 120 minutes, it sends a turn not shown to the user into the **same** DM runtime session; a `[quiet]` reply is discarded,
+  and any other content is written to the DM lane as an ordinary Cat message and mirrored to Telegram. It holds an in-process gate keyed by runtime session
+  ([sessionTurnGate.ts](../../../cats-platform/src/products/chat/state/runtime-dispatch/sessionTurnGate.ts)),
+  so the owner's messages queue instead of getting a 409.
+- Sleep closes only the worker and keeps the DM lease's session id; when it wakes and the execution target is compatible, it reconnects to the same
+  provider-native session through Runtime resume; retarget does not resume the old provider. Since 2026-10-26 every proactive turn carries that DM's conversation handoff pack
+  (12,000-character limit), role, reply language, checkpoint and the filtered memory (PR #319, #321).
+- Explicit non-goal: there is no OS-level background start, and when Cats is not open or the computer is asleep the Cat will not wake (ADR-127 Negative).
 
-Telegram / DM：
+Telegram / DM:
 
-- platform 伺服器程序擁有。預設 long polling（[polling.ts](../../../cats-platform/src/platform/transports/telegram/polling.ts)，
-  ADR-029），webhook 可選，經 Desktop 管理的 ngrok/Funnel ingress（ADR-139）。
-- 入站經 `bridge.ts` 解析 bound Cat、重用或建立該 Cat 的 DM lane，再進 chat adapter 與
-  `runtime-dispatch/routing.ts`（約 7.7K 行）做 ensure/wake/resume 與受監督的 runtime send；
-  回覆依序送出、4000 字元切段、照片走 `sendPhoto`，心跳與 Web 起源訊息經 transport fanout 鏡像。
-- `TelegramRoomBridge<TState>` 是泛型 port，但唯一實作綁 ChatState；fanout 與 adapter import chat product 程式碼；
-  token 以明文存在 core state。Telegram 一個 token 只允許一個 `getUpdates` 消費者。
+- Owned by the platform server process. Long polling by default ([polling.ts](../../../cats-platform/src/platform/transports/telegram/polling.ts),
+  ADR-029), with an optional webhook through the Desktop-managed ngrok/Funnel ingress (ADR-139).
+- Inbound goes through `bridge.ts`, which resolves the bound Cat and reuses or creates that Cat's DM lane, then into the chat adapter and
+  `runtime-dispatch/routing.ts` (about 7.7K lines) for ensure/wake/resume and the supervised runtime send;
+  replies are sent in order, split into 4000-character segments, photos go through `sendPhoto`, and heartbeats and Web-originated messages are mirrored via transport fanout.
+- `TelegramRoomBridge<TState>` is a generic port, but its only implementation is bound to ChatState; fanout and the adapter import chat product code;
+  the token is stored in plain text in core state. Telegram allows only one `getUpdates` consumer per token.
 
-Desktop host（`desktop/host/`）：
+Desktop host (`desktop/host/`):
 
-- `main.ts` 約 2.9K 行；主視窗是一般有框視窗，關閉即藏到 tray。可重用的模組：`tray.ts`、`trayMenu.ts`、
-  `desktopStartup.ts`（預設開機啟動、不開視窗、留 tray）、`windowPlacement.ts`、`candidateProfile.ts`（單一實例鎖，
-  candidate profile 已能隔離 home、userData、port 與 AppUserModelId）、`processSupervisor.ts`（先 runtime 後 platform，
-  預期外退出標 `failed` 不自動重啟）、`updateManager.ts`。
-- 沒有任何 widget、寵物或桌面層的嘗試。唯一 frameless/transparent 的視窗是 screenshot overlay
-  （[screenshotOverlayWindows.ts](../../../cats-platform/desktop/host/screenshotOverlayWindows.ts)：`screen-saver`
-  等級 always-on-top、skipTaskbar）與更新對話框的 1×1 隱藏 owner。
-- 程序拓樸依 ADR-003：Electron main 監督 runtime 與 platform 兩個 sidecar，renderer 只跟 platform 講話，platform 只跟
-  runtime 走 loopback HTTP。
+- `main.ts` is about 2.9K lines; the main window is an ordinary framed window, and closing it hides to the tray. Reusable modules: `tray.ts`, `trayMenu.ts`,
+  `desktopStartup.ts` (start at login by default, no window, stay in the tray), `windowPlacement.ts`, `candidateProfile.ts` (single-instance lock,
+  and the candidate profile can already isolate home, userData, port and AppUserModelId), `processSupervisor.ts` (runtime first then platform,
+  an unexpected exit is marked `failed` with no automatic restart), `updateManager.ts`.
+- There has been no attempt at any widget, pet or desktop layer. The only frameless/transparent window is the screenshot overlay
+  ([screenshotOverlayWindows.ts](../../../cats-platform/desktop/host/screenshotOverlayWindows.ts): `screen-saver`
+  level always-on-top, skipTaskbar) and the update dialog's 1×1 hidden owner.
+- The process topology follows ADR-003: Electron main supervises the two sidecars runtime and platform, the renderer talks only to the platform, and the platform talks only to the
+  runtime over loopback HTTP.
 
-套件與依賴事實：
+Package and dependency facts:
 
-- platform 對 runtime **沒有 npm 依賴**，只經 `CatsRuntimeClient`（`src/runtime/client.ts`）走 HTTP；Desktop 每次發行以
-  SHA 釘 runtime（0.11.1 釘 `5212fa59`）。
-- `@cats-inc/cats-platform` 的 `exports` 只有 `.`（Electron main）與 `./app-sdk`；companion、dispatch、Telegram 邏輯
-  沒有對外介面。
-- conversation 是 Chat channel，與 `CatsCoreState` 一起存成單一 JSON 快照（`chat-state.local.json`），
-  `FileChatStore` 在程序內佇列後整檔原子覆寫；provider/model 是每個 conversation 每個 participant 各自設定（ADR-131），
-  Catlas 是唯一的全域綁定。
-- ADR-110 第 7 點：新 repo 需要至少一個耐久邊界（獨立擁有權、真正獨立的發行週期、穩定的版本化依賴契約，
-  或可量測的協調成本下降）；單憑產物格式不足。
+- The platform has **no npm dependency** on the runtime and goes only through `CatsRuntimeClient` (`src/runtime/client.ts`) over HTTP; Desktop pins the runtime by SHA at each release (0.11.1 pins `5212fa59`).
+- The `exports` of `@cats-inc/cats-platform` has only `.` (Electron main) and `./app-sdk`; the companion, dispatch and Telegram logic
+  have no external interface.
+- A conversation is a Chat channel, stored together with `CatsCoreState` as one JSON snapshot (`chat-state.local.json`);
+  `FileChatStore` queues in-process and then atomically overwrites the whole file; provider/model are set per participant per conversation (ADR-131),
+  and Catlas is the only global binding.
+- ADR-110 point 7: a new repo needs at least one durable boundary (independent ownership, a truly independent release cadence, a stable versioned dependency contract,
+  or a measurable reduction in coordination cost); an artifact format alone is not enough.
 
-App SDK / .catsapp：
+App SDK / .catsapp:
 
-- 可以：sandboxed iframe renderer、最多 8 個 frontend、Node service 與 background worker（ADR-125/SPEC-122，仍是 candidate）。
-- 不可以：擁有視窗、tray、always-on-top、login item；Cats 關閉後繼續執行；收 Telegram 或驅動 conversation/session；
-  `jobs.schedule` 只在 manifest 驗證（`catsAppValidation.ts`），沒有排程執行者；第三方不能跑可執行元件。
-- 結論：不適合「一個 exe 一個 bot」。
+- Can: a sandboxed iframe renderer, up to 8 frontends, a Node service and a background worker (ADR-125/SPEC-122, still a candidate).
+- Cannot: own a window, tray, always-on-top or login item; keep running after Cats is closed; receive Telegram or drive a conversation/session;
+  `jobs.schedule` is validated only in the manifest (`catsAppValidation.ts`) and has no scheduler to run it; third parties cannot run executable components.
+- Conclusion: not suitable for "one exe, one bot".
 
-Catlas 相關文件：ADR-054、061、066、070、SPEC-071（視窗內 floating/docked pill）、ADR-140、SPEC-131、PLAN-123（curated
-assist 與 titles）。ROADMAP 開放項：排程或喚醒驅動的 Guide Cat refresh、companion surfaces、missions 與 schedules。
-全部文件裡**沒有**桌面 widget、獨立 companion exe 或 bot-as-process 的紀錄。
+Catlas-related documents: ADR-054, 061, 066, 070, SPEC-071 (the in-window floating/docked pill), ADR-140, SPEC-131, PLAN-123 (curated
+assist and titles). ROADMAP open items: schedule- or wakeup-driven Guide Cat refresh, companion surfaces, missions and schedules.
+Nowhere in the documents is there a record of a desktop widget, a standalone companion exe or bot-as-process.
 
 ### desktop-work-fleet 0.4.2
 
-- 它不是 agent fleet。它是 owner 的便箋產品「Work Fleet」：一事一卡、九群 formation、每裝置版面、Google Drive
-  appDataFolder 同步。`src/` 沒有任何 `child_process`，沒有 claude/codex/gemini 的呼叫、session resume 或輸出解析。
-  Claude Code 的「FleetView」只是撞名。
-- 它給的是**已在真機驗證的原生殼**：
-  - Windows（.NET 10 WPF + WebView2，`src/native/windows/`）：三層 wallpaper/desktop/floating。desktop 層掛在擁有
-    `SHELLDLL_DefView` 的 Explorer host 之下、圖示之上；wallpaper 層掛在 `WorkerW`，沒有現成 host 時以 `0x052C`
-    向 Explorer 要求建立（[NativeShellLayers.cs](../../../../sammykenny2/desktop-work-fleet/src/native/windows/app/NativeShellLayers.cs)，
-    ADR-030）。floating 層是 per-pixel 透明、只有便箋區域收輸入的 layered window
-    （[DesktopSurface.cs](../../../../sammykenny2/desktop-work-fleet/src/native/windows/app/DesktopSurface.cs)，ADR-017）。
-  - tray（`Shell_NotifyIcon` v4 + WPF Fluent 選單，`NativeTray.cs`、`core/TrayMenu.cs`，ADR-019）、全域快捷鍵不搶焦點、
-    named-pipe 單一實例（`SingleInstance.cs`）、開機啟動與 close-to-tray（ADR-043）、GitHub release feed 更新器
-    （`NativeUpdater.cs`，ADR-044）、MSIX 自含封裝（ADR-036）、CrashGuard 先脫離 Explorer 再回報（ADR-045）。
-  - macOS AppKit + WKWebView 與 Linux GTK + layer-shell 各有對應宿主（ADR-023、025、031）。
-- 兩個直接影響 bot 設計的教訓：
-  - 隱藏 WebView 的計時器會被節流到約一分鐘一次，fleet 因此在原生主程序加了 20 秒的 `host-tick`
-    （`FleetWindow.cs`）。**bot 的 life loop 與排程必須在主程序，不能放 renderer。**
-  - ADR-049：Explorer 桌面視窗沒有 redirection surface，WPF 自繪的內容掛上去後不會上屏，最後靠 windowed WebView2 走
-    DirectComposition 才成功。Chromium/Electron 在同一條件下的行為沒有先例。
-- ADR-058 + SPEC-009 + PLAN-009（2026-10-20，Proposed，未實作）：把資料權威移到「非視覺常駐 core」，presentation 改為
-  可拋棄的子程序、經驗證的本機 IPC、持續的 readiness/recovery 狀態機。這正是 bot 該有的形狀；PLAN-009 Phase 0.3
-  還在選非視覺 JS host。
+- It is not an agent fleet. It is the owner's note product "Work Fleet": one card per matter, nine-group formation, per-device layout, Google Drive
+  appDataFolder sync. `src/` has no `child_process`, and no calls to claude/codex/gemini, session resume or output parsing.
+  Claude Code's "FleetView" is only a name collision.
+- What it provides is **a native shell already verified on real machines**:
+  - Windows (.NET 10 WPF + WebView2, `src/native/windows/`): three layers wallpaper/desktop/floating. The desktop layer is attached under the Explorer host
+    that owns `SHELLDLL_DefView`, above the icons; the wallpaper layer is attached to `WorkerW`, and when there is no ready host it asks Explorer to create one with `0x052C`
+    ([NativeShellLayers.cs](../../../../sammykenny2/desktop-work-fleet/src/native/windows/app/NativeShellLayers.cs),
+    ADR-030). The floating layer is a per-pixel transparent layered window where only the note area takes input
+    ([DesktopSurface.cs](../../../../sammykenny2/desktop-work-fleet/src/native/windows/app/DesktopSurface.cs), ADR-017).
+  - Tray (`Shell_NotifyIcon` v4 + WPF Fluent menu, `NativeTray.cs`, `core/TrayMenu.cs`, ADR-019), global shortcuts that do not steal focus,
+    a named-pipe single instance (`SingleInstance.cs`), start at login and close-to-tray (ADR-043), a GitHub release feed updater
+    (`NativeUpdater.cs`, ADR-044), self-contained MSIX packaging (ADR-036), and CrashGuard, which detaches from Explorer first and then reports (ADR-045).
+  - macOS AppKit + WKWebView and Linux GTK + layer-shell each have a corresponding host (ADR-023, 025, 031).
+- Two lessons that directly affect the bot's design:
+  - Timers of a hidden WebView are throttled to about once a minute, so the fleet added a 20-second `host-tick` in the native main process
+    (`FleetWindow.cs`). **The bot's life loop and schedules must live in the main process and not in the renderer.**
+  - ADR-049: Explorer's desktop window has no redirection surface, so content drawn by WPF itself does not reach the screen once attached, and it finally succeeded only with a windowed WebView2 going through
+    DirectComposition. There is no precedent for how Chromium/Electron behaves under the same conditions.
+- ADR-058 + SPEC-009 + PLAN-009 (2026-10-20, Proposed, not implemented): move the data authority to a "non-visual resident core", with the presentation becoming a
+  disposable child process, over verified local IPC, with a continuous readiness/recovery state machine. This is exactly the shape the bot should have; PLAN-009 Phase 0.3
+  is still choosing the non-visual JS host.
 
 ## Dependency direction options
 
-| 選項 | 內容 | 評估 |
+| Option | Content | Assessment |
 | --- | --- | --- |
-| A. 直接依賴 cats-runtime | 新成員像 platform 一樣走 process + HTTP 契約，釘 runtime 版本；自己擁有 life loop、事件入口、便箋存檔 | 符合 runtime ADR-009 與 platform 現況；runtime 已是公開 npm 套件；ADR-110 第 7 點的耐久邊界成立（獨立發行週期、版本化契約） |
-| B. 依賴 cats-platform | import platform 的 companion/Telegram/dispatch | platform `exports` 沒有這些介面；邏輯綁 ChatState 單一 JSON store 與程序內 gate；要先做 ADR-110 第 4、6 點的 package 抽取才可能 |
-| C. 做成 .catsapp | 在 Cats Desktop 內以 App 形式提供便箋 | 不能擁有視窗/tray/開機項，Cats 關掉就死，沒有排程執行者與 session SDK；與「大幅輕量化、獨立 process」相反 |
-| D. 薄 presence client | 像 Mobile 一樣只做 platform server 的客戶端 | 重用最多，但不是 standalone，仍需 Desktop 或 headless platform 常駐 |
+| A. Depend directly on cats-runtime | The new member goes through the process + HTTP contract like the platform, pins the runtime version, and owns its life loop, event entry and note storage | Consistent with runtime ADR-009 and the platform's current state; the runtime is already a public npm package; the durable boundary of ADR-110 point 7 holds (independent release cadence, versioned contract) |
+| B. Depend on cats-platform | Import the platform's companion/Telegram/dispatch | The platform `exports` has none of these interfaces; the logic is tied to ChatState's single JSON store and in-process gate; the package extraction of ADR-110 points 4 and 6 would have to be done first |
+| C. Make it a .catsapp | Provide the note as an App inside Cats Desktop | Cannot own a window/tray/login item, dies when Cats is closed, has no scheduler or session SDK; opposite to "greatly lightened, independent process" |
+| D. Thin presence client | Only a client of the platform server, like Mobile | Reuses the most, but is not standalone and still needs Desktop or a headless platform to stay resident |
 
-本輪傾向 A，B 列為未來若 platform 抽出 transport/client packages 時的再評估項，C 與 D 不符合 owner 的核心訴求。
-這是研究判斷，決策留給 ADR。
+This round leans to A; B is listed for re-evaluation if the platform later extracts transport/client packages, and C and D do not meet the owner's core requirements.
+This is a research judgment, and the decision is left to an ADR.
 
 ## Candidate topology and alive mechanisms
 
-以下為研究層級的候選，不是已採納的設計。
+The following are research-level candidates, not an adopted design.
 
 ```text
-bot.exe             殼：tray、便箋視窗、單一實例、updater
-  └─ bot core       Node：life loop、事件入口、全域 provider/model、便箋存檔
-       └─ cats-runtime   app-managed 子程序，--port 0，私有 CATS_RUNTIME_DIR
-            └─ provider CLI   claude/codex/pi 常駐；其他每回合 spawn 並 resume
+bot.exe             shell: tray, note windows, single instance, updater
+  └─ bot core       Node: life loop, event entry, global provider/model, note storage
+       └─ cats-runtime   app-managed child process, --port 0, private CATS_RUNTIME_DIR
+            └─ provider CLI   claude/codex/pi resident; others spawned each turn and resumed
 ```
 
-- 「一個 exe 一個 bot」在 OS 上是三到四個程序，這由 runtime 的 process + HTTP 契約決定。
-- 每隻 bot 一個 runtime 實例比共用簡單：runtime 的 session 上限與 per-resource singleton 只在單一程序內協調。
-  代價是每隻 bot 一份 Node 與 CLI 的常駐記憶體。
-- 每隻 bot 需要私有 `CATS_RUNTIME_DIR`，並把 discovery 目錄指向空資料夾，否則 FileWatcher 會匯入使用者所有 CLI session。
-- 活著的機制可直接沿用 ADR-127 的形狀：
-  - 每分鐘 tick：session 不是 ready 就 resume 或重建；runtime 重啟後一分鐘內自己醒回。
-  - 心跳：隨機間隔送隱藏回合進同一個 session，`[quiet]` 丟棄；主人剛講過話就延後；409 以 gate 排隊。
-  - 事件：Telegram long polling、檔案監看、本機 webhook、OS 喚醒／登入事件。
-  - 排程：以 runtime wakeup 當 cron 計時器（UTC），到點由 bot core 自己送訊息進 session。
-  - 睡眠：關 worker、保留 session id，醒來 resume 同一個 provider session。
-- 成本：醒著的 bot 常駐一個 CLI 程序與一個 runtime session 名額；每次心跳即使 `[quiet]` 也是真回合，消耗額度。
-- 全域 provider/model：只存一組 `{ provider, model }`，形狀同 `GuideCatRecord`；修改即 retarget 全部 session。
-- 殼分兩階段：第一階段 Electron，沿用 platform desktop/host 模式，便箋為 frameless 小視窗、可選 alwaysOnTop，
-  沒有未知數；第二階段桌面層，在「Electron + 原生 helper 移植 fleet 掛載法」與「採用 fleet 的 C#/WPF/WebView2 殼、
-  Node core 作子程序」之間選擇。
+- "One exe, one bot" is three to four processes at the OS level, which is determined by the runtime's process + HTTP contract.
+- One runtime instance per bot is simpler than sharing: the runtime's session cap and per-resource singletons are coordinated only inside a single process.
+  The cost is a resident Node and CLI memory footprint per bot.
+- Each bot needs a private `CATS_RUNTIME_DIR` and must point the discovery directory at an empty folder, otherwise the FileWatcher imports all of the user's CLI sessions.
+- The alive mechanisms can directly reuse the shape of ADR-127:
+  - Per-minute tick: if the session is not ready, resume or rebuild it; after a runtime restart it wakes itself back within a minute.
+  - Heartbeat: send a hidden turn into the same session at a random interval, discard `[quiet]`; defer when the owner just spoke; queue 409 with a gate.
+  - Events: Telegram long polling, file watching, a local webhook, OS wake/login events.
+  - Schedule: use the runtime wakeup as the cron timer (UTC), and at the due time the bot core itself sends a message into the session.
+  - Sleep: close the worker, keep the session id, and on waking resume the same provider session.
+- Cost: an awake bot holds one resident CLI process and one runtime session slot; each heartbeat, even `[quiet]`, is a real turn and consumes quota.
+- Global provider/model: store only one `{ provider, model }`, in the same shape as `GuideCatRecord`; changing it retargets all sessions.
+- The shell has two stages: stage one is Electron, following the platform desktop/host pattern, with the note as a small frameless window with optional alwaysOnTop,
+  and no unknowns; stage two is the desktop layer, choosing between "Electron + a native helper porting the fleet's attaching method" and "adopt the fleet's C#/WPF/WebView2 shell
+  with the Node core as a child process".
 
 ## Open questions for the ADR
 
-1. 便箋與 session 的對應：一隻 bot 只有一個活著的主 session、便箋是它的視圖；或每張便箋一個 session、只有主便箋保持醒著。
-   心跳與事件必須有唯一的目標 session。
-2. 殼的技術選型：Electron（與 Desktop 同棧、可直接抄 `desktop/host`）或 fleet 式原生殼（三層已驗證、WebView2 輕量、
-   多一套 .NET 工具鏈）。桌面層在 Electron 上需要實驗證據。
-3. 多隻 bot 是否共用 runtime，以及每隻 bot 的記憶體與額度預算。
-4. Telegram 綁定：bot 與 Desktop 不能共用 token；是否需要自己的 bot binding 設定與 token 儲存方式。
-5. 命名：`cats-bots` 與 `cats-agents` 皆會與既有詞彙部分重疊（Cat 即 agent；ADR-028 的 bot binding）。
-   「一個程序一個 bot」的語意較接近 `cats-bots`。
-6. 與 Cats Desktop 的關係：同一台機器同時跑 Desktop 與 bot 時的 data root、runtime 實例與 CLI 登入隔離。
-7. OS 睡眠與未登入狀態：與 ADR-127 相同，電腦睡著不會醒；是否接受此邊界。
+1. The mapping between notes and sessions: a bot has only one living main session and the notes are its views; or one session per note, with only the main note kept awake.
+   Heartbeats and events must have a unique target session.
+2. The shell's technology choice: Electron (the same stack as Desktop, `desktop/host` can be copied directly) or a fleet-style native shell (three layers verified, WebView2 is light,
+   but one more .NET toolchain). The desktop layer on Electron needs experimental evidence.
+3. Whether multiple bots share a runtime, and each bot's memory and quota budget.
+4. Telegram binding: the bot and Desktop cannot share a token; whether it needs its own bot binding settings and a token storage method.
+5. Naming: both `cats-bots` and `cats-agents` partly overlap existing vocabulary (a Cat is an agent; the bot binding of ADR-028).
+   The semantics of "one process, one bot" are closer to `cats-bots`.
+6. The relationship with Cats Desktop: isolation of the data root, runtime instance and CLI login when Desktop and a bot run on the same machine.
+7. OS sleep and the signed-out state: as with ADR-127, the bot will not wake while the computer sleeps; whether this boundary is accepted.
 
 ## Risks
 
-- 重寫 continuity 可能退步：PR #319（initializing session 首回合由心跳執行）、#321（sleep 後 resume 與 retarget 區分、
-  承接包、篩選記憶）、#327（回覆分段依序送達）都埋在 chat state 裡。這三個行為應成為 bot core 的驗收項。
-- 單程序假設：platform 的 store 與 session gate 以「兩個寫入者都在 platform 程序內」為前提；bot 不能與 Desktop
-  共用 data root、runtime session 或 Telegram token。
-- runtime 0.x 契約漂移：需像 Desktop 一樣釘 SHA 或版本，升級時跑契約測試。
-- 桌面層依賴 Explorer 非公開協定（`0x052C`、WorkerW），fleet 為此累積了 ADR-045、049、050 等多次崩潰修正；
-  Electron 路徑沒有先例。
-- 每隻 bot 的常駐成本（Node + CLI + 可能的 Chromium）與心跳額度，在多 bot 情境下會線性放大。
+- Rewriting continuity may regress: PR #319 (the first turn of an initializing session is executed by the heartbeat), #321 (resume after sleep distinguished from retarget,
+  handoff pack, filtered memory) and #327 (reply segments delivered in order) are all buried in chat state. These three behaviors should become acceptance items for the bot core.
+- Single-process assumption: the platform's store and session gate assume "both writers are inside the platform process"; the bot cannot
+  share a data root, runtime session or Telegram token with Desktop.
+- Runtime 0.x contract drift: it needs to be pinned by SHA or version like Desktop, with contract tests run on upgrade.
+- The desktop layer depends on Explorer's non-public protocol (`0x052C`, WorkerW), and the fleet has accumulated several crash fixes for this in ADR-045, 049, 050 and others;
+  the Electron path has no precedent.
+- Each bot's resident cost (Node + CLI + possibly Chromium) and heartbeat quota scale linearly in a multi-bot scenario.
 
 ## Suggested next steps
 
-1. 以本文件為輸入寫第一份 ADR：決定依賴方向（候選 A）、便箋與 session 的對應、殼的第一階段技術選型。
-2. 在 cats-one 的 `config/developer-workspace.json` 與 `templates/workspace/AGENTS.md.template` 登記新成員，重跑
-   workspace sync；補 `AGENTS.md` 的 Project Metadata、`package.json`、`README.md`、LICENSE 持有人（目前仍是 bootstrap
-   placeholder）。
-3. 先做無 UI 的 bot core，驗三件事：runtime 重啟後自動醒回、心跳會回 `[quiet]`、Telegram 來訊會回覆。
-4. 之後才加 tray 與便箋視窗；桌面層另立實驗與證據門檻。
+1. Use this document as input to write the first ADR: decide the dependency direction (candidate A), the mapping between notes and sessions, and the stage-one technology choice of the shell.
+2. Register the new member in cats-one's `config/developer-workspace.json` and `templates/workspace/AGENTS.md.template`, and rerun
+   workspace sync; fill in `AGENTS.md` Project Metadata, `package.json`, `README.md` and the LICENSE holder (still a bootstrap
+   placeholder for now).
+3. First build the bot core without UI, and verify three things: it wakes itself after a runtime restart, the heartbeat replies `[quiet]`, and an incoming Telegram message gets a reply.
+4. Only then add the tray and note windows; the desktop layer gets its own experiment and evidence bar.
 
 ## References
 
-- cats-runtime：[docs/api.md](../../../cats-runtime/docs/api.md)、
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md)、
-  [ADR-009](../../../cats-runtime/docs/decisions/009-keep-cats-runtime-separately-packageable-with-app-managed-local-startup.md)、
-  [ADR-032](../../../cats-runtime/docs/decisions/032-replace-gemini-cli-with-antigravity-cli.md)、
-  [bundle-runtime.mjs](../../../cats-runtime/scripts/bundle-runtime.mjs)。
-- cats-platform：[ADR-003](../../../cats-platform/docs/decisions/003-electron-host-manages-local-services.md)、
-  [ADR-035](../../../cats-platform/docs/decisions/035-invert-platform-dependency-and-extract-shared-design-layer.md)、
-  [ADR-054](../../../cats-platform/docs/decisions/054-use-a-platform-level-guide-sidecar-for-day-0-assist.md)、
-  [ADR-070](../../../cats-platform/docs/decisions/070-use-a-surface-safe-floating-and-shared-chrome-docked-guide-cat-placement-model.md)、
-  [ADR-090](../../../cats-platform/docs/decisions/090-adopt-generic-schedule-rules-for-mission-triggers.md)、
-  [ADR-110](../../../cats-platform/docs/decisions/110-keep-platform-clients-in-one-repository-with-explicit-package-boundaries.md)、
-  [ADR-124](../../../cats-platform/docs/decisions/124-model-companion-as-a-cat-role-not-a-skill-profile.md)、
-  [ADR-127](../../../cats-platform/docs/decisions/127-keep-companion-cats-alive-with-a-platform-owned-life-loop.md)、
-  [SPEC-124](../../../cats-platform/docs/specs/SPEC-124-alive-companion-life-loop.md)、
-  [PLAN-117](../../../cats-platform/docs/plans/PLAN-117-alive-companion-life-loop.md)、
-  [ADR-139](../../../cats-platform/docs/decisions/139-manage-one-desktop-remote-ingress.md)。
-- desktop-work-fleet：[ADR-007](../../../../sammykenny2/desktop-work-fleet/docs/decisions/007-desktop-scene-and-platform-host.md)、
-  [ADR-017](../../../../sammykenny2/desktop-work-fleet/docs/decisions/017-windows-composition-surface-and-input.md)、
-  [ADR-019](../../../../sammykenny2/desktop-work-fleet/docs/decisions/019-windows-shortcuts-and-tray.md)、
-  [ADR-030](../../../../sammykenny2/desktop-work-fleet/docs/decisions/030-windows-explorer-wallpaper-layer.md)、
-  [ADR-058](../../../../sammykenny2/desktop-work-fleet/docs/decisions/058-desktop-presentation-lifecycle-and-core-isolation.md)、
-  [平台能力研究](../../../../sammykenny2/desktop-work-fleet/docs/research/2026-10-04-desktop-interaction-platform-feasibility.md)。
-- 相對路徑以 cats-inc 開發者工作區的並排 checkout 為準；fleet 位於 `../sammykenny2/desktop-work-fleet`。
+- cats-runtime: [docs/api.md](../../../cats-runtime/docs/api.md),
+  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md),
+  [ADR-009](../../../cats-runtime/docs/decisions/009-keep-cats-runtime-separately-packageable-with-app-managed-local-startup.md),
+  [ADR-032](../../../cats-runtime/docs/decisions/032-replace-gemini-cli-with-antigravity-cli.md),
+  [bundle-runtime.mjs](../../../cats-runtime/scripts/bundle-runtime.mjs).
+- cats-platform: [ADR-003](../../../cats-platform/docs/decisions/003-electron-host-manages-local-services.md),
+  [ADR-035](../../../cats-platform/docs/decisions/035-invert-platform-dependency-and-extract-shared-design-layer.md),
+  [ADR-054](../../../cats-platform/docs/decisions/054-use-a-platform-level-guide-sidecar-for-day-0-assist.md),
+  [ADR-070](../../../cats-platform/docs/decisions/070-use-a-surface-safe-floating-and-shared-chrome-docked-guide-cat-placement-model.md),
+  [ADR-090](../../../cats-platform/docs/decisions/090-adopt-generic-schedule-rules-for-mission-triggers.md),
+  [ADR-110](../../../cats-platform/docs/decisions/110-keep-platform-clients-in-one-repository-with-explicit-package-boundaries.md),
+  [ADR-124](../../../cats-platform/docs/decisions/124-model-companion-as-a-cat-role-not-a-skill-profile.md),
+  [ADR-127](../../../cats-platform/docs/decisions/127-keep-companion-cats-alive-with-a-platform-owned-life-loop.md),
+  [SPEC-124](../../../cats-platform/docs/specs/SPEC-124-alive-companion-life-loop.md),
+  [PLAN-117](../../../cats-platform/docs/plans/PLAN-117-alive-companion-life-loop.md),
+  [ADR-139](../../../cats-platform/docs/decisions/139-manage-one-desktop-remote-ingress.md).
+- desktop-work-fleet: [ADR-007](../../../../sammykenny2/desktop-work-fleet/docs/decisions/007-desktop-scene-and-platform-host.md),
+  [ADR-017](../../../../sammykenny2/desktop-work-fleet/docs/decisions/017-windows-composition-surface-and-input.md),
+  [ADR-019](../../../../sammykenny2/desktop-work-fleet/docs/decisions/019-windows-shortcuts-and-tray.md),
+  [ADR-030](../../../../sammykenny2/desktop-work-fleet/docs/decisions/030-windows-explorer-wallpaper-layer.md),
+  [ADR-058](../../../../sammykenny2/desktop-work-fleet/docs/decisions/058-desktop-presentation-lifecycle-and-core-isolation.md),
+  [platform capability research](../../../../sammykenny2/desktop-work-fleet/docs/research/2026-10-04-desktop-interaction-platform-feasibility.md).
+- Relative paths assume the side-by-side checkouts of the cats-inc developer workspace; the fleet is at `../sammykenny2/desktop-work-fleet`.
 
 *Last updated: 2026-10-27*

@@ -12,38 +12,55 @@
 
 ## Summary
 
-便箋把 bot 的回覆當 markdown 顯示，工具呼叫是可展開的卡片，需要主人決定的事有按鈕；設定與首次啟動頁
-功能不變但改以 React 實作。頁面的行為仍由 SPEC-001 FR-33 與 SPEC-002 定義，本文件只補充閱讀與互動。
+The note shows the bot's replies as markdown, tool calls are expandable cards, and matters that need
+the owner's decision have buttons; the settings and first-run pages keep their functions but are
+implemented in React. The pages' behavior is still defined by SPEC-001 FR-33 and SPEC-002; this
+document only adds reading and interaction.
 
 ## Functional Requirements
 
-1. FR-1：建置。renderer 由 `src/renderer` 以 Vite 建置到 `dist/renderer`，頁面名稱與查詢字串不變；
-   CSP 維持 `script-src 'self'`、`style-src 'self'`；建置產生 `THIRD-PARTY-NOTICES.txt`。
-2. FR-2：markdown。bot 的回覆（含串流中的回覆）以 GFM 渲染：段落、粗體與斜體、清單、引言、表格、
-   程式碼與程式碼區塊、刪除線；單一換行保留為換行。原始 HTML 以文字顯示。程式碼區塊與表格在便箋寬度內
-   自己橫向捲動，便箋本身不出現橫向捲軸。主人自己的訊息維持純文字。
-3. FR-3：連結與圖片。http(s) 連結以系統瀏覽器開啟，便箋不換頁；其他連結不可點，滑過時以 title 顯示
-   目標；遠端圖片不載入，顯示為指向該圖片的連結。殼拒絕任何頁面開新視窗或換到別的網址。
-4. FR-4：工具卡片。同一次工具呼叫（`tool_use` 與其 `tool_result`，以 `toolId` 對應）顯示為一張卡片：
-   預設收合，顯示工具名稱、一行摘要與狀態（執行中、完成、錯誤）；展開後看到輸入與結果全文。
-   沒有 `toolId` 的項目各自成卡。
-5. FR-5：主人的決定。對應到 `awaiting_owner` 工作項的系統訊息顯示「Approve」與「Deny」按鈕，按下後呼叫
-   `resolveApproval`；已決定、已過期或已不在等待的項目只顯示結果，沒有按鈕。
-6. FR-6：設定與首次啟動頁以 React 重寫，功能與 SPEC-002 FR-1–FR-6 相同，並保留這些既有行為：
-   model 清單只採用最新一次請求、載入中不能存檔、查詢失敗時仍可留空或輸入 model id、切回已存的
-   provider 時預選已存的 model、Notes 分頁在視窗取得焦點時更新、改名進行中不被事件重繪打斷。
+1. FR-1: Build. The renderer is built by Vite from `src/renderer` to `dist/renderer`, with page names
+   and query strings unchanged; the CSP stays `script-src 'self'` and `style-src 'self'`; the build
+   generates `THIRD-PARTY-NOTICES.txt`.
+2. FR-2: Markdown. The bot's replies (including streaming replies) are rendered as GFM: paragraphs,
+   bold and italics, lists, quotes, tables, code and code blocks, strikethrough; a single line break is
+   kept as a line break. Raw HTML is shown as text. Code blocks and tables scroll horizontally inside
+   themselves within the note width, and the note itself shows no horizontal scrollbar. The owner's own
+   messages remain plain text.
+3. FR-3: Links and images. http(s) links are opened in the system browser and the note does not
+   navigate; other links are not clickable and show their target in the title on hover; remote images
+   are not loaded and are shown as a link to the image. The shell refuses any page opening a new window
+   or navigating to another URL.
+4. FR-4: Tool cards. One tool call (`tool_use` and its `tool_result`, matched by `toolId`) is shown as
+   one card: collapsed by default, showing the tool name, a one-line summary and the state (running,
+   done, error); expanded, it shows the full input and result. Items without a `toolId` each get their
+   own card.
+5. FR-5: The owner's decisions. A system message corresponding to an `awaiting_owner` work item shows
+   "Approve" and "Deny" buttons, which call `resolveApproval` when pressed; an item that is already
+   decided, expired or no longer waiting shows only the result, with no buttons.
+6. FR-6: The settings and first-run pages are rewritten in React with the same functions as SPEC-002
+   FR-1–FR-6, and keep these existing behaviors: the model list uses only the latest request, saving is
+   not possible while loading, the model can still be left empty or a model id typed when the query
+   fails, switching back to the saved provider preselects the saved model, the Notes tab refreshes when
+   the window gains focus, and a rename in progress is not interrupted by an event redraw.
 
 ## Acceptance
 
-- A1：一段含標題、清單、表格、程式碼區塊與連結的回覆在 340 px 寬的便箋裡正確顯示，便箋沒有橫向捲軸。
-- A2：點回覆裡的 https 連結，預設瀏覽器開啟該網址，便箋仍在原頁；點本機路徑的連結沒有反應。
-- A3：一個會用工具的回合在便箋上顯示收合的工具卡片，展開後看到輸入與結果。
-- A4：`ask_owner` 的問題在便箋上有按鈕，按 Approve 後工作項完成、按鈕消失。
-- A5：既有的驗收腳本（設定頁 model 競態與存檔、桌面層便箋的抬起、背景便箋的未讀）在新頁面上照樣通過。
-- A6：打包後的安裝檔第一次開啟出現首次啟動頁，建立 bot 後 home 便箋可以對話。
+- A1: A reply containing a heading, list, table, code block and link displays correctly in a 340 px
+  wide note, and the note has no horizontal scrollbar.
+- A2: Clicking an https link in a reply opens that URL in the default browser, and the note stays on
+  its page; clicking a link to a local path does nothing.
+- A3: A turn that uses tools shows a collapsed tool card on the note, and expanding it shows the input
+  and result.
+- A4: A question from `ask_owner` has buttons on the note, and after pressing Approve the work item
+  completes and the buttons disappear.
+- A5: The existing acceptance scripts (settings-page model race and saving, raising a desktop-layer
+  note, unread of a background note) still pass on the new pages.
+- A6: The packaged installer shows the first-run page the first time it is opened, and after the bot is
+  created the home note can chat.
 
 ## Non-Goals
 
-- 與 Cats Desktop 共用元件或套件（ADR-003 §1）。
-- 主人訊息的 markdown、編輯或重送訊息、附件。
-- 浮動貓改用 React。
+- Sharing components or packages with Cats Desktop (ADR-003 §1).
+- Markdown in the owner's messages, editing or resending messages, attachments.
+- Moving the floating Cat to React.
