@@ -38,6 +38,11 @@ export interface TelegramPolicy {
   ownerChatId: number | null;
 }
 
+/** SPEC-006 BDC-02: the owner's switch for desktop control; off by default. */
+export interface DesktopControlPolicy {
+  enabled: boolean;
+}
+
 /** SPEC-001 FR-1. */
 export interface BotProfile {
   schemaVersion: 2;
@@ -52,6 +57,8 @@ export interface BotProfile {
   heartbeat: HeartbeatPolicy;
   idleSleepMinutes: number;
   telegram: TelegramPolicy;
+  /** SPEC-006 BDC-02: absent or invalid reads as off, so an older writer that drops it fails closed. */
+  desktopControl: DesktopControlPolicy;
   updatedAt: string;
 }
 
@@ -281,6 +288,7 @@ export interface BotProfilePatch {
   permissions?: Partial<BotPermissions>;
   providerPolicy?: SessionExecutionPolicy | null;
   telegram?: Partial<TelegramPolicy>;
+  desktopControl?: Partial<DesktopControlPolicy>;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */
