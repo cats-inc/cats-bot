@@ -37,7 +37,7 @@ jobs:
         with:
           name: cats-bot-windows-${{ github.sha }}
           path: |
-            release/*-setup.exe
-            release/*-portable.exe
+            release/*-setup-*.exe
+            release/*-portable-*.exe
           if-no-files-found: error
           retention-days: 30

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
 
@@ -36,6 +36,81 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  package-preview:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Build candidate packages (updates disabled)
+        shell: bash
+        env:
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          tag="v$(node -p 'require("./package.json").version')"
+          node scripts/build-preview.mjs --platform "$RELEASE_PLATFORM" --tag "$tag" --source "$SOURCE_COMMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+            release/*-build.json
+          if-no-files-found: error
+
+  preview-contract:
+    needs: package-preview
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: pin
+        run: echo "runtime=$(node -p 'require("./vendor/runtime-source.json").commit')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: cats-inc/cats-runtime
+          ref: ${{ steps.pin.outputs.runtime }}
+          path: runtime-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: candidate-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete candidate assets and source bundle
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python scripts/create-source-bundle.py "$SOURCE_COMMIT" runtime-source release-assets
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import { validateInputs, validateAssets } from './scripts/release-contract.mjs';
+          const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+          const input = await validateInputs(process.cwd(), `v${pkg.version}`);
+          await validateAssets('release-assets', input, process.env.SOURCE_COMMIT, true);
+          JS
 
   validate:
     runs-on: ubuntu-latest

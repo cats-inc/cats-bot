@@ -1,0 +1,234 @@
+name: Bots Standard Preview
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Unused vX.Y.Z matching the prepared package/lockfile version (0.2.0 or later).'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Preview discovery follows the release feed order. Serialize different tags too.
+concurrency:
+  group: bots-standard-preview-release
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.identity.outputs.tag }}
+      source: ${{ steps.identity.outputs.source }}
+      runtime: ${{ steps.identity.outputs.runtime }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - id: identity
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        with:
+          script: |
+            const { guardRelease } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
+            const input = await guardRelease({ github, root: process.env.GITHUB_WORKSPACE, tag: process.env.RELEASE_TAG, sourceCommit: context.sha });
+            core.setOutput('tag', input.tag);
+            core.setOutput('source', context.sha);
+            core.setOutput('runtime', input.runtime.commit);
+
+  draft:
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.source }}
+      - uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.guard.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.guard.outputs.source }}
+        with:
+          script: |
+            const { guardRelease } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
+            const input = await guardRelease({ github, root: process.env.GITHUB_WORKSPACE, tag: process.env.RELEASE_TAG, sourceCommit: process.env.SOURCE_COMMIT });
+            if (!input.existing) await github.rest.repos.createRelease({ owner: input.owner, repo: input.repo,
+              tag_name: input.tag, target_commitish: process.env.SOURCE_COMMIT, draft: true, prerelease: true,
+              make_latest: 'false', name: `Cats Bot ${input.tag} — Standard Preview`,
+              body: `${input.notes}\n\n${input.identity}\nRuntime commit: \`${input.runtime.commit}\`\n\nSigning profile: Standard. Per-platform trust is recorded in the build receipts. Portable and unsigned macOS builds use manual updates.\n` });
+
+  build:
+    needs: [guard, draft]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
+          - os: ubuntu-latest
+            platform: linux
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.source }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Stage macOS notarization key
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          KEY_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
+        run: |
+          if [ -n "$KEY_BASE64" ]; then
+            key_path="$RUNNER_TEMP/bots-notarization.p8"
+            printf '%s' "$KEY_BASE64" | base64 --decode > "$key_path"
+            chmod 600 "$key_path"
+            echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
+          fi
+      - name: Build Standard Preview packages
+        env:
+          RELEASE_TAG: ${{ needs.guard.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.guard.outputs.source }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+          WIN_CSC_LINK: ${{ matrix.platform == 'windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.platform == 'windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
+          CSC_LINK: ${{ matrix.platform == 'macos' && secrets.CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.platform == 'macos' && secrets.CSC_KEY_PASSWORD || '' }}
+          APPLE_API_KEY_ID: ${{ matrix.platform == 'macos' && secrets.APPLE_API_KEY_ID || '' }}
+          APPLE_API_ISSUER: ${{ matrix.platform == 'macos' && secrets.APPLE_API_ISSUER || '' }}
+        shell: bash
+        run: node scripts/build-preview.mjs --platform "$RELEASE_PLATFORM" --tag "$RELEASE_TAG" --source "$SOURCE_COMMIT" --release
+      - name: Verify Windows signatures
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          HAS_CERT: ${{ secrets.WIN_CSC_LINK != '' }}
+        run: |
+          if ($env:HAS_CERT -eq 'true') {
+            Get-ChildItem release -Filter *.exe | ForEach-Object {
+              if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid') { throw "Invalid signature: $($_.Name)" }
+            }
+          }
+      - name: Verify macOS universal app and signing
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          HAS_CERT: ${{ secrets.CSC_LINK != '' }}
+        run: |
+          app='release/mac-universal/Cats Bot.app'
+          lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/Cats Bot"
+          if [ "$HAS_CERT" = 'true' ]; then
+            codesign --verify --deep --strict --verbose=2 "$app"
+            spctl --assess --type execute --verbose=2 "$app"
+            xcrun stapler validate "$app"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: preview-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+            release/*-build.json
+          if-no-files-found: error
+
+  publish:
+    needs: [guard, draft, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.guard.outputs.source }}
+      - uses: actions/checkout@v4
+        with:
+          repository: cats-inc/cats-runtime
+          ref: ${{ needs.guard.outputs.runtime }}
+          path: runtime-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: preview-*
+          path: release-assets
+          merge-multiple: true
+      - name: Complete source bundle
+        env:
+          SOURCE_COMMIT: ${{ needs.guard.outputs.source }}
+        run: python scripts/create-source-bundle.py "$SOURCE_COMMIT" runtime-source release-assets
+      - name: Validate and attach all assets to the same draft
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.guard.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.guard.outputs.source }}
+        with:
+          script: |
+            const root = process.env.GITHUB_WORKSPACE;
+            const { guardRelease } = await import(`${root}/scripts/release-github.mjs`);
+            const { validateAssets } = await import(`${root}/scripts/release-contract.mjs`);
+            const input = await guardRelease({ github, root, tag: process.env.RELEASE_TAG, sourceCommit: process.env.SOURCE_COMMIT });
+            if (!input.existing) throw new Error('Expected the guarded draft release.');
+            await validateAssets(`${root}/release-assets`, input, process.env.SOURCE_COMMIT);
+            const fs = require('node:fs/promises');
+            const old = await github.paginate(github.rest.repos.listReleaseAssets, { owner: input.owner, repo: input.repo, release_id: input.existing.id });
+            for (const asset of old) await github.rest.repos.deleteReleaseAsset({ owner: input.owner, repo: input.repo, asset_id: asset.id });
+            for (const name of await fs.readdir(`${root}/release-assets`)) {
+              const data = await fs.readFile(`${root}/release-assets/${name}`);
+              await github.rest.repos.uploadReleaseAsset({ owner: input.owner, repo: input.repo, release_id: input.existing.id,
+                name, data, headers: { 'content-type': 'application/octet-stream', 'content-length': data.length } });
+            }
+      - uses: actions/attest-build-provenance@v3
+        with:
+          subject-path: release-assets/*
+      - name: Publish immutable Standard Preview
+        uses: actions/github-script@v7
+        env:
+          RELEASE_TAG: ${{ needs.guard.outputs.tag }}
+          SOURCE_COMMIT: ${{ needs.guard.outputs.source }}
+        with:
+          script: |
+            const root = process.env.GITHUB_WORKSPACE;
+            const { guardRelease } = await import(`${root}/scripts/release-github.mjs`);
+            const input = await guardRelease({ github, root, tag: process.env.RELEASE_TAG, sourceCommit: process.env.SOURCE_COMMIT });
+            if (!input.existing) throw new Error('Expected the same draft before publication.');
+            const fs = require('node:fs/promises');
+            const assets = await github.paginate(github.rest.repos.listReleaseAssets, { owner: input.owner, repo: input.repo, release_id: input.existing.id });
+            const files = await fs.readdir(`${root}/release-assets`);
+            if (assets.length !== files.length) throw new Error('Uploaded asset count mismatch.');
+            for (const name of files) {
+              const asset = assets.find(item => item.name === name);
+              const data = await fs.readFile(`${root}/release-assets/${name}`);
+              const hash = require('node:crypto').createHash('sha256').update(data).digest('hex');
+              if (!asset || asset.state !== 'uploaded' || asset.size !== data.length || asset.digest !== `sha256:${hash}`) throw new Error(`Hosted asset verification failed: ${name}`);
+            }
+            await github.rest.repos.updateRelease({ owner: input.owner, repo: input.repo, release_id: input.existing.id,
+              draft: false, prerelease: true, make_latest: 'false' });
+            const result = await github.rest.repos.getRelease({ owner: input.owner, repo: input.repo, release_id: input.existing.id });
+            if (result.data.draft || !result.data.prerelease) throw new Error('Published release identity mismatch.');
+            const tag = await github.rest.git.getRef({ owner: input.owner, repo: input.repo, ref: `tags/${input.tag}` });
+            if (tag.data.object.type !== 'commit' || tag.data.object.sha !== process.env.SOURCE_COMMIT) throw new Error('Published tag differs from the built source.');
+            core.notice(result.data.html_url);
