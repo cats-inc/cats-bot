@@ -116,6 +116,9 @@ CI builds the same full architecture/format matrix as unsigned candidates,
 validates the combined metadata/checksums and creates the complete-source ZIP.
 The shared packager also checks the macOS executable's Intel and Apple Silicon
 architecture slices in both candidate CI and release builds. CI does not publish.
+Both workflows use GitHub's standard `macos-15-intel` build host so release
+availability does not depend on the ARM runner pool. The host architecture does
+not change the Universal output: both x86_64 and arm64 slices remain required.
 A local Windows unpacked candidate can be built after
 `npm ci` and `npm run build`, with the .NET 8 SDK or newer installed:
 
