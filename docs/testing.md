@@ -145,6 +145,11 @@ last step, not the first.
 
 ## Running Tests
 
+`tests/integration/codexDesktopControl.test.ts` runs the packed Runtime against a
+scripted Codex native MCP approval and a fake desktop helper. It verifies decline
+and cancellation without tool execution, a separate app grant after tool consent,
+read-only tool consent, one execution in the same work item, and input-free receipts.
+
 ```bash
 npm test                                      # everything
 node --test tests/architecture-boundaries.test.ts

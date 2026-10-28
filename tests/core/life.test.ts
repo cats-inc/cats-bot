@@ -75,15 +75,20 @@ test('a tick during a running turn neither resumes, rebuilds nor cancels (A2 bus
     // The run is journaled right before the prompt leaves (FR-28).
     const running = waitForEvent(core, (event) => event.type === 'work.updated'
       && event.workItem.state === 'running' && event.workItem.run !== undefined);
+    const completed = waitForEvent(core, (event) => event.type === 'turn.completed' && event.conversationId === 'home');
     const slow = await core.sendOwnerMessage('home', 'slow:1500');
     await running;
     const report = await core.tick();
     assert.equal(report.outcome, 'busy_turn');
     const during = await fetchFakeState(core);
-    assert.equal(during.calls.length, before.calls.length + 1, 'only the message itself reached the runtime');
+    // Journaling precedes HTTP delivery, so the send may still be in flight here.
+    assert.ok(during.calls.length >= before.calls.length && during.calls.length <= before.calls.length + 1);
     assert.ok(!during.calls.some((call) => ['resume', 'cancel', 'close'].includes(String(call.op))));
-    const finished = await waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === slow.id);
+    const finished = await completed;
     assert.equal(finished.type === 'turn.completed' && finished.workItem.state, 'completed');
+    assert.equal(finished.type === 'turn.completed' && finished.workItem.id, slow.id);
+    const after = await fetchFakeState(core);
+    assert.equal(after.calls.length, before.calls.length + 1, 'only the message itself reached the runtime');
   } finally {
     await core.stop();
   }
