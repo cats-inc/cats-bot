@@ -1,6 +1,6 @@
 {
   "name": "@cats-inc/cats-bots",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Standalone always-alive desktop bots for the Cats ecosystem: one process per bot, wrapping an agent CLI through cats-runtime.",
   "author": "sammykenny2 <sammykenny2@gmail.com>",

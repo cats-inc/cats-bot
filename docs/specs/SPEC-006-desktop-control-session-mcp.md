@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Contract frozen (P0, 2026-10-29); implementation in progress under PLAN-006 |
+| Status | Contract frozen (P0, 2026-10-29); phases A and B implemented under PLAN-006 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Reviewer | Product owner, Platform and Runtime maintainers |
 | Baseline | Bots `a0a9ec5`; 2026-10-29 |
