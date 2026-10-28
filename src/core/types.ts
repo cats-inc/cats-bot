@@ -8,6 +8,8 @@
 export interface ExecutionTarget {
   provider: string;
   model: string | null;
+  /** Claude Code only: launch with `--chrome` so Claude in Chrome tools are available. */
+  claudeInChrome?: boolean;
 }
 
 export type WorkspaceAccess = 'read_write' | 'read_only';
@@ -371,7 +373,7 @@ export interface TelegramSettingsStatus {
 // SPEC-039 wire contract, owned by Runtime; no provider protocol details.
 /** Host-facing interaction contract. Native provider request IDs stay in the adapter. */
 export const INTERACTION_KINDS = [
-  'command_approval', 'file_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url',
+  'command_approval', 'file_approval', 'tool_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url',
 ] as const;
 export type InteractionKind = typeof INTERACTION_KINDS[number];
 export type InteractionStatus = 'pending' | 'responding' | 'resolved' | 'expired'
@@ -494,7 +496,9 @@ export interface SessionToolInventory {
   pages: number;
   servers: SessionToolServer[];
   dynamicTools: Array<{ name: string; source: 'runtime-dynamic' }>;
-  builtins: 'not_exposed_by_provider';
+  /** Built-in provider tools, once the provider reports them. */
+  builtins: 'not_exposed_by_provider' | 'not_observed' | 'observed';
+  builtinTools?: string[];
   reason?: string;
 }
 

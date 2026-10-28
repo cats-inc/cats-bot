@@ -106,6 +106,8 @@ export interface BotForm {
   name: string;
   provider: string;
   model: string | null;
+  /** Applies only while the provider is Claude Code. */
+  claudeInChrome: boolean;
   instructions: string;
   cwd: string;
   workspaceAccess: BotPermissions['workspaceAccess'];
@@ -118,6 +120,7 @@ export function botForm(profile: BotProfile): BotForm {
     name: profile.name,
     provider: profile.executionTarget.provider,
     model: profile.executionTarget.model,
+    claudeInChrome: profile.executionTarget.claudeInChrome === true,
     instructions: profile.instructions,
     cwd: profile.permissions.cwd,
     workspaceAccess: profile.permissions.workspaceAccess,
@@ -135,8 +138,11 @@ export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | 
   const patch: BotProfilePatch = {};
   const name = form.name.trim();
   if (name && name !== profile.name) patch.name = name;
-  if (form.provider !== profile.executionTarget.provider || form.model !== profile.executionTarget.model) {
-    patch.executionTarget = { provider: form.provider, model: form.model };
+  const chrome = form.provider === 'claude' && form.claudeInChrome;
+  if (form.provider !== profile.executionTarget.provider || form.model !== profile.executionTarget.model
+    || chrome !== (profile.executionTarget.claudeInChrome === true)) {
+    patch.executionTarget = { provider: form.provider, model: form.model,
+      ...(chrome || profile.executionTarget.claudeInChrome ? { claudeInChrome: chrome } : {}) };
   }
   if (form.instructions !== profile.instructions) patch.instructions = form.instructions;
   const permissions: Partial<BotPermissions> = {};
@@ -160,6 +166,8 @@ export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProf
   }
   if (patch.executionTarget && patch.executionTarget.provider !== before.executionTarget.provider) {
     lines.push(`The runtime restarts for ${patch.executionTarget.provider} once the current reply has finished.`);
+  } else if (patch.executionTarget && (after.executionTarget.claudeInChrome === true) !== (before.executionTarget.claudeInChrome === true)) {
+    lines.push(`The runtime restarts with Claude in Chrome ${after.executionTarget.claudeInChrome ? 'on' : 'off'} once the current reply has finished.`);
   }
   return lines.join(' ');
 }

@@ -96,6 +96,21 @@ test('saving sends only what changed', () => {
   assert.deepEqual(botPatch(PROFILE, { ...form, cwd: '  ' }), null, 'an emptied folder is not saved');
 });
 
+test('Claude in Chrome is saved for Claude only and turned off when the provider changes', () => {
+  const form = botForm(PROFILE);
+  assert.equal(form.claudeInChrome, false);
+  assert.deepEqual(botPatch(PROFILE, { ...form, claudeInChrome: true }),
+    { executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } });
+  assert.equal(botPatch(PROFILE, { ...form, provider: 'codex', claudeInChrome: true })?.executionTarget?.claudeInChrome, undefined,
+    'never sent for another provider when it was off');
+  const chrome = { ...PROFILE, executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } };
+  assert.equal(botForm(chrome).claudeInChrome, true);
+  assert.equal(botPatch(chrome, botForm(chrome)), null);
+  assert.deepEqual(botPatch(chrome, { ...botForm(chrome), provider: 'codex', model: null }),
+    { executionTarget: { provider: 'codex', model: null, claudeInChrome: false } });
+  assert.match(saveNotice(PROFILE, chrome, { executionTarget: chrome.executionTarget }), /Claude in Chrome on/u);
+});
+
 test('after a save the page says when sessions are replaced and when the runtime restarts', () => {
   const after = { ...PROFILE, configRevision: 4 };
   assert.match(saveNotice(PROFILE, after, { instructions: 'x' }), /fresh session/u);

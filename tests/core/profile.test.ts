@@ -142,6 +142,22 @@ test('applyProfilePatch bumps configRevision only for a real target change (FR-2
   assert.equal(renamed.profile.heartbeat.wakeMinMinutes, 2);
 });
 
+test('Claude in Chrome restarts the runtime, survives other edits and stays off for older profiles', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', model: 'opus', cwd: 'C:/work', now });
+  assert.equal(profile.executionTarget.claudeInChrome, undefined);
+  const on = applyProfilePatch(profile, { executionTarget: { provider: 'claude', model: 'opus', claudeInChrome: true } }, now);
+  assert.equal(on.providerChanged, true, 'the runtime launches the CLI with --chrome');
+  assert.equal(on.profile.configRevision, 2);
+  const model = applyProfilePatch(on.profile, { executionTarget: { provider: 'claude', model: 'sonnet' } }, now);
+  assert.equal(model.profile.executionTarget.claudeInChrome, true, 'an edit that omits it keeps it');
+  assert.equal(model.providerChanged, false);
+  const off = applyProfilePatch(on.profile, { executionTarget: { provider: 'claude', model: 'opus', claudeInChrome: false } }, now);
+  assert.equal(off.providerChanged, true);
+  assert.equal(off.profile.executionTarget.claudeInChrome, undefined);
+  const loaded = normalizeProfile({ ...profile, executionTarget: { provider: 'claude', model: 'opus' } }, profile);
+  assert.equal(loaded.executionTarget.claudeInChrome, undefined);
+});
+
 test('applyProfilePatch bumps configRevision for instructions, permissions and cwd too (FR-27)', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
   for (const patch of [

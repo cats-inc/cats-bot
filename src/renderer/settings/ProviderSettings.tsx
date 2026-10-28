@@ -57,6 +57,7 @@ export function ProviderSettings({ profile, onSaved }: { profile: BotProfile; on
         <option value="on-request">Ask when requested by the agent</option><option value="untrusted">Ask for untrusted commands</option><option value="never">Never prompt; enforce the access limit</option>
       </select></label>}
       <p className="hint">The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.</p>
+      {profile.executionTarget.provider === 'claude' && <p className="hint warn">Claude Code cannot limit file or network access on Windows, so only full machine access with network can be saved. Choose &quot;Ask when requested by the agent&quot; to approve each action yourself.</p>}
     </>}
     <button type="button" disabled={busy} onClick={() => void save()}>Save provider policy</button>
     <h3>Current session</h3>
@@ -73,6 +74,7 @@ export function ProviderSettings({ profile, onSaved }: { profile: BotProfile; on
         <p>Authentication mechanism: {s.auth}. Discovery: {s.discovery}. Invocation: not verified.</p>
         <ul>{s.tools.map(t => <li key={t.qualifiedName}>{t.qualifiedName}</li>)}</ul>
       </details>)}
+      {observation.inventory.builtinTools?.length ? <details><summary>Built-in tools · {observation.inventory.builtinTools.length}</summary><ul>{observation.inventory.builtinTools.map(t => <li key={t}>{t}</li>)}</ul></details> : null}
       {observation.inventory.dynamicTools.length > 0 && <details><summary>Runtime dynamic tools</summary><ul>{observation.inventory.dynamicTools.map(t => <li key={t.name}>{t.name}</li>)}</ul></details>}
       {observation.dependencies.map(d => <p key={d.kind}>{d.kind === 'browser' ? 'Browser' : 'Computer use'}: {d.status}. {d.evidence} {d.remediation}</p>)}
     </>}

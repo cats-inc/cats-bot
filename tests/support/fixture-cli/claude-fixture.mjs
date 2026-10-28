@@ -27,6 +27,9 @@ if (args.includes('--help')) {
     '  --resume <id>',
     '  --model <model>',
     '  --mcp-config <json>',
+    '  --permission-mode <mode>',
+    '  --permission-prompt-tool <tool>',
+    '  --chrome',
     '',
   ].join('\n'));
   process.exit(0);
@@ -38,6 +41,13 @@ const sessionId = resumed ?? randomUUID();
 const modelIndex = args.indexOf('--model');
 const model = modelIndex !== -1 ? args[modelIndex + 1] : 'claude-fixture';
 const logPath = process.env.CATS_BOTS_FIXTURE_LOG;
+const modeIndex = args.indexOf('--permission-mode');
+const launchedMode = modeIndex !== -1 ? args[modeIndex + 1] : null;
+// What `initialize` reports: `manual` reports `default`; no flag stands for the user's own mode.
+const permissionMode = args.includes('--dangerously-skip-permissions') ? 'bypassPermissions'
+  : launchedMode === 'manual' ? 'default' : launchedMode ?? 'auto';
+const hostPrompts = args[args.indexOf('--permission-prompt-tool') + 1] === 'stdio';
+const chrome = args.includes('--chrome');
 
 const mcpIndex = args.indexOf('--mcp-config');
 let mcpServers = {};
@@ -98,6 +108,24 @@ function userMessageOf(full) {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** Host answers to this CLI's own control requests, by request_id. */
+const answers = new Map();
+let controlId = 0;
+function askHost(request) {
+  const requestId = `fixture-${++controlId}`;
+  process.stdout.write(`${JSON.stringify({ type: 'control_request', request_id: requestId, request })}\n`);
+  return new Promise((resolve) => answers.set(requestId, resolve));
+}
+function answerHost(requestId, response) {
+  process.stdout.write(`${JSON.stringify({ type: 'control_response', response: { subtype: 'success', request_id: requestId, response } })}\n`);
+}
+function serverStatus() {
+  return [
+    ...Object.keys(mcpServers).map((name) => ({ name, status: 'connected', scope: 'dynamic', tools: [{ name: 'ask_owner' }] })),
+    ...(chrome ? [{ name: 'claude-in-chrome', status: 'connected', scope: 'dynamic', tools: [{ name: 'navigate' }] }] : []),
+  ];
+}
+
 let initialized = false;
 let turns = 0;
 let queue = Promise.resolve();
@@ -110,7 +138,8 @@ async function handleTurn(full) {
   if (!initialized) {
     initialized = true;
     emit({
-      type: 'system', subtype: 'init', cwd: process.cwd(), tools: [], model, permissionMode: 'default', claude_code_version: '2.1.267',
+      type: 'system', subtype: 'init', cwd: process.cwd(), tools: ['Read', 'Bash', ...(hostPrompts ? ['AskUserQuestion'] : [])],
+      model, permissionMode, claude_code_version: '2.1.267',
       mcp_servers: Object.keys(mcpServers).map((name) => ({ name, status: 'connected' })),
     });
   }
@@ -148,6 +177,21 @@ async function handleTurn(full) {
     reply = `asked -> ${text}`;
   } else if (message === 'schedules?') {
     reply = await callTool('schedule_list', {});
+  } else if (message === 'native-question') {
+    const question = 'Which fixture color?';
+    const answer = hostPrompts ? await askHost({ subtype: 'can_use_tool', tool_name: 'AskUserQuestion', display_name: 'AskUserQuestion',
+      requires_user_interaction: true, tool_use_id: 'toolu_q', input: { questions: [{ question, header: 'Color', multiSelect: false,
+        options: [{ label: 'Red' }, { label: 'Blue' }] }] } }) : { behavior: 'deny' };
+    reply = answer.behavior === 'allow' ? `answered ${answer.updatedInput?.answers?.[question]}` : 'question denied';
+  } else if (message === 'native-chrome') {
+    const answer = !chrome ? null : await askHost({ subtype: 'can_use_tool', tool_name: 'mcp__claude-in-chrome__navigate',
+      display_name: 'Navigate', mcp_server: { name: 'claude-in-chrome', source: 'dynamic' }, tool_use_id: 'toolu_c',
+      input: { url: 'https://example.com' } });
+    reply = !answer ? 'no chrome' : answer.behavior === 'allow' ? 'navigate allowed' : 'navigate denied';
+  } else if (message === 'native-form') {
+    const answer = await askHost({ subtype: 'elicitation', mcp_server_name: 'fixture_tools', message: 'Pick one', mode: 'form',
+      requested_schema: { type: 'object', properties: { choice: { type: 'string', enum: ['a', 'b'] } }, required: ['choice'] } });
+    reply = `form ${answer.action} ${answer.content?.choice ?? ''}`.trim();
   } else if (message.startsWith('[Cats heartbeat')) {
     reply = process.env.CATS_BOTS_FIXTURE_HEARTBEAT_REPLY || '[quiet]';
   } else {
@@ -168,6 +212,19 @@ rl.on('line', (line) => {
   try {
     frame = JSON.parse(trimmed);
   } catch {
+    return;
+  }
+  if (frame && frame.type === 'control_response') {
+    const resolve = answers.get(frame.response?.request_id);
+    answers.delete(frame.response?.request_id);
+    resolve?.(frame.response?.response ?? {});
+    return;
+  }
+  if (frame && frame.type === 'control_request') {
+    const subtype = frame.request?.subtype;
+    if (subtype === 'initialize') answerHost(frame.request_id, { current_permission_mode: permissionMode, commands: [] });
+    else if (subtype === 'mcp_status') answerHost(frame.request_id, { mcpServers: serverStatus() });
+    else process.stdout.write(`${JSON.stringify({ type: 'control_response', response: { subtype: 'error', request_id: frame.request_id, error: 'unsupported' } })}\n`);
     return;
   }
   if (frame && frame.type === 'user') {

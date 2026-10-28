@@ -206,20 +206,26 @@ export class RuntimeClient {
   }
 
   async sessionControls(provider: string, policy: SessionExecutionPolicy | null): Promise<Pick<CreateSessionRequest, 'interactionHost' | 'executionPolicy'>> {
+    let unenforceable = false;
     try {
       const result = await this.request<{ providers: Record<string, { defaultInstance?: string; defaultBackend?: string;
         instances: Array<{ id: string; backend: string; continuity?: {
           interactions?: { version: number; kinds: string[] };
-          sessionCapabilities?: { version: number; executionPolicy: boolean };
+          sessionCapabilities?: { version: number; executionPolicy: boolean;
+            admissibleCeilings?: Array<{ access: string; network: boolean }> };
         } }> }> }>('GET', '/providers/config');
       const configured = result.providers?.[provider];
       const target = configured?.instances.find(t => t.id === configured.defaultInstance && t.backend === configured.defaultBackend);
       const c = target?.continuity;
-      if (c?.interactions?.version === 1 && (!policy || c.sessionCapabilities?.version === 1 && c.sessionCapabilities.executionPolicy)) {
+      const ceilings = c?.sessionCapabilities?.admissibleCeilings;
+      if (policy && ceilings && !ceilings.some(ceiling => ceiling.access === policyAccess(policy) && ceiling.network === policyNetwork(policy))) {
+        unenforceable = true;
+      } else if (c?.interactions?.version === 1 && (!policy || c.sessionCapabilities?.version === 1 && c.sessionCapabilities.executionPolicy)) {
         return { interactionHost: { ...INTERACTION_HOST, kinds: INTERACTION_HOST.kinds.filter(k => c.interactions!.kinds.includes(k)) },
           ...(policy ? { executionPolicy: policy } : {}) };
       }
     } catch { /* Old Runtime remains usable only with the unchanged legacy policy. */ }
+    if (unenforceable) throw new Error('The selected provider cannot enforce this access or network limit. Choose full access with network, or keep the existing tool settings.');
     if (policy) throw new Error('Selected Runtime/provider does not support provider policy v1. Upgrade Runtime or select legacy settings.');
     return {};
   }
@@ -317,4 +323,12 @@ export class RuntimeClient {
     }
     return outcome;
   }
+}
+
+function policyAccess(policy: SessionExecutionPolicy): string {
+  return policy.mode === 'explicit' ? policy.access : policy.constraints.maxAccess;
+}
+
+function policyNetwork(policy: SessionExecutionPolicy): boolean {
+  return policy.mode === 'explicit' ? policy.network : policy.constraints.network;
 }
