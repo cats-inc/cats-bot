@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress; P0 and P1 complete, P2 and P3 in review, P4 authorized, P5 needs owner sign-off after P4 |
+| Status | Phase A delivered (P0–P3 merged or in review, P4 recorded); waiting for owner sign-off before P5 |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -152,11 +152,33 @@ builder. The repository has no localization, so the strings are English only.
 
 ### P4 — Phase A native acceptance
 
-- [ ] Run B1–B6 and B8 on a real Windows machine with a real Claude Code, in a test Bot with
-  an isolated data root.
-- [ ] Record the Defender result, redacted samples and any items that did not pass.
+- [x] Run B1–B6 and B8 on a real Windows machine with a real Claude Code, in a test Bot with
+  an isolated data root. See the record below.
+- [x] Record the Defender result, redacted samples and any items that did not pass.
 
 **Exit:** the owner confirms phase A and authorizes phase B.
+
+P4 record (2026-10-29, Windows 11, Claude Code 2.1.312 `haiku` with the owner's own sign-in):
+
+- **Setup**:
+  - A test Bot was created with `cats-bot init` under a temporary `CATS_BOTS_HOME`.
+  - Its profile was edited to set an explicit full-access/network/`on-request` `providerPolicy` and `desktopControl.enabled`, since no CLI path changes the profile switch.
+  - `cats-bot run` started it with its own private Runtime, and the P3 build's helper ran against two throwaway windows.
+  - A script acted as the owner only through the CLI: `respond` with "Allow once", and `desktop --grant ... allow`.
+- **Results**: 12/12 checks passed.
+  - B2: `desktop home --enable` turned the conversation on. Each of the 4 desktop tool calls in the owner turn produced a `tool_approval` naming server `cats-desktop`. A scheduled turn got `not_owner_present`.
+  - B3: the app grant came only through `desktop --grant`.
+  - Phase A tools: the reply named the blue background, "Probe button" and "visible text", and reported the masked field's value as null. The password never reached the model.
+  - B8: the transcript kept 5 tool-result summaries and no screenshot bytes.
+  - BDC-13: `capabilities` carried `desktopControl` with status `injected`.
+  - B5: `desktop --stop` cleared the grants, and the next owner turn got `stopped`. `quit` revoked the conversation and the Runtime exited cleanly.
+  - Defender recorded no detection.
+- **Not exercised natively**:
+  - B1 off Windows.
+  - B6, the global gate while a grant waits (covered by core tests).
+  - The lock pause.
+  - The note and tray UI with a live helper (P3's shell smoke ran without one).
+  - A packaged installer's helper and Codex.
 
 ### P5 — Phase B (act)
 
