@@ -1,6 +1,7 @@
 # SPEC-005: Standard Preview Releases and Updates
 
-Status: implementation in progress. Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-host-owned-updates.md).
+Status: implemented; CI acceptance for the submitted commit is tracked in [PR #32](https://github.com/cats-inc/cats-bots/pull/32).
+Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-host-owned-updates.md).
 
 ## Requirements
 

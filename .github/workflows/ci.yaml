@@ -7,15 +7,22 @@ on:
     branches: [main]
 
 jobs:
-  # ADR-001 §9 / PLAN-001 Task 0.3: the bot core is built and tested on both
-  # platforms the first shell targets. Tests run `.ts` files directly through
+  # ADR-001 §9 / PLAN-005: test and package on each supported platform.
+  # Keep the required check names stable. Tests run `.ts` files directly through
   # Node 24 type stripping, so the source stays limited to erasable syntax.
   node:
+    name: node (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
     steps:
       - uses: actions/checkout@v4
 
@@ -37,26 +44,6 @@ jobs:
       - name: Build
         run: npm run build
 
-  package-preview:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-          - os: macos-latest
-            platform: macos
-          - os: ubuntu-latest
-            platform: linux
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-          cache: npm
-      - run: npm ci
-      - run: npm run build
       - name: Build candidate packages (updates disabled)
         shell: bash
         env:
@@ -79,7 +66,7 @@ jobs:
           if-no-files-found: error
 
   preview-contract:
-    needs: package-preview
+    needs: node
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -113,8 +100,16 @@ jobs:
           JS
 
   validate:
+    # This existing required check also gates every platform's package contract.
+    needs: [node, preview-contract]
+    if: always()
     runs-on: ubuntu-latest
     steps:
+      - name: Require every platform and the combined package contract
+        env:
+          NODE_RESULT: ${{ needs.node.result }}
+          CONTRACT_RESULT: ${{ needs.preview-contract.result }}
+        run: test "$NODE_RESULT" = success && test "$CONTRACT_RESULT" = success
       - uses: actions/checkout@v4
 
       - name: Check required files exist

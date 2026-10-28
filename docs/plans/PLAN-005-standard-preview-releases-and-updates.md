@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | In progress |
+| Status | Implementation complete; CI acceptance tracked in PR #32 |
 | Owner | Bot Electron host and release pipeline |
 | Spec | [SPEC-005](../specs/SPEC-005-standard-preview-releases-and-updates.md) |
 
@@ -14,7 +14,7 @@
   workflow_dispatch draft/build/validate/publish pipeline and release SOP.
 - [x] P2: host-owned updater, distribution capabilities, installation exclusion,
   explicit download/install, drain and failure recovery.
-- [ ] P3: Settings/tray/preload wiring, focused and CI tests, isolated Windows
+- [x] P3: Settings/tray/preload wiring, focused and CI coverage, isolated Windows
   renderer/package acceptance and independent review.
 
 ## Validation and release boundary
@@ -40,3 +40,7 @@ existing schema-2 migration requires the next authorized release to be at least
   architecture installers, non-Windows Koffi exclusion, Runtime startup/stop
   fencing, persistent installation recovery and trusted SHA512 cache revalidation
   before draining the Bot. Three-OS CI packaging remains the merge gate.
+- Final validation on the exact PR head is hosted in [PR #32](https://github.com/cats-inc/cats-bots/pull/32).
+  The existing required `validate` check depends on all three platform builds
+  and the combined artifact contract; auto-merge cannot bypass the new coverage.
+  Publication and real installed upgrades are outside this implementation task.
