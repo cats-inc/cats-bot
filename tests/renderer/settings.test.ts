@@ -36,6 +36,7 @@ const PROFILE: BotProfile = {
   heartbeat: { enabled: true, wakeMinMinutes: 2, wakeMaxMinutes: 10, regularMinMinutes: 30, regularMaxMinutes: 120 },
   idleSleepMinutes: 15,
   telegram: { enabled: false, ownerChatId: null },
+  desktopControl: { enabled: false },
   updatedAt: '2026-10-28T00:00:00.000Z',
 };
 

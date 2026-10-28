@@ -126,6 +126,18 @@ test('future receipt backup is preserved even when the primary is valid', () => 
   } finally { home.cleanup(); }
 });
 
+test('a tool_approval receipt (Claude Code tools, SPEC-006 desktop tools) reloads after a restart', async () => {
+  const home = makeTempHome('cats-receipt-tool-approval-');
+  try {
+    const at = new Date().toISOString();
+    const receipt = { botId: 'bot', conversationId: 'c', workItemId: 'w', interactionId: 'i', sessionId: 's',
+      workerGeneration: 'g', executionId: 'e', revision: 1, createdAt: at, expiresAt: at, status: 'resolved', kind: 'tool_approval' };
+    writeFileSync(join(home.botsHome, 'provider-interactions.json'), JSON.stringify({ version: 1, receipts: [receipt] }));
+    const reloaded = new BotInteractions(home.botsHome, 'bot', () => {});
+    assert.equal((await reloaded.snapshot('c')).interactions[0]?.kind, 'tool_approval');
+  } finally { home.cleanup(); }
+});
+
 test('startup failure releases the new control endpoint and instance lock', async () => {
   const home = makeTempHome('cats-control-start-failure-');
   const { core, root } = openTestBot({ botsHome: home.botsHome });

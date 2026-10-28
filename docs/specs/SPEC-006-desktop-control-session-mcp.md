@@ -87,6 +87,43 @@ These follow the contract version frozen in Platform SPEC-133 on 2026-10-29, inc
   `--enable`/`--disable` set the conversation switch; `--grant <requestId> allow|deny` answers
   a grant; `--stop` stops control.
 
+## P2 Implementation Details (2026-10-29)
+
+These are the Bot's own choices where SPEC-133 leaves the detail to each implementation; the
+cross-implementation contract is unchanged.
+
+- **Descriptor per send (BDC-04)**: a session has no capability snapshot before it exists,
+  so sessions are created without `cats-desktop`. Before every send the core reads the
+  session's snapshot and, for a qualifying conversation, passes the full `mcpServers` set
+  with the send; Runtime recycles the worker once, when the set first changes, and the set
+  then stays identical on every send (BDC-05). While the profile switch is on, every send
+  carries its explicit set, so a conversation that stops qualifying loses the descriptor;
+  its token is revoked at the same time. A new session of the conversation gets a new token
+  and no grants. Turn `instructions` are not used, because Runtime would persist them over
+  the Bot's own; the rules travel in the MCP `initialize` instructions.
+- **Availability (BDC-01)**: the helper must also complete its `hello`. A helper that
+  answers with another protocol keeps desktop control `unavailable` (`handshake_failed`)
+  until the owner turns the feature off and on.
+- **Never grantable (BDC-08)**: `hello` carries the core's process id and executable (the
+  Electron main process, whose renderer, GPU and runtime children run the same executable)
+  and Cats Desktop's default install paths. The core also refuses `Cats.exe` and
+  `Cats Bot.exe` by file name wherever they are installed. The parent process is not
+  listed: for the Electron main process it is the launcher, not the Bot.
+- **Owner-present turn (BDC-05)**: an interrupted turn that the owner approves to run
+  again is queued with source `recovery`, so it is not owner-present.
+- **Global gate (BDC-09)**: while any grant request waits, the queue starts only owner
+  messages; heartbeats, schedules and events stay queued, and the life loop treats the
+  waiting conversation as busy, until the request is answered, denied by stop or a switch,
+  or expires.
+- **Stop (BDC-10)**: a helper answer that arrives after a stop is discarded and the call
+  returns `stopped`.
+- **Capability entry (BDC-13)**: `sessionCapabilities` adds
+  `desktopControl: { name: 'Cats desktop control', status, reason }` beside Runtime's
+  `observation`, also when the snapshot is unavailable. `holding` is reported from phase B.
+- **Redaction (BDC-12)**: the transcript and turn events keep a one-line summary instead of
+  a desktop tool's result (errors stay readable). Telegram gets one generic notice per new
+  grant request in the home conversation, naming no app and no request.
+
 ## Acceptance Criteria
 
 | ID | Required evidence |

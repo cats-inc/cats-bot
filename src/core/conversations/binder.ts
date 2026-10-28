@@ -18,7 +18,8 @@ export interface SessionBinderDependencies {
   profile(): BotProfile;
   conversations: ConversationStore;
   now(): Date;
-  mcpServers?(conversationId: string): RuntimeMcpServer[];
+  /** The session's MCP servers; `sessionId` is null for a session about to be created. */
+  mcpServers?(conversationId: string, sessionId: string | null): RuntimeMcpServer[];
   /** A queued or running work item: its prompt reaches the session as a message, not in the handoff pack. */
   isPendingWorkItem?(workItemId: string): boolean;
   /** Closes a replaced session once no turn runs in it (FR-27); without it the old worker is left alone. */
@@ -97,7 +98,7 @@ export class SessionBinder {
       try {
         const view = await client.resumeSession(attachment.sessionId, {
           ...await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy),
-          ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
+          ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id, attachment.sessionId) } : {}),
         });
         this.deps.conversations.setAttachment(conversation.id, {
           state: view.status === 'ready' ? 'ready' : 'initializing',
@@ -145,7 +146,7 @@ export class SessionBinder {
       ...(!profile.providerPolicy ? { permissionMode: profile.permissions.permissionMode } : {}),
       ...(!profile.providerPolicy && profile.permissions.allowedTools ? { allowedTools: profile.permissions.allowedTools } : {}),
       instructions: composeInstructions(profile.instructions, pack),
-      ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id) } : {}),
+      ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id, null) } : {}),
     };
     const replaced = conversation.attachment.sessionId;
     try {

@@ -8,6 +8,7 @@ import type {
   BotPermissions,
   BotProfile,
   BotProfilePatch,
+  DesktopControlPolicy,
   ExecutionTarget,
   HeartbeatPolicy,
   PermissionMode,
@@ -27,6 +28,9 @@ export const HEARTBEAT_DEFAULTS: HeartbeatPolicy = {
 export const IDLE_SLEEP_MINUTES_DEFAULT = 15;
 
 export const TELEGRAM_DEFAULTS: TelegramPolicy = { enabled: false, ownerChatId: null };
+
+/** SPEC-006 BDC-02: desktop control is off until the owner turns it on. */
+export const DESKTOP_CONTROL_DEFAULTS: DesktopControlPolicy = { enabled: false };
 
 export const PROFILE_SCHEMA_VERSION = 2 as const;
 
@@ -62,8 +66,17 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     heartbeat: { ...HEARTBEAT_DEFAULTS },
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
     telegram: { ...TELEGRAM_DEFAULTS },
+    desktopControl: { ...DESKTOP_CONTROL_DEFAULTS },
     updatedAt: now,
   };
+}
+
+/**
+ * SPEC-006 P0 decision: a missing or invalid value is off, never the fallback, so a
+ * profile rewritten by an older Bot (which drops the field) turns the feature off.
+ */
+function normalizeDesktopControl(value: unknown): DesktopControlPolicy {
+  return { enabled: isRecord(value) && value.enabled === true };
 }
 
 function normalizeTelegram(value: unknown, fallback: TelegramPolicy): TelegramPolicy {
@@ -163,6 +176,7 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     heartbeat: normalizeHeartbeat(raw.heartbeat, fallback.heartbeat),
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
     telegram: normalizeTelegram(raw.telegram, fallback.telegram),
+    desktopControl: normalizeDesktopControl(raw.desktopControl),
     updatedAt: stringOr(raw.updatedAt, fallback.updatedAt),
   };
 }
@@ -262,6 +276,10 @@ export function applyProfilePatch(
     telegram: patch.telegram
       ? normalizeTelegram({ ...profile.telegram, ...patch.telegram }, profile.telegram)
       : profile.telegram,
+    // Not a session setting: the descriptor follows per send, so no revision bump (SPEC-006).
+    desktopControl: patch.desktopControl
+      ? normalizeDesktopControl({ ...profile.desktopControl, ...patch.desktopControl })
+      : profile.desktopControl,
     updatedAt: now.toISOString(),
   };
   return {

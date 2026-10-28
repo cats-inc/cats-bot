@@ -35,8 +35,8 @@
     "bot": "node dist/cli/main.js",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "shell": "electron .",
-    "dist:win": "electron-builder --win nsis portable --publish never",
-    "dist:dir": "electron-builder --dir --publish never",
+    "dist:win": "node scripts/windows-desktop-control.mjs publish && electron-builder --win nsis portable --publish never && node scripts/windows-desktop-control.mjs verify",
+    "dist:dir": "node scripts/windows-desktop-control.mjs publish && electron-builder --dir --publish never && node scripts/windows-desktop-control.mjs verify",
     "dist:preview": "node scripts/build-preview.mjs",
     "icons": "electron scripts/make-icons.mjs"
   },
@@ -93,7 +93,16 @@
         "portable"
       ],
       "artifactName": "${productName}-${version}-${arch}.${ext}",
-      "icon": "assets/installer/icon.png"
+      "icon": "assets/installer/icon.png",
+      "extraResources": [
+        {
+          "from": "build/native-windows/${arch}/windows-desktop-control",
+          "to": "native/windows-desktop-control",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ]
     },
     "nsis": {
       "buildUniversalInstaller": false,

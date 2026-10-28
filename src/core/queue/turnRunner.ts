@@ -1,7 +1,8 @@
 import type { SessionBinder } from '../conversations/binder.ts';
 import type { ConversationStore } from '../conversations/store.ts';
 import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
-import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent } from '../runtime/client.ts';
+import { desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
+import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
 
@@ -71,6 +72,11 @@ export interface TurnRunnerDependencies {
   /** FR-28: journals the item with its run before the prompt leaves, so a crash mid-turn keeps the evidence. */
   persistRun(item: WorkItem): void;
   providerEvent?(item: WorkItem, event: RuntimeStreamEvent): void;
+  /**
+   * SPEC-006 BDC-04: decided inside the session gate right before the prompt is sent; may
+   * return the session's MCP server set, which Runtime keeps until a send changes it.
+   */
+  prepareSend?(item: WorkItem, sessionId: string): Promise<Pick<SendMessageRequest, 'mcpServers'>>;
   log(line: string): void;
   delays?: Partial<TurnRetryDelays>;
 }
@@ -211,6 +217,8 @@ export class TurnRunner {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
+    // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) never reach the transcript.
+    const desktopTools = new Map<string, string>();
     const emitDelta = (entry: Parameters<ConversationStore['append']>[1], seq: number) => {
       this.deps.emit({
         type: 'turn.delta',
@@ -246,6 +254,9 @@ export class TurnRunner {
           break;
         }
         case 'tool_use': {
+          if (typeof event.toolId === 'string' && typeof event.toolName === 'string' && isDesktopControlToolName(event.toolName)) {
+            desktopTools.set(event.toolId, event.toolName);
+          }
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'tool_use',
             origin,
@@ -258,7 +269,11 @@ export class TurnRunner {
           break;
         }
         case 'tool_result': {
-          const text = typeof event.text === 'string' ? event.text : '';
+          const name = typeof event.toolName === 'string' ? event.toolName
+            : typeof event.toolId === 'string' ? desktopTools.get(event.toolId) : undefined;
+          const raw = typeof event.text === 'string' ? event.text : '';
+          // An error is the server's own sentence; a result may carry screen content.
+          const text = isDesktopControlToolName(name) && event.isError !== true ? desktopToolResultSummary(name) : raw;
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'tool_result',
             origin,
@@ -292,7 +307,9 @@ export class TurnRunner {
           break;
       }
     };
-    const outcome = await client.streamMessage(sessionId, { message: item.prompt }, onEvent, controller.signal);
+    const extra = this.deps.prepareSend ? await this.deps.prepareSend(item, sessionId) : {};
+    if (controller.signal.aborted) return { kind: 'cancelled' };
+    const outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal);
     const text = textParts.join('').trim();
     if (outcome.completed) {
       // SPEC-001 FR-25: a quiet heartbeat leaves no message behind.
