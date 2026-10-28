@@ -11,11 +11,11 @@ import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
 import { resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
 import type { BotHostEvent } from '../../core/types.ts';
 import { FloatingBot } from './floatingBot.ts';
-import { HOST_COMMANDS, runHostCommand } from './ipc.ts';
+import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { SettingsWindow } from './settingsWindow.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { BotTray } from './tray.ts';
-import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
+import { buildTrayMenuTemplate, type TrayDesktopControl, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
 import { NOTE_LAYER_LABELS, NOTE_LAYERS, type NoteLayer } from './viewState.ts';
 import { loadDesktopHost } from './win32Desktop.ts';
 import { NoteWindows } from './windows.ts';
@@ -206,8 +206,23 @@ async function main(): Promise<void> {
   };
 
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
+  // SPEC-006 BDC-10: whether desktop control is on, and which note has a grant request waiting.
+  const trayDesktopControl = async (): Promise<TrayDesktopControl> => {
+    const state = await core.desktopControlState();
+    let waitingConversationId: string | null = null;
+    if (state.pendingRequests > 0) {
+      for (const conversationId of state.conversations) {
+        const one = await core.desktopControlState(conversationId).catch(() => null);
+        if (one?.conversation?.pendingRequests.length) {
+          waitingConversationId = conversationId;
+          break;
+        }
+      }
+    }
+    return { enabled: state.enabled, pendingRequests: state.pendingRequests, waitingConversationId };
+  };
   const trayModel = async (): Promise<TrayMenuModel> => {
-    const [profile, conversations] = await Promise.all([core.getProfile(), core.listConversations()]);
+    const [profile, conversations, desktopControl] = await Promise.all([core.getProfile(), core.listConversations(), trayDesktopControl()]);
     return {
       botName: profile.name,
       status: core.status(),
@@ -217,6 +232,7 @@ async function main(): Promise<void> {
       openAtLoginAvailable,
       awaitingOwner: core.listWorkItems().filter((item) => item.state === 'awaiting_owner').length,
       floatingVisible: windows.shellState.floatingBot.visible,
+      desktopControl,
     };
   };
   const refreshTray = async () => {
@@ -299,6 +315,12 @@ async function main(): Promise<void> {
     },
     onToggleOpenAtLogin: (enabled) => setOpenAtLogin(enabled),
     onToggleFloating: (visible) => setFloatingVisible(visible),
+    // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
+    onStopDesktopControl: () => {
+      void core.stopDesktopControl().then(refreshTray).catch((error: unknown) => {
+        process.stderr.write(`stop desktop control failed: ${errorMessage(error)}\n`);
+      });
+    },
     onQuit: quit,
   };
   const tray: BotTray | null = new BotTray({ assetsDir, ...trayActions });
@@ -329,10 +351,9 @@ async function main(): Promise<void> {
       throw new Error('Command from an unknown window');
     }
     const list = Array.isArray(args) ? args : [];
-    if (['providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl'].includes(command)) {
-      const note = windows.windowFor(event.sender.id);
-      if (!note || list[0] !== note.conversationId) throw new Error('Provider request belongs to another note.');
-    }
+    // Provider requests and desktop control belong to one note (SPEC-004, SPEC-006 BDC-07).
+    const sender = { note: windows.windowFor(event.sender.id)?.conversationId ?? null, settings: fromSettings(event), floating: fromFloating(event) };
+    if (!senderMayInvoke(command, list, sender)) throw new Error('This request belongs to another note.');
     const result = await runHostCommand(core, command, list, url => shell.openExternal(url));
     if (command === 'deleteConversation' && typeof list[0] === 'string') windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
@@ -459,6 +480,13 @@ async function main(): Promise<void> {
     if (event.type === 'provider.interactions') {
       if (event.notify && !windows.isFocused(event.conversationId)) {
         void showBubble(event.conversationId, 'The provider is waiting for your response.');
+      }
+      void refreshTray();
+    }
+    if (event.type === 'desktop.control') {
+      // BDC-12: like the Telegram notice, the bubble names no app, path or request.
+      if (event.notify && event.conversationId && !windows.isFocused(event.conversationId)) {
+        void showBubble(event.conversationId, 'A desktop control request is waiting for you.');
       }
       void refreshTray();
     }

@@ -1,5 +1,5 @@
 import type { BotCore } from '../../core/bot.ts';
-import type { ApprovalDecision, BotProfilePatch, BotInteractionResponse } from '../../core/types.ts';
+import type { ApprovalDecision, BotProfilePatch, BotInteractionResponse, DesktopGrantDecision } from '../../core/types.ts';
 
 /**
  * SPEC-001 FR-32 / FR-34: the command side of `BotHostApi` as the renderer
@@ -7,7 +7,8 @@ import type { ApprovalDecision, BotProfilePatch, BotInteractionResponse } from '
  * renderer never receives the runtime's URL or key because the core never
  * exposes them. Window-only commands (hide, pin) are handled by the window
  * layer, not here. The settings page (SPEC-002) adds the provider and model
- * catalogs, renaming and the Telegram token.
+ * catalogs, renaming and the Telegram token. SPEC-006 adds desktop control:
+ * its state, the conversation switch, grant answers and stop.
  */
 
 export type HostCommand =
@@ -33,7 +34,11 @@ export type HostCommand =
   | 'listModels'
   | 'renameConversation'
   | 'telegramStatus'
-  | 'setTelegramToken';
+  | 'setTelegramToken'
+  | 'desktopControlState'
+  | 'setConversationDesktopControl'
+  | 'respondDesktopGrant'
+  | 'stopDesktopControl';
 
 export const HOST_COMMANDS: readonly HostCommand[] = [
   'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities', 'openProviderInteractionUrl',
@@ -56,7 +61,38 @@ export const HOST_COMMANDS: readonly HostCommand[] = [
   'renameConversation',
   'telegramStatus',
   'setTelegramToken',
+  'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
 ];
+
+/**
+ * Commands only the note of the named conversation may send. SPEC-006 BDC-07: grants are
+ * answered there or in the CLI, never from Settings, the floating cat or a provider request.
+ */
+export const NOTE_ONLY_COMMANDS: readonly HostCommand[] = [
+  'providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl',
+  'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
+];
+
+/** The window a `bot:invoke` came from: a note's conversation, Settings or the floating cat. */
+export interface CommandSender {
+  note: string | null;
+  settings: boolean;
+  floating: boolean;
+}
+
+/**
+ * Whether that window may send the command with these arguments. A note acts only on its own
+ * conversation; desktop control state is read by its own note, or at the profile level
+ * (no conversation) by Settings, whose switch it shows.
+ */
+export function senderMayInvoke(command: string, args: unknown[], sender: CommandSender): boolean {
+  if (sender.note === null && !sender.settings && !sender.floating) return false;
+  if (NOTE_ONLY_COMMANDS.includes(command as HostCommand)) return sender.note !== null && args[0] === sender.note;
+  if (command === 'desktopControlState') {
+    return sender.note !== null ? args[0] === sender.note : sender.settings && (args[0] === undefined || args[0] === null);
+  }
+  return true;
+}
 
 function asString(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value) throw new Error(`${name} must be a non-empty string`);
@@ -129,6 +165,20 @@ export async function runHostCommand(core: BotCore, command: string, args: unkno
       // The token goes into the secret store and is never echoed back to a renderer.
       await core.setTelegramToken(typeof args[0] === 'string' && args[0].trim() ? args[0] : null);
       return core.telegramStatus();
+    case 'desktopControlState':
+      return core.desktopControlState(args[0] === undefined || args[0] === null ? undefined : asString(args[0], 'conversationId'));
+    case 'setConversationDesktopControl':
+      if (typeof args[1] !== 'boolean') throw new Error('enabled must be true or false');
+      return core.setConversationDesktopControl(asString(args[0], 'conversationId'), args[1]);
+    case 'respondDesktopGrant': {
+      const decision = args[2];
+      if (decision !== 'allow' && decision !== 'deny') throw new Error('decision must be allow or deny');
+      await core.respondDesktopGrant(asString(args[0], 'conversationId'), asString(args[1], 'requestId'), decision as DesktopGrantDecision);
+      return core.desktopControlState(asString(args[0], 'conversationId'));
+    }
+    case 'stopDesktopControl':
+      await core.stopDesktopControl(asString(args[0], 'conversationId'));
+      return core.desktopControlState(asString(args[0], 'conversationId'));
     default:
       throw new Error(`Unknown host command ${command}`);
   }
