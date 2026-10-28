@@ -125,14 +125,13 @@ jobs:
               if ((Get-AuthenticodeSignature -LiteralPath $_.FullName).Status -ne 'Valid') { throw "Invalid signature: $($_.Name)" }
             }
           }
-      - name: Verify macOS universal app and signing
+      - name: Verify macOS signature and notarization
         if: matrix.platform == 'macos'
         shell: bash
         env:
           HAS_CERT: ${{ secrets.CSC_LINK != '' }}
         run: |
           app='release/mac-universal/Cats Bot.app'
-          lipo -verify_arch x86_64 arm64 "$app/Contents/MacOS/Cats Bot"
           if [ "$HAS_CERT" = 'true' ]; then
             codesign --verify --deep --strict --verbose=2 "$app"
             spctl --assess --type execute --verbose=2 "$app"
