@@ -21,7 +21,7 @@ node_modules/
 dist/
 .npm/
 *.tgz
-!vendor/cats-runtime-0.6.2-e38e56bf.tgz
+!vendor/cats-runtime-0.6.2-487e7c96.tgz
 
 # === Environment ===
 .env

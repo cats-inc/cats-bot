@@ -41,7 +41,7 @@
     "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
-    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-e38e56bf.tgz",
+    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-487e7c96.tgz",
     "electron-updater": "6.8.9",
     "koffi": "2.16.3"
   },

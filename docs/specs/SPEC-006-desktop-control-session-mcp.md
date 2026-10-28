@@ -198,6 +198,23 @@ SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
 - **Strings**: the repository has no localization, so the new note and tray strings are English
   only.
 
+### Codex consent follow-up (2026-10-29)
+
+The pinned Runtime recognizes Codex's native MCP tool-approval form as `tool_approval`.
+With an explicit `on-request` or `untrusted` policy it requests a provider prompt for
+every session MCP call, including read-only tools. The existing note card answers
+that request and resumes the same turn. Allowing `request_app_access` then opens the
+separate application-grant card; it does not grant the app itself. Decline and cancel
+execute no tool. No self-exclusion, profile default, approval gate or persisted format
+changes. Codex's provider-default policy and legacy `mcp_form` hosts remain compatible.
+
+Provider computer-use plugins can also issue the recognized native marked form;
+the note preserves their message and uses a neutral Allow label, without claiming
+an app grant lasts only one call. The profile must use an interactive policy:
+legacy permission mode can select `never` and suppress the provider's prompt.
+This does not route unrelated plugin or Windows permission protocols. The native
+evidence and fixture coverage are recorded in PLAN-006.
+
 ## Acceptance Criteria
 
 | ID | Required evidence |

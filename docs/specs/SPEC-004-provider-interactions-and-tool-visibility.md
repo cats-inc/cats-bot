@@ -22,7 +22,7 @@ The shared contract follows
 `cats-runtime/docs/specs/SPEC-039-provider-session-capabilities-and-interactions.md`; it corresponds to
 Runtime PLAN-049, and Platform SPEC-132/PLAN-124 is another, independent consumer. The contract
 documents are merged; the Bot currently adopts exactly the 0.6.2 candidate artifact of Runtime source
-`50ef02b4686c1fff6b60819d292acc5b2e1ef773`, with the digest in vendor/README, and no new package
+`487e7c9698ac4ef4b3f19dcf4baee9ee3d61ae21`, with the digest in vendor/README, and no new package
 version has been published. This work follows ADR-001's standalone resident core and does not create a
 separate Bot architecture ADR.
 

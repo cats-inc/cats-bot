@@ -263,6 +263,46 @@ P5 record (2026-10-29, fixtures only):
 - **Full checks**: `npm run typecheck`, `npm test` (191 of 191) and `npm run build` pass on
   Windows. The repository has no lint script.
 
+## Codex consent follow-up (2026-10-29)
+
+The Runtime candidate now recognizes native Codex MCP tool approvals and requests
+per-call prompting for explicitly interactive session-injected servers. Bots keeps
+its existing policy gate, note ownership, app grants and exclusion lists. No profile
+default, persisted format, package version or publication changes in this slice.
+
+- **Fixture checks:** the new packed-Runtime integration verifies decline/cancel
+  without desktop-tool execution, a separate app grant after tool consent, consent
+  before `read_ui`, one invocation in the same work item, and input-free receipts.
+  Typecheck, all 193 Bots tests and the build passed. After the final Runtime label
+  adjustment, both provider integration tests and all four release/provenance tests
+  passed again. Runtime reports 102 unique focused tests and a successful build.
+- **Native Cats tools:** Windows 11, Codex 0.165.0 / `gpt-6.1-sol`, a temporary Bot
+  and Electron profile, and one newly opened Paint window. The real note sent a
+  request to use Cats desktop control. CDP clicked each actual provider consent
+  button (`request_app_access`, `list_windows`, `screenshot_window`) and the separate
+  Paint app-grant button. All continued the same work item. The native helper ran
+  one `capture_window` and returned a 1568×982 PNG only after both approvals.
+- **Native provider plugin:** with Cats desktop control off and explicit
+  `on-request`, a natural Paint screenshot request selected the existing computer-use
+  skill. Codex emitted `mcpServer/elicitation/request` from `node_repl`, `mode: form`,
+  `_meta.codex_approval_kind: mcp_tool_call`, an empty object schema, and the message
+  “Allow Codex to use 小畫家?”. The real note showed Allow/Decline/Cancel. Clicking
+  Allow returned `{ action: 'accept', content: {}, _meta: null }` and resumed the same
+  work item. No Cats app grant or native helper call was involved in this path. The
+  upstream metadata offered persistence scopes; Bots does not assume a one-call
+  app grant or select a persistent scope implicitly. An earlier interrupted probe
+  left an upstream request temporarily busy; the later successful run needed no reset.
+- **Limits:** the helper's Paint capture contained the title bar and blank client
+  area; the provider-plugin capture was reported as black. Consent delivery and
+  continuation passed; useful Paint image capture did not. No native typing,
+  clipboard operation or broad OS-permission change was attempted. Raw wire evidence
+  and note screenshots remain private in ignored temporary directories.
+
+The legacy profile path can select native `approvalPolicy: never`, which suppresses
+the provider's question before it reaches the Bot. Enabling an explicit interactive
+policy is also necessary; the new mapping alone cannot change that setting. Native
+plugin forms already have a compatible `mcp_form` fallback on older hosts.
+
 ## Validation
 
 Use temporary state only; no real profile or installed application is changed. Record the
