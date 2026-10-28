@@ -5,6 +5,7 @@ import type { ShellStateView } from '../bridge.ts';
 import { errorText } from '../errors.ts';
 import { appFacts, lifeForm, lifePatch, nextHeartbeatText, telegramFacts, type Fact, type LifeForm } from './settingsLogic.ts';
 import { useToast } from './toast.ts';
+import { Updates } from './Updates.tsx';
 
 /** SPEC-002 FR-4, FR-6: the Life, Telegram and App tabs. */
 
@@ -208,6 +209,7 @@ export function AppTab() {
           <span>Start this bot when I sign in</span>
         </label>
         {shell && status && <Facts id="app-facts" facts={appFacts(status, shell.version)} />}
+        <Updates />
         <div className="row">
           <button type="button" id="app-open-data" onClick={() => void api.shell.openDataFolder()}>
             Open data folder

@@ -64,6 +64,7 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
     onOpenConversation: (id) => clicks.push(`open:${id}`),
     onNewNote: () => clicks.push('new'),
     onOpenSettings: (tab) => clicks.push(`settings:${tab ?? 'bot'}`),
+    onCheckForUpdates: () => clicks.push('updates'),
     onToggleHeartbeat: (enabled) => clicks.push(`heartbeat:${enabled}`),
     onToggleOpenAtLogin: (enabled) => clicks.push(`login:${enabled}`),
     onToggleFloating: (visible) => clicks.push(`floating:${visible}`),
@@ -82,6 +83,7 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
     'Show floating cat',
     'Start at login',
     'Settings…',
+    'Check for Updates…',
     'separator',
     'Quit',
   ]);
@@ -95,9 +97,10 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
   template[8]!.click!();
   template[9]!.click!();
   template[10]!.click!();
-  template[12]!.click!();
+  template[11]!.click!();
+  template[13]!.click!();
   assert.equal(template[8]?.checked, true);
-  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'floating:false', 'login:true', 'settings:bot', 'quit']);
+  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'floating:false', 'login:true', 'settings:bot', 'updates', 'quit']);
   assert.equal(buildTrayTooltip({ botName: 'Mochi', status, conversations: [conversation('home', 'home', 0)], heartbeatEnabled: true, openAtLogin: false, openAtLoginAvailable: false, awaitingOwner: 0, floatingVisible: true }), 'Mochi (runtime ready)');
   const paused = buildTrayMenuTemplate({ botName: 'Mochi', status: { ...status, runtime: { state: 'failed', pid: null } }, conversations: [], heartbeatEnabled: false, openAtLogin: true, openAtLoginAvailable: false, awaitingOwner: 0, floatingVisible: false }, {
     onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {}, onToggleOpenAtLogin: () => {}, onToggleFloating: () => {}, onQuit: () => {},

@@ -54,6 +54,7 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 | [PLAN-001](./PLAN-001-resident-bot-core-foundation.md) | Resident Bot Core Foundation | Draft | [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md) |
 | [PLAN-002](./PLAN-002-desktop-presence.md) | Desktop Presence | In progress | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
 | [PLAN-003](./PLAN-003-react-renderer.md) | React Renderer | Done | [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) |
+| [PLAN-005](./PLAN-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented; CI gate in PR #32 | [SPEC-005](../specs/SPEC-005-standard-preview-releases-and-updates.md) |
 <!-- Add new plans above this line -->
 
 ## For AI Agents

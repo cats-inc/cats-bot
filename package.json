@@ -37,10 +37,12 @@
     "shell": "electron .",
     "dist:win": "electron-builder --win nsis portable --publish never",
     "dist:dir": "electron-builder --dir --publish never",
+    "dist:preview": "node scripts/build-preview.mjs",
     "icons": "electron scripts/make-icons.mjs"
   },
   "dependencies": {
     "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-e38e56bf.tgz",
+    "electron-updater": "6.8.9",
     "koffi": "2.16.3"
   },
   "devDependencies": {
@@ -57,7 +59,8 @@
     "remark-breaks": "4.0.0",
     "remark-gfm": "4.0.1",
     "typescript": "^5.9.3",
-    "vite": "7.3.6"
+    "vite": "7.3.6",
+    "yaml": "2.9.1"
   },
   "engines": {
     "node": ">=24.0.0"
@@ -80,8 +83,7 @@
       "!node_modules/koffi/vendor/**",
       "!node_modules/koffi/doc/**",
       "!node_modules/koffi/lib/**",
-      "!node_modules/koffi/build/koffi/{darwin,freebsd,linux,musl,openbsd}_*/**",
-      "!node_modules/koffi/build/koffi/win32_{ia32,arm64}/**",
+      "!dist/release/**",
       "package.json",
       "LICENSE"
     ],
@@ -94,16 +96,45 @@
       "icon": "assets/installer/icon.png"
     },
     "nsis": {
-      "oneClick": true,
+      "buildUniversalInstaller": false,
+      "oneClick": false,
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Cats Bot",
       "runAfterFinish": true,
-      "artifactName": "${productName}-${version}-setup.${ext}"
+      "artifactName": "Cats-Bot-${version}-setup-${arch}.${ext}",
+      "allowToChangeInstallationDirectory": true,
+      "include": "assets/installer/installer.nsh",
+      "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "buildUniversalInstaller": false,
+      "artifactName": "Cats-Bot-${version}-portable-${arch}.${ext}"
+    },
+    "mac": {
+      "files": [
+        "!node_modules/koffi/**"
+      ],
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "artifactName": "Cats-Bot-${version}-${arch}.${ext}",
+      "icon": "assets/installer/icon.png"
+    },
+    "linux": {
+      "files": [
+        "!node_modules/koffi/**"
+      ],
+      "target": [
+        "deb"
+      ],
+      "category": "Utility",
+      "executableName": "cats-bot",
+      "artifactName": "Cats-Bot-${version}-${arch}.${ext}",
+      "icon": "assets/installer/icon.png"
     }
   },
   "allowScripts": {

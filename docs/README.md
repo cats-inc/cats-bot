@@ -33,7 +33,7 @@ These important documents live in the project root:
 |----------|--------|-------------|
 | [setup-guide.md](./setup-guide.md) | Complete | Install, verify, build and run commands |
 | [testing.md](./testing.md) | Complete | Test types, commands and state-hygiene rules |
-| [deployment.md](./deployment.md) | Template | Deployment instructions |
+| [deployment.md](./deployment.md) | Complete | Manual Standard Preview publication, signing and application updates |
 | [security-guidelines.md](./security-guidelines.md) | Template | Security policies |
 | [mcp-config.md](./mcp-config.md) | Template | MCP server configuration |
 | [services.md](./services.md) | Complete | Dynamic loopback listeners and the environment variables that place them |
@@ -81,6 +81,11 @@ Add your project-specific automation scripts here.
 | [Resident bot architecture assessment](./research/2026-10-27-resident-bot-architecture-assessment.md) | Research | Independent source-based recommendations for bot lifetime, Runtime integration, global model settings and desktop presentation |
 
 ## Decision Records
+
+Standard Preview delivery and host-owned Check for Updates are defined by
+[ADR-004](decisions/004-publish-standard-previews-with-host-owned-updates.md),
+[SPEC-005](specs/SPEC-005-standard-preview-releases-and-updates.md) and
+[PLAN-005](plans/PLAN-005-standard-preview-releases-and-updates.md).
 
 | Document | Status | Description |
 |----------|--------|-------------|

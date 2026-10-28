@@ -131,7 +131,8 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         offenders.push(where);
       } else if (isRelative(specifier) && !resolvesInside(file, specifier, rendererRoot)) {
         // Outside the renderer only the core's type contract, and only as types (erased from the bundle).
-        if (!typeOnly || resolve(dirname(file), specifier) !== typesFile) offenders.push(`${where} (only \`import type\` from core/types.ts)`);
+        const allowed = [typesFile, join(srcRoot, 'shared', 'shellUpdate.ts')];
+        if (!typeOnly || !allowed.includes(resolve(dirname(file), specifier))) offenders.push(`${where} (only browser-safe type contracts)`);
       }
     }
   }

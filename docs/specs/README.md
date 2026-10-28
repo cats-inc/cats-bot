@@ -56,6 +56,7 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | [SPEC-001](./SPEC-001-resident-bot-core-and-global-execution.md) | Resident Bot Core and Global Execution Contract | Draft | [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md) |
 | [SPEC-002](./SPEC-002-desktop-presence-settings-and-first-run.md) | Desktop Presence, Settings and First Run | Accepted | [PLAN-002](../plans/PLAN-002-desktop-presence.md) |
 | [SPEC-003](./SPEC-003-note-reading-and-the-react-renderer.md) | Note Reading and the React Renderer | Accepted | [PLAN-003](../plans/PLAN-003-react-renderer.md) |
+| [SPEC-005](./SPEC-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented | [PLAN-005](../plans/PLAN-005-standard-preview-releases-and-updates.md) |
 <!-- Add new specs above this line -->
 
 ## For AI Agents

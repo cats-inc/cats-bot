@@ -98,6 +98,9 @@ export class RuntimeSupervisor {
   private _client: RuntimeClient | null = null;
   private _pid: number | null = null;
   private exited: Promise<void> | null = null;
+  private generation = 0;
+  private starting: Promise<RuntimeClient> | null = null;
+  private stopTask: Promise<void> | null = null;
 
   constructor(options: RuntimeSupervisorOptions) {
     this.options = options;
@@ -131,9 +134,16 @@ export class RuntimeSupervisor {
   }
 
   async start(): Promise<RuntimeClient> {
-    if (this._state === 'starting' || this._state === 'ready') {
+    if (this.starting || this.stopTask || this.child || this._state === 'starting' || this._state === 'ready') {
       throw new Error(`Runtime is already ${this._state}`);
     }
+    const task = this.launch(++this.generation);
+    this.starting = task;
+    try { return await task; }
+    finally { if (this.starting === task) this.starting = null; }
+  }
+
+  private async launch(generation: number): Promise<RuntimeClient> {
     mkdirSync(this.runtimeDir, { recursive: true });
     ensureProvidersConfig(this.runtimeDir, this.options.providers);
     this.stopping = false;
@@ -157,9 +167,10 @@ export class RuntimeSupervisor {
     try {
       port = await reserveLoopbackPort();
     } catch (error) {
-      this.setState('failed', error instanceof Error ? error.message : String(error));
+      if (generation === this.generation) this.setState('failed', error instanceof Error ? error.message : String(error));
       throw error;
     }
+    if (generation !== this.generation || this.stopping) throw new Error('Runtime startup was cancelled.');
     const child = spawn(
       this.options.nodeExecPath ?? process.execPath,
       [
@@ -210,7 +221,7 @@ export class RuntimeSupervisor {
           const baseUrl = parsed.healthUrl
             ? parsed.healthUrl.replace(/\/health\/?$/u, '')
             : `http://${parsed.host ?? '127.0.0.1'}:${parsed.port}`;
-          void this.confirmReady(baseUrl).then(
+          void this.confirmReady(baseUrl, generation).then(
             (client) => finish(null, client),
             (error: unknown) => finish(error instanceof Error ? error : new Error(String(error))),
           );
@@ -225,7 +236,7 @@ export class RuntimeSupervisor {
         finish(error);
       });
       this.exited = new Promise<void>((resolveExit) => {
-        child.once('exit', (code, signal) => {
+        child.once('close', (code, signal) => {
           const expected = this.stopping && !this.failed;
           if (this.child === child) {
             this.child = null;
@@ -244,7 +255,7 @@ export class RuntimeSupervisor {
       const client = await ready;
       return client;
     } catch (error) {
-      if (this.child === child) {
+      if (this.child === child && generation === this.generation) {
         this.failed = true;
         this.stopping = true;
         this.setState('failed', error instanceof Error ? error.message : String(error));
@@ -254,7 +265,7 @@ export class RuntimeSupervisor {
     }
   }
 
-  private async confirmReady(baseUrl: string): Promise<RuntimeClient> {
+  private async confirmReady(baseUrl: string, generation: number): Promise<RuntimeClient> {
     const client = new RuntimeClient({
       baseUrl,
       apiKey: this._apiKey,
@@ -262,9 +273,10 @@ export class RuntimeSupervisor {
     });
     const deadline = Date.now() + (this.options.readyTimeoutMs ?? 60_000);
     let lastError = 'health not ready';
-    while (Date.now() < deadline) {
+    while (Date.now() < deadline && generation === this.generation && !this.stopping) {
       try {
         const health = await client.health();
+        if (generation !== this.generation || this.stopping) throw new Error('Runtime startup was cancelled.');
         if (health.readiness?.ready === true || health.startup?.phase === 'ready') {
           this._baseUrl = baseUrl;
           this._client = client;
@@ -283,6 +295,20 @@ export class RuntimeSupervisor {
 
   /** SPEC-001 FR-7: stdin first, then SIGTERM after the grace period, then SIGKILL. */
   async stop(): Promise<void> {
+    if (this.stopTask) return this.stopTask;
+    this.stopping = true;
+    this.generation++;
+    const starting = this.starting;
+    this.stopTask = this.stopChild().then(async () => {
+      await starting?.catch(() => undefined);
+      this._client = null; this._baseUrl = null; this._pid = null;
+      if (this._state !== 'stopped') this.setState('stopped');
+    });
+    try { await this.stopTask; }
+    finally { this.stopTask = null; }
+  }
+
+  private async stopChild(): Promise<void> {
     const child = this.child;
     if (!child) {
       if (this._state !== 'stopped') this.setState('stopped');

@@ -141,8 +141,28 @@ and the renderer (`tsconfig.renderer.json`).
 ## CI/CD Integration
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
-`npm run build` on `ubuntu-latest` and `windows-latest` with Node 24 for every
+`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main`.
+
+The same CI builds all Standard Preview architecture/format combinations as
+unsigned candidates and checks the complete asset metadata, source bundle and
+checksums. Candidate identity disables updates. Publication is a separate manual
+workflow documented in [deployment.md](deployment.md).
+
+`tests/shell/updates.test.ts` covers native-operation timeout fencing, completion
+identity, explicit consent, Settings main-frame ownership, drain order, multiple
+Bots, crashed/PID-reused installation leases and uncertain handoff recovery.
+`tests/shell/releasePipeline.test.ts` covers immutable inputs, version ordering,
+draft ownership, signing configuration, source receipts and corrupted/missing
+updater assets. Fixtures never run an installer. Real renderer acceptance must use
+isolated Bot/userData roots; real installed upgrades remain a separate release
+check on each target OS.
+
+After building, run `node node_modules/electron/cli.js scripts/test-updates-renderer.mjs`
+for the isolated real Electron renderer/preload acceptance. It exercises check
+failure/retry, explicit download, progress, reload persistence and cancelled or
+confirmed fixture installation. No provider, real profile or installer is used;
+screenshots/results stay in ignored `tmp/updates-renderer-*` directories.
 
 ---
 

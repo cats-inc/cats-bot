@@ -26,6 +26,7 @@ export interface TrayMenuActions {
   onNewNote(): void;
   /** SPEC-002 FR-4: opens the settings window, on a given tab when one is named. */
   onOpenSettings(tab?: string): void;
+  onCheckForUpdates?(): void;
   onToggleHeartbeat(enabled: boolean): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onToggleFloating(visible: boolean): void;
@@ -117,6 +118,7 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
   }
   template.push(
     { label: 'Settings…', click: () => actions.onOpenSettings() },
+    { label: 'Check for Updates…', click: () => actions.onCheckForUpdates?.() },
     { type: 'separator' },
     { label: 'Quit', click: () => actions.onQuit() },
   );

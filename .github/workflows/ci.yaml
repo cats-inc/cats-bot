@@ -7,15 +7,22 @@ on:
     branches: [main]
 
 jobs:
-  # ADR-001 §9 / PLAN-001 Task 0.3: the bot core is built and tested on both
-  # platforms the first shell targets. Tests run `.ts` files directly through
+  # ADR-001 §9 / PLAN-005: test and package on each supported platform.
+  # Keep the required check names stable. Tests run `.ts` files directly through
   # Node 24 type stripping, so the source stays limited to erasable syntax.
   node:
+    name: node (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
     steps:
       - uses: actions/checkout@v4
 
@@ -37,9 +44,72 @@ jobs:
       - name: Build
         run: npm run build
 
-  validate:
+      - name: Build candidate packages (updates disabled)
+        shell: bash
+        env:
+          RELEASE_PLATFORM: ${{ matrix.platform }}
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          tag="v$(node -p 'require("./package.json").version')"
+          node scripts/build-preview.mjs --platform "$RELEASE_PLATFORM" --tag "$tag" --source "$SOURCE_COMMIT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: candidate-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.dmg
+            release/*.zip
+            release/*.deb
+            release/*.blockmap
+            release/latest*.yml
+            release/*-build.json
+          if-no-files-found: error
+
+  preview-contract:
+    needs: node
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+      - id: pin
+        run: echo "runtime=$(node -p 'require("./vendor/runtime-source.json").commit')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          repository: cats-inc/cats-runtime
+          ref: ${{ steps.pin.outputs.runtime }}
+          path: runtime-source
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: candidate-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete candidate assets and source bundle
+        env:
+          SOURCE_COMMIT: ${{ github.sha }}
+        run: |
+          python scripts/create-source-bundle.py "$SOURCE_COMMIT" runtime-source release-assets
+          node --input-type=module <<'JS'
+          import { readFile } from 'node:fs/promises';
+          import { validateInputs, validateAssets } from './scripts/release-contract.mjs';
+          const pkg = JSON.parse(await readFile('package.json', 'utf8'));
+          const input = await validateInputs(process.cwd(), `v${pkg.version}`);
+          await validateAssets('release-assets', input, process.env.SOURCE_COMMIT, true);
+          JS
+
+  validate:
+    # This existing required check also gates every platform's package contract.
+    needs: [node, preview-contract]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every platform and the combined package contract
+        env:
+          NODE_RESULT: ${{ needs.node.result }}
+          CONTRACT_RESULT: ${{ needs.preview-contract.result }}
+        run: test "$NODE_RESULT" = success && test "$CONTRACT_RESULT" = success
       - uses: actions/checkout@v4
 
       - name: Check required files exist

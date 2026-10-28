@@ -15,6 +15,7 @@ import type {
   BotInteractionResponse,
   SessionCapabilitiesSnapshot,
 } from '../core/types.ts';
+import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 
 /**
  * ADR-003: the type of `window.catsBot`, which `assets/preload.cjs` exposes.
@@ -133,6 +134,9 @@ export interface CatsBotBridge {
   };
   /** Settings-window only; the shell answers null to other windows. */
   shell: {
+    updateState(): Promise<BotUpdateState>;
+    updateAction(action: BotUpdateAction): Promise<BotUpdateState>;
+    onUpdate(listener: (state: BotUpdateState) => void): Unsubscribe;
     state(): Promise<ShellStateView | null>;
     setOpenAtLogin(enabled: boolean): Promise<boolean | null>;
     chooseFolder(current: string): Promise<string | null>;
