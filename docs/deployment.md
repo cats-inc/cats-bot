@@ -38,6 +38,15 @@ created only at publication. No push or tag trigger publishes.
 | macOS | Universal (x64 + arm64) DMG and updater ZIP; latest-mac.yml | Developer ID + notarization when fully configured; otherwise unsigned/manual updates |
 | Linux | amd64/arm64 DEBs; latest-linux.yml and latest-linux-arm64.yml | Unsigned, OS package manager authorization at installation |
 
+Windows packages also carry the desktop control helper (SPEC-006 BDC-11) at
+`resources/native/windows-desktop-control/`. `build-preview.mjs` publishes it
+self-contained for each Windows architecture with the runner's preinstalled .NET
+SDK, stages the .NET runtime's license texts under `licenses/`, and reads every
+unpacked package back to confirm the helper matches the app's architecture.
+electron-builder signs it with the app when Windows credentials exist, and signed
+releases verify its Authenticode signature as well. macOS and Linux builds never
+run dotnet.
+
 Each release includes per-platform build receipts, SHA256SUMS and a complete
 Bot + pinned Runtime source ZIP with a source/checksum manifest. Portable assets
 are not updater targets. Candidate CI artifacts carry a different distribution
@@ -111,7 +120,7 @@ Both workflows use GitHub's standard `macos-15-intel` build host so release
 availability does not depend on the ARM runner pool. The host architecture does
 not change the Universal output: both x86_64 and arm64 slices remain required.
 A local Windows unpacked candidate can be built after
-`npm ci` and `npm run build`:
+`npm ci` and `npm run build`, with the .NET 8 SDK or newer installed:
 
 ```powershell
 $sourceCommit = git rev-parse HEAD

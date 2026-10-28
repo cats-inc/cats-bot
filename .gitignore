@@ -53,3 +53,7 @@ temp/
 
 # === Electron packaging output ===
 release/
+
+# === .NET native helper build output ===
+native/**/bin/
+native/**/obj/
