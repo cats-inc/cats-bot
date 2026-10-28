@@ -473,6 +473,7 @@ export class BotCore implements BotHostApi {
         }
         return {
           sessionId: running.item.run?.sessionId ?? null,
+          workItemId: running.item.id,
           ownerPresent: running.item.kind === 'owner_message' && running.item.source === 'owner',
         };
       },
@@ -1410,6 +1411,8 @@ export class BotCore implements BotHostApi {
       try { this.interactions.end(item.id); }
       finally {
         if (this.running?.item.id === item.id) this.running = null;
+        // SPEC-133 DC-11: the end of the turn releases the desktop control it held.
+        this.desktop.turnEnded(item.conversationId, item.id);
         this.pump();
       }
     }).catch(() => this.log('turn finalization failed; provider interaction receipts may need recovery'));

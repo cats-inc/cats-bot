@@ -388,6 +388,29 @@ textarea {
   cursor: default;
 }
 
+/* SPEC-006 P5 (BDC-10): the banner while the bot holds control. */
+.desktop-holding {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #b5452f;
+  color: #fff;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.desktop-holding > span {
+  flex: 1;
+}
+
+.desktop-holding .desktop-stop {
+  background: #fff;
+  color: #b5452f;
+}
+
 .desktop-status,
 .desktop-granted {
   color: var(--muted);

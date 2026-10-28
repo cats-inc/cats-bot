@@ -6,6 +6,7 @@ import {
   enabledNotesText,
   grantCardText,
   grantedText,
+  holdingBanner,
   notePanelVisible,
   noteStatus,
   reasonText,
@@ -14,7 +15,7 @@ import {
   switchDisabled,
 } from '../../src/renderer/desktopControl/desktopControl.ts';
 
-/** SPEC-006 P3: what the note and Settings show of desktop control, apart from React. */
+/** SPEC-006 P3 and P5: what the note and Settings show of desktop control, apart from React. */
 
 const REQUEST: DesktopGrantRequest = {
   requestId: 'grant_1', query: 'notepad', name: 'Notepad', path: 'C:\\Windows\\notepad.exe', publisher: 'Microsoft Corporation',
@@ -24,8 +25,9 @@ const REQUEST: DesktopGrantRequest = {
 function state(conversation: Partial<NonNullable<DesktopControlState['conversation']>> = {}, top: Partial<DesktopControlState> = {}) {
   const capability: DesktopControlCapability = { name: 'Cats desktop control', status: 'injected', reason: null };
   return {
-    available: true, reason: null, enabled: true, conversations: ['home'], pendingRequests: 0, ...top,
-    conversation: { conversationId: 'home', enabled: true, capability, stopped: false, grants: [], pendingRequests: [], ...conversation },
+    available: true, reason: null, enabled: true, conversations: ['home'], pendingRequests: 0, holding: [], ...top,
+    conversation: { conversationId: 'home', enabled: true, capability, stopped: false, holding: null, grants: [], pendingRequests: [],
+      ...conversation },
   } satisfies DesktopControlState;
 }
 
@@ -66,7 +68,7 @@ test('the DC-18 status reads as a sentence with its reason', () => {
 
 test('Stop appears with grants or waiting requests, and the switch can always be turned off', () => {
   const idle = state();
-  assert.equal(showStop(idle.conversation), false, 'phase A has no holding state');
+  assert.equal(showStop(idle.conversation), false, 'nothing granted, waiting or held');
   assert.equal(showStop(state({ pendingRequests: [REQUEST] }).conversation), true);
   const granted = state({ grants: [{ name: 'Notepad', path: REQUEST.path, publisher: null, tier: 'full' },
     { name: 'PowerShell', path: 'C:\\pwsh.exe', publisher: 'Microsoft Windows', tier: 'observe_only' }] });
@@ -81,6 +83,19 @@ test('Stop appears with grants or waiting requests, and the switch can always be
   assert.equal(switchDisabled(on, on.conversation), false, 'but it can still be turned off');
   const profileOff = state({ enabled: false }, { enabled: false });
   assert.equal(switchDisabled(profileOff, profileOff.conversation), true);
+});
+
+test('while the bot holds control the note shows a banner naming the app, with Stop (SPEC-006 BDC-10)', () => {
+  const held = state({ capability: capability('holding'), holding: '記事本',
+    grants: [{ name: '記事本', path: REQUEST.path, publisher: null, tier: 'full' }] });
+  assert.equal(holdingBanner(held.conversation), 'The bot is operating 記事本. Stop takes control back and ends its access.');
+  assert.equal(showStop(held.conversation), true);
+  assert.equal(noteStatus(held, held.conversation), 'The bot is operating your desktop.');
+  assert.equal(holdingBanner(state().conversation), null, 'no banner while nothing is held');
+  assert.equal(holdingBanner(state({ capability: capability('active_turn') }).conversation), null, 'an active turn alone holds nothing');
+  // Held control is never hidden, even if the profile switch went off in between.
+  assert.equal(notePanelVisible(state({ holding: '記事本' }, { enabled: false })), true);
+  assert.equal(showStop(state({ holding: '記事本' }).conversation), true);
 });
 
 test('a grant card names the app, its path, its publisher or unsigned, the observe-only limit and the bot\'s reason', () => {

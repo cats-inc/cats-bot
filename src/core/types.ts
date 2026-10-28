@@ -310,8 +310,11 @@ export type BotHostEvent =
   | { type: 'presence.changed'; conversationId: string; presence: PresenceState; reason: PresenceReason }
   | { type: 'runtime.status'; state: RuntimeState; detail?: string }
   | { type: 'host.handoff'; message: HandoffMessage }
-  /** SPEC-006: desktop control changed; `pendingRequests` counts grant requests waiting in the conversation. */
-  | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; notify?: boolean };
+  /**
+   * SPEC-006: desktop control changed; `pendingRequests` counts grant requests waiting in the conversation,
+   * and `holding` says whether it (or, without a conversation, any conversation) holds control.
+   */
+  | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; holding: boolean; notify?: boolean };
 
 // ---- Command results the presentation reads (SPEC-001 FR-32, SPEC-002) ----------
 // Kept here, free of imports, so the renderer can type the bridge from this file
@@ -541,14 +544,20 @@ export interface SessionCapabilitiesSnapshot {
 
 // ---- SPEC-006 / SPEC-133 desktop control (Bot-owned) -----------------------
 
-/** SPEC-133 DC-18 state values. `holding` belongs to phase B and is not reported yet. */
+/** SPEC-133 DC-18 state values; `holding` takes precedence over `active_turn` while an input tool holds control. */
 export type DesktopControlStatus = 'unavailable' | 'off' | 'not_injected' | 'injected' | 'active_turn' | 'holding';
 
 export interface DesktopControlCapability {
   name: 'Cats desktop control';
   status: DesktopControlStatus;
-  /** Why the status is not `injected` or `active_turn`; null otherwise. */
+  /** Why the status is not `injected`, `active_turn` or `holding`; null otherwise. */
   reason: string | null;
+}
+
+/** A conversation whose running turn holds control, and the app it operates (SPEC-133 DC-11). */
+export interface DesktopControlHolding {
+  conversationId: string;
+  app: string;
 }
 
 export type DesktopGrantDecision = 'allow' | 'deny';
@@ -581,11 +590,15 @@ export interface DesktopControlState {
   conversations: string[];
   /** Grant requests waiting across every conversation. */
   pendingRequests: number;
+  /** Conversations that hold control now (BDC-10: the tray shows them). */
+  holding: DesktopControlHolding[];
   conversation?: {
     conversationId: string;
     enabled: boolean;
     capability: DesktopControlCapability;
     stopped: boolean;
+    /** The app this conversation's turn holds control of; null when it holds none (BDC-10: the note's banner). */
+    holding: string | null;
     grants: DesktopGrantedApp[];
     pendingRequests: DesktopGrantRequest[];
   };

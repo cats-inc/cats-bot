@@ -153,20 +153,22 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ### `src/core/desktopControl`
 
-- **Purpose**: owner-consented desktop control on Windows (ADR-005, SPEC-006 phase A).
+- **Purpose**: owner-consented desktop control on Windows (ADR-005, SPEC-006 phases A and B).
 - **Responsibilities**: `helper.ts` supervises the native helper
   (`native/windows-desktop-control/`): lazy start, `hello` with the Bot's own process and
   executables plus Cats Desktop's install paths, idle exit, crash limit, and where the helper
   lives (packaged resource, or the checkout's Release build). `policy.ts` is the DC-04 gate
-  on Runtime's capability snapshot. `tools.ts` holds SPEC-133's phase A tool names, schemas
-  and error codes. `switches.ts` stores the per-conversation switch in
+  on Runtime's capability snapshot. `tools.ts` holds SPEC-133's phase A and phase B tool
+  names, schemas, key allowlist and error codes. `switches.ts` stores the per-conversation switch in
   `desktop-control.json`. `service.ts` serves `cats-desktop` with the `src/core/tools`
   server class: before every send it decides whether the conversation's session carries
   the descriptor, a tool call is served only while the running work item is an owner
   message from a local surface, and app grants are answered only through `BotHostApi`
   (`desktopControlState`, `setConversationDesktopControl`, `respondDesktopGrant`,
   `stopDesktopControl`). Grants stay in memory; while one waits, background work does not
-  start (BDC-09). The note, Settings and the tray reach these through `ipc.ts`, where a note
+  start (BDC-09). The first input tool of an owner turn holds control until the core reports
+  that the work item ended (`turnEnded`); Stop releases it and cancels the helper op only for
+  a conversation that held control (BDC-10). The note, Settings and the tray reach these through `ipc.ts`, where a note
   acts only on its own conversation; `cats-bot desktop` reaches them through the host control
   endpoint (`src/core/host-api/control.ts`).
 

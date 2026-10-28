@@ -126,8 +126,9 @@ function describeEvent(event: BotHostEvent): string | null {
     case 'work.awaitingOwner':
       return `[approval] ${event.workItem.id} awaits the owner: ${event.workItem.prompt}`;
     case 'desktop.control':
-      // BDC-12: no app, path or reason here; `cats-bot desktop` shows the request to the owner.
+      // BDC-12: no app, path or reason here; `cats-bot desktop` shows the request and the held app to the owner.
       return `[desktop] ${event.conversationId ?? 'all conversations'}: ${event.pendingRequests} grant request(s) waiting`
+        + (event.holding ? '; the bot holds desktop control (stop: cats-bot desktop --stop)' : '')
         + (event.notify ? `; see cats-bot desktop ${event.conversationId ?? 'home'}` : '');
     default:
       return null;

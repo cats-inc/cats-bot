@@ -1,11 +1,12 @@
 import { useCallback, useRef, useState, type MutableRefObject } from 'react';
 
 import type { DesktopControlState, DesktopGrantDecision, DesktopGrantRequest } from '../../core/types.ts';
-import { grantCardText, grantedText, notePanelVisible, noteStatus, showStop, switchDisabled } from './desktopControl.ts';
+import { grantCardText, grantedText, holdingBanner, notePanelVisible, noteStatus, showStop, switchDisabled } from './desktopControl.ts';
 
 /**
- * SPEC-006 P3 in the note: the conversation switch, the DC-18 status, grant request cards and
- * Stop. Grants are answered only through `respondDesktopGrant`, never the provider path.
+ * SPEC-006 P3 and P5 in the note: the conversation switch, the DC-18 status, grant request
+ * cards, Stop, and the banner while the bot holds control (BDC-10). Grants are answered only
+ * through `respondDesktopGrant`, never the provider path.
  */
 
 const api = window.catsBot;
@@ -73,6 +74,7 @@ export function DesktopControlBar({ model }: { model: DesktopControlModel }) {
   const conversation = state.conversation;
   const status = noteStatus(state, conversation);
   const granted = grantedText(conversation);
+  const holding = holdingBanner(conversation);
   return (
     <section className="desktop-bar" id="desktop-control" aria-label="Desktop control">
       <div className="desktop-row">
@@ -87,13 +89,21 @@ export function DesktopControlBar({ model }: { model: DesktopControlModel }) {
           Desktop control
         </label>
         <span className="note-spacer" />
-        {showStop(conversation) && (
+        {showStop(conversation) && !holding && (
           <button className="desktop-stop" id="desktop-stop" disabled={model.busy} onClick={() => model.stop()}>
             Stop
           </button>
         )}
       </div>
-      {status && <div className="desktop-status" id="desktop-status" role="status">{status}</div>}
+      {holding && (
+        <div className="desktop-holding" id="desktop-holding" role="alert">
+          <span>{holding}</span>
+          <button className="desktop-stop" id="desktop-holding-stop" disabled={model.busy} onClick={() => model.stop()}>
+            Stop
+          </button>
+        </div>
+      )}
+      {status && !holding && <div className="desktop-status" id="desktop-status" role="status">{status}</div>}
       {granted && <div className="desktop-granted" id="desktop-granted">{granted}</div>}
       {model.failed && <div className="desktop-error" role="alert">Could not update desktop control. Try again.</div>}
     </section>
