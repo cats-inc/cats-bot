@@ -37,5 +37,17 @@ test('packed Runtime maps Codex native input to the headless Bot and resumes the
     assert.ok(result.type === 'turn.completed');
     assert.equal(result.workItem.state, 'completed', result.workItem.error);
     assert.equal(result.workItem.result?.text, 'native response received');
+    const formPending = waitForEvent(core, e => e.type === 'provider.interactions' && e.pending === 1, 60_000);
+    const formDone = waitForEvent(core, e => e.type === 'turn.completed', 60_000);
+    await core.sendOwnerMessage('home', 'provider-form');
+    await formPending;
+    const form = (await core.providerInteractions('home')).interactions.find(i => i.status === 'pending')!;
+    assert.equal(form.kind, 'mcp_form');
+    await callHostControl(root, { operation: 'respond', conversationId: 'home', interactionId: form.interactionId,
+      response: { workItemId: form.workItemId, workerGeneration: form.workerGeneration, executionId: form.executionId,
+        expectedRevision: form.revision, idempotencyKey: 'native-empty-form', answer: { action: 'accept', values: { text: '', tags: [], empty: '' } } } });
+    const formResult = await formDone;
+    assert.ok(formResult.type === 'turn.completed');
+    assert.equal(formResult.workItem.result?.text, 'empty form accepted');
   } finally { await core.stop(); home.cleanup(); }
 });

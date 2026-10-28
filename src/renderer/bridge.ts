@@ -11,6 +11,9 @@ import type {
   TelegramSettingsStatus,
   TranscriptEntry,
   WorkItem,
+  BotInteractionSnapshot,
+  BotInteractionResponse,
+  SessionCapabilitiesSnapshot,
 } from '../core/types.ts';
 
 /**
@@ -23,6 +26,10 @@ import type {
 
 /** Each `bot:invoke` command with its arguments and result (src/shell/electron/ipc.ts). */
 export interface HostCommands {
+  providerInteractions: { args: [conversationId: string]; result: BotInteractionSnapshot };
+  respondProviderInteraction: { args: [conversationId: string, interactionId: string, response: BotInteractionResponse]; result: null };
+  sessionCapabilities: { args: [conversationId: string, refresh?: boolean]; result: SessionCapabilitiesSnapshot };
+  openProviderInteractionUrl: { args: [conversationId: string, interactionId: string]; result: null };
   getProfile: { args: []; result: BotProfile };
   updateProfile: { args: [patch: BotProfilePatch]; result: BotProfile };
   listConversations: { args: []; result: ConversationRecord[] };
@@ -48,6 +55,7 @@ export type HostCommandName = keyof HostCommands;
 
 /** The same list as the shell's `HOST_COMMANDS`, at run time, for the contract test. */
 export const BRIDGE_COMMANDS = [
+  'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities', 'openProviderInteractionUrl',
   'getProfile',
   'updateProfile',
   'listConversations',

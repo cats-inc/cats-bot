@@ -79,6 +79,10 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       click: () => actions.onOpenConversation(home?.id ?? 'home'),
     },
   ];
+  if (model.status.pendingInteractions && model.status.queue.running) {
+    const conversationId = model.status.queue.running.conversationId;
+    template.push({ label: `Provider requests (${model.status.pendingInteractions})`, click: () => actions.onOpenConversation(conversationId) });
+  }
   if (notes.length > 0) {
     template.push({
       label: 'Notes',
