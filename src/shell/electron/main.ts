@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { Menu, app, dialog, ipcMain, safeStorage, shell, type MenuItemConstructorOptions } from 'electron';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../../core/bot.ts';
+import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
 import { resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
@@ -123,6 +124,8 @@ async function main(): Promise<void> {
   const openCore = () => BotCore.open({
     root,
     runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
+    // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
+    ...(app.isPackaged ? { desktopControl: { helperPath: packagedHelperPath(process.resourcesPath) } } : {}),
     secrets,
     log: (line) => process.stderr.write(`${line}\n`),
   });

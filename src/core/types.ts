@@ -274,6 +274,14 @@ export interface BotHostApi {
   providerInteractions(conversationId: string): Promise<BotInteractionSnapshot>;
   respondProviderInteraction(conversationId: string, interactionId: string, response: BotInteractionResponse): Promise<void>;
   sessionCapabilities(conversationId: string, refresh?: boolean): Promise<SessionCapabilitiesSnapshot>;
+  /** SPEC-006 BDC-07: desktop control state; with a conversation, its switch, grants and waiting grant requests. */
+  desktopControlState(conversationId?: string): Promise<DesktopControlState>;
+  /** SPEC-006 BDC-03: the per-conversation switch; turning it off revokes that conversation's grants. */
+  setConversationDesktopControl(conversationId: string, enabled: boolean): Promise<DesktopControlState>;
+  /** SPEC-006 BDC-07: only the owner answers a grant request, never a provider approval or Telegram. */
+  respondDesktopGrant(conversationId: string, requestId: string, decision: DesktopGrantDecision): Promise<void>;
+  /** SPEC-006 BDC-10 / SPEC-133 DC-12: without a conversation, stops every conversation. */
+  stopDesktopControl(conversationId?: string): Promise<void>;
   quit(): Promise<void>;
 }
 
@@ -301,7 +309,9 @@ export type BotHostEvent =
   | { type: 'work.awaitingOwner'; workItem: WorkItem }
   | { type: 'presence.changed'; conversationId: string; presence: PresenceState; reason: PresenceReason }
   | { type: 'runtime.status'; state: RuntimeState; detail?: string }
-  | { type: 'host.handoff'; message: HandoffMessage };
+  | { type: 'host.handoff'; message: HandoffMessage }
+  /** SPEC-006: desktop control changed; `pendingRequests` counts grant requests waiting in the conversation. */
+  | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; notify?: boolean };
 
 // ---- Command results the presentation reads (SPEC-001 FR-32, SPEC-002) ----------
 // Kept here, free of imports, so the renderer can type the bridge from this file
@@ -525,6 +535,60 @@ export interface SessionCapabilitiesSnapshot {
   supported: boolean;
   observation?: ProviderSessionCapabilities;
   reason?: string;
+  /** SPEC-006 BDC-13: added by the Bot, separate from the provider-native `computer_use` dependency. */
+  desktopControl?: DesktopControlCapability;
+}
+
+// ---- SPEC-006 / SPEC-133 desktop control (Bot-owned) -----------------------
+
+/** SPEC-133 DC-18 state values. `holding` belongs to phase B and is not reported yet. */
+export type DesktopControlStatus = 'unavailable' | 'off' | 'not_injected' | 'injected' | 'active_turn' | 'holding';
+
+export interface DesktopControlCapability {
+  name: 'Cats desktop control';
+  status: DesktopControlStatus;
+  /** Why the status is not `injected` or `active_turn`; null otherwise. */
+  reason: string | null;
+}
+
+export type DesktopGrantDecision = 'allow' | 'deny';
+export type DesktopAppTier = 'full' | 'observe_only';
+
+/** An app the owner granted; matched on executable path plus signing publisher (SPEC-133 DC-09). */
+export interface DesktopGrantedApp {
+  name: string;
+  path: string;
+  publisher: string | null;
+  tier: DesktopAppTier;
+}
+
+/** A grant request waiting for the owner (SPEC-133 DC-08). */
+export interface DesktopGrantRequest extends DesktopGrantedApp {
+  requestId: string;
+  query: string;
+  reason: string;
+  createdAt: string;
+  expiresAt: string;
+}
+
+export interface DesktopControlState {
+  available: boolean;
+  /** Why desktop control is unavailable; null when it is available. */
+  reason: string | null;
+  /** The profile switch (BDC-02). */
+  enabled: boolean;
+  /** Conversations whose switch is on (BDC-03). */
+  conversations: string[];
+  /** Grant requests waiting across every conversation. */
+  pendingRequests: number;
+  conversation?: {
+    conversationId: string;
+    enabled: boolean;
+    capability: DesktopControlCapability;
+    stopped: boolean;
+    grants: DesktopGrantedApp[];
+    pendingRequests: DesktopGrantRequest[];
+  };
 }
 
 export interface BotInteraction extends ProviderInteraction {

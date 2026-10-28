@@ -9,7 +9,9 @@ import type { RuntimeMcpServer } from '../runtime/client.ts';
  * so this is a minimal JSON-RPC-over-HTTP endpoint: `initialize`,
  * `notifications/initialized`, `ping`, `tools/list`, `tools/call`. One server
  * per bot; the conversation that owns a session is encoded in the URL path, so
- * each session gets its own descriptor.
+ * each session gets its own descriptor. SPEC-006 BDC-06 serves `cats-desktop`
+ * with the same class under its own name, with a token per conversation that
+ * `authorize` checks, and with image and structured results.
  */
 
 export const MCP_SERVER_NAME = 'cats-bot';
@@ -27,9 +29,16 @@ export interface ToolCallContext {
   conversationId: string;
 }
 
+export type ToolContent =
+  | { type: 'text'; text: string }
+  | { type: 'image'; data: string; mimeType: string };
+
 export interface ToolCallResult {
   text: string;
   isError?: boolean;
+  /** Replaces the default single text item, for example to return an image. */
+  content?: ToolContent[];
+  structuredContent?: Record<string, unknown>;
 }
 
 export interface ToolHandlers {
@@ -40,8 +49,15 @@ export interface ToolHandlers {
 export interface BotToolServerOptions {
   handlers: ToolHandlers;
   serverVersion: string;
+  /** The MCP server name; defaults to `cats-bot`. */
+  name?: string;
+  /** MCP `initialize` instructions. */
+  instructions?: string;
   host?: string;
   token?: string;
+  /** Replaces the single server token: whether `token` may call tools of `conversationId`. */
+  authorize?(conversationId: string, token: string): boolean;
+  maxBodyBytes?: number;
 }
 
 interface JsonRpcRequest {
@@ -51,13 +67,13 @@ interface JsonRpcRequest {
   params?: Record<string, unknown>;
 }
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes: number): Promise<string> {
   return new Promise((resolve, reject) => {
     let size = 0;
     const chunks: Buffer[] = [];
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
+      if (size > maxBytes) {
         reject(new Error('request body too large'));
         req.destroy();
         return;
@@ -90,14 +106,18 @@ export class BotToolServer {
     return this.port ? `http://${this.options.host ?? '127.0.0.1'}:${this.port}/mcp` : null;
   }
 
+  get name(): string {
+    return this.options.name ?? MCP_SERVER_NAME;
+  }
+
   /** The `mcpServers` descriptor for a session of `conversationId`. */
-  descriptorFor(conversationId: string): RuntimeMcpServer[] {
+  descriptorFor(conversationId: string, token = this.token): RuntimeMcpServer[] {
     if (!this.url) return [];
     return [{
-      name: MCP_SERVER_NAME,
+      name: this.name,
       transport: 'http',
       url: `${this.url}/${encodeURIComponent(conversationId)}`,
-      auth: { kind: 'bearer_env', token: this.token },
+      auth: { kind: 'bearer_env', token },
     }];
   }
 
@@ -137,11 +157,21 @@ export class BotToolServer {
       sendJson(res, 404, { error: 'not found' });
       return;
     }
-    if (req.headers.authorization !== `Bearer ${this.token}`) {
+    let conversationId: string;
+    try {
+      conversationId = match[1] ? decodeURIComponent(match[1]) : 'home';
+    } catch {
+      sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+    const header = req.headers.authorization ?? '';
+    const authorized = this.options.authorize
+      ? header.startsWith('Bearer ') && this.options.authorize(conversationId, header.slice('Bearer '.length))
+      : header === `Bearer ${this.token}`;
+    if (!authorized) {
       sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
-    const conversationId = match[1] ? decodeURIComponent(match[1]) : 'home';
     if (req.method === 'DELETE') {
       res.writeHead(200);
       res.end();
@@ -160,7 +190,7 @@ export class BotToolServer {
     }
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await readBody(req));
+      parsed = JSON.parse(await readBody(req, this.options.maxBodyBytes ?? MAX_BODY_BYTES));
     } catch {
       sendJson(res, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
       return;
@@ -192,7 +222,8 @@ export class BotToolServer {
         return reply({
           protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : DEFAULT_PROTOCOL_VERSION,
           capabilities: { tools: { listChanged: false } },
-          serverInfo: { name: MCP_SERVER_NAME, version: this.options.serverVersion },
+          serverInfo: { name: this.name, version: this.options.serverVersion },
+          ...(this.options.instructions ? { instructions: this.options.instructions } : {}),
         });
       }
       case 'notifications/initialized':
@@ -212,7 +243,11 @@ export class BotToolServer {
         }
         try {
           const result = await this.options.handlers.call(name, args, context);
-          return reply({ content: [{ type: 'text', text: result.text }], ...(result.isError ? { isError: true } : {}) });
+          return reply({
+            content: result.content ?? [{ type: 'text', text: result.text }],
+            ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
+            ...(result.isError ? { isError: true } : {}),
+          });
         } catch (error) {
           return reply({ content: [{ type: 'text', text: error instanceof Error ? error.message : String(error) }], isError: true });
         }
