@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Phase A delivered and recorded (P0–P4); phase B (P5): helper, server, hold state and indicator in review, native acceptance (B7) pending |
+| Status | Phase A and phase B delivered and recorded (P0–P5) |
 | Owner | Bot core, headless CLI, Electron shell |
 | Spec | [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md) |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md) |
@@ -195,7 +195,42 @@ P4 record (2026-10-29, Windows 11, Claude Code 2.1.312 `haiku` with the owner's 
   sends the helper `cancel` only for a conversation that held control. The tray's first item
   and tooltip and a banner in the note name the held app. See SPEC-006 "P5 Implementation
   Details".
-- [ ] Guard fixtures and native acceptance against a throwaway test window (B7).
+- [x] Guard fixtures and native acceptance against a throwaway test window (B7). See the record below.
+
+P5 record (2026-10-29, Windows 11, Claude Code 2.1.312 `sonnet` with the owner's own sign-in).
+The script ran an isolated test Bot from this branch's build with a temporary `CATS_BOTS_HOME`,
+an explicit `on-request` policy and the profile switch on, and drove it only through the
+`cats-bot` CLI: `say`, `interactions`, `respond` and `desktop` for grants and Stop.
+- **Owner answers.** It answered each provider approval with "Allow once", always after 4 quiet
+  seconds on the keyboard and mouse, and each grant through `cats-bot desktop --grant`.
+- **Targets.** Input went only to the throwaway probe app (`native-check/probe/`). A red
+  PowerShell window, observe only, lay over the probe's corner.
+- **Checks.** A second helper process read the probe back on its own. All 19 checks passed in
+  one run:
+
+- **Act tools.** All 7 act calls of the first owner turn produced a `tool_approval` from
+  `cats-desktop` before they ran. The probe then read "Clicks: 2" (`invoke_element` and
+  `click`), "Checked: True", text "hello from cats", "Last key: Return" or Enter, and
+  "Wheel: -2".
+- **BDC-10.** `cats-bot desktop` showed control held during that turn and released when it
+  ended.
+- **B8.** The transcript's tool entries kept no typed text.
+- **Guards.** The model received:
+  - `covered` for a point under the red window;
+  - `password_field` for typing into the password box;
+  - `observe_only` for typing into PowerShell;
+  - `operator_active` when the script nudged the mouse by one pixel just before approving `key`.
+
+  The password value never appeared.
+- **B5 and BDC-10.** `cats-bot desktop home --stop` while control was held made the next call
+  answer `stopped`, released control and cleared the grants. Defender recorded no detection.
+
+Not exercised natively:
+- the note's banner and the tray item in a running shell (covered by the UI tests above);
+- Stop from the note and the tray;
+- the clipboard tools, so the owner's clipboard is not overwritten;
+- the screen-lock pause;
+- Codex.
 
 **Exit:** B7 passes and is recorded; anything that did not pass is stated as such.
 
@@ -234,4 +269,4 @@ Use temporary state only; no real profile or installed application is changed. R
 checks each slice actually ran. Native, packaged and fixture evidence prove different things,
 so report them separately.
 
-*Created: 2026-10-29. Planned; implementation not authorized.*
+*Created: 2026-10-29. Phase A and phase B authorized by the owner on 2026-10-29.*

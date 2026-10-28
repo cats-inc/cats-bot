@@ -206,4 +206,4 @@ SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
 | B7 | Phase B: guard fixtures for every input tool, plus native acceptance against a throwaway test window |
 | B8 | The journal, receipts, logs and Telegram notices contain no screenshot bytes, typed text or clipboard content |
 
-*Created: 2026-10-29. Draft; implementation not authorized.*
+*Created: 2026-10-29. Phase A and phase B authorized by the owner on 2026-10-29.*
