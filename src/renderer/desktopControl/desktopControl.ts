@@ -1,8 +1,8 @@
 import type { DesktopControlState, DesktopGrantRequest } from '../../core/types.ts';
 
 /**
- * SPEC-006 P3: what the note and the settings page show of desktop control, apart from React,
- * so it is tested with node:test. The core decides; this only words its state and reasons.
+ * SPEC-006 P3 and P5: what the note and the settings page show of desktop control, apart from
+ * React, so it is tested with node:test. The core decides; this only words its state and reasons.
  */
 
 const REASONS: Record<string, string> = {
@@ -34,16 +34,23 @@ export function reasonText(reason: string | null): string {
 
 type Conversation = NonNullable<DesktopControlState['conversation']>;
 
-/** The note shows desktop control while the profile switch is on, and always while something waits or is granted. */
+/** The note shows desktop control while the profile switch is on, and always while something waits, is granted or held. */
 export function notePanelVisible(state: DesktopControlState | null): state is DesktopControlState & { conversation: Conversation } {
   const conversation = state?.conversation;
   if (!state || !conversation) return false;
-  return state.enabled || conversation.grants.length > 0 || conversation.pendingRequests.length > 0;
+  return state.enabled || conversation.grants.length > 0 || conversation.pendingRequests.length > 0 || conversation.holding !== null;
 }
 
-/** Phase A has no holding state: Stop is offered whenever the conversation has grants or waiting requests. */
+/** Stop is offered whenever the conversation has grants or waiting requests, or holds control. */
 export function showStop(conversation: Conversation): boolean {
-  return conversation.grants.length > 0 || conversation.pendingRequests.length > 0 || conversation.capability.status === 'holding';
+  return conversation.grants.length > 0 || conversation.pendingRequests.length > 0 || conversation.holding !== null
+    || conversation.capability.status === 'holding';
+}
+
+/** BDC-10: the banner while this note's turn holds control (SPEC-133 DC-11), naming the app; null otherwise. */
+export function holdingBanner(conversation: Conversation): string | null {
+  if (conversation.holding === null) return null;
+  return `The bot is operating ${conversation.holding}. Stop takes control back and ends its access.`;
 }
 
 /** The conversation switch can always be turned off; it is turned on only where desktop control can work. */

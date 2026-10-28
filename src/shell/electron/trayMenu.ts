@@ -1,5 +1,5 @@
 import type { BotStatus } from '../../core/bot.ts';
-import type { ConversationRecord } from '../../core/types.ts';
+import type { ConversationRecord, DesktopControlHolding } from '../../core/types.ts';
 
 /**
  * SPEC-001 FR-33: what the tray menu offers, as plain data so it can be
@@ -17,6 +17,8 @@ export interface TrayDesktopControl {
   pendingRequests: number;
   /** A conversation with a request waiting, so the tray can open its note. */
   waitingConversationId: string | null;
+  /** Conversations whose turn holds control, with the app (SPEC-133 DC-11). */
+  holding: DesktopControlHolding[];
 }
 
 export interface TrayMenuModel {
@@ -72,7 +74,14 @@ export function unreadTotal(conversations: ConversationRecord[]): number {
   return conversations.reduce((sum, record) => sum + record.unreadCount, 0);
 }
 
+/** The apps held now, each once. */
+export function heldApps(desktop: TrayDesktopControl): string[] {
+  return [...new Set(desktop.holding.map((row) => row.app))];
+}
+
 export function desktopControlLabel(desktop: TrayDesktopControl): string {
+  const held = heldApps(desktop);
+  if (held.length) return `the bot is operating ${held.join(', ')}`;
   if (desktop.pendingRequests) return 'desktop control request waiting';
   return desktop.enabled ? 'desktop control on' : '';
 }
@@ -87,7 +96,15 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
   const home = model.conversations.find((record) => record.role === 'home');
   const notes = model.conversations.filter((record) => record.role === 'note');
   const unread = unreadTotal(model.conversations);
-  const template: TrayMenuItem[] = [
+  const desktop = model.desktopControl;
+  const held = heldApps(desktop);
+  const template: TrayMenuItem[] = [];
+  if (held.length) {
+    // SPEC-006 BDC-10 / SPEC-133 DC-12: while the bot holds control, Stop is the nearest item.
+    template.push({ label: `Stop desktop control (${held.join(', ')})`, click: () => actions.onStopDesktopControl() },
+      { type: 'separator' });
+  }
+  template.push(
     {
       label: `${model.botName}: ${runtimeLabel(model.status)}${unread ? `, ${unread} unread` : ''}`
         + `${model.awaitingOwner ? `, ${model.awaitingOwner} waiting for you` : ''}`,
@@ -98,12 +115,11 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       label: home && home.unreadCount ? `Open home note (${home.unreadCount})` : 'Open home note',
       click: () => actions.onOpenConversation(home?.id ?? 'home'),
     },
-  ];
+  );
   if (model.status.pendingInteractions && model.status.queue.running) {
     const conversationId = model.status.queue.running.conversationId;
     template.push({ label: `Provider requests (${model.status.pendingInteractions})`, click: () => actions.onOpenConversation(conversationId) });
   }
-  const desktop = model.desktopControl;
   if (desktop.pendingRequests) {
     // Only the note (or the CLI) answers a grant request; the tray opens the note that waits.
     template.push({
@@ -129,7 +145,7 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
       click: () => actions.onToggleHeartbeat(!model.heartbeatEnabled),
     },
   );
-  if (desktop.enabled || desktop.pendingRequests) {
+  if (!held.length && (desktop.enabled || desktop.pendingRequests)) {
     template.push({ label: 'Stop desktop control', click: () => actions.onStopDesktopControl() });
   }
   template.push({

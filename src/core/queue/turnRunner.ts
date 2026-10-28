@@ -1,7 +1,7 @@
 import type { SessionBinder } from '../conversations/binder.ts';
 import type { ConversationStore } from '../conversations/store.ts';
 import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
-import { desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
+import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
@@ -217,7 +217,8 @@ export class TurnRunner {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
-    // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) never reach the transcript.
+    // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) and typed or clipboard
+    // text in their inputs never reach the transcript.
     const desktopTools = new Map<string, string>();
     const emitDelta = (entry: Parameters<ConversationStore['append']>[1], seq: number) => {
       this.deps.emit({
@@ -254,13 +255,12 @@ export class TurnRunner {
           break;
         }
         case 'tool_use': {
-          if (typeof event.toolId === 'string' && typeof event.toolName === 'string' && isDesktopControlToolName(event.toolName)) {
-            desktopTools.set(event.toolId, event.toolName);
-          }
+          const desktopTool = typeof event.toolName === 'string' && isDesktopControlToolName(event.toolName);
+          if (desktopTool && typeof event.toolId === 'string') desktopTools.set(event.toolId, event.toolName as string);
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'tool_use',
             origin,
-            text: toolInputText(event),
+            text: (desktopTool ? desktopToolInputSummary(event.toolName as string) : null) ?? toolInputText(event),
             workItemId: item.id,
             ...(typeof event.toolName === 'string' ? { toolName: event.toolName } : {}),
             ...(typeof event.toolId === 'string' ? { toolId: event.toolId } : {}),

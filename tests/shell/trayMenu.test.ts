@@ -34,7 +34,7 @@ function conversation(id: string, role: 'home' | 'note', unreadCount: number, ti
   };
 }
 
-const DESKTOP_OFF = { enabled: false, pendingRequests: 0, waitingConversationId: null };
+const DESKTOP_OFF = { enabled: false, pendingRequests: 0, waitingConversationId: null, holding: [] };
 
 const status: BotStatus = {
   id: 'mochi',
@@ -127,7 +127,7 @@ test('the tray shows desktop control while it is on, opens the note that waits a
   const off = buildTrayMenuTemplate({ ...base, desktopControl: DESKTOP_OFF }, actions);
   assert.ok(!off.some((item) => item.label?.includes('esktop control')), 'nothing while the profile switch is off');
 
-  const on = { ...base, desktopControl: { enabled: true, pendingRequests: 0, waitingConversationId: null } };
+  const on = { ...base, desktopControl: { enabled: true, pendingRequests: 0, waitingConversationId: null, holding: [] } };
   const idle = buildTrayMenuTemplate(on, actions);
   assert.ok(!idle.some((item) => item.label?.startsWith('Desktop control requests')));
   const stop = idle.find((item) => item.label === 'Stop desktop control');
@@ -135,16 +135,44 @@ test('the tray shows desktop control while it is on, opens the note that waits a
   stop.click!();
   assert.equal(buildTrayTooltip(on), 'Mochi (runtime ready) - desktop control on');
 
-  const waiting = { ...base, desktopControl: { enabled: true, pendingRequests: 2, waitingConversationId: 'conv-1' } };
+  const waiting = { ...base, desktopControl: { enabled: true, pendingRequests: 2, waitingConversationId: 'conv-1', holding: [] } };
   const template = buildTrayMenuTemplate(waiting, actions);
   const labels = template.map((item) => item.label ?? item.type);
   assert.deepEqual(labels.slice(0, 4), ['Mochi: runtime ready', 'separator', 'Open home note', 'Desktop control requests (2)']);
   assert.ok(labels.indexOf('Stop desktop control') > labels.indexOf('Pause heartbeat'));
   template[3]!.click!();
   assert.equal(buildTrayTooltip(waiting), 'Mochi (runtime ready) - desktop control request waiting');
-  const unknown = buildTrayMenuTemplate({ ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: null } }, actions);
+  const unknown = buildTrayMenuTemplate({ ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: null,
+    holding: [] } }, actions);
   unknown.find((item) => item.label === 'Desktop control requests (1)')!.click!();
   assert.deepEqual(clicks, ['desktop-stop', 'open:conv-1', 'open:home'], 'the tray opens the note; it never answers a grant');
+});
+
+test('while the bot holds control the tray names the app and offers Stop first (SPEC-006 BDC-10, SPEC-133 DC-11)', () => {
+  const clicks: string[] = [];
+  const actions = {
+    onOpenConversation: (id: string) => clicks.push(`open:${id}`), onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
+    onToggleOpenAtLogin: () => {}, onToggleFloating: () => {}, onStopDesktopControl: () => clicks.push('desktop-stop'), onQuit: () => {},
+  };
+  const base = {
+    botName: 'Mochi', status, conversations: [conversation('home', 'home', 0, 'Home')],
+    heartbeatEnabled: true, openAtLogin: false, openAtLoginAvailable: false, awaitingOwner: 0, floatingVisible: true,
+  };
+  const holding = { ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: 'home',
+    holding: [{ conversationId: 'home', app: '記事本' }, { conversationId: 'conv-1', app: '記事本' }] } };
+  const template = buildTrayMenuTemplate(holding, actions);
+  const labels = template.map((item) => item.label ?? item.type);
+  assert.deepEqual(labels.slice(0, 3), ['Stop desktop control (記事本)', 'separator', 'Mochi: runtime ready'],
+    'Stop is the nearest item, and each app is named once');
+  assert.equal(labels.filter((label) => label?.startsWith('Stop desktop control')).length, 1, 'one Stop item');
+  assert.ok(labels.includes('Desktop control requests (1)'), 'a waiting request still opens its note');
+  template[0]!.click!();
+  assert.deepEqual(clicks, ['desktop-stop']);
+  assert.equal(buildTrayTooltip(holding), 'Mochi (runtime ready) - the bot is operating 記事本');
+
+  const released = { ...base, desktopControl: { enabled: true, pendingRequests: 0, waitingConversationId: null, holding: [] } };
+  assert.equal(buildTrayMenuTemplate(released, actions)[0]!.label, 'Mochi: runtime ready', 'the release takes the item away');
+  assert.equal(buildTrayTooltip(released), 'Mochi (runtime ready) - desktop control on');
 });
 
 test('note view state normalises what it reads and round-trips what it writes', () => {

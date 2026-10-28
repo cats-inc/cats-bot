@@ -14,18 +14,22 @@ import { DesktopControlSwitches } from '../../src/core/desktopControl/switches.t
 import {
   DESKTOP_CONTROL_ERROR_CODES,
   DESKTOP_CONTROL_TOOLS,
+  desktopToolInputSummary,
   desktopToolResultSummary,
   isDesktopControlToolName,
 } from '../../src/core/desktopControl/tools.ts';
 import type { SessionCapabilitiesSnapshot } from '../../src/core/types.ts';
 import {
   callDesktopTool,
+  CAPTURE_BOUNDS,
   defaultWorld,
   errorCode,
   fakeHelper,
   NOTEPAD,
   PNG_BYTES,
+  SECRET_CLIPBOARD,
   SECRET_TITLE,
+  SECRET_TYPED,
   SECRET_UI_VALUE,
   snapshot,
   waitUntil,
@@ -34,10 +38,11 @@ import {
 import { makeTempHome } from '../support/harness.ts';
 
 /**
- * SPEC-006 phase A against a fake helper: the DC-04 policy gate, the descriptor and turn
- * rules (BDC-04, BDC-05), grants only the owner answers (BDC-07, SPEC-133 DC-08), the tools,
- * stop, lock, off and unavailable states, the helper's crash limit and the switch store.
- * These ports of Platform's desktop-control.test.js scenarios run the Bot's own code.
+ * SPEC-006 against a fake helper: the DC-04 policy gate, the descriptor and turn rules
+ * (BDC-04, BDC-05), grants only the owner answers (BDC-07, SPEC-133 DC-08), the phase A and
+ * phase B tools, holding control (DC-11), stop, lock, off and unavailable states, the helper's
+ * crash limit and the switch store. These ports of Platform's desktop-control.test.js
+ * scenarios run the Bot's own code.
  */
 
 interface Fixture {
@@ -50,6 +55,7 @@ interface Fixture {
   changes: DesktopControlChange[];
   logs: string[];
   snapshotFor: { current: SessionCapabilitiesSnapshot | null };
+  clock: { now: number };
   /** Re-decides the descriptor the way the core does before a send, and returns it. */
   send(conversationId?: string, sessionId?: string): Promise<ReturnType<DesktopControlService['descriptorFor']>[number] | undefined>;
 }
@@ -66,6 +72,7 @@ async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; 
   const changes: DesktopControlChange[] = [];
   const logs: string[] = [];
   const snapshotFor: Fixture['snapshotFor'] = { current: overrides.snapshot === undefined ? snapshot() : overrides.snapshot };
+  const clock = { now: Date.now() };
   const service = new DesktopControlService({
     helper: overrides.helper === null ? null : createDesktopControlHelperClient({
       path: 'fake.exe', selfProcessIds: [process.pid], selfExecutables: ['C:\\Bot\\Cats Bot.exe'], spawn: helper.spawn,
@@ -81,6 +88,7 @@ async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; 
     selfExecutables: ['C:\\Bot\\Cats Bot.exe'],
     grantWaitMs: overrides.grantWaitMs ?? 300,
     ...(overrides.requestTtlMs !== undefined ? { requestTtlMs: overrides.requestTtlMs } : {}),
+    now: () => clock.now,
   });
   t.after(async () => {
     service.close();
@@ -88,7 +96,7 @@ async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; 
     home.cleanup();
   });
   return {
-    service, world, helper, switches, profile, turn, changes, logs, snapshotFor,
+    service, world, helper, switches, profile, turn, changes, logs, snapshotFor, clock,
     async send(conversationId = 'conv-1', sessionId = 'session-1') {
       await service.refresh(conversationId, sessionId);
       return service.descriptorFor(conversationId, sessionId)[0];
@@ -96,7 +104,8 @@ async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; 
   };
 }
 
-const owner = (sessionId = 'session-1'): DesktopControlTurn => ({ sessionId, ownerPresent: true });
+const owner = (sessionId = 'session-1', workItemId = 'item-1'): DesktopControlTurn => ({ sessionId, workItemId, ownerPresent: true });
+const background = (): DesktopControlTurn => ({ sessionId: 'session-1', workItemId: 'item-1', ownerPresent: false });
 
 test('DC-04 policy gate passes only explicit interactive approval and fails closed', () => {
   assert.deepEqual(evaluateDesktopControlPolicy(snapshot()), { ok: true });
@@ -111,11 +120,22 @@ test('DC-04 policy gate passes only explicit interactive approval and fails clos
     'policy_unknown');
 });
 
-test('the tool list and error codes are SPEC-133 phase A exactly', () => {
+test('the tool list and error codes are SPEC-133 phase A and phase B exactly', () => {
   assert.deepEqual(DESKTOP_CONTROL_TOOLS.map((tool) => tool.name),
-    ['request_app_access', 'list_windows', 'screenshot_window', 'read_ui', 'open_app']);
+    ['request_app_access', 'list_windows', 'screenshot_window', 'read_ui', 'open_app',
+      'click', 'invoke_element', 'type_text', 'key', 'scroll', 'clipboard_read', 'clipboard_write']);
   for (const tool of DESKTOP_CONTROL_TOOLS) assert.equal(tool.inputSchema.additionalProperties, false, tool.name);
   assert.deepEqual(DESKTOP_CONTROL_TOOLS[0]!.inputSchema.required, ['apps', 'reason']);
+  const required = (name: string) => DESKTOP_CONTROL_TOOLS.find((tool) => tool.name === name)!.inputSchema.required;
+  assert.deepEqual(required('click'), ['snapshotId', 'x', 'y']);
+  assert.deepEqual(required('invoke_element'), ['elementId', 'action']);
+  assert.deepEqual(required('type_text'), ['windowId', 'text']);
+  assert.deepEqual(required('key'), ['windowId', 'keys']);
+  assert.deepEqual(required('scroll'), ['snapshotId', 'x', 'y', 'direction', 'amount']);
+  assert.deepEqual(required('clipboard_write'), ['text']);
+  assert.equal(desktopToolInputSummary('mcp__cats-desktop__type_text'), 'Desktop control type_text input; its text is not kept.');
+  assert.equal(desktopToolInputSummary('mcp__cats-desktop__clipboard_write'), 'Desktop control clipboard_write input; its text is not kept.');
+  assert.equal(desktopToolInputSummary('mcp__cats-desktop__click'), null, 'other inputs carry no typed or clipboard text');
   assert.equal(DESKTOP_CONTROL_ERROR_CODES.length, 15);
   assert.equal(isDesktopControlToolName('mcp__cats-desktop__screenshot_window'), true);
   assert.equal(isDesktopControlToolName('cats_desktop.read_ui'), true);
@@ -134,7 +154,7 @@ test('the descriptor rides only qualifying sessions, stays stable, and tools ser
 
   // No turn, a background turn, an owner turn of another session: not owner-present.
   assert.equal(errorCode(await callDesktopTool(descriptor, 'list_windows')), 'not_owner_present');
-  f.turn.current = { sessionId: 'session-1', ownerPresent: false };
+  f.turn.current = background();
   assert.equal(errorCode(await callDesktopTool(descriptor, 'list_windows')), 'not_owner_present');
   f.turn.current = owner('session-0');
   assert.equal(errorCode(await callDesktopTool(descriptor, 'list_windows')), 'not_owner_present');
@@ -294,6 +314,168 @@ test('stop revokes grants and later calls return stopped until the owner grants 
   assert.equal(errorCode(await callDesktopTool(descriptor, 'request_app_access', { apps: ['記事本'], reason: 'locked' })), 'locked');
 });
 
+const POWERSHELL = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe';
+const SHELL_WINDOW = { hwnd: 9, pid: 2, path: POWERSHELL, title: 'PowerShell', bounds: { x: 0, y: 0, width: 400, height: 300 },
+  minimized: false, foreground: false };
+
+/** Asks for an app and allows it the way the owner would in the note; returns its appId. */
+async function grant(f: Fixture, descriptor: Awaited<ReturnType<Fixture['send']>>, query: string): Promise<string> {
+  const pending = callDesktopTool(descriptor, 'request_app_access', { apps: [query], reason: 'Test' });
+  await waitUntil(() => f.service.pendingRequests('conv-1') > 0, 5_000, 'grant request');
+  for (const request of f.service.state('conv-1').conversation!.pendingRequests) f.service.decide('conv-1', request.requestId, 'allow');
+  return (await pending).structuredContent.results[0].app.appId as string;
+}
+
+test('phase B tools convert coordinates, keep the guards and hold control until the turn ends', async (t) => {
+  const f = await fixture(t, { world: { windows: [...defaultWorld().windows, SHELL_WINDOW] } });
+  const descriptor = await f.send();
+  f.turn.current = owner();
+  const sent = (op: string) => f.helper.requests.filter((row) => row.op === op).at(-1)?.params;
+  const count = (op: string) => f.helper.requests.filter((row) => row.op === op).length;
+  const code = async (name: string, args: Record<string, unknown>) => errorCode(await callDesktopTool(descriptor, name, args));
+  await grant(f, descriptor, '記事本');
+  await grant(f, descriptor, 'powershell');
+  const windows = (await callDesktopTool(descriptor, 'list_windows')).structuredContent.windows;
+  const notepad = windows.find((row: { title: string }) => row.title === SECRET_TITLE).windowId;
+  const shell = windows.find((row: { title: string }) => row.title === 'PowerShell').windowId;
+  const { snapshotId } = (await callDesktopTool(descriptor, 'screenshot_window', { windowId: notepad })).structuredContent;
+
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'active_turn', 'observing holds nothing');
+  assert.deepEqual((await callDesktopTool(descriptor, 'click', { snapshotId, x: 10, y: 20 })).structuredContent, { done: true });
+  assert.deepEqual(sent('click'), { hwnd: 7, bounds: CAPTURE_BOUNDS, x: 120, y: 240, button: 'left', count: 1 },
+    'image pixels become screen pixels through the snapshot scale, with the capture-time bounds');
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'holding', 'holding takes precedence over active_turn');
+  assert.deepEqual(f.service.state().holding, [{ conversationId: 'conv-1', app: '記事本' }]);
+  assert.equal(f.service.state('conv-1', 'session-1').conversation!.holding, '記事本');
+  assert.ok(f.changes.some((change) => change.conversationId === 'conv-1' && change.holding), 'the note and tray hear of it');
+
+  assert.equal(await code('click', { snapshotId, x: 100, y: 0 }), 'stale_snapshot', 'a point outside the image');
+  assert.equal(await code('click', { snapshotId: 'snap_unknown', x: 1, y: 1 }), 'stale_snapshot');
+  await callDesktopTool(descriptor, 'scroll', { snapshotId, x: 0, y: 0, direction: 'down', amount: 3 });
+  assert.deepEqual(sent('scroll'), { hwnd: 7, bounds: CAPTURE_BOUNDS, x: 100, y: 200, direction: 'down', amount: 3 });
+  f.clock.now += 61_000;
+  assert.equal(await code('click', { snapshotId, x: 1, y: 1 }), 'stale_snapshot', 'older than 60 seconds');
+
+  const ui = (await callDesktopTool(descriptor, 'read_ui', { windowId: notepad })).structuredContent;
+  await callDesktopTool(descriptor, 'invoke_element', { elementId: ui.nodes[1].elementId, action: 'toggle' });
+  assert.deepEqual(sent('invoke'), { hwnd: 7, readId: 5, elementId: 'e1', action: 'toggle' }, 'element ids resolve to the helper read');
+  assert.equal(await code('invoke_element', { elementId: 'ui99.e1', action: 'invoke' }), 'window_changed');
+
+  await callDesktopTool(descriptor, 'type_text', { windowId: notepad, text: `${SECRET_TYPED} 喵` });
+  assert.deepEqual(sent('type'), { hwnd: 7, text: `${SECRET_TYPED} 喵` });
+  assert.equal(await code('type_text', { windowId: notepad, text: 'a\nb' }), 'unavailable', 'no control characters');
+  f.world.fail = { type: 'password_field' };
+  assert.equal(await code('type_text', { windowId: notepad, text: 'x' }), 'password_field', 'helper codes reach the model');
+  f.world.fail = { key: 'covered' };
+  assert.equal(await code('key', { windowId: notepad, keys: 'enter' }), 'covered');
+  f.world.fail = {};
+  await callDesktopTool(descriptor, 'key', { windowId: notepad, keys: 'Ctrl+S' });
+  assert.deepEqual(sent('key'), { hwnd: 7, keys: 'ctrl+s' });
+  assert.equal(await code('key', { windowId: notepad, keys: 'alt+tab' }), 'unavailable', 'keys outside the allowlist');
+
+  // The parser says what each tool takes (same wording as Platform).
+  const message = async (name: string, args: Record<string, unknown>) =>
+    (await callDesktopTool(descriptor, name, args)).structuredContent.error.message as string;
+  assert.equal(await message('type_text', { windowId: notepad, content: 'x' }),
+    'Unexpected argument content; this tool takes only windowId, text.');
+  assert.equal(await message('list_windows', { extra: 1 }), 'Unexpected argument extra; this tool takes only no arguments.');
+  assert.equal(await message('click', { x: 1, y: 1 }), 'snapshotId is required and must be an id returned by a tool.');
+
+  const shellShot = (await callDesktopTool(descriptor, 'screenshot_window', { windowId: shell })).structuredContent.snapshotId;
+  assert.equal(await code('click', { snapshotId: shellShot, x: 1, y: 1 }), 'observe_only');
+  assert.equal(await code('type_text', { windowId: shell, text: 'dir' }), 'observe_only');
+
+  // Nothing reaches the helper when a check fails.
+  const keys = count('key');
+  f.world.operatorIdleMs = 1_000;
+  assert.equal(await code('key', { windowId: notepad, keys: 'enter' }), 'operator_active');
+  f.world.operatorIdleMs = 9_000;
+  f.world.locked = true;
+  assert.equal(await code('key', { windowId: notepad, keys: 'enter' }), 'locked');
+  f.world.locked = false;
+  f.turn.current = background();
+  assert.equal(await code('key', { windowId: notepad, keys: 'enter' }), 'not_owner_present');
+  f.turn.current = owner();
+  assert.equal(count('key'), keys, 'nothing is sent while the owner is active, the screen is locked or the turn is not the owner\'s');
+
+  await callDesktopTool(descriptor, 'clipboard_write', { text: SECRET_CLIPBOARD });
+  assert.deepEqual((await callDesktopTool(descriptor, 'clipboard_read')).structuredContent, { text: SECRET_CLIPBOARD });
+  const recorded = JSON.stringify(f.service.state('conv-1', 'session-1')) + JSON.stringify(f.changes) + f.logs.join('\n');
+  for (const secret of [SECRET_TYPED, SECRET_CLIPBOARD]) assert.equal(recorded.includes(secret), false, 'state and logs never carry it (BDC-12)');
+
+  // The end of the work item releases control; a later turn starts without it.
+  f.service.turnEnded('conv-1', 'item-0');
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'holding', 'another work item\'s end releases nothing');
+  f.service.turnEnded('conv-1', 'item-1');
+  f.turn.current = null;
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'injected', 'the end of the turn releases control');
+  assert.deepEqual(f.service.state().holding, []);
+  assert.equal(f.changes.at(-1)!.holding, false);
+  f.turn.current = owner('session-1', 'item-2');
+  assert.equal((await callDesktopTool(descriptor, 'clipboard_read')).isError, undefined);
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'active_turn', 'the clipboard holds no control');
+  assert.equal(f.helper.calls.includes('cancel'), false, 'a normal end of a turn sends no cancel');
+});
+
+test('Stop cancels the helper op only for a conversation that holds control; later calls return stopped', async (t) => {
+  const f = await fixture(t);
+  const descriptor = await f.send();
+  f.turn.current = owner();
+  const cancels = () => f.helper.calls.filter((op) => op === 'cancel').length;
+  await grant(f, descriptor, '記事本');
+  const [window] = (await callDesktopTool(descriptor, 'list_windows')).structuredContent.windows;
+  const { snapshotId } = (await callDesktopTool(descriptor, 'screenshot_window', { windowId: window.windowId })).structuredContent;
+  f.service.stop('conv-2');
+  f.service.stop();
+  assert.equal(cancels(), 0, 'nothing held: stopping sends no cancel, so another conversation\'s input is never cut');
+  assert.equal(errorCode(await callDesktopTool(descriptor, 'click', { snapshotId, x: 1, y: 1 })), 'stopped');
+
+  await grant(f, descriptor, '記事本');
+  const [again] = (await callDesktopTool(descriptor, 'list_windows')).structuredContent.windows;
+  const shot = (await callDesktopTool(descriptor, 'screenshot_window', { windowId: again.windowId })).structuredContent.snapshotId;
+  await callDesktopTool(descriptor, 'click', { snapshotId: shot, x: 1, y: 1 });
+  f.service.stop('conv-2');
+  assert.equal(cancels(), 0, 'stopping another conversation never cancels this one');
+
+  f.world.holdOps = ['type'];
+  const typing = callDesktopTool(descriptor, 'type_text', { windowId: again.windowId, text: 'a long text' });
+  await waitUntil(() => f.helper.calls.includes('type'), 5_000, 'typing');
+  f.service.stop('conv-1');
+  await waitUntil(() => cancels() === 1, 5_000, 'cancel');
+  f.helper.release();
+  assert.equal(errorCode(await typing), 'stopped', 'Stop cancels the helper op in progress');
+  f.world.holdOps = [];
+  assert.deepEqual(f.service.state().holding, [], 'Stop releases control');
+  assert.equal(f.service.capability('conv-1', 'session-1').status, 'active_turn');
+  for (const [name, args] of [['click', { snapshotId: shot, x: 1, y: 1 }], ['type_text', { windowId: again.windowId, text: 'x' }],
+    ['clipboard_read', {}]] as const) {
+    assert.equal(errorCode(await callDesktopTool(descriptor, name, args)), 'stopped', `${name} after Stop`);
+  }
+  f.service.stop('conv-1');
+  assert.equal(cancels(), 1, 'a conversation that no longer holds control sends no second cancel');
+
+  // A turn that ends while its input still runs (the owner cancelled the turn) cancels that input too.
+  await grant(f, descriptor, '記事本');
+  const [third] = (await callDesktopTool(descriptor, 'list_windows')).structuredContent.windows;
+  f.world.holdOps = ['type'];
+  const cut = callDesktopTool(descriptor, 'type_text', { windowId: third.windowId, text: 'more text' });
+  await waitUntil(() => f.helper.calls.filter((op) => op === 'type').length === 2, 5_000, 'second typing');
+  f.service.turnEnded('conv-1', 'item-1');
+  await waitUntil(() => cancels() === 2, 5_000, 'cancel at the end of the turn');
+  assert.deepEqual(f.service.state().holding, [], 'the end of the turn releases control');
+  f.helper.release();
+  f.world.holdOps = [];
+  await cut;
+
+  // Turning the conversation off while it holds control also ends the input in progress.
+  f.turn.current = owner('session-1', 'item-2');
+  await callDesktopTool(descriptor, 'key', { windowId: third.windowId, keys: 'enter' });
+  assert.equal(f.service.state().holding.length, 1);
+  f.service.setConversation('conv-1', false);
+  await waitUntil(() => cancels() === 3, 5_000, 'cancel on revoke');
+  assert.deepEqual(f.service.state().holding, []);
+});
+
 test('grant requests join, expire unanswered and are limited to five per conversation', async (t) => {
   const many: FakeWorld['apps'] = {};
   for (let index = 0; index < 7; index += 1) {
@@ -316,7 +498,7 @@ test('grant requests join, expire unanswered and are limited to five per convers
 test('a background turn cannot open a grant request', async (t) => {
   const f = await fixture(t);
   const descriptor = await f.send();
-  f.turn.current = { sessionId: 'session-1', ownerPresent: false };
+  f.turn.current = background();
   assert.equal(errorCode(await callDesktopTool(descriptor, 'request_app_access', { apps: ['記事本'], reason: 'x' })),
     'not_owner_present');
   assert.equal(f.service.pendingRequests(), 0, 'nothing waits, so nothing holds the gate');

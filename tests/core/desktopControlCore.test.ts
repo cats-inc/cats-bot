@@ -16,7 +16,9 @@ import {
   fakeHelper,
   NOTEPAD,
   PNG_BYTES,
+  SECRET_CLIPBOARD,
   SECRET_TITLE,
+  SECRET_TYPED,
   SECRET_UI_VALUE,
   snapshot,
   waitUntil,
@@ -26,10 +28,11 @@ import {
 import { makeTempHome } from '../support/harness.ts';
 
 /**
- * SPEC-006 P2 in the Bot core, on a scripted in-process Runtime client and a fake helper:
- * injection decided per send (BDC-04), owner-present turns from the work item (BDC-05),
- * grants through BotHostApi only (BDC-07), the global gate while a grant waits (BDC-09),
- * the capability entry (BDC-13) and redaction (BDC-12). Covers B1–B3, B6 and B8 in code.
+ * SPEC-006 P2 and P5 in the Bot core, on a scripted in-process Runtime client and a fake
+ * helper: injection decided per send (BDC-04), owner-present turns from the work item (BDC-05),
+ * grants through BotHostApi only (BDC-07), the global gate while a grant waits (BDC-09), held
+ * control and Stop (BDC-10), the capability entry (BDC-13) and redaction (BDC-12). Covers B1–B3,
+ * B6, B8 and the fixture half of B7 in code.
  */
 
 interface Step {
@@ -358,7 +361,7 @@ test('B6: a waiting grant holds background work, owner messages still run, and w
   assert.equal((await h.completed(heartbeat.id)).state, 'completed');
 });
 
-test('B8: screenshots, UI values and window titles reach no transcript, journal, log or Telegram notice', async (t) => {
+test('B8: screenshots, UI values, window titles, typed and clipboard text reach no transcript, journal, log or Telegram notice', async (t) => {
   const h = await harness(t, { grantWaitMs: 50 });
   await enable(h);
   // Telegram learns only that something waits.
@@ -390,25 +393,84 @@ test('B8: screenshots, UI values and window titles reach no transcript, journal,
     emit({ type: 'tool_result', toolId: 't3', text: JSON.stringify(windows) });
     emit({ type: 'tool_use', toolName: 'mcp__cats-desktop__read_ui', toolId: 't4', toolArgs: { windowId: 'win_x' } });
     emit({ type: 'tool_result', toolId: 't4', isError: true, text: 'window_changed: Unknown windowId; call list_windows again.' });
+    // Phase B: typed text and clipboard content travel in the tool input, and the clipboard comes back in a result.
+    const typeArgs = { windowId: windows[0].windowId, text: SECRET_TYPED };
+    const typed = await callDesktopTool(desktop, 'type_text', typeArgs);
+    emit({ type: 'tool_use', toolName: 'mcp__cats-desktop__type_text', toolId: 't5', toolArgs: typeArgs });
+    emit({ type: 'tool_result', toolId: 't5', text: JSON.stringify(typed.structuredContent) });
+    emit({ type: 'tool_use', toolName: 'mcp__cats-desktop__clipboard_write', toolId: 't6', text: JSON.stringify({ text: SECRET_CLIPBOARD }) });
+    await callDesktopTool(desktop, 'clipboard_write', { text: SECRET_CLIPBOARD });
+    const clipboard = await callDesktopTool(desktop, 'clipboard_read');
+    assert.equal(clipboard.structuredContent.text, SECRET_CLIPBOARD, 'the model reads the clipboard');
+    emit({ type: 'tool_use', toolName: 'mcp__cats-desktop__clipboard_read', toolId: 't7', toolArgs: {} });
+    emit({ type: 'tool_result', toolId: 't7', text: JSON.stringify(clipboard.structuredContent) });
   });
   await h.turn('describe my screen');
 
   const transcript = JSON.stringify(h.core.transcript('home'));
   assert.match(transcript, /Desktop control screenshot_window result; screen content is not kept/u);
   assert.match(transcript, /window_changed: Unknown windowId/u, 'an error stays readable');
+  assert.match(transcript, /Desktop control type_text input; its text is not kept/u);
+  assert.match(transcript, /Desktop control clipboard_write input; its text is not kept/u);
   const deltas = JSON.stringify(h.events.filter((event) => event.type === 'turn.delta'));
   const files = ['journal.jsonl', 'desktop-control.json', 'profile.json', ...readdirSync(join(h.root, 'logs')).map((file) => join('logs', file)),
     ...readdirSync(join(h.root, 'transcripts')).map((file) => join('transcripts', file))]
     .map((file) => { try { return readFileSync(join(h.root, file), 'utf8'); } catch { return ''; } }).join('\n');
   for (const [label, text] of [['transcript', transcript], ['turn deltas', deltas], ['files', files],
     ['logs', h.logs.join('\n')], ['telegram', h.telegram.join('\n')]] as const) {
-    for (const secret of [PNG_BYTES, SECRET_UI_VALUE, SECRET_TITLE]) assert.equal(text.includes(secret), false, `${label} leaked ${secret.slice(0, 12)}`);
+    for (const secret of [PNG_BYTES, SECRET_UI_VALUE, SECRET_TITLE, SECRET_TYPED, SECRET_CLIPBOARD]) {
+      assert.equal(text.includes(secret), false, `${label} leaked ${secret.slice(0, 16)}`);
+    }
   }
   for (const send of h.sends) {
     const token = send.body.mcpServers?.find((server) => server.name === 'cats-desktop')?.auth;
     if (token?.kind === 'bearer_env') assert.equal(files.includes(token.token) || h.logs.join('\n').includes(token.token), false,
       'the bearer token is never written (BDC-06)');
   }
+});
+
+test('P5: an owner turn holds control from its first input action until it ends, and Stop from the CLI cancels it', async (t) => {
+  const h = await harness(t);
+  await enable(h);
+  const home = (await h.core.listConversations()).find((row) => row.role === 'home')!;
+  const holdingEvents = () => h.events.flatMap((event) => event.type === 'desktop.control' ? [event.holding] : []);
+  const seen: { before?: string; click?: string; during?: string; state?: DesktopControlState } = {};
+  let windowId = '';
+  h.during(async ({ desktop }) => {
+    await grantNotepad(h, desktop);
+    [{ windowId }] = (await callDesktopTool(desktop, 'list_windows')).structuredContent.windows;
+    const { snapshotId } = (await callDesktopTool(desktop, 'screenshot_window', { windowId })).structuredContent;
+    seen.before = (await h.core.sessionCapabilities('home')).desktopControl?.status;
+    seen.click = errorCode(await callDesktopTool(desktop, 'click', { snapshotId, x: 10, y: 20 }));
+    seen.during = (await h.core.sessionCapabilities('home')).desktopControl?.status;
+    seen.state = await h.core.desktopControlState('home');
+  });
+  await h.turn('press the button');
+  assert.deepEqual([seen.before, seen.click, seen.during], ['active_turn', undefined, 'holding']);
+  assert.deepEqual(seen.state!.holding, [{ conversationId: home.id, app: '記事本' }], 'the tray reads this');
+  assert.equal(seen.state!.conversation!.holding, '記事本', 'the note\'s banner reads this');
+  const after = await h.core.desktopControlState('home');
+  assert.deepEqual([after.holding, after.conversation!.holding, after.conversation!.capability.status], [[], null, 'injected'],
+    'the end of the work item releases control');
+  assert.ok(holdingEvents().includes(true));
+  assert.equal(holdingEvents().at(-1), false, 'the shell hears of the release and refreshes the tray and note');
+  assert.equal(h.helper.calls.includes('cancel'), false, 'a normal end of a turn sends no cancel');
+
+  // Grants outlive the turn; the next turn holds control again, until the owner stops it with cats-bot desktop --stop.
+  const codes: Record<string, string | undefined> = {};
+  h.during(async ({ desktop }) => {
+    codes.key = errorCode(await callDesktopTool(desktop, 'key', { windowId, keys: 'enter' }));
+    assert.equal((await h.core.desktopControlState()).holding.length, 1);
+    const stop = await cli(h.root, 'desktop', 'home', '--stop');
+    assert.equal(stop.code, 0, stop.error);
+    await waitUntil(() => h.helper.calls.includes('cancel'), 5_000, 'cancel');
+    codes.afterStop = errorCode(await callDesktopTool(desktop, 'key', { windowId, keys: 'enter' }));
+    codes.state = (await h.core.sessionCapabilities('home')).desktopControl?.status;
+  });
+  await h.turn('press enter');
+  assert.deepEqual(codes, { key: undefined, afterStop: 'stopped', state: 'active_turn' });
+  assert.equal(h.helper.calls.filter((op) => op === 'cancel').length, 1);
+  assert.deepEqual((await h.core.desktopControlState('home')).conversation!.grants, [], 'Stop revoked the grant');
 });
 
 test('deleting a conversation forgets its switch and grants; a recovery rerun is not owner-present', async (t) => {

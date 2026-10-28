@@ -13,6 +13,10 @@ import type { SessionCapabilitiesSnapshot } from '../../src/core/types.ts';
 export const NOTEPAD = 'C:\\Program Files\\WindowsApps\\Microsoft.WindowsNotepad\\Notepad\\Notepad.exe';
 export const SECRET_UI_VALUE = 'private-ui-value-7f3a';
 export const SECRET_TITLE = 'private-window-title-91c2';
+export const SECRET_TYPED = 'private-typed-text-4e8d';
+export const SECRET_CLIPBOARD = 'private-clipboard-text-b05a';
+/** What the fake helper's `capture_window` reports: a 200x100 window at (100, 200), captured at half scale. */
+export const CAPTURE_BOUNDS = { x: 100, y: 200, width: 200, height: 100 };
 export const PNG_BYTES = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk';
 
 export interface FakeCandidate {
@@ -43,6 +47,11 @@ export interface FakeWorld {
   crashOn?: string;
   /** Delays the answer of these ops until `release()` is called. */
   holdOps?: string[];
+  /** What `state` reports as the owner's idle time; 9000 when unset. */
+  operatorIdleMs?: number;
+  /** Ops that answer with this helper error code. */
+  fail?: Record<string, string>;
+  clipboard?: string | null;
 }
 
 export function defaultWorld(): FakeWorld {
@@ -67,6 +76,8 @@ export interface FakeHelper {
   spawn: DesktopControlSpawn;
   /** Every op received, in order. */
   calls: string[];
+  /** Every op received with its params, in order. */
+  requests: Array<{ op: string; params: Record<string, unknown> }>;
   /** The params of every `hello`. */
   hellos: Array<Record<string, unknown>>;
   spawned: number;
@@ -76,6 +87,7 @@ export interface FakeHelper {
 
 export function fakeHelper(world: FakeWorld): FakeHelper {
   const calls: string[] = [];
+  const requests: FakeHelper['requests'] = [];
   const hellos: Array<Record<string, unknown>> = [];
   let held: Array<() => void> = [];
   const state = { spawned: 0 };
@@ -97,6 +109,7 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
         write(line: string) {
           const { id, op, params } = JSON.parse(line) as { id: number; op: string; params: Record<string, unknown> };
           calls.push(op);
+          requests.push({ op, params });
           const reply = (result: unknown) => stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
           const fail = (code: string) => stdout.write(`${JSON.stringify({ id, ok: false, error: { code, message: code } })}\n`);
           if (world.crashOn === op) {
@@ -108,18 +121,25 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
               hellos.push(params);
               if (params.protocol !== 1) fail('invalid_request');
               else reply({ protocol: world.protocol ?? 1, version: '1.0.0', platform: 'win32', dpiAwareness: 'per_monitor_v2' });
-            } else if (op === 'state') reply({ locked: world.locked === true, idleMs: 9000 });
+            } else if (op === 'state') reply({ locked: world.locked === true, idleMs: 9000, operatorIdleMs: world.operatorIdleMs ?? 9000 });
             else if (op === 'resolve_apps') {
               reply({ matches: (params.queries as string[]).map((query) => ({ query, candidates: world.apps[query] ?? [] })) });
             } else if (op === 'list_windows') {
               reply({ windows: world.windows.filter((window) => (params.paths as string[]).includes(window.path)) });
             } else if (op === 'capture_window') {
               if (!world.windows.some((window) => window.hwnd === params.hwnd)) fail('window_gone');
-              else reply({ pngBase64: PNG_BYTES, width: 100, height: 50, scale: 0.5, bounds: {} });
+              else reply({ pngBase64: PNG_BYTES, width: 100, height: 50, scale: 0.5, bounds: CAPTURE_BOUNDS });
             } else if (op === 'read_ui') {
-              reply({ nodes: [{ elementId: 'e0', parentId: null, role: 'window', name: 'Notepad', value: null },
+              reply({ readId: 5, nodes: [{ elementId: 'e0', parentId: null, role: 'window', name: 'Notepad', value: null },
                 { elementId: 'e1', parentId: 'e0', role: 'edit', name: 'Text', value: SECRET_UI_VALUE }], truncated: false });
             } else if (op === 'open_app') reply({ pid: 42 });
+            else if (world.fail?.[op]) fail(world.fail[op]!);
+            else if (['click', 'scroll', 'type', 'key', 'invoke'].includes(op)) reply({ done: true });
+            else if (op === 'clipboard_read') reply({ text: world.clipboard ?? null });
+            else if (op === 'clipboard_write') {
+              world.clipboard = params.text as string;
+              reply({ done: true });
+            } else if (op === 'cancel') reply({ cancelled: true });
             else fail('invalid_request');
           };
           if (world.holdOps?.includes(op)) held.push(answer);
@@ -133,6 +153,7 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
   return {
     spawn,
     calls,
+    requests,
     hellos,
     get spawned() { return state.spawned; },
     release() {

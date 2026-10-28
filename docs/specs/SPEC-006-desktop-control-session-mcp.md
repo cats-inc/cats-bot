@@ -144,6 +144,55 @@ cross-implementation contract is unchanged.
 - **Notices (BDC-12)**: the shell's bubble for a new grant request, the tray and `cats-bot run`
   output name no app, path or reason.
 
+## P5 Implementation Details (2026-10-29)
+
+Phase B follows SPEC-133's R5, "Phase B helper rules" and "Phase B server rules" as written:
+the seven tools, their schemas, the key allowlist, the snapshot and element-id rules, the order
+of checks for the five input tools, holding, and clipboard tools that need no grant. Where
+SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
+
+- **Helper (BDC-11)**: the Bot's copy carries Platform's phase B ops, guards, element cache and
+  immediate `cancel` unchanged, plus `native-check/input-check.mjs` and its probe app, which
+  are test tools and never packaged. Packaging needs no change: publishing compiles the
+  project, which excludes `native-check/`.
+- **End of turn (SPEC-133 DC-11)**: Platform releases control when its send returns. The Bot
+  releases it when the core finishes the work item that took control, whatever the outcome,
+  including a cancel. Only that work item shows or releases the hold, so a later turn of the same
+  session never inherits it.
+- **Stop (BDC-10, SPEC-133 DC-12)**: the note's banner, the tray and `cats-bot desktop --stop`
+  all reach `stopDesktopControl`. Besides revoking grants, Stop forgets the conversation's
+  window ids, snapshots and element ids, so after a new grant the bot lists windows again. The
+  helper's `cancel` is global, so it is sent only when a stopped conversation held control. A
+  stop that lands while an input tool checks its window sends nothing to the helper. Turning the
+  conversation's switch off while it holds control also sends `cancel`, since BDC-03 revokes
+  control. A turn that ends while one of its input ops is still in the helper (the owner
+  cancelled the turn) sends `cancel` too, and a later Stop sends it while such an op is still
+  in progress. The queue runs one turn at a time, so this `cancel` reaches only that
+  conversation's op.
+- **Indicator (BDC-10)**: the Bot has no topmost notice window. While control is held:
+  - The tray's first item is "Stop desktop control (app)" and its tooltip says the bot is
+    operating the app.
+  - The note shows a banner under its header that names the app, with Stop.
+  - The core does not open or raise the note when control starts, because a Bot window brought
+    forward would cover the target or take its focus (`covered`, `not_foreground`).
+  - `DesktopControlState.holding` lists `{ conversationId, app }`, `conversation.holding` names
+    the app, and `desktop.control` events carry `holding`.
+  - The held app is named only in these indicators and in `cats-bot desktop`. Logs, `cats-bot
+    run` output and Telegram name no app.
+- **Redaction (BDC-12)**: the transcript keeps a one-line summary instead of the input of
+  `type_text` and `clipboard_write`, as it already does for every desktop tool's result. Tool
+  summaries give character counts, never the text. Interaction receipts carry no tool input.
+- **Helper call timeouts**: `type` 180 seconds, other input ops 30 seconds, clipboard ops 10
+  seconds.
+- **Instructions**: the MCP `initialize` instructions are Platform's phase B text with the Bot's
+  two additions: the full tool id `mcp__cats-desktop__request_app_access`, since Claude Code
+  defers MCP tools behind ToolSearch, and the owner-present rule (BDC-05).
+- **Argument errors**: the same wording as Platform: "Unexpected argument `<name>`; this tool
+  takes only `<arguments>`." and "`<id>` is required and must be an id returned by a tool.",
+  still with the `unavailable` code. The Bot cuts an echoed argument name at 40 characters.
+- **Strings**: the repository has no localization, so the new note and tray strings are English
+  only.
+
 ## Acceptance Criteria
 
 | ID | Required evidence |
@@ -157,4 +206,4 @@ cross-implementation contract is unchanged.
 | B7 | Phase B: guard fixtures for every input tool, plus native acceptance against a throwaway test window |
 | B8 | The journal, receipts, logs and Telegram notices contain no screenshot bytes, typed text or clipboard content |
 
-*Created: 2026-10-29. Draft; implementation not authorized.*
+*Created: 2026-10-29. Phase A and phase B authorized by the owner on 2026-10-29.*

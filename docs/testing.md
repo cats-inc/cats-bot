@@ -89,8 +89,11 @@ last step, not the first.
   real shell (below). For desktop control (SPEC-006),
   `tests/shell/desktopControlIpc.test.ts` covers the host commands and which
   window may send them, `tests/renderer/desktopControl.test.ts` the note and
-  Settings wording and visibility, and `tests/core/desktopControlCore.test.ts`
-  runs `cats-bot desktop` against a running core with a fake helper.
+  Settings wording and visibility, including the banner while the bot holds
+  control, `tests/shell/trayMenu.test.ts` the tray's Stop item, and
+  `tests/core/desktopControlCore.test.ts` runs `cats-bot desktop` against a
+  running core with a fake helper. `tests/core/desktopControl.test.ts` covers
+  the phase B guard fixtures (PLAN-006 P5).
 
 ### Windows desktop control helper
 
@@ -109,6 +112,11 @@ last step, not the first.
   sends keyboard or mouse input, and checks the handshake, window listing, app
   resolution, capture under a covering window (B4), UI reading without password
   values, the lock state and self exclusion. CI never starts the helper.
+- **Native input check** (Windows only, manual, B7): `node
+  native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
+  builds its probe app on first use and sends real keyboard and mouse input,
+  but only to that probe window, after 5 quiet seconds from the owner before
+  each action. Run it only on a desktop nobody else is using.
 
 ### Manual acceptance
 

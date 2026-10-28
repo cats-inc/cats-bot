@@ -14,6 +14,11 @@ internal sealed record UiNode(
 internal static class Uia
 {
     private const int BoundingRectangle = 30001;
+    private const int ProcessId = 30002;
+    private const int MaxCachedReads = 8;
+    private static readonly object CacheLock = new();
+    private static readonly LinkedList<(int ReadId, long Hwnd, Dictionary<string, IUIAutomationElement> Elements)> Reads = new();
+    private static int _nextReadId;
     private const int ControlType = 30003;
     private const int LocalizedControlType = 30004;
     private const int Name = 30005;
@@ -38,8 +43,9 @@ internal static class Uia
         "separator", "semanticzoom", "appbar",
     ];
 
-    public static (List<UiNode> Nodes, bool Truncated) Read(long hwndValue, int maxNodes, Bounds frame)
+    public static (int ReadId, List<UiNode> Nodes, bool Truncated) Read(long hwndValue, int maxNodes, Bounds frame)
     {
+        var elements = new Dictionary<string, IUIAutomationElement>();
         var hwnd = new IntPtr(hwndValue);
         if (!Native.IsWindow(hwnd)) throw new HelperException("window_gone", "The window no longer exists.");
         var automation = (IUIAutomation)new CUIAutomation();
@@ -70,6 +76,7 @@ internal static class Uia
                 continue; // The element went away while it was being read.
             }
             nodes.Add(node);
+            elements[node.ElementId] = element;
             try
             {
                 for (var child = walker.GetFirstChildElement(element); child is not null; child = walker.GetNextSiblingElement(child))
@@ -82,8 +89,87 @@ internal static class Uia
                 // Children of a vanished element are skipped.
             }
         }
-        return (nodes, truncated);
+        int readId;
+        lock (CacheLock)
+        {
+            // invoke_element resolves ids from the last few reads; older ones answer window_changed.
+            readId = ++_nextReadId;
+            Reads.AddFirst((readId, hwndValue, elements));
+            while (Reads.Count > MaxCachedReads) Reads.RemoveLast();
+        }
+        return (readId, nodes, truncated);
     }
+
+    /// <summary>UIA SetFocus on the window brings it forward when SetForegroundWindow is refused (skill note).</summary>
+    public static void Focus(long hwnd)
+    {
+        try
+        {
+            var automation = (IUIAutomation)new CUIAutomation();
+            automation.ElementFromHandle(new IntPtr(hwnd))?.SetFocus();
+        }
+        catch (COMException)
+        {
+            // The caller verifies the foreground window and reports not_foreground.
+        }
+    }
+
+    /// <summary>Typing needs keyboard focus inside the target window and, unless allowed, outside password fields.</summary>
+    public static void RequireTypingTarget(WindowInfo window, bool allowPassword)
+    {
+        IUIAutomationElement? focused;
+        try
+        {
+            focused = ((IUIAutomation)new CUIAutomation()).GetFocusedElement();
+        }
+        catch (COMException)
+        {
+            focused = null;
+        }
+        if (focused is null || focused.GetCurrentPropertyValue(ProcessId) is not int pid || pid != window.Pid)
+        {
+            throw new HelperException("not_foreground", "Keyboard focus is not inside the window.");
+        }
+        if (!allowPassword && Bool(focused, IsPassword)) throw new HelperException("password_field", "The focused field is a password field.");
+    }
+
+    /// <summary>invoke_element: a UIA pattern on an element from a recent read_ui of the same window.</summary>
+    public static void Invoke(WindowInfo window, int readId, string elementId, string action)
+    {
+        IUIAutomationElement? element = null;
+        lock (CacheLock)
+        {
+            foreach (var read in Reads)
+            {
+                if (read.ReadId == readId && read.Hwnd == window.Hwnd) read.Elements.TryGetValue(elementId, out element);
+            }
+        }
+        if (element is null) throw new HelperException("window_changed", "That element is no longer known; call read_ui again.");
+        try
+        {
+            if (element.GetCurrentPropertyValue(ProcessId) is not int pid || pid != window.Pid)
+            {
+                throw new HelperException("window_changed", "That element no longer belongs to the window.");
+            }
+            switch (action)
+            {
+                case "invoke": Pattern<IUIAutomationInvokePattern>(element, 10000).Invoke(); break;
+                case "toggle": Pattern<IUIAutomationTogglePattern>(element, 10015).Toggle(); break;
+                case "select": Pattern<IUIAutomationSelectionItemPattern>(element, 10010).Select(); break;
+                case "expand": Pattern<IUIAutomationExpandCollapsePattern>(element, 10005).Expand(); break;
+                case "collapse": Pattern<IUIAutomationExpandCollapsePattern>(element, 10005).Collapse(); break;
+                default: throw new HelperException("invalid_request", "Unknown action.");
+            }
+        }
+        catch (COMException)
+        {
+            throw new HelperException("window_changed", "The element went away or refused the action; call read_ui again.");
+        }
+    }
+
+    private static T Pattern<T>(IUIAutomationElement element, int patternId) where T : class
+        => element.GetCurrentPattern(patternId) as T
+            ?? throw new HelperException("invalid_request", "The element does not support that action.");
 
     private static UiNode Describe(IUIAutomationElement element, string id, string? parentId, Bounds frame)
     {
@@ -133,7 +219,7 @@ internal static class Uia
         void GetRootElement();
         IUIAutomationElement? ElementFromHandle(IntPtr hwnd);
         void ElementFromPoint();
-        void GetFocusedElement();
+        IUIAutomationElement? GetFocusedElement();
         void GetRootElementBuildCache();
         void ElementFromHandleBuildCache();
         void ElementFromPointBuildCache();
@@ -163,5 +249,37 @@ internal static class Uia
         void BuildUpdatedCache();
         [return: MarshalAs(UnmanagedType.Struct)]
         object? GetCurrentPropertyValue(int propertyId);
+        void GetCurrentPropertyValueEx();
+        void GetCachedPropertyValue();
+        void GetCachedPropertyValueEx();
+        void GetCurrentPatternAs();
+        void GetCachedPatternAs();
+        [return: MarshalAs(UnmanagedType.IUnknown)]
+        object? GetCurrentPattern(int patternId);
+    }
+
+    [ComImport, Guid("fb377fbe-8ea6-46d5-9c73-6499642d3059"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationInvokePattern
+    {
+        void Invoke();
+    }
+
+    [ComImport, Guid("94cf8058-9b8d-4ab9-8bfd-4cd0a33c8c70"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationTogglePattern
+    {
+        void Toggle();
+    }
+
+    [ComImport, Guid("a8efa66a-0fda-421a-9194-38021f3578ea"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationSelectionItemPattern
+    {
+        void Select();
+    }
+
+    [ComImport, Guid("619be086-1f4e-4ee4-bafa-210128738730"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IUIAutomationExpandCollapsePattern
+    {
+        void Expand();
+        void Collapse();
     }
 }

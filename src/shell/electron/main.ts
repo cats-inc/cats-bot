@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   };
 
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
-  // SPEC-006 BDC-10: whether desktop control is on, and which note has a grant request waiting.
+  // SPEC-006 BDC-10: whether desktop control is on, which note has a grant request waiting, and what is held.
   const trayDesktopControl = async (): Promise<TrayDesktopControl> => {
     const state = await core.desktopControlState();
     let waitingConversationId: string | null = null;
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
         }
       }
     }
-    return { enabled: state.enabled, pendingRequests: state.pendingRequests, waitingConversationId };
+    return { enabled: state.enabled, pendingRequests: state.pendingRequests, waitingConversationId, holding: state.holding };
   };
   const trayModel = async (): Promise<TrayMenuModel> => {
     const [profile, conversations, desktopControl] = await Promise.all([core.getProfile(), core.listConversations(), trayDesktopControl()]);
