@@ -161,9 +161,10 @@ SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
   session never inherits it.
 - **Stop (BDC-10, SPEC-133 DC-12)**: the note's banner, the tray and `cats-bot desktop --stop`
   all reach `stopDesktopControl`. Besides revoking grants, Stop forgets the conversation's
-  window ids, snapshots and element ids, so after a new grant the bot lists windows again. The
-  helper's `cancel` is global, so it is sent only when a stopped conversation held control. A
-  stop that lands while an input tool checks its window sends nothing to the helper. Turning the
+  window ids, snapshots and element ids, so after a new grant the bot lists windows again. A
+  stop that lands while an input tool checks its window sends nothing to the helper. Both rules
+  are now shared with Platform (SPEC-133 "Stop and revoke win every race"). The helper's
+  `cancel` is global, so it is sent only when a stopped conversation held control. Turning the
   conversation's switch off while it holds control also sends `cancel`, since BDC-03 revokes
   control. A turn that ends while one of its input ops is still in the helper (the owner
   cancelled the turn) sends `cancel` too, and a later Stop sends it while such an op is still
@@ -179,6 +180,10 @@ SPEC-133 leaves the detail to each implementation, the Bot decides as follows.
     the app, and `desktop.control` events carry `holding`.
   - The held app is named only in these indicators and in `cats-bot desktop`. Logs, `cats-bot
     run` output and Telegram name no app.
+- **Diagnostics (BDC-12)**: the helper client drains the helper's stderr and keeps only its
+  tail in memory. When the helper exits unexpectedly, the Bot's log gets one line with the exit
+  code and only the exception type names and stack frames from that tail. Exception messages
+  are dropped, since one could quote typed or on-screen text.
 - **Redaction (BDC-12)**: the transcript keeps a one-line summary instead of the input of
   `type_text` and `clipboard_write`, as it already does for every desktop tool's result. Tool
   summaries give character counts, never the text. Interaction receipts carry no tool input.
