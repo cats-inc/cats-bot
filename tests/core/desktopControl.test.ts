@@ -7,6 +7,7 @@ import {
   developmentHelperPath,
   packagedHelperPath,
   resolveDesktopControlHelper,
+  summarizeHelperStderr,
 } from '../../src/core/desktopControl/helper.ts';
 import { evaluateDesktopControlPolicy } from '../../src/core/desktopControl/policy.ts';
 import { DesktopControlService, type DesktopControlChange, type DesktopControlTurn } from '../../src/core/desktopControl/service.ts';
@@ -569,4 +570,21 @@ test('the helper client handshakes with the self lists, restarts after a crash a
   assert.equal(mismatched.unavailableReason(), 'handshake_failed', 'a failed handshake keeps desktop control unavailable (BDC-01)');
   await assert.rejects(mismatched.call('state'), (error: { code?: string }) => error.code === 'unavailable');
   mismatched.close();
+});
+
+test('an unexpected helper exit reports exception types and frames, never their messages (BDC-12)', async () => {
+  const exits: Array<{ code: number | null; summary: string }> = [];
+  const world: FakeWorld = { apps: {}, windows: [], crashOn: 'list_windows',
+    stderr: "Unhandled exception. System.FormatException: The input string 'my secret note' was not in a correct format.\r\n"
+      + '   at Cats.DesktopControl.Windows.Input.Type(WindowInfo window, String text, CancellationToken cancel) in C:\\src\\Input.cs:line 160\r\n'
+      + ' ---> System.InvalidOperationException: clipboard said hello\r\n' };
+  const client = createDesktopControlHelperClient({ path: 'fake.exe', selfProcessIds: [], selfExecutables: [],
+    spawn: fakeHelper(world).spawn, onExit: (exit) => exits.push(exit) });
+  await assert.rejects(client.call('list_windows', { paths: [] }), (error: { code?: string }) => error.code === 'executor_failed');
+  assert.equal(exits.length, 1);
+  assert.equal(exits[0]?.summary, 'System.FormatException\n'
+    + 'at Cats.DesktopControl.Windows.Input.Type(WindowInfo window, String text, CancellationToken cancel)\n'
+    + 'System.InvalidOperationException');
+  assert.equal(summarizeHelperStderr('plain text the helper printed'), '');
+  client.close();
 });

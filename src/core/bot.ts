@@ -454,6 +454,9 @@ export class BotCore implements BotHostApi {
       selfProcessIds: [process.pid, ...(options?.selfProcessIds ?? [])],
       selfExecutables,
       ...(options?.spawn ? { spawn: options.spawn } : {}),
+      // Exception types and stack frames only (BDC-12); the next call restarts the helper.
+      onExit: ({ code, summary }) => this.log(`desktop control helper exited unexpectedly (code ${code})`
+        + `${summary ? `: ${summary.replace(/\n/gu, ' | ')}` : ''}`),
     });
     return new DesktopControlService({
       helper,

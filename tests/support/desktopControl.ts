@@ -45,6 +45,8 @@ export interface FakeWorld {
   locked?: boolean;
   protocol?: number;
   crashOn?: string;
+  /** Written to the helper's stderr just before a crash. */
+  stderr?: string;
   /** Delays the answer of these ops until `release()` is called. */
   holdOps?: string[];
   /** What `state` reports as the owner's idle time; 9000 when unset. */
@@ -94,6 +96,7 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
   const spawn: DesktopControlSpawn = () => {
     state.spawned += 1;
     const stdout = new PassThrough();
+    const stderr = new PassThrough();
     const child = new EventEmitter() as EventEmitter & DesktopControlHelperProcess;
     let alive = true;
     const exit = (code: number) => {
@@ -103,6 +106,7 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
     };
     Object.assign(child, {
       stdout,
+      stderr,
       kill: () => { exit(0); return true; },
       stdin: {
         end() {},
@@ -113,7 +117,8 @@ export function fakeHelper(world: FakeWorld): FakeHelper {
           const reply = (result: unknown) => stdout.write(`${JSON.stringify({ id, ok: true, result })}\n`);
           const fail = (code: string) => stdout.write(`${JSON.stringify({ id, ok: false, error: { code, message: code } })}\n`);
           if (world.crashOn === op) {
-            exit(1);
+            if (world.stderr) stderr.write(world.stderr);
+            setImmediate(() => exit(1));
             return true;
           }
           const answer = () => {
