@@ -45,6 +45,13 @@ const packaged = directories.filter(item => item.isDirectory() && (platform === 
 if (packaged.length !== (args.includes('--dir') || platform === 'macos' ? 1 : 2)) throw new Error('Packaged architecture count mismatch.');
 for (const directory of packaged) {
   const resources = platform === 'macos' ? join(root, 'release', directory.name, 'Cats Bot.app', 'Contents', 'Resources') : join(root, 'release', directory.name, 'resources');
+  if (platform === 'macos') {
+    // lipo consumes every argument after -verify_arch as an architecture name.
+    // Verify here so unsigned candidate CI exercises the same native check.
+    const architectures = spawnSync('lipo', [join(resources, '..', 'MacOS', 'Cats Bot'), '-verify_arch',
+      ...(args.includes('--dir') ? ['x86_64'] : ['x86_64', 'arm64'])], { stdio: 'inherit' });
+    if (architectures.error || architectures.status !== 0) throw architectures.error ?? new Error('Packaged macOS app lacks the required architectures.');
+  }
   const actual = JSON.parse(await readFile(join(resources, 'bot-release.json'), 'utf8'));
   if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error('Packaged descriptor differs from the release identity.');
   const runtime = JSON.parse(await readFile(join(resources, 'app', 'node_modules', '@cats-inc', 'cats-runtime', 'package.json'), 'utf8'));
