@@ -43,11 +43,12 @@ Bot + pinned Runtime source ZIP with a source/checksum manifest. Portable assets
 are not updater targets. Candidate CI artifacts carry a different distribution
 identity and cannot self-update.
 
-macOS uses the existing Cats Desktop credentials through `cats-inc` organization
-secrets. All five secrets grant **Selected repositories** access only to
-`cats-platform` and `cats-bots`; no new Apple certificate, API key or per-repository
-upload is needed. Windows signing is configured separately with repository or
-applicable organization secrets.
+Reuse Cats Desktop's existing macOS credentials through `cats-inc` organization
+secrets. Configure all five with **Selected repositories** access only to
+`cats-platform` and `cats-bots`; no new Apple certificate or API key is needed.
+Desktop repository secrets alone are not visible to Bots: they must first be
+shared at organization scope. Windows signing is configured separately with
+repository or applicable organization secrets.
 
 | Platform | Secrets |
 | --- | --- |
@@ -59,6 +60,16 @@ variables → Actions**, retaining the selected-repository access. Do not create
 same-name repository or environment overrides, which take precedence and can
 keep Bots on stale credentials. Pause signed releases during rotation, then verify
 signing and notarization authentication in both repositories before resuming.
+
+Follow the [shared Apple credential migration procedure](https://github.com/cats-inc/cats-platform/blob/main/docs/deployment.md#desktop-release-signing)
+when moving an existing Desktop set. Keep Desktop's source copies until Bots
+passes native signing, signature verification and notarization API authentication;
+then remove the Desktop overrides and verify Desktop again. If the baseline or
+Bots checks fail, keep the Desktop source copies and stop. If Desktop fails after
+switching, pause signed releases and diagnose the shared configuration before
+proceeding. Temporary credential probes do not publish a release or establish full
+product notarization, and both existing release workflows already read these
+secret names without code changes.
 
 Windows certificates may have an empty password; a password without a certificate
 is rejected. macOS requires all certificate and notarization credentials together.
