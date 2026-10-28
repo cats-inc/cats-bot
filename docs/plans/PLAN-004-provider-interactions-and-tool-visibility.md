@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Codex 完成；Claude Code（P5）scripted 驗收通過，真實 CLI 驗收進行中；成功 Chrome／桌面操作尚未驗證 |
+| Status | Codex 與 Claude Code 完成；成功 Chrome／桌面操作尚未驗證 |
 | Owner | Bot core、CLI、Electron shell |
 | Assigned To | Unassigned |
 | Reviewer | Product owner、Runtime maintainers |
@@ -73,7 +73,7 @@ Runtime PLAN-049 是共同前置，Platform PLAN-124 不構成 Bot 的執行依�
 - [x] Pin 含 Runtime PLAN-050 P1/P2 的 packed artifact，加入 `tool_approval` 與 built-in 工具清單。
 - [x] Claude in Chrome 每個 bot 的開關（`--chrome`）與 Claude 的 policy 上限說明、儲存前檢查。
 - [x] Scripted Claude CLI 經 packed Runtime 完成提問、Chrome 工具 approval、MCP 表單與清單觀測。
-- [ ] 真實 Claude CLI 經 Runtime 與新的測試 Bot 跑一次；Chrome 實際操作需主人同意後另行驗收。
+- [x] 真實 Claude CLI 經 Runtime 與新的測試 Bot 跑一次；Chrome 實際操作需主人同意後另行驗收。
 
 **Exit:** Claude bot 與 Codex bot 走同一條互動路徑；無法執行的上限在儲存或建立 session 前被拒絕。
 
@@ -106,5 +106,6 @@ Runtime PLAN-049 是共同前置，Platform PLAN-124 不構成 Bot 的執行依�
 | 2026-10-28 | P4 native 比較：Codex 0.164.0，同一 Windows 使用者／config／測試 cwd、explicit workspace-write/offline/on-request/reviewer=user。真實 Bot core（Runtime b75da37b）與 Terminal 均實際呼叫 Chrome 建 tab，得到 Browser is not available: chrome；受控 WinForms 目標的 native listing 均得到 missing native pipe（OS error 2），沒有 tab 或按鈕操作成功。Bot 的 policy verified，configured MCP 為 279/3/4，另有 4 個 Bot 注入工具。工具呼叫路徑已接通，A6 的成功操作與 helper 恢復仍待環境可用後驗收。 |
 | 2026-10-28 | Follow-up slice：pin Runtime 50ef02b4686c1fff6b60819d292acc5b2e1ef773，修正同 cwd 的舊 Codex thread 被錯認及失敗 admission 刪除 transcript；精確 tgz digest 見 vendor/README。整數表單將小數上下限轉為 ceil/floor，4 個實際 DOM validity 案例經獨立檢查。新 pin 的 12 項 focused tests（含真實 packed Runtime + scripted provider）、typecheck/build 通過，Electron 41.2.0 Windows unpacked 重新建置並核對含修正的 Runtime。沒有重新宣稱原生工具成功，亦未發布。 |
 | 2026-10-28 | P5 Claude Code slice：pin Runtime `e38e56bfd54fe783df22a5e0d914b14d186ee6bf`（PLAN-050 P1/P2，未發布），新增 `tool_approval`、Claude in Chrome 開關、Claude policy 上限的儲存前檢查與說明、built-in 工具清單。Scripted Claude CLI 新增 initialize／mcp_status／AskUserQuestion／Chrome 工具 approval／MCP 表單；packed Runtime 整合測試通過，Codex 整合測試仍通過。完整 `npm test` 128/128、typecheck、build 通過。真實 Claude CLI 經 Bot 的驗收尚待進行。 |
+| 2026-10-28 | P5 真實驗收：Claude Code 2.1.312（haiku）經 packed Runtime `e38e56bf` 與全新隔離測試 Bot（真實使用者登入、scratch cwd、explicit full-access/network/on-request、Claude in Chrome 開啟），23 秒內完成四回合：提問（`user_input`，回答 Blue）、Write（`file_approval`，只顯示路徑與大小，檔案寫入）、Bot 自己的 `schedule_list`（`tool_approval`，server `cats-bot`）、拒絕 shell 轉址（`command_approval`，檔案未建立）。Policy `verified`（回報 `default`、reviewer `user`）；儲存 workspace-write 被拒。清單：`cats-bot` 注入、`claude-in-chrome` 22 個工具、7 個 claude.ai connectors、34 個 built-in；browser `unknown`、computer use `unavailable`。未實測：真正的 Chrome 瀏覽器操作（沒有開啟瀏覽器）、真實 MCP 表單／URL（僅 scripted 與直接 CLI 探測）、便箋上 `tool_approval` 卡片的畫面（沿用通用卡片）。 |
 
 *Created / last updated: 2026-10-28*
