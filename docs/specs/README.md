@@ -62,7 +62,7 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | [SPEC-002](./SPEC-002-desktop-presence-settings-and-first-run.md) | Desktop Presence, Settings and First Run | Accepted | [PLAN-002](../plans/PLAN-002-desktop-presence.md) |
 | [SPEC-003](./SPEC-003-note-reading-and-the-react-renderer.md) | Note Reading and the React Renderer | Accepted | [PLAN-003](../plans/PLAN-003-react-renderer.md) |
 | [SPEC-005](./SPEC-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented | [PLAN-005](../plans/PLAN-005-standard-preview-releases-and-updates.md) |
-| [SPEC-007](./SPEC-007-cats-bot-identity-and-data-root.md) | Cats Bot Identity and Data Root | Phase 1 implemented | [PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md) |
+| [SPEC-007](./SPEC-007-cats-bot-identity-and-data-root.md) | Cats Bot Identity and Data Root | Implemented except FR-8 | [PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md) |
 | [SPEC-008](./SPEC-008-hub-and-bots.md) | Hub and Bots | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
 | [SPEC-009](./SPEC-009-coordinator-role.md) | Coordinator Role | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
 <!-- Add new specs above this line -->

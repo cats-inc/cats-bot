@@ -10,8 +10,8 @@ PR #51's Hub/core authority remain intact. No shared-package cutover is implemen
 The next design (2026-10-29) gives Cats Bot its own identity and `~/.catsbot`
 root ([ADR-007](decisions/007-give-cats-bot-its-own-identity-and-data-root.md),
 [SPEC-007](specs/SPEC-007-cats-bot-identity-and-data-root.md),
-[PLAN-008](plans/PLAN-008-cats-bot-identity-and-data-root.md); Phase 1
-implemented on 2026-10-30). The rest, not yet implemented, runs
+[PLAN-008](plans/PLAN-008-cats-bot-identity-and-data-root.md); implemented on
+2026-10-30 apart from the 0.3.0 release). The rest, not yet implemented, runs
 every bot as a headless core under one hub, with a transferable coordinator role
 and per-bot execution environments, native only at first
 ([ADR-008](decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
