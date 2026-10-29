@@ -17,7 +17,7 @@ import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
-import { resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
+import { InvalidBotIdError, isValidBotId, resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
 import type { BotHostEvent } from '../../core/types.ts';
 import { FloatingBot } from './floatingBot.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
@@ -86,6 +86,12 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(1));
   const installation = app.isPackaged ? new BotInstallation(app.getPath('appData'), process.execPath, app.getVersion()) : null;
   const botId = args.id ?? readBotIdFromEnv() ?? installation?.pendingBotId() ?? 'mochi';
+  // SPEC-008 FR-27: refuse before the id reaches any path, Electron's user data included.
+  if (!isValidBotId(botId)) {
+    dialog.showErrorBox('Cats Bot', new InvalidBotIdError(botId).message);
+    app.exit(2);
+    return;
+  }
   const botsHome = resolveBotsHome();
   const root = resolveBotRoot(botId);
   app.setName('Cats Bot');

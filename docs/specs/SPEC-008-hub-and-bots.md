@@ -216,12 +216,13 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 27. FR-27: A bot id is one path segment of 1 to 64 characters matching
     `[a-z0-9]+(-[a-z0-9]+)*`, and never a Windows device name (`con`, `prn`,
-    `aux`, `nul`, `com1`–`com9`, `lpt1`–`lpt9`). It is checked wherever it
+    `aux`, `nul`, `com0`–`com9`, `lpt0`–`lpt9`). It is checked wherever it
     enters, before any path is resolved: `--id` and `CATS_BOT_ID` in the CLI,
     the core and the shell; Settings → Bots create (FR-5); and the registry and
     directory reconcile (FR-3), which reports and skips a directory whose name
     is not a valid id. An invalid id is refused with a message that states the
-    rule. `cats-bot init` already derives ids of this form from the bot's name.
+    rule. `cats-bot init` derives an id of this form from the bot's name,
+    truncated to 64 characters, with `-bot` appended to a device name.
     No id can then name a path outside its own bot root, such as the hub's part
     of `<CATS_BOT_HOME>` (SPEC-007 FR-3).
 
