@@ -10,6 +10,13 @@ helpers run in the hub and display language becomes a fleet preference once PLAN
 
 ## Context
 
+Proposed follow-up (2026-10-29):
+[Platform PLAN-127](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-127-shared-platform-package-extraction.md)
+would replace selected vendored helpers with versioned resources after Desktop
+and Bot prove the same artifact. Until that consumer cutover, this record's
+vendoring/provenance rules remain current. Provider-first UX and Runtime catalog
+ownership remain unchanged; ADR-008 still owns the future Hub placement.
+
 The original picker omitted catalog controls and added synthetic default/custom
 entries. First run only checked PATH and could not install a missing provider.
 The reference Desktop uses Runtime's authoritative catalogs and packaged,

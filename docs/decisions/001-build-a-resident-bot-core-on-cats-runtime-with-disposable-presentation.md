@@ -16,6 +16,13 @@ per-bot lock and tray once PLAN-008/PLAN-009 land; until then this record descri
 
 ## Context
 
+Proposed dependency follow-up (2026-10-29):
+[Platform ADR-142](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/142-publish-reusable-platform-packages-for-independent-products.md)
+would replace the blanket Platform-package exclusion for specifically reviewed
+pure/Node public entries after dual-consumer verification. The current import
+guard remains in force until adoption lands. Headless core, independent data,
+Runtime process/HTTP ownership and product authority are unchanged.
+
 ### The owner's direction
 
 - One executable is one bot, wrapping one agent CLI.

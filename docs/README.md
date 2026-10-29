@@ -1,5 +1,10 @@
 # Documentation Index
 
+The follow-on [shared Platform proposal](architecture.md#proposed-shared-platform-consumption-2026-10-29)
+links Platform's ADR-142, SPEC-134 and PLAN-127 package-consumption design.
+It proposes versioned setup/native/host reuse while preserving the independent
+Bot ecosystem and PR #51's Hub/core authority. No shared-package cutover is implemented.
+
 The next design (2026-10-29, not implemented) gives Cats Bot its own identity
 and `~/.catsbot` root ([ADR-007](decisions/007-give-cats-bot-its-own-identity-and-data-root.md),
 [SPEC-007](specs/SPEC-007-cats-bot-identity-and-data-root.md),
