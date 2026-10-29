@@ -28,6 +28,16 @@ keeps the application usable.
 
 ## Implementation Phases
 
+### Coordination with proposed shared Platform packages
+
+[Platform PLAN-127](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-127-shared-platform-package-extraction.md)
+proposes extracting setup/native helpers before additional host mechanisms.
+Coordinate consumer changes with this plan's host-service phase; the Hub owns
+setup/updates/language/cipher, while each core owns its Runtime/helper and Bot
+state. Until a reviewed package exists, this plan can use the current adapters.
+Do not make the Hub depend on the Platform application or pass Runtime credentials
+to it. Package extraction does not complete any Hub/coordinator acceptance task.
+
 ### Phase 1: Core out of Electron, still one bot
 
 - [ ] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client

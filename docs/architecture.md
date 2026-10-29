@@ -1,5 +1,25 @@
 # System Architecture
 
+## Proposed shared Platform consumption (2026-10-29)
+
+After [PR #51](https://github.com/cats-inc/cats-bots/pull/51) merged, the owner
+requested a shared-Platform design. Platform
+[ADR-142](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/142-publish-reusable-platform-packages-for-independent-products.md) /
+[SPEC-134](https://github.com/cats-inc/cats-platform/blob/main/docs/specs/SPEC-134-reusable-platform-packages-and-consumer-boundaries.md) /
+[PLAN-127](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-127-shared-platform-package-extraction.md)
+propose replacing selected copied implementations with versioned packages, first
+setup resources and the native helper. This is not a dependency on the Platform
+application, a shared Runtime, Desktop profiles or the Platform domain model.
+
+Bot ADR-007/008/009/010 retain identity, Hub/core, coordinator and environment
+ownership. The proposed Hub may consume Electron mechanisms; a headless core may
+consume only pure/Node-safe modules and keeps its own Runtime/helper. Runtime
+credentials remain core-owned and shared code cannot grant owner authority.
+The actual code still uses current vendoring/import guards. Package adoption
+updates those guards only for reviewed public entries after both products pass
+packed-consumer acceptance. Neither shared-package adoption nor PR #51's Hub
+implementation is claimed complete by this proposal.
+
 > How a cats-bot is put together. Decisions live in `docs/decisions/`, the
 > behavioural contract in `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md`.
 
