@@ -28,8 +28,6 @@ export interface PresenterHost {
   refreshTray(): void;
   /** A `cats-bot quit` handed to this bot's core. */
   quitRequested(presenter: BotPresenter): void;
-  /** This bot's core ended without being asked. */
-  coreLost(presenter: BotPresenter): void;
 }
 
 export type WindowRole = 'note' | 'settings' | 'floating';
@@ -169,9 +167,6 @@ export class BotPresenter {
   /** Follows the core's events and opens what was open before. */
   async start(): Promise<void> {
     this.core.subscribe((event) => this.onEvent(event));
-    this.hosted.client.onClose(() => {
-      if (!this.stopping && !this.host.isQuitting()) this.host.coreLost(this);
-    });
     // A token the CLI stored as a file is re-stored with the OS facility.
     void this.core.protectSecretsAtRest().catch((error: unknown) => this.host.log(`secret re-store failed: ${errorMessage(error)}`));
     if (this.windows.shellState.floatingBot.visible) this.setFloatingVisible(true);

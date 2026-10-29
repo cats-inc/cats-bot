@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BotProfile, BotStatus } from '../../core/types.ts';
 import catUrl from '../cat.svg';
 import { BotTab } from './BotTab.tsx';
+import { BotsTab } from './BotsTab.tsx';
 import { NotesTab } from './NotesTab.tsx';
 import { AppTab, LifeTab, TelegramTab } from './OtherTabs.tsx';
 import { brandState } from './settingsLogic.ts';
@@ -12,11 +13,12 @@ import { ToastContext } from './toast.ts';
 /**
  * The settings window (SPEC-002 FR-4): one per bot, opened from the tray, the
  * note's ⚙ or the floating cat's menu, on the tab given by `?tab=` or later
- * by the shell. Like the note it keeps no durable state.
+ * by the shell. Like the note it keeps no durable state. With `?scope=hub` it
+ * is the hub's Bots page (SPEC-008 FR-5), which reaches no bot.
  */
 
 const api = window.catsBot;
-const TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
+const TABS = ['bot', 'notes', 'life', 'telegram', 'app', 'bots'] as const;
 type Tab = (typeof TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   bot: 'Bot',
@@ -24,15 +26,17 @@ const TAB_LABELS: Record<Tab, string> = {
   life: 'Life',
   telegram: 'Telegram',
   app: 'App',
+  bots: 'Bots',
 };
 
 function isTab(value: string | null): value is Tab {
   return value !== null && (TABS as readonly string[]).includes(value);
 }
 
-export function SettingsApp({ initialTab }: { initialTab: string | null }) {
+export function SettingsApp({ initialTab, scope }: { initialTab: string | null; scope: 'bot' | 'hub' }) {
   const { locale } = useI18n();
-  const [tab, setTab] = useState<Tab>(isTab(initialTab) ? initialTab : 'bot');
+  const tabs: readonly Tab[] = scope === 'hub' ? ['bots'] : TABS;
+  const [tab, setTab] = useState<Tab>(scope === 'hub' ? 'bots' : isTab(initialTab) ? initialTab : 'bot');
   const [profile, setProfile] = useState<BotProfile | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
@@ -51,6 +55,10 @@ export function SettingsApp({ initialTab }: { initialTab: string | null }) {
   }, [locale]);
 
   useEffect(() => {
+    if (scope === 'hub') {
+      document.title = `Cats Bot ${t('Bots')}`;
+      return undefined;
+    }
     void api.invoke('getProfile').then(setProfile);
     void refreshStatus();
     const offEvent = api.onEvent((event) => {
@@ -63,7 +71,7 @@ export function SettingsApp({ initialTab }: { initialTab: string | null }) {
       offEvent();
       offNavigate();
     };
-  }, [refreshStatus]);
+  }, [refreshStatus, scope, locale]);
 
   const saved = (next: BotProfile) => {
     setProfile(next);
@@ -78,10 +86,10 @@ export function SettingsApp({ initialTab }: { initialTab: string | null }) {
             <img src={catUrl} alt="" width="40" height="40" />
             <div>
               <strong id="brand-name">{status?.name ?? t('Cats Bot')}</strong>
-              <small id="brand-state">{status ? brandState(profile, status) : '…'}</small>
+              <small id="brand-state">{scope === 'hub' ? t('Bots') : status ? brandState(profile, status) : '…'}</small>
             </div>
           </div>
-          {TABS.map((name) => (
+          {tabs.map((name) => (
             <button
               key={name}
               className="tab"
@@ -99,6 +107,7 @@ export function SettingsApp({ initialTab }: { initialTab: string | null }) {
           {tab === 'life' && <LifeTab onSaved={saved} />}
           {tab === 'telegram' && <TelegramTab />}
           {tab === 'app' && <AppTab />}
+          {tab === 'bots' && <BotsTab />}
         </main>
       </div>
       <div className="toast" id="toast" role="status" hidden={!toastText}>

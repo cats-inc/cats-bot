@@ -119,6 +119,28 @@ export interface FloatingBubbleMessage {
   text: string;
 }
 
+/** SPEC-008 FR-5: one row of Settings → Bots. */
+export interface BotRow {
+  id: string;
+  name: string;
+  provider: string | null;
+  state: 'starting' | 'running' | 'stopped' | 'failed' | 'external' | 'archived' | 'missing';
+  error: string | null;
+  pid: number | null;
+  startAutomatically: boolean;
+  coordinator: boolean;
+}
+
+export interface BotListing {
+  bots: BotRow[];
+  /** Bot directories without a registry entry, for the owner to add. */
+  unregistered: string[];
+  maxBots: number;
+  active: number;
+}
+
+export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete';
+
 export interface SetupInput {
   name: string;
   provider: string;
@@ -171,6 +193,13 @@ export interface CatsBotBridge {
     activate(): Promise<null>;
     menu(): Promise<null>;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
+  };
+  /** Settings windows and the hub's Bots page only. */
+  hub: {
+    bots(): Promise<BotListing>;
+    action(action: BotAction, id: string, value?: boolean): Promise<BotListing>;
+    create(): Promise<null>;
+    onChange(listener: () => void): Unsubscribe;
   };
   /** First-run page only. */
   setup: {

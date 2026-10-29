@@ -55,10 +55,13 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
 
 export class SettingsWindow {
   private readonly options: PageWindowOptions;
+  private readonly query: Record<string, string>;
   private window: BrowserWindow | null = null;
 
-  constructor(options: PageWindowOptions) {
+  /** `query` selects the page's scope: SPEC-008 FR-5's Bots page opens with `scope=hub`. */
+  constructor(options: PageWindowOptions, query: Record<string, string> = {}) {
     this.options = options;
+    this.query = query;
   }
 
   async open(tab?: string): Promise<void> {
@@ -75,7 +78,7 @@ export class SettingsWindow {
     window.on('closed', () => {
       if (this.window === window) this.window = null;
     });
-    await window.loadURL(pageUrl(this.options.rendererDir, 'settings.html', tab ? { tab } : {}));
+    await window.loadURL(pageUrl(this.options.rendererDir, 'settings.html', { ...this.query, ...(tab ? { tab } : {}) }));
     window.show();
   }
 

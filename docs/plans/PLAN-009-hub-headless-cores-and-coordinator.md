@@ -108,14 +108,18 @@ regression.
 
 ### Phase 3: Bot management
 
-- [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically and
+- [x] 3.1: Settings → Bots: list, create, start, stop, start automatically and
       order; archive, restore, and delete from the archive under the instance
       lock, with `trash/` and start-time recovery, and `cats-bot run` refusing
       archived ids (FR-3, FR-5); bot cap of 3 (FR-6).
-- [ ] 3.2: Tray submenus per bot and aggregated attention (FR-16).
-- [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order
+      `src/shell/electron/hub/botManager.ts` and
+      `src/renderer/settings/BotsTab.tsx`; the hub's own Bots page opens when no
+      bot runs.
+- [x] 3.2: Tray submenus per bot and aggregated attention (FR-16).
+- [x] 3.3: Core supervision: crash restart with backoff and limits, Quit order
       for every managed core including reattached ones, process-tree kill
       fallback, and listing externally hosted cores (FR-9 to FR-11).
+      `src/shell/electron/hub/coreRunner.ts`.
 
 **Deliverables**: up to three bots managed from one hub, with archive and
 delete; tests also cover the cap.
@@ -337,6 +341,38 @@ Each entry names where it is implemented.
   development build stored with the old user data's OS key cannot be opened
   and need to be entered again, such as a Telegram token. Nothing was
   released with the old layout.
+- **D17, Settings → Bots (3.1).**
+  - Every bot's settings window gets a Bots tab. The hub also has a Bots page
+    of its own (tray "Bots…" with no bot or several), which opens by itself
+    when no bot runs.
+  - "New bot" opens the provider-first setup page. The id comes from the name,
+    with `-2`, `-3` and so on when it is taken. The new bot starts at once.
+  - Archive and delete each ask in a native dialog that names the bot, shown
+    by the hub, so no page can skip it. Delete is offered only for archived
+    bots.
+  - Directories without a registry entry are listed with "Add", within the cap.
+  - An entry whose directory is missing shows as "Folder missing".
+  - A bot whose core another program runs shows as running in another
+    program; it cannot be started or archived from the hub.
+- **D18, supervision (3.3).**
+  - A core that ends unasked closes its windows and is started again after 1,
+    5 and 15 seconds, at most three times in ten minutes. After that the bot
+    stays failed with its error, and the hub says so once in a dialog.
+  - A start that fails counts the same way. A start by the owner clears the
+    count.
+  - Stop and Quit never restart. Quit stops every core this hub manages,
+    reattached ones included, and leaves external ones running.
+- **D19, external cores (3.3).** The hub recognises one by its instance lock.
+  At start it attaches only to give the core the hub's identity (FR-21). A
+  core started outside after the hub only gets it at the next hub start.
+- **D20, the tray with several bots (3.2).**
+  - Each running bot gets a submenu named after it, with the sum of its unread
+    replies, waiting work and requests.
+  - The hub items are Bots…, Start at login, Check for Updates… and Quit.
+  - The tooltip sums unread replies and waiting items.
+  - The tray click opens the first bot's direct message, or the Bots page.
+  - `cats-bot quit` for a bot stops only that bot while others run; the last
+    running bot's quit ends the hub.
 
 ## Progress Log
 
@@ -351,6 +387,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 1.3 to 1.5 implemented. With the real Electron shell in an isolated home (Windows 11, fixture CLI): the shell started its core as a separate process; killing the shell left the core running; a new shell reattached to the same core; `cats-bot quit` ended both. First working set: shell 461 MB over five Electron processes, core 64 MB, Runtime 80 MB, fixture CLI 59 MB. |
 | 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
 | 2026-10-30 | Tasks 2.1 to 2.5 implemented. With the real Electron hub in an isolated home (Windows 11, fixture CLI): the first run wrote the registry, hub state, root lock and installation id; `cats-bot hub status` answered; a second launch handed over and exited; killing the hub left the core running and a new hub reattached; `cats-bot quit` ended both and released the hub's files. |
+| 2026-10-30 | Tasks 3.1 to 3.3 implemented. Unit tests cover the cap, archive, restore, delete through `trash/`, interrupted deletes, a junction inside a deleted bot, and restart limits. With the real Electron hub and two bots made by `cats-bot init`: both were taken in and ran; killing one core restarted only that bot; `cats-bot quit` stopped one bot alone and quitting the last one ended the hub. |
 
 ---
 

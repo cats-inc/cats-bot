@@ -18,7 +18,8 @@ import { LanguageField } from '../LanguageField.tsx';
 const api = window.catsBot;
 const fetchModels = (provider: string): Promise<ModelCatalog> => api.setup.models(provider);
 
-export function SetupPage() {
+/** `create`: a further bot from Settings → Bots (SPEC-008 FR-5), not the hub's first run. */
+export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const { locale } = useI18n();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState('');
@@ -39,8 +40,8 @@ export function SetupPage() {
   }, []);
 
   useEffect(() => {
-    document.title = t('Set up Cats Bot');
-  }, [locale]);
+    document.title = purpose === 'create' ? t('New bot') : t('Set up Cats Bot');
+  }, [locale, purpose]);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();

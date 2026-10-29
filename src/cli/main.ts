@@ -9,7 +9,7 @@ import { describeSchedule, type CreateScheduleInput } from '../core/life/schedul
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { callHubControl } from '../core/host-api/hubControl.ts';
-import { botPathsFor, deriveBotId, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
+import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
 /**
@@ -170,8 +170,16 @@ interface Target {
   running: ReturnType<typeof readInstanceLock>;
 }
 
+/** SPEC-008 FR-5: an archived bot's id stays reserved; Settings restores it, nothing creates it again. */
+function assertNotArchived(id: string, env: NodeJS.ProcessEnv): void {
+  if (isValidBotId(id) && existsSync(join(hubPathsFor(resolveCatsBotHome(env)).archive, id))) {
+    throw new Error(`Bot ${id} is archived. Restore it in Settings → Bots before using it.`);
+  }
+}
+
 function resolveTarget(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Target {
   const id = resolveBotId(parsed.flags, env);
+  assertNotArchived(id, env);
   const root = resolveBotRoot(id, env);
   return { id, root, running: readInstanceLock(botPathsFor(root)) };
 }
@@ -189,6 +197,7 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
     return 2;
   }
   const id = flagString(parsed.flags, 'id') ?? deriveBotId(name);
+  assertNotArchived(id, env);
   const permissionMode = flagString(parsed.flags, 'permission-mode') as PermissionMode | undefined;
   const { profile, root } = initializeBot(resolveBotsHome(env), {
     id,

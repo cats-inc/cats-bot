@@ -10,28 +10,32 @@ import {
   ipcMain,
   safeStorage,
   shell,
+  type BrowserWindow,
   type MenuItemConstructorOptions,
 } from 'electron';
 
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
-import type { ChannelHostServices } from '../../core/host-api/channel.ts';
+import { HostChannelClient, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
-import { botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
+import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
+import { readInstanceLock } from '../../core/store/lock.ts';
+import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
 import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
 import { BotPresenter, type PresenterHost } from './botPresenter.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
+import { BotManagementError, BotManager } from './hub/botManager.ts';
+import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
-import {
-  activeBots, addBot, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, reconcileRegistry, writeRegistry,
-  type BotRegistry,
-} from './hub/registry.ts';
+import { addBot, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, writeRegistry, type BotRegistry } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
+import { createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { runFirstRunSetup } from './setup.ts';
+import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
-import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
+import { buildHubTrayMenuTemplate, buildHubTrayTooltip, buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
 import { configureUpdater, createUpdaterAdapter, installDebianUpdate } from './update/adapter.ts';
 import { BotUpdateController } from './update/controller.ts';
 import { TrayUpdateDialog } from './update/dialog.ts';
@@ -45,15 +49,17 @@ import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
 
 /**
- * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phase 2 (SPEC-008): the
- * hub. One Electron process per account and installation presents every bot
- * that runs, each as a core process of its own reached through its host
- * channel (ADR-008). The tray, the sticky notes, the settings windows and the
- * floating Cats are clients of `BotHostApi`; every bot's windows are bound to
- * it (FR-17). All windows closed means the bots keep running until Quit. A
- * hub without a bot registry opens the first-run page (SPEC-002 FR-1,
- * SPEC-008 FR-4). A hub that closes or crashes leaves its cores running, and
- * the next hub of this installation reattaches to them.
+ * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phases 2 and 3 (SPEC-008):
+ * the hub. One Electron process per account and installation presents every
+ * bot that runs, each as a core process of its own reached through its host
+ * channel (ADR-008), and manages them: Settings → Bots creates, starts,
+ * stops, archives, restores and deletes bots, and a core that ends unasked is
+ * started again with backoff. The tray, the sticky notes, the settings
+ * windows and the floating Cats are clients of `BotHostApi`; every bot's
+ * windows are bound to it (FR-17). All windows closed means the bots keep
+ * running until Quit. A hub without a bot registry opens the first-run page
+ * (SPEC-002 FR-1, SPEC-008 FR-4). A hub that closes or crashes leaves its
+ * cores running, and the next hub of this installation reattaches to them.
  */
 
 const require = createRequire(import.meta.url);
@@ -92,6 +98,18 @@ function resolvePackagedRuntimeEntry(): string | undefined {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** What Settings → Bots shows of one bot (SPEC-008 FR-5). */
+interface BotRow {
+  id: string;
+  name: string;
+  provider: string | null;
+  state: 'starting' | 'running' | 'stopped' | 'failed' | 'external' | 'archived' | 'missing';
+  error: string | null;
+  pid: number | null;
+  startAutomatically: boolean;
+  coordinator: boolean;
 }
 
 async function main(): Promise<void> {
@@ -173,13 +191,21 @@ async function main(): Promise<void> {
   };
   if (!readHubState(home)) saveHubState(hubState);
   const locale = () => resolveLocale(hubState.language, app.getLocale());
-  const t = (message: string) => translate(locale(), message);
+  const t = (message: string, values?: Record<string, unknown>) => translate(locale(), message, values);
   const languageState = () => ({ preference: hubState.language, locale: locale() });
 
-  const presenters = new Map<string, BotPresenter>();
+  const runners = new Map<string, CoreRunner<BotPresenter>>();
+  // A bot whose windows open while its runner still starts it; they talk to the hub already.
+  const opening = new Map<string, BotPresenter>();
+  /** The bots presented now, in the registry's order. */
+  const presented = (): BotPresenter[] => manager.registry.bots
+    .map((bot) => runners.get(bot.id)?.handle ?? opening.get(bot.id))
+    .filter((presenter): presenter is BotPresenter => presenter !== null && presenter !== undefined);
+  const primary = (): BotPresenter | undefined => presented()[0];
+
   // FR-19: one setup helper at a time for every bot; a CLI it found reaches every core's PATH.
   const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup'), (directory) => {
-    for (const presenter of presenters.values()) {
+    for (const presenter of presented()) {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
     }
   }));
@@ -195,6 +221,7 @@ async function main(): Promise<void> {
       },
     }
     : {};
+  const hostIdentity = { pid: process.pid, executable: process.execPath, installationId };
 
   // FR-4: the first run creates the first bot with the provider-first flow.
   const createFirstBot = async (): Promise<string | null> => {
@@ -246,7 +273,7 @@ async function main(): Promise<void> {
     writeRegistry(home, next);
     return next;
   };
-  let registry: BotRegistry;
+  let loaded: BotRegistry;
   try {
     const read = readRegistry(home);
     if (read.state === 'corrupt') {
@@ -260,75 +287,141 @@ async function main(): Promise<void> {
         app.quit();
         return;
       }
-      registry = created;
+      loaded = created;
     } else {
-      const reconciled = reconcileRegistry(home, read.registry);
-      registry = reconciled.registry;
-      if (reconciled.changed) writeRegistry(home, registry);
-      for (const id of reconciled.unregistered) log(`bot ${id} has a directory but no registry entry`);
-      for (const id of reconciled.missing) log(`bot ${id} is registered but its directory is missing`);
-      for (const name of reconciled.skipped) log(`skipped ${name}: not a valid bot id`);
+      loaded = read.registry;
     }
   } catch (error) {
     dialog.showErrorBox('Cats Bot', errorMessage(error));
     app.quit();
     return;
   }
+  // FR-11: a core that another program started, which the hub only lists and
+  // attaches to so that its helper excludes the hub (FR-21).
+  const externals = new Map<string, HostChannelClient>();
+  const externalPid = (id: string): number | null => {
+    const runner = runners.get(id);
+    if (runner?.handle || runner?.state === 'starting') return null;
+    const root = botRootIn(hubPaths.bots, id);
+    return existsSync(root) ? readInstanceLock(botPathsFor(root))?.pid ?? null : null;
+  };
+  const manager = new BotManager(home, loaded, {
+    stop: async (id) => { await runners.get(id)?.stop(); },
+    hostedElsewhere: (id) => externalPid(id) !== null,
+  });
+  try {
+    const report = manager.recover();
+    for (const id of report.unregistered) log(`bot ${id} has a directory but no registry entry`);
+    for (const id of report.missing) log(`bot ${id} is registered but its directory is missing`);
+    for (const name of report.skipped) log(`skipped ${name}: not a valid bot id`);
+  } catch (error) {
+    log(`registry recovery failed: ${errorMessage(error)}`);
+  }
 
   let quitting = false;
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
-  const primary = (): BotPresenter | undefined => presenters.values().next().value;
+  const pages = { preloadPath, rendererDir, iconPath };
+  // FR-5: Settings → Bots, also reachable when no bot runs.
+  const botsWindow = new SettingsWindow(pages, { scope: 'hub' });
+  const settingsWindows = (): Array<BrowserWindow> => [
+    ...presented().map((presenter) => presenter.settings.browserWindow),
+    botsWindow.browserWindow,
+  ].filter((window): window is BrowserWindow => window !== null);
   let tray: BotTray | null = null;
+
+  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number } => {
+    const registry = manager.registry;
+    const rows = registry.bots.map((bot): BotRow => {
+      const archived = bot.archivedAt !== null;
+      const root = join(archived ? hubPaths.archive : hubPaths.bots, bot.id);
+      let profile = null;
+      try {
+        profile = existsSync(root) ? readBotProfile(root) : null;
+      } catch { /* a corrupt profile shows as failed */ }
+      const runner = runners.get(bot.id);
+      const external = archived ? null : externalPid(bot.id);
+      const state: BotRow['state'] = archived ? 'archived'
+        : !existsSync(root) ? 'missing'
+          : external !== null ? 'external'
+            : runner?.state === 'external' ? 'stopped' : runner?.state ?? 'stopped';
+      return {
+        id: bot.id,
+        name: profile?.name ?? bot.id,
+        provider: profile?.executionTarget.provider ?? null,
+        state,
+        error: runner?.error ?? null,
+        pid: runner?.handle?.hosted.pid ?? external,
+        startAutomatically: bot.startAutomatically,
+        coordinator: registry.coordinator.holder === bot.id,
+      };
+    });
+    const known = new Set(registry.bots.map((bot) => bot.id));
+    return {
+      bots: rows,
+      unregistered: listBotDirectories(hubPaths.bots).ids.filter((id) => !known.has(id)),
+      maxBots: registry.maxBots,
+      active: manager.activeCount(),
+    };
+  };
+  const botsChanged = () => {
+    void refreshTray();
+    for (const window of settingsWindows()) window.webContents.send('hub:botsChanged');
+  };
+
   const trayModel = async (presenter: BotPresenter): Promise<TrayMenuModel> => ({
     ...(await presenter.trayModel()),
     locale: locale(),
     openAtLogin: hubState.openAtLogin,
     openAtLoginAvailable,
   });
-  const refreshTray = async () => {
-    const presenter = primary();
-    if (!tray || !presenter || quitting) return;
+  let refreshing = false;
+  let refreshAgain = false;
+  const refreshTray = async (): Promise<void> => {
+    if (!tray || quitting) return;
+    if (refreshing) {
+      refreshAgain = true;
+      return;
+    }
+    refreshing = true;
     try {
-      tray.update(await trayModel(presenter));
-    } catch (error) {
-      // A core may be stopping; the next event refreshes the tray again.
-      if (!quitting) log(`tray refresh failed: ${errorMessage(error)}`);
+      const bots = [];
+      for (const presenter of presented()) {
+        try {
+          bots.push({ model: await trayModel(presenter), actions: trayActionsFor(() => presenter) });
+        } catch (error) {
+          // A core may be stopping; the next event refreshes the tray again.
+          if (!quitting) log(`tray refresh for ${presenter.botId} failed: ${errorMessage(error)}`);
+        }
+      }
+      const model = { locale: locale(), bots, openAtLogin: hubState.openAtLogin, openAtLoginAvailable };
+      if (!quitting) tray?.update(buildHubTrayMenuTemplate(model, hubTrayActions), buildHubTrayTooltip(model));
+    } finally {
+      refreshing = false;
+      if (refreshAgain) {
+        refreshAgain = false;
+        void refreshTray();
+      }
     }
   };
 
   const closeAll = () => {
-    for (const presenter of presenters.values()) presenter.close();
+    for (const presenter of presented()) presenter.close();
+    botsWindow.destroy();
     tray?.dispose();
+    for (const client of externals.values()) client.close();
     void hubControl.stop();
     app.quit();
   };
   const quit = () => {
     if (quitting) return;
     quitting = true;
-    for (const presenter of presenters.values()) presenter.remember();
+    for (const presenter of presented()) presenter.remember();
     void providerSetup
       .whenIdle()
-      .then(() => Promise.allSettled([...presenters.values()].map((presenter) => presenter.stop())))
+      // FR-10: every core this hub manages, reattached ones included; external ones are left running.
+      .then(() => Promise.allSettled([...runners.values()].map((runner) => runner.stop())))
       .catch((error: unknown) => log(`core stop failed: ${errorMessage(error)}`))
       .finally(closeAll);
-  };
-  // Until Phase 3 supervises cores, a core that ends unasked restarts with the hub.
-  const coreLost = (presenter: BotPresenter) => {
-    if (quitting) return;
-    quitting = true;
-    log(`The Bot core of ${presenter.botId} stopped unexpectedly; see ${presenter.hosted.logFile}`);
-    void dialog.showMessageBox({
-      type: 'error',
-      title: 'Cats Bot',
-      message: t('The Bot core stopped unexpectedly.'),
-      detail: presenter.hosted.logFile,
-      buttons: [t('Restart Cats Bot'), t('Quit')],
-      defaultId: 0,
-      cancelId: 1,
-    }).then(async ({ response }) => {
-      await Promise.allSettled([...presenters.values()].filter((other) => other !== presenter).map((other) => other.stop()));
-      if (response === 0) app.relaunch({ args: process.argv.slice(1) });
-    }).finally(closeAll);
   };
   const presenterHost: PresenterHost = {
     preloadPath,
@@ -341,15 +434,23 @@ async function main(): Promise<void> {
     refreshTray: () => { void refreshTray(); },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
     quitRequested: (presenter) => {
-      if (presenters.size <= 1) {
+      if (presented().length <= 1) {
         quit();
         return;
       }
-      presenters.delete(presenter.botId);
-      presenter.close();
-      void presenter.hosted.stop().finally(() => { void refreshTray(); });
+      void runners.get(presenter.botId)?.stop().finally(botsChanged);
     },
-    coreLost,
+  };
+
+  // FR-11 and FR-21: a core another program runs gets the hub's identity, and nothing else.
+  const attachExternal = async (id: string): Promise<void> => {
+    if (externals.has(id)) return;
+    const client = await HostChannelClient.connect(botRootIn(hubPaths.bots, id), { host: hostIdentity });
+    externals.set(id, client);
+    client.onClose(() => {
+      if (externals.get(id) === client) externals.delete(id);
+      botsChanged();
+    });
   };
 
   const startBot = async (botId: string): Promise<BotPresenter> => {
@@ -357,50 +458,82 @@ async function main(): Promise<void> {
     const profile = readBotProfile(root);
     if (!profile) throw new Error(`Bot ${botId} has no profile at ${root}.`);
     const runtimeEntry = resolvePackagedRuntimeEntry();
-    const hosted = await attachOrStartCore(root, {
-      execPath: process.execPath,
-      runAsNode: true,
-      entry: join(appPath, 'dist', 'cli', 'main.js'),
-      catsBotHome: home,
-      botId,
-      // FR-12: the hub's installation is the manager of the cores it starts.
-      manager: installationId,
-      ...(services.cipher ? { hostCipher: services.cipher.label } : {}),
-      ...(runtimeEntry ? { runtimeEntry } : {}),
-      // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
-      ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
-    }, { host: { pid: process.pid, executable: process.execPath, installationId }, services });
+    let hosted;
+    try {
+      hosted = await attachOrStartCore(root, {
+        execPath: process.execPath,
+        runAsNode: true,
+        entry: join(appPath, 'dist', 'cli', 'main.js'),
+        catsBotHome: home,
+        botId,
+        // FR-12: the hub's installation is the manager of the cores it starts.
+        manager: installationId,
+        ...(services.cipher ? { hostCipher: services.cipher.label } : {}),
+        ...(runtimeEntry ? { runtimeEntry } : {}),
+        // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
+        ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
+      }, { host: hostIdentity, services });
+    } catch (error) {
+      if (error instanceof CoreHostedElsewhereError) {
+        await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${errorMessage(attachError)}`));
+      }
+      throw error;
+    }
     const identity = botWindowIdentity({ appId: APP_ID, botId, botName: profile.name, executable: process.execPath, packaged: app.isPackaged });
     const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity);
-    presenters.set(botId, presenter);
+    opening.set(botId, presenter);
+    try {
+      await presenter.start();
+    } catch (error) {
+      presenter.close();
+      await hosted.stop().catch(() => undefined);
+      throw error;
+    } finally {
+      opening.delete(botId);
+    }
     return presenter;
   };
-
-  const starting = activeBots(registry, home).filter((bot) => bot.startAutomatically);
-  // A new core inherits the hub's PATH, so each provider CLI is found first.
-  if (!readProviderOverrides().providerCommand) {
-    const providers = new Set(starting.map((bot) => readBotProfile(botRootIn(hubPaths.bots, bot.id))?.executionTarget.provider)
-      .filter((provider): provider is string => typeof provider === 'string'));
-    for (const provider of providers) {
-      await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+  // FR-9: each bot's core is supervised on its own.
+  const runnerFor = (id: string): CoreRunner<BotPresenter> => {
+    let runner = runners.get(id);
+    if (!runner) {
+      const created: CoreRunner<BotPresenter> = new CoreRunner<BotPresenter>(id, {
+        start: () => startBot(id),
+        stop: async (presenter) => {
+          try {
+            await presenter.stop();
+          } finally {
+            presenter.close();
+          }
+        },
+        onLost: (presenter, listener) => {
+          presenter.hosted.client.onClose(() => {
+            if (!quitting && created.handle === presenter) {
+              presenter.remember();
+              presenter.close();
+            }
+            listener();
+          });
+        },
+        isExternal: (error) => error instanceof CoreHostedElsewhereError,
+        changed: () => {
+          botsChanged();
+          if (created.exhausted && !quitting) {
+            void dialog.showMessageBox({
+              type: 'error',
+              title: 'Cats Bot',
+              message: t('The Bot core stopped unexpectedly.'),
+              detail: `${id}: ${created.error ?? ''}\n${join(botRootIn(hubPaths.bots, id), 'logs', 'core.log')}`,
+            });
+          }
+        },
+        log,
+      });
+      runner = created;
+      runners.set(id, runner);
     }
-  }
-  const failures: string[] = [];
-  for (const bot of starting) {
-    try {
-      await startBot(bot.id);
-    } catch (error) {
-      failures.push(error instanceof CoreHostedElsewhereError
-        ? `${bot.id}: ${error.message}\n\nStop the other instance (for example cats-bot run) first.`
-        : `${bot.id}: ${errorMessage(error)}`);
-    }
-  }
-  if (presenters.size === 0) {
-    dialog.showErrorBox('Cats Bot', failures[0] ?? `No bot in ${home} is set to start.`);
-    app.quit();
-    return;
-  }
-  if (failures.length > 0) void dialog.showMessageBox({ type: 'warning', title: 'Cats Bot', message: failures.join('\n\n') });
+    return runner;
+  };
 
   const hubControl = new HubControlServer(home, installationId, {
     // FR-25: the owner CLI's view of the hub.
@@ -409,16 +542,10 @@ async function main(): Promise<void> {
       installationId,
       executable: process.execPath,
       home,
-      coordinator: registry.coordinator.holder,
-      bots: registry.bots.map((bot) => ({
-        id: bot.id,
-        state: presenters.has(bot.id) ? 'running' : bot.archivedAt ? 'archived' : 'stopped',
-        pid: presenters.get(bot.id)?.hosted.pid ?? null,
-        startAutomatically: bot.startAutomatically,
-      })),
+      coordinator: manager.registry.coordinator.holder,
+      bots: listBots().bots.map((bot) => ({ id: bot.id, state: bot.state, pid: bot.pid, startAutomatically: bot.startAutomatically })),
     }),
   });
-  await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
 
   const applyLoginItem = (enabled: boolean) => {
     try {
@@ -478,11 +605,11 @@ async function main(): Promise<void> {
       },
       drain: async () => {
         quitting = true;
-        for (const presenter of presenters.values()) presenter.remember();
+        for (const presenter of presented()) presenter.remember();
         await providerSetup.whenIdle();
-        const processes = await Promise.all([...presenters.values()].map(async (presenter) =>
+        const processes = await Promise.all(presented().map(async (presenter) =>
           [presenter.hosted.pid, (await presenter.core.status().catch(() => null))?.runtime.pid ?? null] as const));
-        await Promise.all([...presenters.values()].map((presenter) => presenter.stop()));
+        await Promise.all([...runners.values()].map((runner) => runner.stop()));
         if (processes.some(([corePid, runtimePid]) => processIsAlive(corePid) || (runtimePid && processIsAlive(runtimePid)))) {
           throw new Error('A Bot Runtime has not stopped; installation was cancelled.');
         }
@@ -496,7 +623,7 @@ async function main(): Promise<void> {
       },
       openRelease: (url) => shell.openExternal(url),
       changed: (state) => {
-        for (const presenter of presenters.values()) presenter.settings.browserWindow?.webContents.send('shell:update', state);
+        for (const window of settingsWindows()) window.webContents.send('shell:update', state);
       },
     },
   );
@@ -515,7 +642,10 @@ async function main(): Promise<void> {
           owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
       }),
   });
-  // FR-16: with one bot the tray menu is today's; its items act on that bot.
+  const openBots = () => {
+    void botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+  };
+  // FR-16: one bot's items act on that bot; with one bot the menu is today's.
   const trayActionsFor = (target: () => BotPresenter | undefined): TrayMenuActions => ({
     onOpenConversation: (conversationId) => {
       void target()?.windows
@@ -544,11 +674,18 @@ async function main(): Promise<void> {
     },
     onQuit: quit,
   });
-  tray = new BotTray({ assetsDir, ...trayActionsFor(primary) });
+  const hubTrayActions = {
+    onOpenBots: openBots,
+    onCheckForUpdates: () => {
+      void trayUpdates.open().catch((error) => log(errorMessage(error)));
+    },
+    onToggleOpenAtLogin: setOpenAtLogin,
+    onQuit: quit,
+  };
 
   // FR-17: every message from a renderer is answered for the bot whose window sent it.
   const senderOf = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => {
-    for (const presenter of presenters.values()) {
+    for (const presenter of presented()) {
       const role = presenter.roleOf(event.sender.id);
       if (role) return { presenter, role };
     }
@@ -558,34 +695,166 @@ async function main(): Promise<void> {
     const from = senderOf(event);
     return from?.role === 'settings' ? from.presenter : null;
   };
+  const fromBotsWindow = (event: Electron.IpcMainInvokeEvent) => botsWindow.owns(event.sender.id);
+  /** A settings page of a bot, or the hub's Bots page. */
+  const fromAnySettings = (event: Electron.IpcMainInvokeEvent) => fromSettings(event) !== null || fromBotsWindow(event);
+  // FR-5: a new bot is created with the provider-first page.
+  let createWindow: BrowserWindow | null = null;
+  const fromCreate = (event: Electron.IpcMainInvokeEvent) =>
+    createWindow !== null && !createWindow.isDestroyed() && event.sender.id === createWindow.webContents.id;
   const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
     event.senderFrame === event.sender.mainFrame;
   ipcMain.handle('ui:language', (event) => {
-    if (!ownedMainFrame(event) || !senderOf(event)) throw new Error('Unknown window');
+    if (!ownedMainFrame(event) || (!senderOf(event) && !fromBotsWindow(event) && !fromCreate(event))) throw new Error('Unknown window');
     return languageState();
   });
   ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
-    if (!ownedMainFrame(event) || !fromSettings(event) || !isLanguagePreference(value))
+    if (!ownedMainFrame(event) || (!fromAnySettings(event) && !fromCreate(event)) || !isLanguagePreference(value))
       throw new Error('Invalid display language');
     saveHubState({ ...hubState, language: value });
-    for (const presenter of presenters.values()) presenter.sendLanguage(languageState());
+    for (const presenter of presented()) presenter.sendLanguage(languageState());
+    for (const window of [botsWindow.browserWindow, createWindow]) {
+      if (window && !window.isDestroyed()) window.webContents.send('ui:languageChanged', languageState());
+    }
     void refreshTray();
     return languageState();
   });
   ipcMain.handle('setup:check', (event, provider: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
-    if (!ownedMainFrame(event) || !fromSettings(event))
+    if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
     return providerSetup.check(provider);
   });
   ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
-    if (!ownedMainFrame(event) || !fromSettings(event))
+    if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
     return providerSetup.install(provider, step);
   });
+  ipcMain.handle('setup:providers', (event) => (ownedMainFrame(event) && fromCreate(event) ? listProviders() : []));
+  ipcMain.handle('setup:models', (event, provider: unknown) => {
+    if (!ownedMainFrame(event) || !fromCreate(event) || typeof provider !== 'string') return { provider: '', defaultModel: null, models: [], source: 'none' };
+    return readPackagedModelCatalog(provider);
+  });
+  let finishing = false;
+  ipcMain.handle('setup:finish', async (event, raw: unknown) => {
+    const window = createWindow;
+    if (!ownedMainFrame(event) || !fromCreate(event) || !window || finishing) throw new Error('Setup is already finishing');
+    const input = validateSetupInput(raw);
+    finishing = true;
+    try {
+      const checked = await providerSetup.check(input.provider);
+      if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
+      const id = await manager.create({
+        name: input.name,
+        provider: input.provider,
+        model: input.model,
+        ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+        ...(input.instructions ? { instructions: input.instructions } : {}),
+      });
+      window.destroy();
+      botsChanged();
+      void runnerFor(id).start().then((presenter) => presenter?.windows.open('home'));
+    } catch (error) {
+      throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
+    } finally {
+      finishing = false;
+    }
+    return null;
+  });
+  const openCreateWindow = () => {
+    if (createWindow && !createWindow.isDestroyed()) {
+      createWindow.show();
+      createWindow.focus();
+      return;
+    }
+    const window = createPageWindow(pages, { width: 560, height: 800, title: 'New bot' });
+    createWindow = window;
+    window.on('close', (event) => {
+      if (providerSetup.busy || finishing) event.preventDefault();
+    });
+    window.on('closed', () => {
+      if (createWindow === window) createWindow = null;
+    });
+    void window.loadURL(pageUrl(rendererDir, 'settings.html', { mode: 'setup', purpose: 'create' })).then(() => window.show());
+  };
 
-  const isSettingsWindow = (id: number) => [...presenters.values()].some((presenter) => presenter.settings.owns(id));
+  // FR-5: Settings → Bots. Archive and delete each ask the owner here, in the hub.
+  const confirm = async (owner: BrowserWindow | null, message: string, detail: string, action: string): Promise<boolean> => {
+    const options = { type: 'warning' as const, title: 'Cats Bot', message, detail, buttons: [t('Cancel'), action], defaultId: 0, cancelId: 0 };
+    return (owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)).response === 1;
+  };
+  ipcMain.handle('hub:bots', (event) => {
+    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    return listBots();
+  });
+  ipcMain.handle('hub:createBot', (event) => {
+    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (manager.activeCount() >= manager.registry.maxBots) {
+      throw new Error(`Cats Bot runs at most ${manager.registry.maxBots} bots. Archive one first.`);
+    }
+    openCreateWindow();
+    return null;
+  });
+  ipcMain.handle('hub:botAction', async (event, action: unknown, id: unknown, value: unknown) => {
+    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (quitting) throw new Error('Cats Bot is stopping');
+    if (typeof id !== 'string' || !isValidBotId(id)) throw new Error('Unknown bot');
+    const owner = (fromSettings(event)?.settings.browserWindow ?? botsWindow.browserWindow) ?? null;
+    const name = listBots().bots.find((bot) => bot.id === id)?.name ?? id;
+    try {
+      switch (action) {
+        case 'start':
+          if (manager.entry(id)?.archivedAt !== null) throw new BotManagementError(`Bot ${id} is not active.`);
+          await runnerFor(id).start();
+          break;
+        case 'stop':
+          await runners.get(id)?.stop();
+          break;
+        case 'startAutomatically':
+          if (typeof value !== 'boolean') throw new Error('Invalid value');
+          await manager.setStartAutomatically(id, value);
+          break;
+        case 'moveUp':
+        case 'moveDown': {
+          const ids = manager.registry.bots.filter((bot) => bot.archivedAt === null).map((bot) => bot.id);
+          const index = ids.indexOf(id);
+          const other = index + (action === 'moveUp' ? -1 : 1);
+          if (index < 0 || other < 0 || other >= ids.length) break;
+          [ids[index], ids[other]] = [ids[other]!, ids[index]!];
+          await manager.reorder(ids);
+          break;
+        }
+        case 'register':
+          await manager.register(id);
+          break;
+        case 'archive':
+          if (!await confirm(owner, t('Archive {name}?', { name }),
+            t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBots();
+          await manager.archive(id);
+          runners.delete(id);
+          break;
+        case 'restore':
+          await manager.restore(id);
+          break;
+        case 'delete':
+          if (!await confirm(owner, t('Delete {name} permanently?', { name }),
+            t('Its conversations, settings and stored secrets are removed. This cannot be undone. The provider CLI folders are kept.'),
+            t('Delete'))) return listBots();
+          await manager.delete(id);
+          break;
+        default:
+          throw new Error('Unknown bot action');
+      }
+    } catch (error) {
+      throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
+    } finally {
+      botsChanged();
+    }
+    return listBots();
+  });
+
+  const isSettingsWindow = (id: number) => presented().some((presenter) => presenter.settings.owns(id)) || botsWindow.owns(id);
   ipcMain.handle('shell:updateState', (event) => {
     if (!isUpdateSender(event, isSettingsWindow)) throw new Error('Updates are available only from Settings.');
     return updates.snapshot();
@@ -639,6 +908,7 @@ async function main(): Promise<void> {
       || command === 'renameConversation' || command === 'createConversation') {
       void refreshTray();
     }
+    if (command === 'updateProfile') botsChanged();
     return result;
   });
   ipcMain.handle('window:hide', (event) => {
@@ -770,8 +1040,9 @@ async function main(): Promise<void> {
 
   app.on('second-instance', (_event, _argv, _cwd, data) => {
     const id = (data as { id?: unknown } | null)?.id;
-    const presenter = (typeof id === 'string' ? presenters.get(id) : undefined) ?? primary();
-    void presenter?.windows.open('home');
+    const presenter = (typeof id === 'string' ? runners.get(id)?.handle : undefined) ?? primary();
+    if (presenter) void presenter.windows.open('home');
+    else openBots();
   });
   app.on('before-quit', (event) => {
     if (quitting) return;
@@ -779,8 +1050,38 @@ async function main(): Promise<void> {
     quit();
   });
 
-  for (const presenter of presenters.values()) await presenter.start();
+  tray = new BotTray({
+    assetsDir,
+    onClick: () => {
+      const presenter = primary();
+      if (presenter) void presenter.windows.open('home').then(refreshTray);
+      else openBots();
+    },
+  });
+  await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
+
+  const starting = manager.registry.bots.filter((bot) => bot.archivedAt === null && bot.startAutomatically
+    && existsSync(join(hubPaths.bots, bot.id)));
+  // A new core inherits the hub's PATH, so each provider CLI is found first.
+  if (!readProviderOverrides().providerCommand) {
+    const providers = new Set(starting.map((bot) => {
+      try {
+        return readBotProfile(botRootIn(hubPaths.bots, bot.id))?.executionTarget.provider;
+      } catch {
+        return undefined;
+      }
+    }).filter((provider): provider is string => typeof provider === 'string'));
+    for (const provider of providers) {
+      await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+    }
+  }
+  for (const bot of starting) await runnerFor(bot.id).start();
+  // Bots another program runs are listed, and attached to only for the hub's identity.
+  for (const bot of manager.registry.bots) {
+    if (externalPid(bot.id) !== null) await attachExternal(bot.id).catch(() => undefined);
+  }
   await refreshTray();
+  if (presented().length === 0) openBots();
 }
 
 main().catch((error: unknown) => {

@@ -240,7 +240,7 @@ export function AppTab() {
             checked={shell?.openAtLogin ?? false}
             onChange={(event) => void setLogin(event.target.checked)}
           />
-          <span>{t('Start this bot when I sign in')}</span>
+          <span>{t('Start Cats Bot when I sign in')}</span>
         </label>
         {shell && status && <Facts id="app-facts" facts={appFacts(status, shell.version)} />}
         <Updates />

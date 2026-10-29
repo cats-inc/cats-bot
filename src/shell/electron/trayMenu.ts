@@ -90,16 +90,87 @@ export function desktopControlLabel(desktop: TrayDesktopControl, locale: Locale 
   return desktop.enabled ? t('desktop control on') : '';
 }
 
+/** What the hub shares across bots in its tray (SPEC-008 FR-16). */
+export interface HubTrayModel {
+  locale?: Locale;
+  bots: Array<{ model: TrayMenuModel; actions: TrayMenuActions }>;
+  openAtLogin: boolean;
+  openAtLoginAvailable: boolean;
+}
+
+export interface HubTrayActions {
+  onOpenBots(): void;
+  onCheckForUpdates?(): void;
+  onToggleOpenAtLogin(enabled: boolean): void;
+  onQuit(): void;
+}
+
+function attention(model: TrayMenuModel): number {
+  return unreadTotal(model.conversations) + model.awaitingOwner + model.status.pendingInteractions + model.desktopControl.pendingRequests;
+}
+
+/**
+ * FR-16: with one bot the menu is today's. With more, each bot's items move
+ * into a submenu named after it, and the hub's items are shared: Bots…,
+ * Start at login, Check for Updates…, Quit.
+ */
+export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayActions): TrayMenuItem[] {
+  if (model.bots.length === 1) return buildTrayMenuTemplate(model.bots[0]!.model, model.bots[0]!.actions);
+  const t = (text: string, values?: Record<string, unknown>) => translate(model.locale ?? 'en', text, values);
+  const template: TrayMenuItem[] = model.bots.length === 0
+    ? [{ label: t('No bot is running'), enabled: false }]
+    : model.bots.map(({ model: bot, actions: botActions }) => {
+      const waiting = attention(bot);
+      return {
+        label: waiting ? `${bot.botName} (${waiting})` : bot.botName,
+        submenu: buildTrayMenuTemplate(bot, botActions, { hubItems: false }),
+      };
+    });
+  template.push({ type: 'separator' }, { label: t('Bots…'), click: () => actions.onOpenBots() });
+  if (model.openAtLoginAvailable) {
+    template.push({
+      label: t('Start at login'),
+      type: 'checkbox',
+      checked: model.openAtLogin,
+      click: () => actions.onToggleOpenAtLogin(!model.openAtLogin),
+    });
+  }
+  template.push(
+    { label: t('Check for Updates…'), click: () => actions.onCheckForUpdates?.() },
+    { type: 'separator' },
+    { label: t('Quit'), click: () => actions.onQuit() },
+  );
+  return template;
+}
+
+/** FR-16: pending requests and unread replies of every bot, on the icon's tooltip. */
+export function buildHubTrayTooltip(model: HubTrayModel): string {
+  if (model.bots.length === 1) return buildTrayTooltip(model.bots[0]!.model);
+  const t = (text: string, values?: Record<string, unknown>) => translate(model.locale ?? 'en', text, values);
+  const unread = model.bots.reduce((sum, bot) => sum + unreadTotal(bot.model.conversations), 0);
+  const waiting = model.bots.reduce((sum, bot) => sum + bot.model.awaitingOwner + bot.model.status.pendingInteractions
+    + bot.model.desktopControl.pendingRequests, 0);
+  return `Cats Bot (${t('{count} bots', { count: model.bots.length })})`
+    + (unread ? ` - ${t('{count} unread', { count: unread })}` : '')
+    + (waiting ? ` - ${t('{count} waiting for you', { count: waiting })}` : '');
+}
+
 export function buildTrayTooltip(model: TrayMenuModel): string {
   const unread = unreadTotal(model.conversations);
   const desktop = desktopControlLabel(model.desktopControl, model.locale);
   return `${model.botName} (${runtimeLabel(model.status, model.locale)})${unread ? ` - ${translate(model.locale ?? 'en', '{count} unread', { count: unread })}` : ''}${desktop ? ` - ${desktop}` : ''}`;
 }
 
+/**
+ * One bot's menu. With `hubItems: false` it leaves out what the hub shares
+ * (start at login, updates, quit), for the bot's submenu (SPEC-008 FR-16).
+ */
 export function buildTrayMenuTemplate(
   model: TrayMenuModel,
   actions: TrayMenuActions,
+  options: { hubItems?: boolean } = {},
 ): TrayMenuItem[] {
+  const hubItems = options.hubItems ?? true;
   const t = (text: string, values?: Record<string, unknown>) =>
     translate(model.locale ?? 'en', text, values);
   const home = model.conversations.find((record) => record.role === 'home');
@@ -167,7 +238,7 @@ export function buildTrayMenuTemplate(
     checked: model.floatingVisible,
     click: () => actions.onToggleFloating(!model.floatingVisible),
   });
-  if (model.openAtLoginAvailable) {
+  if (hubItems && model.openAtLoginAvailable) {
     template.push({
       label: 'Start at login',
       type: 'checkbox',
@@ -175,12 +246,14 @@ export function buildTrayMenuTemplate(
       click: () => actions.onToggleOpenAtLogin(!model.openAtLogin),
     });
   }
-  template.push(
-    { label: 'Settings…', click: () => actions.onOpenSettings() },
-    { label: 'Check for Updates…', click: () => actions.onCheckForUpdates?.() },
-    { type: 'separator' },
-    { label: 'Quit', click: () => actions.onQuit() },
-  );
+  template.push({ label: 'Settings…', click: () => actions.onOpenSettings() });
+  if (hubItems) {
+    template.push(
+      { label: 'Check for Updates…', click: () => actions.onCheckForUpdates?.() },
+      { type: 'separator' },
+      { label: 'Quit', click: () => actions.onQuit() },
+    );
+  }
   // Translate only product-owned labels. Conversation titles remain the owner's words.
   for (const item of template) {
     if (item.label) {

@@ -3,7 +3,8 @@
 // FR-34, SPEC-002).
 // Commands go to the core through `bot:invoke`; events come back on
 // `bot:event`. Window-only actions use `window:*`, shell preferences
-// `shell:*`, the floating bot `floating:*` and first-run setup `setup:*`;
+// `shell:*`, the floating bot `floating:*`, first-run setup `setup:*` and the
+// hub's bot management `hub:*`;
 // the main process checks which
 // window sent each one. Nothing here can reach the runtime: the renderer never
 // learns its URL or key. Plain CommonJS on purpose: sandboxed preload scripts
@@ -148,6 +149,25 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
     finish(input) {
       return ipcRenderer.invoke('setup:finish', input);
+    },
+  },
+  // SPEC-008 FR-5: Settings → Bots; the hub asks before archiving or deleting.
+  hub: {
+    bots() {
+      return ipcRenderer.invoke('hub:bots');
+    },
+    action(action, id, value) {
+      return ipcRenderer.invoke('hub:botAction', action, id, value);
+    },
+    create() {
+      return ipcRenderer.invoke('hub:createBot');
+    },
+    onChange(listener) {
+      const wrapped = () => listener();
+      ipcRenderer.on('hub:botsChanged', wrapped);
+      return () => {
+        ipcRenderer.removeListener('hub:botsChanged', wrapped);
+      };
     },
   },
 });
