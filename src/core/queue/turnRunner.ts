@@ -5,6 +5,7 @@ import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlTool
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
+import { ResponsePresentation } from './responsePresentation.ts';
 
 /**
  * SPEC-001 FR-11, FR-17, FR-18, FR-25, FR-27: run one work item as one
@@ -217,10 +218,20 @@ export class TurnRunner {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
+    const presentation = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt)
+      ? null : new ResponsePresentation(this.deps.conversations, item, origin, this.deps.now());
     // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) and typed or clipboard
     // text in their inputs never reach the transcript.
     const desktopTools = new Map<string, string>();
+    const publishPresentation = () => {
+      const entry = presentation?.checkpoint();
+      if (entry) this.deps.emit({ type: 'turn.presentation', conversationId, workItemId: item.id, entry });
+    };
     const emitDelta = (entry: Parameters<ConversationStore['append']>[1], seq: number) => {
+      if (presentation && entry.kind !== 'bot' && entry.kind !== 'progress') {
+        presentation.entry({ seq, at: this.deps.now().toISOString(), ...entry });
+        publishPresentation();
+      }
       this.deps.emit({
         type: 'turn.delta',
         conversationId,
@@ -236,6 +247,15 @@ export class TurnRunner {
       switch (event.type) {
         case 'init':
         case 'result': {
+          // Coarse providers may return text only in their terminal snapshot.
+          // A repeated final aggregate must never be appended after streamed deltas.
+          if (event.type === 'result' && !textParts.length) {
+            const segments = Array.isArray(event.segments) ? event.segments : [];
+            const text = segments.filter(segment => segment && typeof segment === 'object' && segment.kind === 'text')
+              .map(segment => typeof segment.text === 'string' ? segment.text : '').join('')
+              || (typeof event.text === 'string' ? event.text : '');
+            if (text) onEvent({ type: 'text', text });
+          }
           // The conversation may already have moved to a newer session (FR-27); only this one is touched.
           if (this.deps.conversations.get(conversationId)?.attachment.sessionId !== sessionId) break;
           if (event.sessionId) {
@@ -249,6 +269,10 @@ export class TurnRunner {
           if (typeof event.text === 'string' && event.text) {
             textParts.push(event.text);
             if (item.kind !== 'heartbeat') {
+              if (presentation) {
+                presentation.text(event.text);
+                publishPresentation();
+              }
               emitDelta({ kind: 'bot', origin, text: event.text, workItemId: item.id }, 0);
             }
           }
@@ -299,6 +323,12 @@ export class TurnRunner {
         }
         case 'progress': {
           if (typeof event.text === 'string' && event.text) {
+            // Only known display statuses belong to durable UI, never arbitrary provider metadata.
+            if (presentation && ['finalizing', 'finishing'].includes(String(event.metadata?.kind))) {
+              presentation.entry({ seq: 0, at: this.deps.now().toISOString(), kind: 'progress', origin,
+                text: clipToolText(event.text), workItemId: item.id });
+              publishPresentation();
+            }
             emitDelta({ kind: 'progress', origin, text: event.text, workItemId: item.id }, 0);
           }
           break;
@@ -309,7 +339,14 @@ export class TurnRunner {
     };
     const extra = this.deps.prepareSend ? await this.deps.prepareSend(item, sessionId) : {};
     if (controller.signal.aborted) return { kind: 'cancelled' };
-    const outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal);
+    let outcome;
+    try {
+      outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal);
+    } catch (error) {
+      presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed');
+      publishPresentation();
+      throw error;
+    }
     const text = textParts.join('').trim();
     if (outcome.completed) {
       // SPEC-001 FR-25: a quiet heartbeat leaves no message behind.
@@ -321,10 +358,15 @@ export class TurnRunner {
         return { kind: 'completed', text: parsed.body, quiet: false };
       }
       if (text) {
+        const terminalSeq = (this.deps.conversations.transcript(conversationId).at(-1)?.seq ?? 0) + 1;
+        presentation?.seal('completed', terminalSeq);
+        publishPresentation();
         this.deps.conversations.append(conversationId, { kind: 'bot', origin, text, workItemId: item.id });
-      }
+      } else { presentation?.seal('completed'); publishPresentation(); }
       return { kind: 'completed', text, quiet: false };
     }
+    presentation?.seal(controller.signal.aborted ? 'cancelled' : outcome.errorText ? 'failed' : 'interrupted');
+    publishPresentation();
     if (controller.signal.aborted) return { kind: 'cancelled' };
     if (outcome.errorText) {
       return { kind: 'failed', reason: outcome.errorText };

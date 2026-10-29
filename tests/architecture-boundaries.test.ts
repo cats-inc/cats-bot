@@ -71,12 +71,22 @@ test('core and cli never import electron, cats-platform or sibling checkouts', (
         offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
       } else if (lowered.includes('cats-platform')) {
         offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
+      } else if (lowered.startsWith('@cats-inc/platform-ui-web') && lowered !== '@cats-inc/platform-ui-web/contracts') {
+        offenders.push(`${relative(repoRoot, file)} imports renderer implementation ${specifier}`);
       } else if (isRelative(specifier) && !resolvesInside(file, specifier, srcRoot)) {
         offenders.push(`${relative(repoRoot, file)} reaches outside src/ via ${specifier}`);
       }
     }
   }
   assert.deepEqual(offenders, []);
+});
+
+test('shared conversation internals are not available to Bot consumers', async () => {
+  const privateEntry: string = '@cats-inc/platform-ui-web/dist/ConversationResponse.js';
+  await assert.rejects(import(privateEntry), { code: 'ERR_PACKAGE_PATH_NOT_EXPORTED' });
+  const contracts = await import('@cats-inc/platform-ui-web/contracts');
+  assert.equal(contracts.readConversationPresentation({ version: 99 }), null);
+  assert.ok(readFileSync(join(repoRoot, 'src/renderer/note/NoteApp.tsx'), 'utf8').includes("@cats-inc/platform-ui-web/conversation.css"));
 });
 
 test('no source file imports from outside the repository', () => {

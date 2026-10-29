@@ -4,6 +4,7 @@ import { mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
 import { conversationFile, transcriptFile, type BotPaths } from '../store/paths.ts';
 import { appendTranscript, readTranscript } from '../store/transcript.ts';
+import { deletePresentations, readPresentations, savePresentation, projectPresentationTranscript } from '../store/presentation.ts';
 import type {
   AttachmentState,
   ConversationRecord,
@@ -210,11 +211,21 @@ export class ConversationStore {
     this.nextSeq.delete(id);
     rmSync(conversationFile(this.paths, id), { force: true });
     rmSync(transcriptFile(this.paths, id), { force: true });
+    deletePresentations(this.paths, id);
   }
 
   transcript(id: string): TranscriptEntry[] {
     this.require(id);
     return readTranscript(this.paths, id);
+  }
+
+  presentationTranscript(id: string, runningWorkId?: string): TranscriptEntry[] {
+    return projectPresentationTranscript(this.transcript(id), readPresentations(this.paths, id), runningWorkId);
+  }
+
+  savePresentation(id: string, entry: TranscriptEntry): void {
+    this.require(id);
+    savePresentation(this.paths, id, entry);
   }
 
   append(id: string, entry: Omit<TranscriptEntry, 'seq' | 'at'>): TranscriptEntry {

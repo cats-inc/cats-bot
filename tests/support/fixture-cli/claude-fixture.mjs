@@ -101,6 +101,8 @@ function textOf(content) {
 
 /** The runtime may prefix the user message with an instructions layer. */
 function userMessageOf(full) {
+  const desktop = /Latest user message:\n([\s\S]*?)\n\nReply with the work product/u.exec(full);
+  if (desktop) return desktop[1];
   const marker = '\nUser message:\n';
   const index = full.lastIndexOf(marker);
   return index === -1 ? full : full.slice(index + marker.length);
@@ -160,6 +162,12 @@ async function handleTurn(full) {
     reply = `model=${model}`;
   } else if (message === 'instructions?') {
     reply = `instructions=${full === message ? '' : full.slice(0, full.length - message.length)}`;
+  } else if (message.startsWith('conversation-layered') || message.startsWith('conversation-cancel')) {
+    emit({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'text', text: '先檢查 **共用元件**，再回覆結果。\n\n```js\nconst conversation = "shared";\n```\n\n| 項目 | 狀態 |\n| --- | --- |\n| Bubble | 已保留 |\n\n[External link](https://example.com)\n\n' }] } });
+    emit({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: 'reused-tool', name: 'Read', input: { path: 'conversation.tsx', detail: '非常長的輸入用來驗證窄視窗。'.repeat(12) } }] } });
+    await sleep(message.startsWith('conversation-cancel') ? 20000 : 3000);
+    emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'reused-tool', content: '元件內容與順序已確認。'.repeat(15) }] } });
+    reply = '檢查完成。文字、工具與結果仍依照原本順序顯示。';
   } else if (message.startsWith('tool')) {
     emit({ type: 'assistant', message: { role: 'assistant', model, content: [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { path: 'file.txt' } }] } });
     emit({ type: 'user', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'contents of file.txt' }] } });

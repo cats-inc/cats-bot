@@ -63,6 +63,13 @@ it to the owner.
 
 ## Testing Strategy
 
+2026-10-30 follow-up: Desktop-derived shared conversation components/styles and
+live/durable adapters are implemented. Bot full suite: 235 passed; final focused
+boundary/persistence checks: 14 passed. Actual isolated Bot copy, keyboard detail
+expansion, approval, cancellation, reload and narrow-layout checks passed.
+The final cross-product UI-6 and hosted CI gates remain open at owner-requested
+immediate closeout. This does not authorize an installer release or version bump.
+
 - Logic that does not touch the DOM is tested with `node:test`; components are accepted by CDP in the
   real shell (docs/testing.md).
 - Each slice reruns the existing acceptance scripts: the settings-page model race and saving, raising a

@@ -39,6 +39,7 @@ export interface HostCommands {
   createConversation: { args: [title?: string]; result: ConversationRecord };
   deleteConversation: { args: [conversationId: string]; result: null };
   transcript: { args: [conversationId: string]; result: TranscriptEntry[] };
+  conversationTranscript: { args: [conversationId: string]; result: TranscriptEntry[] };
   sendOwnerMessage: { args: [conversationId: string, text: string]; result: WorkItem };
   cancelTurn: { args: [conversationId: string]; result: null };
   markSeen: { args: [conversationId: string]; result: null };
@@ -70,6 +71,7 @@ export const BRIDGE_COMMANDS = [
   'createConversation',
   'deleteConversation',
   'transcript',
+  'conversationTranscript',
   'sendOwnerMessage',
   'cancelTurn',
   'markSeen',

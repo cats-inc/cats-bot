@@ -42,6 +42,7 @@
   },
   "dependencies": {
     "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-487e7c96.tgz",
+    "@cats-inc/platform-ui-web": "file:vendor/platform-ui-web-0.1.0-957e4717942c.tgz",
     "electron-updater": "6.8.9",
     "koffi": "2.16.3"
   },

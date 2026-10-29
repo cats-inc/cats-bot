@@ -125,6 +125,20 @@ async function handleMessage(req, res, session, body) {
     if (request.status === 'pending') throw new Error('fixture response timed out');
     write({ type: 'progress', metadata: { kind: 'interaction_updated', interaction: request } });
     reply('provider continued');
+  } else if (message === 'layered') {
+    reply('before');
+    write({ type: 'tool_use', toolName: 'Read', toolId: 't1', text: 'input' });
+    write({ type: 'content_block', block: { id: 'tool:1', index: 1, kind: 'tool', status: 'streaming', text: 'input', toolName: 'Read', toolId: 't1' } });
+    write({ type: 'tool_result', toolName: 'Read', toolId: 't1', text: 'contents' });
+    write({ type: 'content_block', block: { id: 'tool:1', index: 1, kind: 'tool', status: 'complete', text: 'contents', toolName: 'Read', toolId: 't1' } });
+    reply('after');
+  } else if (message === 'result-only') {
+    write({ type: 'result', text: 'coarse answer' });
+    return finish(true);
+  } else if (message === 'partial-slow') {
+    reply('partial');
+    const deadline = Date.now() + 10000;
+    while (Date.now() < deadline && !aborted()) await sleep(20);
   } else if (message.startsWith('slow:')) {
     const ms = Number(message.slice('slow:'.length)) || 1000;
     const deadline = Date.now() + ms;

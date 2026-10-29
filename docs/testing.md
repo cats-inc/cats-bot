@@ -21,6 +21,12 @@ last step, not the first.
   imports `src/core/runtime/`; no file reaches outside the repository
   (SPEC-001 A6).
 
+  The shared conversation exception allows `@cats-inc/platform-ui-web/contracts`
+  in core/CLI and public React/CSS entries in the renderer. Private entries and
+  the root Platform application remain prohibited. `tests/core/presentation.test.ts`
+  checks ordering, sidecar validation/backup/atomic failure, recovery and old-history
+  compatibility; `npm test` continues exercising the real pinned Runtime.
+
 ### Unit tests
 
 - **Location**: `tests/core/profile.test.ts`, `store.test.ts`, `handoff.test.ts`,

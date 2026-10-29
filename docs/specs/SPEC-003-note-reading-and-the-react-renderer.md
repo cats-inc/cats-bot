@@ -58,6 +58,12 @@ for the current-versus-pending boundary.
 
 ## Acceptance
 
+2026-10-30 candidate: the conversation-sharing non-goal is superseded by the
+public `@cats-inc/platform-ui-web` package. Ordered response segments and tools
+persist in a versioned, validated atomic sidecar; original JSONL/API remain intact.
+Bot-specific interactions and authorization remain in the existing core/host.
+Full final UI-6/package/CI signoff is separate from this implemented cutover.
+
 - A1: A reply containing a heading, list, table, code block and link displays correctly in a 340 px
   wide note, and the note has no horizontal scrollbar.
 - A2: Clicking an https link in a reply opens that URL in the default browser, and the note stays on

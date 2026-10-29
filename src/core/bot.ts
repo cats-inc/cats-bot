@@ -948,6 +948,12 @@ export class BotCore implements BotHostApi {
     return this.conversations.transcript(this.resolveConversationId(conversationId));
   }
 
+  conversationTranscript(conversationId: string) {
+    const id = this.resolveConversationId(conversationId);
+    const running = [...this.workItems.values()].find(item => item.conversationId === id && item.state === 'running');
+    return this.conversations.presentationTranscript(id, running?.id);
+  }
+
   /** The runtime's own transcript of the conversation's session (SPEC-001 A1, FR-28 evidence). */
   async sessionHistory(conversationId: string): Promise<Array<{ role: string; text: string }>> {
     const record = this.conversations.require(this.resolveConversationId(conversationId));

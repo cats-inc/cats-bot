@@ -22,6 +22,7 @@ export type HostCommand =
   | 'createConversation'
   | 'deleteConversation'
   | 'transcript'
+  | 'conversationTranscript'
   | 'sendOwnerMessage'
   | 'cancelTurn'
   | 'markSeen'
@@ -48,6 +49,7 @@ export const HOST_COMMANDS: readonly HostCommand[] = [
   'createConversation',
   'deleteConversation',
   'transcript',
+  'conversationTranscript',
   'sendOwnerMessage',
   'cancelTurn',
   'markSeen',
@@ -69,6 +71,7 @@ export const HOST_COMMANDS: readonly HostCommand[] = [
  * answered there or in the CLI, never from Settings, the floating cat or a provider request.
  */
 export const NOTE_ONLY_COMMANDS: readonly HostCommand[] = [
+  'conversationTranscript',
   'providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl',
   'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
 ];
@@ -130,6 +133,8 @@ export async function runHostCommand(core: BotCore, command: string, args: unkno
       return null;
     case 'transcript':
       return core.transcript(asString(args[0], 'conversationId'));
+    case 'conversationTranscript':
+      return core.conversationTranscript(asString(args[0], 'conversationId'));
     case 'sendOwnerMessage':
       return core.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text'));
     case 'cancelTurn':

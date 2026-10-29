@@ -160,6 +160,10 @@ export const zhTW: Record<string, string> = {
   'Hide details': '隱藏詳細內容',
   'I completed the steps': '我已完成步驟',
   Input: '輸入',
+  Copy: '複製',
+  Tool: '工具',
+  'Incomplete or failed': '未完成或失敗',
+  'Conversation history could not be restored: {error}': '無法還原對話紀錄：{error}',
   'Keep existing tool permission settings': '保留既有工具權限設定',
   'Legacy tool permissions are inactive. Change approval and access in Provider access and tools below. File access above remains a host limit.':
     '舊工具權限設定目前未使用。請在下方「Provider 存取與工具」調整核准與存取方式。上方的檔案存取限制仍然有效。',
