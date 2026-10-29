@@ -40,7 +40,7 @@ const resumed = resumeIndex !== -1 ? args[resumeIndex + 1] : null;
 const sessionId = resumed ?? randomUUID();
 const modelIndex = args.indexOf('--model');
 const model = modelIndex !== -1 ? args[modelIndex + 1] : 'claude-fixture';
-const logPath = process.env.CATS_BOTS_FIXTURE_LOG;
+const logPath = process.env.CATS_BOT_FIXTURE_LOG;
 const modeIndex = args.indexOf('--permission-mode');
 const launchedMode = modeIndex !== -1 ? args[modeIndex + 1] : null;
 // What `initialize` reports: `manual` reports `default`; no flag stands for the user's own mode.
@@ -201,7 +201,7 @@ async function handleTurn(full) {
       requested_schema: { type: 'object', properties: { choice: { type: 'string', enum: ['a', 'b'] } }, required: ['choice'] } });
     reply = `form ${answer.action} ${answer.content?.choice ?? ''}`.trim();
   } else if (message.startsWith('[Cats heartbeat')) {
-    reply = process.env.CATS_BOTS_FIXTURE_HEARTBEAT_REPLY || '[quiet]';
+    reply = process.env.CATS_BOT_FIXTURE_HEARTBEAT_REPLY || '[quiet]';
   } else {
     reply = `echo: ${message}`;
   }

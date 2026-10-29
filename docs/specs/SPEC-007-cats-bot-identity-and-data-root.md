@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Phase 1 implemented (2026-10-30); GitHub and workspace steps in PLAN-008 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 
@@ -39,7 +39,7 @@ or releases.
    executable and asset prefix stay "Cats Bot" / `Cats Bot.exe` / `Cats-Bot-`.
 2. FR-2: Windows AUMIDs derive from the appId: `io.catsinc.catsbot` for the hub
    and `io.catsinc.catsbot.<botId>` where a surface is attributed to one bot
-   (SPEC-008 defines which surfaces). Today's `io.catsinc.cats-bot.<botId>` is
+   (SPEC-008 defines which surfaces). The 0.2.x `io.catsinc.cats-bot.<botId>` is
    not kept.
 3. FR-3: The ecosystem root defaults to `~/.catsbot/`. Each bot root is
    `<root>/bots/<botId>/` with the SPEC-001 FR-2 layout unchanged inside it,
@@ -49,7 +49,8 @@ or releases.
 4. FR-4: `CATS_BOT_HOME` overrides the ecosystem root, so one variable moves
    the hub files and every bot together.
    `CATS_BOTS_HOME` is no longer read, and setting it has no effect. Every test
-   sets `CATS_BOT_HOME` to a temporary directory. The development and fixture
+   keeps its bots under a temporary root and sets `CATS_BOT_HOME` to it wherever
+   paths come from the environment. The development and fixture
    variables `CATS_BOTS_PROVIDER_*` and `CATS_BOTS_FIXTURE_*` become
    `CATS_BOT_PROVIDER_*` and `CATS_BOT_FIXTURE_*`.
 5. FR-5: The core never creates, reads or writes a path under `~/.cats/`.
@@ -62,10 +63,13 @@ or releases.
    receipts and source manifests. No code path names `cats-inc/cats-bots`.
 8. FR-8: 0.3.0 is the first release under the new identity and ships together
    with the hub (SPEC-008, PLAN-009). No release is published between PLAN-008
-   Phase 1 and 0.3.0. Its release notes state that 0.2.x has no upgrade path:
-   uninstall 0.2.x first (its uninstall entry has a different GUID), then install
-   0.3.0; `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be deleted by
-   hand.
+   Phase 1 and 0.3.0. Its release notes state that 0.2.x has no upgrade path.
+   Do not use Check for Updates in 0.2.x: its feed can follow GitHub's rename
+   redirect to 0.3.0. Turn off Start at login in 0.2.x first, because its login
+   entry is named after the old AUMID and would start 0.3.0 against an empty
+   root. Then uninstall 0.2.x (its uninstall entry has a different GUID) and
+   install 0.3.0; `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be
+   deleted by hand.
 
 ### Non-Functional Requirements
 

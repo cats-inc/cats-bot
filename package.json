@@ -1,5 +1,5 @@
 {
-  "name": "@cats-inc/cats-bots",
+  "name": "@cats-inc/cats-bot",
   "version": "0.2.5",
   "private": true,
   "description": "Standalone always-alive desktop bots for the Cats ecosystem: one process per bot, wrapping an agent CLI through cats-runtime.",
@@ -7,11 +7,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cats-inc/cats-bots.git"
+    "url": "git+https://github.com/cats-inc/cats-bot.git"
   },
-  "homepage": "https://github.com/cats-inc/cats-bots#readme",
+  "homepage": "https://github.com/cats-inc/cats-bot#readme",
   "bugs": {
-    "url": "https://github.com/cats-inc/cats-bots/issues"
+    "url": "https://github.com/cats-inc/cats-bot/issues"
   },
   "keywords": [
     "cats",
@@ -67,7 +67,7 @@
     "node": ">=24.0.0"
   },
   "build": {
-    "appId": "io.catsinc.cats-bot",
+    "appId": "io.catsinc.catsbot",
     "productName": "Cats Bot",
     "copyright": "Copyright (c) 2026 sammykenny2 and contributors",
     "asar": false,

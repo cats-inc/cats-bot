@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -6,9 +6,9 @@ import { BotCore, initializeBot, type BotCoreOptions, type InitializeBotInput } 
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 
 /**
- * Shared helpers for core tests. Every test gets its own temporary bots home
- * (SPEC-001 state hygiene: never the real `~/.cats`) and must call
- * `cleanup()` in `after`.
+ * Shared helpers for core tests. Every test gets its own temporary Cats Bot
+ * root (state hygiene: never the real `~/.catsbot` or `~/.cats`) and must
+ * call `cleanup()` in `after`.
  */
 
 export const supportDir = resolve(import.meta.dirname);
@@ -23,16 +23,22 @@ export const fixtureCliCommand = process.execPath;
 export const fixtureCliLaunchArgs = [join(fixtureCliDir, 'claude-fixture.mjs')];
 
 export interface TempHome {
+  /** A temporary `CATS_BOT_HOME`. */
+  root: string;
+  /** `<root>/bots`, where every test bot lives. */
   botsHome: string;
   cleanup(): void;
 }
 
-export function makeTempHome(prefix = 'cats-bots-test-'): TempHome {
-  const botsHome = mkdtempSync(join(tmpdir(), prefix));
+export function makeTempHome(prefix = 'cats-bot-test-'): TempHome {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  const botsHome = join(root, 'bots');
+  mkdirSync(botsHome);
   return {
+    root,
     botsHome,
     cleanup() {
-      rmSync(botsHome, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+      rmSync(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },
   };
 }

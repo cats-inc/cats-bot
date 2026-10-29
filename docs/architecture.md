@@ -9,7 +9,7 @@ while leaving JSONL, BotHostApi authority and Runtime ownership intact. The broa
 architecture below remains proposed; final cross-product acceptance and release
 gates are recorded in Platform's `docs/research/conversation-ui-acceptance.md`.
 
-After [PR #51](https://github.com/cats-inc/cats-bots/pull/51) merged, the owner
+After [PR #51](https://github.com/cats-inc/cats-bot/pull/51) merged, the owner
 requested a shared-Platform design. Platform
 [ADR-142](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/142-publish-reusable-platform-packages-for-independent-products.md) /
 [SPEC-134](https://github.com/cats-inc/cats-platform/blob/main/docs/specs/SPEC-134-reusable-platform-packages-and-consumer-boundaries.md) /
@@ -114,7 +114,8 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ### `src/core/store`
 
-- **Purpose**: the data root (`~/.cats/bots/<id>/` or `CATS_BOTS_HOME`).
+- **Purpose**: the data root (`~/.catsbot/bots/<id>/`; `CATS_BOT_HOME` moves
+  the whole `~/.catsbot` root).
 - **Responsibilities**: atomic writes (temp file plus rename), JSON-lines
   append and rebuild for `journal.jsonl` and transcripts, the single-instance
   lock and the handoff directory a second instance writes into (FR-2, FR-3).

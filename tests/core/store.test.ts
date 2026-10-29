@@ -1,28 +1,39 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { readJsonFile, writeJsonAtomic } from '../../src/core/store/atomicFile.ts';
 import { appendJournal, readJournal, rebuildJournalState } from '../../src/core/store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, writeHandoff } from '../../src/core/store/lock.ts';
-import { botPathsFor, resolveBotRoot, resolveBotsHome } from '../../src/core/store/paths.ts';
+import { botPathsFor, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../../src/core/store/paths.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 let home: TempHome;
 before(() => {
-  home = makeTempHome('cats-bots-store-');
+  home = makeTempHome('cats-bot-store-');
 });
 after(() => home.cleanup());
 
-test('CATS_BOTS_HOME places every bot root (FR-2)', () => {
-  const env = { CATS_BOTS_HOME: home.botsHome };
+test('CATS_BOT_HOME places every bot root under bots/ (SPEC-007 FR-3, FR-4)', () => {
+  const env = { CATS_BOT_HOME: home.root };
+  assert.equal(resolveCatsBotHome(env), home.root);
   assert.equal(resolveBotsHome(env), home.botsHome);
-  assert.equal(resolveBotRoot('abc', env), join(home.botsHome, 'abc'));
+  assert.equal(resolveBotRoot('abc', env), join(home.root, 'bots', 'abc'));
   const paths = botPathsFor(join(home.botsHome, 'abc'));
   assert.equal(paths.profile, join(home.botsHome, 'abc', 'profile.json'));
   assert.equal(paths.runtime, join(home.botsHome, 'abc', 'runtime'));
+});
+
+test('the root defaults to ~/.catsbot and ignores CATS_BOTS_HOME (SPEC-007 FR-3, FR-4)', () => {
+  // Resolves paths only; nothing under the real home directory is created or read.
+  const root = join(homedir(), '.catsbot');
+  assert.equal(resolveCatsBotHome({}), root);
+  assert.equal(resolveBotRoot('abc', {}), join(root, 'bots', 'abc'));
+  assert.equal(resolveCatsBotHome({ CATS_BOTS_HOME: home.root }), root);
+  assert.equal(resolveCatsBotHome({ CATS_BOT_HOME: '  ' }), root);
 });
 
 test('writeJsonAtomic leaves no temporary file and readJsonFile classifies failures (FR-3, FR-4)', () => {

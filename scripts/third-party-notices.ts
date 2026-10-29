@@ -49,7 +49,7 @@ async function packageOf(moduleId: string): Promise<PackageInfo | null> {
 
 export function thirdPartyNotices(fileName = 'THIRD-PARTY-NOTICES.txt'): Plugin {
   return {
-    name: 'cats-bots-third-party-notices',
+    name: 'cats-bot-third-party-notices',
     apply: 'build',
     async generateBundle(_options, bundle) {
       const packages = new Map<string, PackageInfo>();

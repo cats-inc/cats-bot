@@ -20,7 +20,7 @@ target = Path(output)
 target.mkdir(parents=True, exist_ok=True)
 archive = target / f'Cats-Bot-v{version}-source.zip'
 with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as combined:
-    for name, checkout, commit in [('cats-bots', root, source_commit), ('cats-runtime', Path(runtime_checkout), runtime['commit'])]:
+    for name, checkout, commit in [('cats-bot', root, source_commit), ('cats-runtime', Path(runtime_checkout), runtime['commit'])]:
         actual = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=checkout, text=True).strip()
         if actual != commit:
             raise RuntimeError(f'{name} checkout is not at the pinned source')
@@ -31,7 +31,7 @@ with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED) as combined:
                 item = copy.copy(item)
                 item.filename = f'{name}/{item.filename}'
                 combined.writestr(item, contents)
-    combined.writestr('BUILDING.txt', 'See cats-bots/docs/deployment.md. Bot uses the exact Runtime tarball in cats-bots/vendor; the matching Runtime source is included. Run npm ci and npm run build with Node 24. No signing credentials are included.\n')
+    combined.writestr('BUILDING.txt', 'See cats-bot/docs/deployment.md. Bot uses the exact Runtime tarball in cats-bot/vendor; the matching Runtime source is included. Run npm ci and npm run build with Node 24. No signing credentials are included.\n')
 manifest = {'sourceCommit': source_commit, 'runtimeCommit': runtime['commit'], 'runtimeSha256': runtime['sha256'],
             'archiveSha256': hashlib.sha256(archive.read_bytes()).hexdigest()}
 (target / f'Cats-Bot-v{version}-sources.json').write_text(json.dumps(manifest, indent=2) + '\n')

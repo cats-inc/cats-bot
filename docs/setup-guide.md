@@ -16,8 +16,8 @@
 ## Installation
 
 ```bash
-git clone https://github.com/cats-inc/cats-bots.git
-cd cats-bots
+git clone https://github.com/cats-inc/cats-bot.git
+cd cats-bot
 npm ci
 ```
 
@@ -93,7 +93,7 @@ npm run shell -- --id mochi                        # later launches
 The shell mounts the same core in the Electron main process: a tray icon
 (open direct message, conversations, new conversation, pause heartbeat, start at login, quit) and
 one frameless window per conversation. Closing a conversation hides its window; the bot
-keeps running until Quit. The same `CATS_BOTS_PROVIDER_*` variables apply.
+keeps running until Quit. The same `CATS_BOT_PROVIDER_*` variables apply.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
 
@@ -140,17 +140,17 @@ the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.
 The provider is the CLI's product name as cats-runtime knows it (`claude`,
 `codex`, `copilot`, `pi`, …); that CLI must be installed and logged in.
 
-Bot data lives under `~/.cats/bots/<bot-id>/` unless `CATS_BOTS_HOME` points
-elsewhere (`docs/services.md`). Never point a test or an experiment at your
-real `~/.cats`.
+Bot data lives under `~/.catsbot/bots/<bot-id>/`; `CATS_BOT_HOME` moves the
+whole `~/.catsbot` root (`docs/services.md`). Cats Desktop's `~/.cats` is never
+used. Never point a test or an experiment at your real `~/.catsbot`.
 
 For development without a real CLI, three variables (read by `run`, `say` and
 `tick` only) point the provider at the scripted fixture instead:
 
 ```bash
-CATS_BOTS_PROVIDER_COMMAND=node                      # the interpreter, spawned directly
-CATS_BOTS_PROVIDER_LAUNCH_ARGS=tests/support/fixture-cli/claude-fixture.mjs   # one argument per line
-CATS_BOTS_PROVIDER_PROJECTS_DIR=/tmp/fixture-projects # the discovery directory it would scan
+CATS_BOT_PROVIDER_COMMAND=node                      # the interpreter, spawned directly
+CATS_BOT_PROVIDER_LAUNCH_ARGS=tests/support/fixture-cli/claude-fixture.mjs   # one argument per line
+CATS_BOT_PROVIDER_PROJECTS_DIR=/tmp/fixture-projects # the discovery directory it would scan
 ```
 
 The fixture is launched through the runtime's `launch.args`, never through a

@@ -1,6 +1,6 @@
 # SPEC-005: Standard Preview Releases and Updates
 
-Status: implemented; CI acceptance for the submitted commit is tracked in [PR #32](https://github.com/cats-inc/cats-bots/pull/32).
+Status: implemented; CI acceptance for the submitted commit is tracked in [PR #32](https://github.com/cats-inc/cats-bot/pull/32).
 Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-host-owned-updates.md).
 
 ## Requirements
@@ -16,7 +16,7 @@ Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-ho
    missing credentials imply signed artifacts. Publish exact source inputs and
    SHA256SUMS; verify every update file's referenced asset size and SHA-512.
 3. Package a validated release descriptor; missing/malformed/mismatched identity
-   never enables self-update. Public updates use only cats-inc/cats-bots.
+   never enables self-update. Public updates use only cats-inc/cats-bot.
 4. Settings > App and the tray/floating menu expose Check for Updates. Show
    current version, Standard Preview identity and checking/current/available/
    downloading/downloaded/installing/error states. Settings survives reload by

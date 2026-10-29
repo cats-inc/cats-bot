@@ -40,7 +40,7 @@ const depsJson = (rid = 'win-x64', version = '8.0.31', sdk: string | null = '10.
 });
 
 async function temporary(t: TestContext): Promise<string> {
-  const root = await mkdtemp(join(tmpdir(), 'cats-bots-dc-helper-'));
+  const root = await mkdtemp(join(tmpdir(), 'cats-bot-dc-helper-'));
   t.after(() => rm(root, { recursive: true, force: true }));
   return root;
 }

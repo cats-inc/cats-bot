@@ -1,4 +1,4 @@
-name: Bots Standard Preview
+name: Cats Bot Standard Preview
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
 
 # Preview discovery follows the release feed order. Serialize different tags too.
 concurrency:
-  group: bots-standard-preview-release
+  group: cats-bot-standard-preview-release
   cancel-in-progress: false
 
 jobs:
@@ -96,7 +96,7 @@ jobs:
           KEY_BASE64: ${{ secrets.APPLE_API_KEY_P8_BASE64 }}
         run: |
           if [ -n "$KEY_BASE64" ]; then
-            key_path="$RUNNER_TEMP/bots-notarization.p8"
+            key_path="$RUNNER_TEMP/cats-bot-notarization.p8"
             printf '%s' "$KEY_BASE64" | base64 --decode > "$key_path"
             chmod 600 "$key_path"
             echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"

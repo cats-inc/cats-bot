@@ -1,9 +1,9 @@
-# Bots Standard Preview releases
+# Cats Bot Standard Preview releases
 
 [ADR-004](decisions/004-publish-standard-previews-with-host-owned-updates.md)
 defines the delivery contract. This is the Electron Bot distribution; the headless
-CLI does not install application updates. GitHub Actions **Bots Standard Preview**
-(`.github/workflows/bots-preview.yml`) publishes only on manual dispatch.
+CLI does not install application updates. GitHub Actions **Cats Bot Standard
+Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatch.
 
 ## Prepare the release commit
 
@@ -22,7 +22,7 @@ CLI does not install application updates. GitHub Actions **Bots Standard Preview
    in the commit. Data migrations need tested validation, backup and atomic
    recovery; a version bump alone is insufficient.
 4. Pass CI and independent review, merge the prepared commit, then select that
-   ref in Actions → Bots Standard Preview → Run workflow, with tag `vX.Y.Z`.
+   ref in Actions → Cats Bot Standard Preview → Run workflow, with tag `vX.Y.Z`.
    Nothing here authorizes publishing from an ordinary feature PR.
 
 The workflow pins the selected SHA, serializes all preview releases, reserves a
@@ -54,8 +54,8 @@ identity and cannot self-update.
 
 Reuse Cats Desktop's existing macOS credentials through `cats-inc` organization
 secrets. Configure all five with **Selected repositories** access only to
-`cats-platform` and `cats-bots`; no new Apple certificate or API key is needed.
-Desktop repository secrets alone are not visible to Bots: they must first be
+`cats-platform` and `cats-bot`; no new Apple certificate or API key is needed.
+Desktop repository secrets alone are not visible to Cats Bot: they must first be
 shared at organization scope. Windows signing is configured separately with
 repository or applicable organization secrets.
 
@@ -67,14 +67,14 @@ repository or applicable organization secrets.
 Rotate the shared macOS values in the organization's **Settings → Secrets and
 variables → Actions**, retaining the selected-repository access. Do not create
 same-name repository or environment overrides, which take precedence and can
-keep Bots on stale credentials. Pause signed releases during rotation, then verify
+keep Cats Bot on stale credentials. Pause signed releases during rotation, then verify
 signing and notarization authentication in both repositories before resuming.
 
 Follow the [shared Apple credential migration procedure](https://github.com/cats-inc/cats-platform/blob/main/docs/deployment.md#desktop-release-signing)
-when moving an existing Desktop set. Keep Desktop's source copies until Bots
+when moving an existing Desktop set. Keep Desktop's source copies until Cats Bot
 passes native signing, signature verification and notarization API authentication;
 then remove the Desktop overrides and verify Desktop again. If the baseline or
-Bots checks fail, keep the Desktop source copies and stop. If Desktop fails after
+Cats Bot checks fail, keep the Desktop source copies and stop. If Desktop fails after
 switching, pause signed releases and diagnose the shared configuration before
 proceeding. Temporary credential probes do not publish a release or establish full
 product notarization, and both existing release workflows already read these
@@ -100,7 +100,7 @@ passes without it.
 ## Check for Updates
 
 Use the tray/floating cat menu **Check for Updates…**, or Settings → App →
-**Check for Updates**. Checks only query the public cats-inc/cats-bots feed.
+**Check for Updates**. Checks only query the public cats-inc/cats-bot feed.
 The tray menu presents the result in a native dialog, without opening Settings;
 Update and Restart explicitly authorizes download and installation. Settings keeps
 separate Download update / Restart and install actions with a native confirmation.

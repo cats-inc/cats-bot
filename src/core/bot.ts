@@ -46,7 +46,7 @@ import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent }
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
-import { botPathsFor, resolveBotRoot, type BotPaths } from './store/paths.ts';
+import { botPathsFor, botRootIn, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import { BotToolServer } from './tools/server.ts';
 import type {
@@ -164,9 +164,8 @@ export interface InitializeBotInput extends Omit<CreateProfileInput, 'cwd' | 'id
 export function initializeBot(
   botsHome: string,
   input: InitializeBotInput,
-  env: NodeJS.ProcessEnv = process.env,
 ): { profile: BotProfile; root: string } {
-  const root = resolveBotRoot(input.id, { ...env, CATS_BOTS_HOME: botsHome });
+  const root = botRootIn(botsHome, input.id);
   const paths = botPathsFor(root);
   const placeholder = createProfile({ id: input.id, name: input.name, provider: input.provider, cwd: root });
   const existing = loadProfile(paths, placeholder);

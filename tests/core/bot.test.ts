@@ -17,7 +17,7 @@ import { fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, t
 
 let home: TempHome;
 before(() => {
-  home = makeTempHome('cats-bots-core-');
+  home = makeTempHome('cats-bot-core-');
 });
 after(() => home.cleanup());
 

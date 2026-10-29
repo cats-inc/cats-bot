@@ -70,7 +70,7 @@ export interface SendMessageRequest {
 export interface RuntimeHealth {
   status: string;
   readiness?: { ready?: boolean; phase?: string };
-  startup?: { phase?: string; bootstrapRequired?: boolean; pid?: number };
+  startup?: { phase?: string; bootstrapRequired?: boolean; pid?: number; managedBy?: string };
   version?: string;
   [key: string]: unknown;
 }

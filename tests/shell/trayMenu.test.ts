@@ -19,7 +19,7 @@ import {
 
 let root: string;
 before(() => {
-  root = mkdtempSync(join(tmpdir(), 'cats-bots-shell-'));
+  root = mkdtempSync(join(tmpdir(), 'cats-bot-shell-'));
 });
 after(() => rmSync(root, { recursive: true, force: true }));
 

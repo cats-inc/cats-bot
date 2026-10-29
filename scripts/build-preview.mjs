@@ -4,7 +4,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { descriptor, signingTrust, validateInputs } from './release-contract.mjs';
+import { descriptor, repository, signingTrust, validateInputs, workflowName } from './release-contract.mjs';
 import { publishWindowsDesktopControl, verifyPackagedWindowsDesktopControl } from './windows-desktop-control.mjs';
 
 const require = createRequire(import.meta.url);
@@ -16,8 +16,8 @@ const input = await validateInputs(root, tag);
 const publishingBuild = args.includes('--release');
 if (publishingBuild) {
   const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' });
-  if (process.env.GITHUB_REPOSITORY !== 'cats-inc/cats-bots' || process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
-    || process.env.GITHUB_WORKFLOW !== 'Bots Standard Preview' || process.env.GITHUB_SHA !== source
+  if (process.env.GITHUB_REPOSITORY !== repository || process.env.GITHUB_EVENT_NAME !== 'workflow_dispatch'
+    || process.env.GITHUB_WORKFLOW !== workflowName || process.env.GITHUB_SHA !== source
     || head.status !== 0 || head.stdout.trim() !== source) throw new Error('Release identity is reserved for the pinned manual publication workflow.');
 }
 const pkg = JSON.parse(await readFile(join(root, 'package.json'), 'utf8'));
@@ -29,7 +29,7 @@ await writeFile(join(stage, 'bot-release.json'), `${JSON.stringify(release, null
 const config = {
   ...pkg.build,
   extraResources: [{ from: join(stage, 'bot-release.json'), to: 'bot-release.json' }],
-  publish: [{ provider: 'github', owner: 'cats-inc', repo: 'cats-bots', releaseType: 'prerelease' }],
+  publish: [{ provider: 'github', owner: repository.split('/')[0], repo: repository.split('/')[1], releaseType: 'prerelease' }],
   mac: { ...pkg.build.mac, identity: trust === 'signed-notarized' ? undefined : null, hardenedRuntime: trust === 'signed-notarized', notarize: trust === 'signed-notarized' },
 };
 await writeFile(join(stage, 'builder.json'), JSON.stringify(config));

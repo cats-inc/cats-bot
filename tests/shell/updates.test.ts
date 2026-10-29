@@ -12,7 +12,7 @@ import { BotUpdateController, InstallHandoffTimeout, type BotUpdater, type Updat
 import { BotInstallation, InstallationRecoveryRequired } from '../../src/shell/electron/update/installation.ts';
 import { isUpdateSender, updateAction } from '../../src/shell/electron/update/ipc.ts';
 import { assertNoOtherUsers } from '../../src/shell/electron/update/otherUsers.ts';
-import { initialUpdateState, isNewerVersion, parseBotRelease, type BotRelease } from '../../src/shell/electron/update/release.ts';
+import { initialUpdateState, isNewerVersion, parseBotRelease, UPDATE_REPOSITORY, type BotRelease } from '../../src/shell/electron/update/release.ts';
 import {
   TrayUpdateDialog,
   updateDialog,
@@ -21,7 +21,7 @@ import {
 import { showDesktopUpdateMessageBox } from '../../src/shell/electron/update/presenter.ts';
 
 const release: BotRelease = {
-  schemaVersion: 1, repository: 'cats-inc/cats-bots', version: '0.2.0', tag: 'v0.2.0', channel: 'preview',
+  schemaVersion: 1, repository: 'cats-inc/cats-bot', version: '0.2.0', tag: 'v0.2.0', channel: 'preview',
   signingProfile: 'standard', distribution: 'standard-preview', platform: 'win32', architectures: ['x64', 'arm64'],
   trust: 'unsigned-no-certificate', sourceCommit: 'a'.repeat(40), runtimeCommit: 'b'.repeat(40),
 };
@@ -265,7 +265,8 @@ test('update IPC only accepts the owned Settings main frame and explicit actions
 });
 
 test('updater disables automatic install/download and configures the plain-version preview feed', () => {
-  const raw = { allowDowngrade: true, setFeedURL(value: unknown) { assert.deepEqual(value, { provider: 'github', owner: 'cats-inc', repo: 'cats-bots' }); } };
+  const [owner, repo] = UPDATE_REPOSITORY.split('/');
+  const raw = { allowDowngrade: true, setFeedURL(value: unknown) { assert.deepEqual(value, { provider: 'github', owner, repo }); } };
   configureUpdater(raw as AppUpdater);
   assert.equal(raw.allowDowngrade, false);
   assert.equal((raw as unknown as AppUpdater).autoDownload, false);

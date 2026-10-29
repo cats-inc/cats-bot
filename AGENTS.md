@@ -38,8 +38,8 @@
 - Test command: `npm ci && npm run typecheck && npm test && npm run build`. `npm test`
   runs `node --test` over `tests/**/*.test.ts`, including `tests/integration/` which starts
   the real pinned cats-runtime from `node_modules` with the scripted fixture CLI; tests
-  only write under temporary directories and never touch the real `~/.cats`
-  (`docs/testing.md`).
+  only write under temporary directories and never touch the real `~/.catsbot`
+  or `~/.cats` (`docs/testing.md`).
 - Subprojects: none declared; nested AGENTS.md files provide scoped instructions
   and do not by themselves prove a monorepo architecture.
 

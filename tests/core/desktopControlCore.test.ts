@@ -494,7 +494,8 @@ test('deleting a conversation forgets its switch and grants; a recovery rerun is
 /** `cats-bot … --id desk` against the harness's running core, the way the owner runs it. */
 function cli(root: string, ...args: string[]): Promise<{ code: number | null; out: string; error: string }> {
   return new Promise((resolveResult, reject) => {
-    const env: NodeJS.ProcessEnv = { ...process.env, CATS_BOTS_HOME: dirname(root) };
+    // The harness bot root is `<CATS_BOT_HOME>/bots/desk`.
+    const env: NodeJS.ProcessEnv = { ...process.env, CATS_BOT_HOME: dirname(dirname(root)) };
     delete env.CATS_BOT_ID;
     const child = spawn(process.execPath, [resolve('src/cli/main.ts'), ...args, '--id', 'desk'], {
       env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true,

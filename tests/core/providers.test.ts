@@ -23,8 +23,8 @@ import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts'
 let dir: string;
 let home: TempHome;
 before(() => {
-  dir = mkdtempSync(join(tmpdir(), 'cats-bots-providers-'));
-  home = makeTempHome('cats-bots-providers-core-');
+  dir = mkdtempSync(join(tmpdir(), 'cats-bot-providers-'));
+  home = makeTempHome('cats-bot-providers-core-');
 });
 after(() => {
   rmSync(dir, { recursive: true, force: true });
