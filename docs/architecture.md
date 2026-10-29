@@ -1,6 +1,13 @@
 # System Architecture
 
-## Proposed shared Platform consumption (2026-10-29)
+## Shared conversation candidate (2026-10-30)
+
+Conversation components/styles now come from the same packed
+`@cats-inc/platform-ui-web` artifact as Desktop. Core imports only the pure
+`contracts` entry. The versioned presentation sidecar preserves message hierarchy
+while leaving JSONL, BotHostApi authority and Runtime ownership intact. The broader
+architecture below remains proposed; final cross-product acceptance and release
+gates are recorded in Platform's `docs/research/conversation-ui-acceptance.md`.
 
 After [PR #51](https://github.com/cats-inc/cats-bots/pull/51) merged, the owner
 requested a shared-Platform design. Platform

@@ -134,6 +134,11 @@ export interface TranscriptEntry {
   toolName?: string;
   toolId?: string;
   isError?: boolean;
+  /** Versioned, sanitized display projection. Legacy JSONL records remain unchanged. */
+  presentation?: import('@cats-inc/platform-ui-web/contracts').ConversationPresentation;
+  presentationRevision?: number;
+  presentationSeqs?: number[];
+  presentationTerminalSeq?: number;
 }
 
 export type WorkItemKind = 'owner_message' | 'heartbeat' | 'schedule' | 'event';
@@ -306,6 +311,7 @@ export type BotHostEvent =
   | { type: 'provider.interactions'; conversationId: string; pending: number; notify?: boolean }
   | { type: 'conversation.updated'; conversation: ConversationRecord }
   | { type: 'turn.delta'; conversationId: string; workItemId: string; entry: TranscriptEntry }
+  | { type: 'turn.presentation'; conversationId: string; workItemId: string; entry: TranscriptEntry }
   | { type: 'turn.completed'; conversationId: string; workItem: WorkItem }
   | { type: 'work.updated'; workItem: WorkItem }
   | { type: 'work.awaitingOwner'; workItem: WorkItem }

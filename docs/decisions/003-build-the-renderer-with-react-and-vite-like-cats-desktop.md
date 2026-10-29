@@ -23,6 +23,13 @@ migration is implied. Matching React versions alone does not complete this follo
 
 ## Context
 
+Implementation cutover (2026-10-30): the conversation now consumes the same
+private packed `@cats-inc/platform-ui-web@0.1.0` artifact as Desktop. This supersedes
+§1's separate implementation for conversation components/styles only. Core may
+import the pure `contracts` entry; the Platform application remains prohibited.
+See [the implementation record](https://github.com/cats-inc/cats-platform/blob/feat/shared-conversation-ui/docs/research/conversation-ui-acceptance.md)
+for exact pins, compatibility, completed checks and outstanding acceptance gates.
+
 - The pages of PLAN-001 and PLAN-002 (note, settings and first run, floating Cat) are plain HTML, CSS
   and untyped JS under `assets/renderer/`, loaded directly by Electron with no build step.
 - The note shows messages with `textContent`: agent CLI replies are almost always markdown, so bold,

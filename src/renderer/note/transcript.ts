@@ -24,8 +24,33 @@ export function visibleEntries(entries: readonly TranscriptEntry[]): TranscriptE
  */
 export function addEntry(entries: readonly TranscriptEntry[], entry: TranscriptEntry): TranscriptEntry[] {
   if (entry.kind === 'progress') return [...entries];
-  if (entry.seq > 0 && entries.some((existing) => existing.seq === entry.seq)) return [...entries];
-  return [...entries, entry];
+  if (entry.presentation) {
+    const existing = entries.find(value => value.presentation?.id === entry.presentation!.id);
+    if ((existing?.presentationRevision ?? 0) > (entry.presentationRevision ?? 0)) return [...entries];
+    const retained = entries.filter(value => value.presentation?.id !== entry.presentation!.id);
+    return reconcilePresentationEntries([...retained, entry]);
+  }
+  if (entry.seq > 0 && entries.some((existing) => !existing.presentation && existing.seq === entry.seq)) return [...entries];
+  return reconcilePresentationEntries([...entries, entry]);
+}
+
+function reconcilePresentationEntries(entries: TranscriptEntry[]): TranscriptEntry[] {
+  const projections = entries.filter(entry => entry.presentation);
+  return entries.filter(entry => entry.presentation || !projections.some(response => (
+    response.workItemId === entry.workItemId && ((response.presentationSeqs ?? []).includes(entry.seq)
+      || (response.presentationTerminalSeq === entry.seq && entry.kind === 'bot' && response.text === entry.text))
+  ))).sort((a, b) => (a.seq < 0 ? Infinity : a.seq) - (b.seq < 0 ? Infinity : b.seq));
+}
+
+/** A late snapshot cannot discard a newer live revision or a local send failure. */
+export function mergeTranscriptEntries(current: readonly TranscriptEntry[], snapshot: readonly TranscriptEntry[]): TranscriptEntry[] {
+  // A recovered sidecar may predate finalization. A terminal JSONL row in the
+  // authoritative read replaces that unbound live partial, including in an open view.
+  const retained = current.filter(entry => !entry.presentation || !snapshot.some(final =>
+    !final.presentation && final.kind === 'bot' && final.seq >= entry.seq
+    && !!entry.workItemId && final.workItemId === entry.workItemId
+    && !(entry.presentationTerminalSeq === final.seq && entry.text === final.text)));
+  return reconcilePresentationEntries(snapshot.reduce((entries, entry) => addEntry(entries, entry), retained));
 }
 
 /** Streamed text of one reply; a different work item starts a new reply. */
@@ -104,7 +129,7 @@ export interface DecisionItem {
   detail: string | null;
 }
 
-export type NoteItem = { type: 'entry'; key: string; entry: TranscriptEntry } | ToolItem | DecisionItem;
+export type NoteItem = { type: 'entry' | 'response'; key: string; entry: TranscriptEntry } | ToolItem | DecisionItem;
 
 /** Work items that ask the owner something: `ask_owner` questions and interrupted turns to run again. */
 const DECIDED_BY_OWNER = new Set(['ask_owner', 'recovery']);
@@ -133,21 +158,28 @@ export function buildNoteItems(
   const items: NoteItem[] = [];
   const openCalls = new Map<string, { item: ToolItem; workItemId: string | undefined }>();
   const asked = new Set<string>();
+  let legacyTurn = 0;
   for (const entry of entries) {
     if (entry.kind === 'progress') continue;
+    if (entry.kind === 'owner') legacyTurn = entry.seq;
+    if (entry.presentation) {
+      items.push({ type: 'response', key: entry.presentation.id, entry });
+      continue;
+    }
+    const toolKey = entry.toolId ? `${entry.workItemId ?? legacyTurn}:${entry.toolId}` : null;
     if (entry.kind === 'tool_use') {
       const item: ToolItem = { type: 'tool', key: `tool:${entry.seq}`, name: entry.toolName || 'tool', input: entry.text, result: null, status: 'done' };
-      if (entry.toolId) openCalls.set(entry.toolId, { item, workItemId: entry.workItemId });
+      if (toolKey) openCalls.set(toolKey, { item, workItemId: entry.workItemId });
       item.status = entry.workItemId && running.has(entry.workItemId) ? 'running' : 'done';
       items.push(item);
       continue;
     }
     if (entry.kind === 'tool_result') {
-      const call = entry.toolId ? openCalls.get(entry.toolId) : undefined;
+      const call = toolKey ? openCalls.get(toolKey) : undefined;
       const item: ToolItem = call?.item ?? { type: 'tool', key: `tool:${entry.seq}`, name: entry.toolName || 'tool', input: '', result: null, status: 'done' };
       item.result = entry.text;
       item.status = entry.isError ? 'error' : 'done';
-      if (call && entry.toolId) openCalls.delete(entry.toolId);
+      if (call && toolKey) openCalls.delete(toolKey);
       else items.push(item);
       continue;
     }

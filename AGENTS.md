@@ -21,7 +21,9 @@
   global provider/model per bot. Read `docs/decisions/001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md`
   (accepted), `docs/specs/SPEC-001-resident-bot-core-and-global-execution.md` and `docs/plans/PLAN-001-resident-bot-core-foundation.md` before any
   implementation; the two notes under `docs/research/` are their evidence. Does not
-  import `@cats-inc/cats-platform`.
+  import `@cats-inc/cats-platform`. The conversation renderer consumes only public
+  `@cats-inc/platform-ui-web` entries; core/CLI may import only its pure `contracts`
+  entry, never React, styles or private package source.
 - Entry points: `src/cli/main.ts` is the headless `cats-bot` CLI (`init`, `run`, `say`,
   `status`, `conversations`, `schedule`, `approve`, `heartbeat`, `tick`, `open`, `quit`, `telegram`; run it as
   `node src/cli/main.ts …` or `npm run bot -- …` after a build). `src/core/bot.ts` exports `BotCore`, the `BotHostApi` every host uses.

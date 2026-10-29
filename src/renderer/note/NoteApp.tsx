@@ -1,3 +1,5 @@
+import { ConversationMessage, ConversationResponse, ConversationMarkdown } from '@cats-inc/platform-ui-web';
+import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
@@ -6,18 +8,16 @@ import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
 import { InteractionCard } from '../interactions/InteractionCard.tsx';
 import type { NoteLayer } from '../bridge.ts';
-import { Markdown } from '../markdown/Markdown.tsx';
 import {
   addEntry,
   appendDelta,
   buildNoteItems,
-  entryClass,
   entryMeta,
   entryText,
   errorText,
   liveInteractions,
   localEntry,
-  toolSummary,
+  mergeTranscriptEntries,
   upsertWorkItem,
   visibleEntries,
   type DecisionItem,
@@ -45,64 +45,22 @@ const api = window.catsBot;
 function Entry({ entry }: { entry: TranscriptEntry }) {
   useI18n();
   const meta = entryMeta(entry);
-  return (
-    <div className={entryClass(entry.kind)}>
-      {entry.kind === 'bot' ? <Markdown text={entry.text} /> : entryText(entry)}
-      {meta && <span className="entry-meta">{meta}</span>}
-    </div>
-  );
+  return <ConversationMessage senderKind={entry.kind === 'owner' ? 'user' : entry.kind === 'bot' ? 'agent' : 'system'}
+    copyLabel={t('Copy')} showCopy={!!entry.text.trim()}
+    onCopy={() => { void navigator.clipboard.writeText(entry.text); }}>
+    {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
+      : <p className="messageBody">{entryText(entry)}</p>}
+    {meta && <span className="entry-meta">{meta}</span>}
+  </ConversationMessage>;
 }
 
-const TOOL_STATUS: Record<ToolItem['status'], { mark: string; label: string }> = {
-  running: { mark: '…', label: 'running' },
-  done: { mark: '✓', label: 'done' },
-  error: { mark: '✕', label: 'failed' },
-};
-
-/** SPEC-003 FR-4: a tool call and its result, collapsed to one line until opened. */
 function ToolCard({ item }: { item: ToolItem }) {
   useI18n();
-  const [open, setOpen] = useState(false);
-  const status = TOOL_STATUS[item.status];
-  return (
-    <div className={`tool-card tool-${item.status}`}>
-      <button
-        className="tool-head"
-        aria-expanded={open}
-        title={open ? t('Hide details') : t('Show input and result')}
-        onClick={() => setOpen(!open)}
-      >
-        <span className="tool-caret" aria-hidden="true">
-          {open ? '▾' : '▸'}
-        </span>
-        <span className="tool-name" title={item.name}>
-          {item.name}
-        </span>
-        <span className="tool-summary">{toolSummary(item)}</span>
-        <span className="tool-status" title={t(status.label)}>
-          {status.mark}
-        </span>
-      </button>
-      {open && (
-        <div className="tool-body">
-          {item.input && (
-            <>
-              <div className="tool-label">{t('Input')}</div>
-              <pre className="tool-text">{item.input}</pre>
-            </>
-          )}
-          <div className="tool-label">{t('Result')}</div>
-          {item.result === null ? (
-            <div className="tool-empty">
-              {item.status === 'running' ? t('Still running…') : t('No result was reported.')}
-            </div>
-          ) : (
-            <pre className="tool-text">{item.result || t('(empty)')}</pre>
-          )}
-        </div>
-      )}
-    </div>
-  );
+  return <ConversationResponse response={{ version: 1, id: item.key, phase: item.status === 'running' ? 'streaming' : 'sealed',
+    blocks: [{ id: item.key, index: 0, kind: 'tool', status: item.status === 'running' ? 'streaming' : item.status === 'error' ? 'error' : 'complete',
+      title: null, text: item.result ?? item.input, toolId: null, toolName: item.name, input: item.input, result: item.result }] }}
+    labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
+    copyLabel={t('Copy')} showProgressDetails />;
 }
 
 const DECISION_OUTCOMES: Record<Exclude<DecisionStatus, 'waiting'>, string> = {
@@ -160,11 +118,15 @@ export function NoteApp() {
   // The note may be opened as `home`; the record's id replaces it once known.
   const conversation = useRef(requested);
   const runningRef = useRef(false);
+  const structuredWork = useRef(new Set<string>());
   const transcriptRef = useRef<HTMLElement>(null);
   const interactionAnchor = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('Cats Bot');
+  const [speakerName, setSpeakerName] = useState('Cats Bot');
+  const [showDetails, setShowDetails] = useState(false);
+  const followTranscript = useRef(true);
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
@@ -172,6 +134,7 @@ export function NoteApp() {
   const [pending, setPending] = useState<PendingReply | null>(null);
   const [running, setRunningState] = useState(false);
   const [runtimeNote, setRuntimeNote] = useState('');
+  const [historyError, setHistoryError] = useState('');
   const [draft, setDraft] = useState('');
   const [interactions, setInteractions] = useState<BotInteraction[]>([]);
   const desktop = useDesktopControl(conversation);
@@ -196,6 +159,7 @@ export function NoteApp() {
     if (!record) return;
     conversation.current = record.id;
     const profile = await api.invoke('getProfile');
+    setSpeakerName(profile.name);
     setTitle(`${profile.name} · ${conversationTitle(record)}`);
     setUnread(record.unreadCount);
     setLayer((await api.window.state()).layer);
@@ -204,9 +168,15 @@ export function NoteApp() {
   // A transcript read keeps the reply being streamed; it is not in the transcript until the turn ends.
   const reload = useCallback(async () => {
     const id = conversation.current;
-    const [transcript, work] = await Promise.all([api.invoke('transcript', id), api.invoke('listWorkItems')]);
-    setEntries(visibleEntries(transcript));
-    setWorkItems(work.filter((item) => item.conversationId === id));
+    try {
+      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems')]);
+      for (const entry of transcript) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
+      setEntries(current => mergeTranscriptEntries(current, visibleEntries(transcript)));
+      setWorkItems(work.filter((item) => item.conversationId === id));
+      setHistoryError('');
+    } catch (error) {
+      setHistoryError(errorText(error));
+    }
   }, []);
 
   // Only a note the owner is looking at reads its replies (a background desktop note does not).
@@ -218,6 +188,12 @@ export function NoteApp() {
     const offEvent = api.onEvent((event) => {
       const id = conversation.current;
       switch (event.type) {
+        case 'turn.presentation':
+          if (event.conversationId !== id) return;
+          structuredWork.current.add(event.workItemId);
+          setPending(null);
+          setEntries(current => addEntry(current, event.entry));
+          return;
         case 'provider.interactions':
           if (event.conversationId === id) void refreshInteractions();
           return;
@@ -226,7 +202,10 @@ export function NoteApp() {
           return;
         case 'turn.delta':
           if (event.conversationId !== id) return;
-          if (event.entry.kind === 'bot') setPending((current) => appendDelta(current, event.workItemId, event.entry.text));
+          if (event.entry.presentation) setEntries(current => addEntry(current, event.entry));
+          else if (event.entry.kind === 'bot') {
+            if (!structuredWork.current.has(event.workItemId)) setPending((current) => appendDelta(current, event.workItemId, event.entry.text));
+          }
           else setEntries((current) => addEntry(current, event.entry));
           return;
         case 'work.updated':
@@ -291,7 +270,7 @@ export function NoteApp() {
   useLayoutEffect(() => {
     if (activeRequestIds) return;
     const element = transcriptRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
+    if (element && followTranscript.current) element.scrollTop = element.scrollHeight;
   }, [items, pending, activeRequestIds]);
   useLayoutEffect(() => {
     if (activeRequestIds) interactionAnchor.current?.scrollIntoView({ block: 'start' });
@@ -301,6 +280,7 @@ export function NoteApp() {
     const text = draft.trim();
     if (!text || runningRef.current) return;
     setDraft('');
+    followTranscript.current = true;
     setRunning(true);
     try {
       await api.invoke('sendOwnerMessage', conversation.current, text);
@@ -365,16 +345,26 @@ export function NoteApp() {
         </button>
       </header>
       <DesktopControlBar model={desktop} />
-      <main className="note-transcript" id="transcript" ref={transcriptRef} aria-live="polite">
+      <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
+        onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
+        <button type="button" className="conversation-details-toggle" aria-pressed={showDetails}
+          onClick={() => setShowDetails(value => !value)}>{showDetails ? t('Hide details') : t('Show input and result')}</button>
+        {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}
         {items.map((item) => {
+          if (item.type === 'response' && item.entry.presentation) return <ConversationResponse key={item.key}
+            response={item.entry.presentation} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={new URL('../cat.svg', import.meta.url).href} alt="" /><strong>{speakerName}</strong></div>}
+            labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
+            showProgressDetails={showDetails} copyLabel={t('Copy')}
+            afterBubble={<span className="entry-meta">{entryMeta(item.entry)}</span>}
+            onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
           if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
           return <Entry key={item.key} entry={item.entry} />;
         })}
         {pending && (
-          <div className="entry entry-bot pending">
-            <Markdown text={pending.text} />
-          </div>
+          <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>
+            <ConversationMarkdown text={pending.text} />
+          </ConversationMessage>
         )}
         <div ref={interactionAnchor}>
           {activeRequests.map((i) => (
