@@ -11,6 +11,12 @@
 
 ## Overview
 
+The completed slices below unified the technology stack and basic rendering;
+they do not establish Desktop conversation parity. The owner-requested next slice
+is [Platform PLAN-127 Phase 4](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-127-shared-platform-package-extraction.md#phase-4-desktop-derived-conversation-renderer-in-both-products),
+with the SPEC-134 Desktop/Bot renderer, data-fidelity and UI acceptance gates.
+This plan remains historical completion evidence; the new extraction is not done.
+
 One PR per slice, merged automatically once CI is green. First replace the build flow alone (screens
 and behavior unchanged) and confirm that file:// loading, the CSP and packaging are all fine, then
 rewrite page by page: the note first (what users see every day), then the tool cards and decision

@@ -8,6 +8,19 @@ and asked for the work to be cut into slices. See
 [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) for the specification and
 [PLAN-003](../plans/PLAN-003-react-renderer.md) for the implementation.
 
+Pending follow-up (2026-10-29): the owner now requires Desktop/Bot conversation
+presentation parity, including user/agent bubbles and hierarchy inside messages.
+Platform [ADR-142](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/142-publish-reusable-platform-packages-for-independent-products.md),
+[SPEC-134](https://github.com/cats-inc/cats-platform/blob/main/docs/specs/SPEC-134-reusable-platform-packages-and-consumer-boundaries.md)
+FR-15 through FR-20 and
+[PLAN-127 Phase 4](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-127-shared-platform-package-extraction.md#phase-4-desktop-derived-conversation-renderer-in-both-products)
+define extraction from Desktop into a versioned shared renderer/styles package.
+That coordinated cutover will replace §1's separate implementation and direct-import
+alternative for supported public UI entries only. Current code/import guards remain
+unchanged until then. Bot data, BotHostApi/channel and authorization stay Bot-owned;
+no Platform application/API dependency, native window-layer change or WebView2
+migration is implied. Matching React versions alone does not complete this follow-up.
+
 ## Context
 
 - The pages of PLAN-001 and PLAN-002 (note, settings and first run, floating Cat) are plain HTML, CSS

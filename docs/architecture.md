@@ -11,6 +11,15 @@ propose replacing selected copied implementations with versioned packages, first
 setup resources and the native helper. This is not a dependency on the Platform
 application, a shared Runtime, Desktop profiles or the Platform domain model.
 
+The owner also requires extracting Desktop's existing conversation renderer for
+both products: user/agent bubbles, message-internal hierarchy, streaming and
+supported interactions, including narrow Bot conversations. SPEC-134 FR-15 through
+FR-20 and UI-1 through UI-6 define the parity gates; PLAN-127 Phase 4 owns the
+slice. Bot provides live/durable presentation adapters through its own core/host
+contract. This replaces ADR-003's separate UI implementation only after verified
+cutover; shared React dependencies alone are insufficient. It does not change
+native window layers or select WebView2.
+
 Bot ADR-007/008/009/010 retain identity, Hub/core, coordinator and environment
 ownership. The proposed Hub may consume Electron mechanisms; a headless core may
 consume only pure/Node-safe modules and keeps its own Runtime/helper. Runtime

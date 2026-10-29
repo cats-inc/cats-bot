@@ -17,6 +17,18 @@ the owner's decision have buttons; the settings and first-run pages keep their f
 implemented in React. The pages' behavior is still defined by SPEC-001 FR-33 and SPEC-002; this
 document only adds reading and interaction.
 
+Owner-requested follow-up (2026-10-29):
+[Platform SPEC-134](https://github.com/cats-inc/cats-platform/blob/main/docs/specs/SPEC-134-reusable-platform-packages-and-consumer-boundaries.md)
+FR-15 through FR-20 and UI-1 through UI-6 require a Desktop-derived shared renderer
+for Desktop and Bot: user/agent bubbles, message-internal hierarchy, live/durable
+continuity, scoped interactions and narrow conversation layout. Bot adapters must
+preserve the necessary identities/block data through the core and transcript store;
+missing history cannot be repaired by a live-only renderer. That planned cutover
+supersedes the component-sharing non-goal below, not the implemented status of this
+spec. Other non-goals and Bot action/consent/redaction policies remain in force.
+See [ADR-003](../decisions/003-build-the-renderer-with-react-and-vite-like-cats-desktop.md)
+for the current-versus-pending boundary.
+
 ## Functional Requirements
 
 1. FR-1: Build. The renderer is built by Vite from `src/renderer` to `dist/renderer`, with page names
