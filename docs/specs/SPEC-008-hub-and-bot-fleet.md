@@ -35,6 +35,10 @@ cap; this version ships a cap of three bots.
 1. FR-1: One hub runs per OS account and installation, behind one Electron
    single-instance lock on the hub's user data (`%APPDATA%\Cats Bot` on
    Windows). A second launch hands its arguments to the running hub and exits.
+   The hub also takes a fleet lock in `<CATS_BOT_HOME>`, so two installations
+   pointed at one root never manage the same fleet: the later hub shows which
+   installation holds the lock and exits. Each installation keeps a random
+   installation id in its user data (FR-12).
 2. FR-2: The fleet registry is `<CATS_BOT_HOME>/fleet.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
    `environmentProfile` (ADR-010) and the coordinator holder (SPEC-009). Only
@@ -42,9 +46,13 @@ cap; this version ships a cap of three bots.
    fields get defaults; a corrupt file is reported and never overwritten
    (SPEC-001 FR-4 rules).
 3. FR-3: At start the hub reconciles the registry with `<root>/bots/` and
-   `<root>/archive/`. A directory without an entry is shown as unregistered for
-   the owner to add (as archived when it is under `archive/`); an entry without a
-   directory is shown as failed. Neither is deleted automatically.
+   `<root>/archive/`. The directory's location decides whether a bot is
+   archived: an entry whose directory is in the other folder gets `archivedAt`
+   set or cleared to match. A directory without an entry is shown as
+   unregistered for the owner to add (as archived when it is under `archive/`);
+   an entry without a directory is shown as failed. Neither is deleted
+   automatically. Only `<root>/trash/` holds deletions the owner has already
+   confirmed: the hub finishes them and removes any remaining entry (FR-5).
 4. FR-4: First run starts when no registry exists. The owner picks the
    environment profile (only native in this version), then creates the first bot
    with SPEC-002 FR-1's provider-first flow. The registry is then written, with
@@ -55,19 +63,26 @@ cap; this version ships a cap of three bots.
    separately. Removing a bot takes two separate steps, each with its own
    confirmation, and nothing skips the first:
    - **Archive** a bot that is not archived: the hub stops its core (FR-10),
-     renames `<root>/bots/<id>/` to `<root>/archive/<id>/` and records
-     `archivedAt`. An archived bot never runs and has no windows, tray items or
-     automatic start. It does not count toward the cap, and its id stays
-     reserved. Archiving the coordinator holder clears the role (SPEC-009). If
-     the rename fails, the bot stays registered and stopped and the error is
-     shown. An externally hosted bot (FR-11) cannot be archived while it runs.
-   - **Restore** an archived bot: the hub renames it back to `<root>/bots/<id>/`
-     and clears `archivedAt`, subject to the cap. It comes back stopped.
+     takes the bot root's instance lock (SPEC-001 FR-3) so no other host can
+     start it meanwhile, renames `<root>/bots/<id>/` to `<root>/archive/<id>/`,
+     records `archivedAt` and releases the lock. The rename is the commit
+     point; if the registry write fails after it, FR-3 repairs `archivedAt` at
+     the next start. An archived bot never runs and has no windows, tray items
+     or automatic start. It does not count toward the cap, and its id stays
+     reserved: `cats-bot run` refuses an id that has a directory under
+     `archive/` instead of creating a new bot root for it. Archiving the
+     coordinator holder clears the role (SPEC-009). If the lock or the rename
+     fails, the bot stays registered and stopped and the error is shown. An
+     externally hosted bot (FR-11) cannot be archived while it runs.
+   - **Restore** an archived bot, subject to the cap: the same steps back to
+     `<root>/bots/<id>/`, clearing `archivedAt`. It comes back stopped.
    - **Delete** an archived bot, and only an archived bot: after a confirmation
-     that names the bot, the hub permanently removes `<root>/archive/<id>/`,
-     including its encrypted secrets, and its registry entry. This cannot be
-     undone. The provider CLIs' own folders (`~/.codex`, `~/.claude`, …) are
-     not touched.
+     that names the bot, the hub renames `<root>/archive/<id>/` into
+     `<root>/trash/`, removes its registry entry and then removes the directory,
+     including its encrypted secrets. This cannot be undone. A delete that stops
+     partway finishes at the next start (FR-3), so a partly removed bot never
+     reappears as archived. The provider CLIs' own folders (`~/.codex`,
+     `~/.claude`, …) are not touched.
 6. FR-6: The fleet cap is the hub setting `maxBots`, 3 in this version and not
    offered in the UI. Archived bots do not count. Creating or restoring beyond
    it is refused in the UI and in the hub's own API. Tests cover at least two
@@ -80,29 +95,34 @@ cap; this version ships a cap of three bots.
    `cats-bot run`, given the bot id and `CATS_BOT_HOME`), with the same
    environment hygiene the core applies to Runtime (SPEC-001 FR-5). The hub also
    passes the packaged Runtime entry and desktop-control helper path, which
-   today only the shell supplies to an in-process core. The core takes the bot
-   root's instance lock (SPEC-001 FR-3).
+   today only the shell supplies to an in-process core, and names its
+   installation as the core's manager (FR-12). The core takes the bot root's
+   instance lock (SPEC-001 FR-3).
 8. FR-8: Cores never talk to each other directly. Anything crossing bots goes
    through the hub (SPEC-009).
 9. FR-9: If a core exits without being asked, the hub marks it failed and
    restarts it with backoff, a bounded number of times per window. After that the
    bot stays failed with its error and log location. Other bots and the hub are
    unaffected.
-10. FR-10: Quit gracefully stops every core this hub started, through the
+10. FR-10: Quit gracefully stops every core this hub manages, through the
     channel: the core stops its Runtime, CLI, helper and tool servers. The hub
-    kills a core's process tree only after a timeout. Externally hosted cores are
-    left running.
+    manages a core whose descriptor names this installation as its manager
+    (FR-12), including one started before the hub's own restart. The hub kills a
+    core's process tree only after a timeout. Externally hosted cores are left
+    running.
 11. FR-11: A core started by another host (for example a developer's
-    `cats-bot run`) also publishes its channel descriptor. The hub lists it in
-    Settings → Bots as externally hosted, with its state, and gives it no notes,
-    floating Cat or tray items. The hub attaches to its channel only to read its
-    state and to serve the hub identity (FR-21). It never starts a second copy,
-    never stops it on Quit and never restarts it.
+    `cats-bot run`) also publishes its channel descriptor, without this
+    installation as its manager. The hub lists it in Settings → Bots as
+    externally hosted, with its state, and gives it no notes, floating Cat or
+    tray items. The hub attaches to its channel only to read its state and to
+    serve the hub identity (FR-21). It never starts a second copy, never stops it
+    on Quit and never restarts it.
 
 ### Host channel
 
 12. FR-12: Each core publishes a channel descriptor in its bot root: protocol
-    version, socket path, a per-start random token and PID, readable by the
+    version, socket path, a per-start random token, PID and manager (the
+    installation id of the hub that started it, or none), readable by the
     current account only. The transport is a named pipe on Windows and a 0600
     Unix socket elsewhere, as for today's owner control. Existing CLI control
     operations (`interactions`, `respond`, `capabilities`, `desktop`) keep
@@ -115,14 +135,19 @@ cap; this version ships a cap of three bots.
 
     Requests are authenticated and size-bounded, and their bodies are never
     logged. A protocol version mismatch is refused and shown, not worked around.
+
+    A host attaches without a gap. It subscribes first and buffers events, then
+    reads the snapshots (transcript, work items, interactions, desktop control
+    state). Each snapshot carries the last sequence number it includes, and the
+    host applies only buffered events above it. A later gap in sequence numbers
+    makes the host read the snapshots again.
 14. FR-14: The channel adds no new way to create an owner-sourced work item. A
     message typed in a hub note is an owner message exactly as it is today, and
     SPEC-006's local-owner-turn rule gives the same result as now. The only new
     work-item source is `bot`, for coordinator work (SPEC-009).
 15. FR-15: When the hub reattaches after its own restart, it verifies each
-    descriptor's PID and token, rebuilds view state from snapshots (transcript,
-    work items, interactions, desktop control state) and then resubscribes.
-    Events are not persisted for replay.
+    descriptor's PID and token, then attaches as in FR-13 and rebuilds view
+    state from the snapshots. Events are not persisted for replay.
 
 ### Presentation
 
@@ -156,7 +181,7 @@ cap; this version ships a cap of three bots.
     externally hosted cores too, whose executable is not the hub's. When the hub
     PID changes, the core updates the helper before it serves another
     desktop-control call (SPEC-006 BDC-08).
-22. FR-22: Updates are hub-owned. Installing stops every hub-started core,
+22. FR-22: Updates are hub-owned. Installing stops every core the hub manages,
     refuses while an externally hosted core runs from this installation (and
     says which), installs, relaunches the hub and restarts the cores. This
     replaces the cross-shell exclusion of ADR-004 for hub-hosted bots.
@@ -170,6 +195,19 @@ cap; this version ships a cap of three bots.
     through it while the hub runs. Without a running hub they refuse instead of
     writing the registry themselves.
 
+### Desktop control across the fleet
+
+26. FR-26: At most one bot controls the desktop at a time. A core takes the
+    desktop lease before a turn takes control (SPEC-006) and before a clipboard
+    call. The lease is a lock scoped to the OS account's desktop session, not to
+    `CATS_BOT_HOME`, and the OS releases it when the process holding it exits.
+    Cores take it themselves, so externally hosted cores obey it without the hub
+    and FR-11 is unchanged. A turn keeps the lease until its control ends: the
+    end of the turn (SPEC-133 DC-11), Stop (DC-12) or the core stopping. A call
+    that cannot take the lease returns `unavailable` with the reason that
+    another bot is using the desktop; SPEC-133's shared error codes are
+    unchanged.
+
 ### Non-Functional Requirements
 
 - **Performance**: record working set and time to first usable note for the hub
@@ -177,6 +215,12 @@ cap; this version ships a cap of three bots.
   baseline of about 560 MB for one bot (ADR-008).
 - **Security**: channel tokens are 32 random bytes and current account only; the
   hub never holds Runtime credentials; renderers stay sandboxed and bot-scoped.
+  A token authenticates the OS account, not the owner. Any process of that
+  account that can read a descriptor can use it, including a native provider
+  CLI with file access, as with today's owner control. The hub's refusals
+  (SPEC-009 FR-6) therefore limit its API, not such processes. This is not a
+  security boundary; only a non-native environment such as docker isolates a
+  bot (ADR-010), and this version offers none.
 - **Reliability**: a hub crash leaves cores running and a restarted hub recovers
   them; one core's failure affects no other bot.
 
@@ -203,6 +247,11 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
       deleted (FR-5).
 - [x] Externally hosted cores (2026-10-29): listed with their state, not
       presented (FR-11).
+- [x] Desktop control across bots (2026-10-29, after review): one lease scoped
+      to the OS account that every core takes itself, so FR-11 is unchanged
+      (FR-26).
+- [x] Strength of the hub's limits (2026-10-29, after review): API refusals,
+      stated as not a security boundary (Security).
 
 ## References
 

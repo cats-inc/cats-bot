@@ -22,7 +22,9 @@ owner answers a bot's questions.
 
 - **A role, not a kind of bot.** The fleet registry names zero or one coordinator.
   The first bot created at first run holds it by default. Any bot can hold it,
-  and archiving the holder leaves the role vacant.
+  and archiving the holder leaves the role vacant. A holder whose provider
+  cannot load session MCP servers keeps the role without its tools, and the hub
+  shows why.
 - **Coordination only.** The holder's core attaches an extra session MCP server
   (`cats-fleet`) to its sessions only while the hub confirms that it holds the
   role. The decision is made before every send, as for `cats-desktop`. The hub
@@ -40,7 +42,9 @@ owner answers a bot's questions.
   - read another bot's transcripts beyond the replies to its own requests;
   - archive or delete bots, or change who holds the role.
   Work it hands over runs under the target bot's own policy and approvals, and is
-  not an owner turn.
+  not an owner turn. These are refusals of the role's tools and the hub's API,
+  not a sandbox: a native provider CLI still runs under the owner's OS account
+  with its file access, limited only by its own provider policy.
 - **Owner confirmation** is required before creating a bot, before starting a bot
   the owner stopped, and before any role transfer.
 - **Transfer.** The owner assigns or clears the holder in Settings. The holder may
@@ -50,7 +54,8 @@ owner answers a bot's questions.
   with per-chain and per-hour limits (by default 4 hops and 10 messages per hour,
   adjustable by the owner). Only the holder can start a chain, and other bots can
   only reply to it. Every coordinator action is recorded in the hub log and in the
-  journals of both bots.
+  journals of both bots. Each delivery has an id, so a crash on either side
+  neither loses nor repeats it.
 - **Native environments only** until Runtime supports session MCP in other
   environments (ADR-010).
 
@@ -65,8 +70,8 @@ owner answers a bot's questions.
 
 ### Negative
 
-- The hub becomes a broker for cross-bot work: it needs queues, limits and
-  error reporting for the coordinator's calls.
+- The hub becomes a broker for cross-bot work: it needs queues, a durable
+  delivery log, limits and error reporting for the coordinator's calls.
 - Confirmation prompts can interrupt the owner. Only creating or waking capacity
   and role transfers ask; messaging and stopping a bot do not.
 
