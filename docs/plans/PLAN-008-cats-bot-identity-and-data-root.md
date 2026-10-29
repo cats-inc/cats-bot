@@ -27,8 +27,8 @@ repository, so the local folder rename cannot strand anyone's work.
 ### Phase 0: Preconditions
 
 - [ ] 0.1: No open PRs and no worktrees other than this work's own.
-- [ ] 0.2: SPEC-007 open questions answered (`CATS_BOT_HOME` meaning; whether
-      0.3.0 waits for PLAN-009).
+- [x] 0.2: SPEC-007 open questions answered on 2026-10-29: `CATS_BOT_HOME` is
+      the ecosystem root, and 0.3.0 waits for PLAN-009.
 
 ### Phase 1: Repository changes (one PR)
 
@@ -93,7 +93,7 @@ repository, so the local folder rename cannot strand anyone's work.
 
 **Deliverables**: the workspace builds and syncs with the new member name.
 
-### Phase 4: First 0.3.0 release (with or after PLAN-009, per SPEC-007)
+### Phase 4: First 0.3.0 release (after PLAN-009 Phase 6, per SPEC-007 FR-8)
 
 - [ ] 4.1: Release notes per SPEC-007 FR-8; owner reinstalls on the
       development machine and removes `~/.cats/bots` by hand.
@@ -120,7 +120,8 @@ Phase 1 occurrences found on 2026-10-29 (`2d17069`):
 - No compatibility shims: an old variable or path is ignored, not translated
   (ADR-007).
 - AUMID changes twice (here, then in PLAN-009) rather than waiting, so this
-  plan stays independent of the hub.
+  plan stays independent of the hub. No release ships between them, so only
+  development builds see the intermediate form.
 
 ## Testing Strategy
 
@@ -145,6 +146,7 @@ Phase 1 occurrences found on 2026-10-29 (`2d17069`):
 | Date | Update |
 |------|--------|
 | 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
+| 2026-10-29 | Owner answered SPEC-007's open questions: `CATS_BOT_HOME` is `~/.catsbot`; 0.3.0 ships with the hub. |
 
 ---
 
