@@ -254,11 +254,12 @@ Each entry names where it is implemented.
   a cipher is configured. Telegram starts once its token is read, so a later
   start or a stop supersedes an attempt still waiting.
 - **D5, the shell's core process (1.3).**
-  - The shell starts `dist/cli/main.js run` with its own executable as Node,
-    detached and hidden. The core writes its log lines to
-    `<bot root>/logs/core.log` (the previous start's log is kept as
-    `core.previous.log`); stdout, which carries conversation text in a
-    terminal, is discarded.
+  - The shell starts `dist/cli/main.js run --json` with its own executable as
+    Node, detached and hidden. The core keeps writing its log to
+    `<bot root>/logs/core.log`. Its stderr, such as a crash before that log
+    opens, goes to `core-stderr.log`, and the previous start's copy is kept as
+    `core-stderr.previous.log`. Its stdout carries events with conversation
+    text and is discarded.
   - The manager a shell names is derived from its executable path, so a shell
     reattaches only to cores started by the same installation. A core with any
     other manager, or a `cats-bot run`, gets today's "another instance" dialog.

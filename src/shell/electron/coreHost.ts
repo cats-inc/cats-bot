@@ -70,9 +70,10 @@ export interface HostedCore {
   stop(timeoutMs?: number): Promise<void>;
 }
 
+/** `--json` keeps the log lines out of stderr; the core writes them to its own log file. */
 export function coreArguments(launch: CoreLaunch): string[] {
   return [
-    launch.entry, 'run', '--id', launch.botId, '--manager', launch.manager,
+    launch.entry, 'run', '--id', launch.botId, '--manager', launch.manager, '--json',
     ...(launch.hostCipher ? ['--host-cipher', launch.hostCipher] : []),
     ...(launch.runtimeEntry ? ['--runtime-entry', launch.runtimeEntry] : []),
     ...(launch.helperPath ? ['--desktop-control-helper', launch.helperPath] : []),
@@ -91,8 +92,14 @@ export function coreEnvironment(launch: CoreLaunch): NodeJS.ProcessEnv {
   return env;
 }
 
+/** The log the core writes itself. */
 export function coreLogFile(root: string): string {
   return join(botPathsFor(root).logs, 'core.log');
+}
+
+/** What the core's process printed to stderr, such as a crash before its log opened; kept per start. */
+export function coreErrorFile(root: string): string {
+  return join(botPathsFor(root).logs, 'core-stderr.log');
 }
 
 /** Reattaches to this installation's running core for the bot in `root`, or starts one. */
@@ -131,18 +138,19 @@ function connect(root: string, options: CoreHostOptions): Promise<HostChannelCli
 
 async function startCore(root: string, launch: CoreLaunch, options: CoreHostOptions): Promise<HostedCore> {
   const logFile = coreLogFile(root);
-  mkdirSync(join(logFile, '..'), { recursive: true });
+  const errorFile = coreErrorFile(root);
+  mkdirSync(join(errorFile, '..'), { recursive: true });
   try {
-    renameSync(logFile, join(logFile, '..', 'core.previous.log'));
+    renameSync(errorFile, join(errorFile, '..', 'core-stderr.previous.log'));
   } catch { /* the first start */ }
-  const stderr = openSync(logFile, 'w', 0o600);
+  const stderr = openSync(errorFile, 'w', 0o600);
   let child: ChildProcess;
   try {
     child = spawn(launch.execPath, coreArguments(launch), {
       env: coreEnvironment(launch),
       detached: true,
       windowsHide: true,
-      // In a terminal stdout carries conversation text; only the log lines are kept.
+      // stdout carries the events, conversation text included; it is never kept.
       stdio: ['ignore', 'ignore', stderr],
     });
   } finally {
@@ -159,7 +167,7 @@ async function startCore(root: string, launch: CoreLaunch, options: CoreHostOpti
   }, options.startTimeoutMs ?? 60_000);
   if (published !== 'published') {
     if (pid && !ended) killTree(pid);
-    throw new Error(`The Bot core did not start (${ended ?? 'timed out'}). Its log is ${logFile}.`);
+    throw new Error(`The Bot core did not start (${ended ?? 'timed out'}). See ${errorFile} and ${logFile}.`);
   }
   return hosted(await connect(root, options), pid!, true, logFile);
 }
