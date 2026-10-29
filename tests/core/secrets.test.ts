@@ -6,7 +6,7 @@ import { after, before, test } from 'node:test';
 import { writeHandoff } from '../../src/core/store/lock.ts';
 import { resolveBotRoot } from '../../src/core/store/paths.ts';
 
-import { FileSecretStore, SECRET_TELEGRAM_TOKEN, secretsPath, type SecretCipher } from '../../src/core/secrets.ts';
+import { FileSecretStore, SECRET_TELEGRAM_TOKEN, secretsPath, type AsyncSecretCipher, type SecretCipher } from '../../src/core/secrets.ts';
 import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts';
 
 let home: TempHome;
@@ -91,4 +91,93 @@ test('telegramStatus reports the stored token protection, and a reloadToken hand
   } finally {
     await core.stop();
   }
+});
+
+// The review of PLAN-009 1.2: a host's cipher answers later, so nothing may write an old copy.
+function gatedCipher() {
+  let open: () => void = () => {};
+  const gate = new Promise<void>((resolve) => { open = resolve; });
+  const cipher: AsyncSecretCipher = {
+    label: 'host',
+    encrypt: async (plain) => {
+      await gate;
+      return Buffer.from(`enc:${plain}`);
+    },
+    decrypt: async (data) => data.toString('utf8').slice(4),
+  };
+  return { cipher, open: () => open() };
+}
+
+test('an upgrade that waits for the host cipher keeps a secret deleted or set meanwhile', async () => {
+  const root = join(home.root, 'race-upgrade');
+  mkdirSync(root, { recursive: true });
+  const plain = new FileSecretStore(root);
+  plain.set('cleared', 'T1-old');
+  plain.set('replaced', 'B-old');
+  plain.set('kept', 'K-old');
+  const { cipher, open } = gatedCipher();
+  const store = new FileSecretStore(root, { asyncCipher: cipher });
+  const upgrading = store.protectAtRestAsync();
+  store.delete('cleared');
+  const setting = store.setAsync('replaced', 'B-new');
+  open();
+  await Promise.all([upgrading, setting]);
+  assert.equal(await store.getAsync('cleared'), null, 'a deleted secret stays deleted');
+  assert.equal(await store.getAsync('replaced'), 'B-new');
+  assert.equal(await store.getAsync('kept'), 'K-old');
+  assert.equal(store.protectionOf('kept'), 'os', 'an untouched secret is still upgraded');
+});
+
+test('the last set of a secret wins, even when an earlier one is still being encrypted', async () => {
+  const root = join(home.root, 'race-set');
+  mkdirSync(root, { recursive: true });
+  let release: () => void = () => {};
+  const slow = new Promise<void>((resolve) => { release = resolve; });
+  const store = new FileSecretStore(root, {
+    asyncCipher: {
+      label: 'host',
+      encrypt: async (plain) => {
+        if (plain === 'first') await slow;
+        return Buffer.from(`enc:${plain}`);
+      },
+      decrypt: async (data) => data.toString('utf8').slice(4),
+    },
+  });
+  const first = store.setAsync('token', 'first');
+  await store.setAsync('token', 'second');
+  release();
+  await first;
+  assert.equal(await store.getAsync('token'), 'second');
+  const third = store.setAsync('token', 'first');
+  store.delete('token');
+  release();
+  await third;
+  assert.equal(store.has('token'), false, 'a delete after a set still in flight wins');
+});
+
+test('a token handed off while no host serves the cipher still starts Telegram (review of 1.2)', async () => {
+  // A Telegram API that holds every long poll until it is aborted.
+  const fakeFetch = ((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+    init?.signal?.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { name: 'AbortError' })), { once: true });
+  })) as unknown as typeof fetch;
+  const logs: string[] = [];
+  const { core } = openTestBot({
+    botsHome: home.botsHome, id: 'reload-no-host',
+    core: {
+      telegram: { fetch: fakeFetch, apiBaseUrl: 'http://127.0.0.1:9' },
+      hostCipher: 'host-label', channel: { hostRequestTimeoutMs: 300 },
+      handoffPollMs: 50,
+      log: (line: string) => logs.push(line),
+    },
+  });
+  await core.updateProfile({ telegram: { enabled: true } });
+  await core.start();
+  try {
+    new FileSecretStore(core.paths.root).set(SECRET_TELEGRAM_TOKEN, '123:from-cli');
+    writeHandoff(core.paths, { kind: 'telegram', payload: { reloadToken: true } });
+    const deadline = Date.now() + 5_000;
+    while (!core.status().telegram.polling && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(core.status().telegram.polling, true, logs.join('\n'));
+    assert.ok(logs.some((line) => line.includes('secret re-store deferred')), logs.join('\n'));
+  } finally { await core.stop(); }
 });

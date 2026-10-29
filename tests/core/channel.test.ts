@@ -151,17 +151,22 @@ test('events arrive numbered, and attach applies only the events above the snaps
     core.emit(event(2));
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.deepEqual(seen, [1, 2]);
-    // listWorkItems emits event 3 while it builds its snapshot; the snapshot reflects sequence 2.
-    const applied: string[] = [];
-    const { value, detach } = await client.attach(
-      async () => client.callWithSeq('listWorkItems') as Promise<{ value: WorkItem[]; seq: number }>,
-      (applied_, seq) => applied.push(`${(applied_ as { detail?: string }).detail}@${seq}`),
-    );
-    assert.deepEqual(value, []);
-    assert.deepEqual(applied, ['e99@3'], 'the event during the snapshot is applied, the earlier ones are not');
-    core.emit(event(4));
+    // Event 3 arrives after attach subscribed but before the snapshot request, so the
+    // snapshot includes it; listWorkItems emits event 4 while it builds that snapshot.
+    const steps: string[] = [];
+    const detach = await client.attach({
+      snapshot: async () => {
+        core.emit(event(3));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return client.callWithSeq('listWorkItems') as Promise<{ value: WorkItem[]; seq: number }>;
+      },
+      install: (value) => steps.push(`install ${value.length}`),
+      apply: (applied, seq) => steps.push(`${(applied as { detail?: string }).detail}@${seq}`),
+    });
+    assert.deepEqual(steps, ['install 0', 'e99@4'], 'the snapshot first, then only the events it does not include');
+    core.emit(event(5));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.deepEqual(applied, ['e99@3', 'e4@4']);
+    assert.deepEqual(steps, ['install 0', 'e99@4', 'e5@5']);
     detach();
     assert.equal(gaps, 0);
   } finally { client.close(); await server.stop(); }
@@ -256,4 +261,72 @@ test('a response reaches its caller before an event the core wrote after it (FR-
     client.close();
     await new Promise<void>((resolve) => raw.close(() => resolve()));
   }
+});
+
+test('a late answer to a request that timed out is dropped, and the connection stays (review of 1.1)', async () => {
+  const { root, server } = await started({ hostRequestTimeoutMs: 100 });
+  let release: () => void = () => {};
+  const slow = new Promise<void>((resolve) => { release = resolve; });
+  const client = await HostChannelClient.connect(root, {
+    host,
+    services: { cipher: { label: 'slow', encrypt: async (plain) => { await slow; return Buffer.from(plain); }, decrypt: (data) => data.toString('utf8') } },
+  });
+  try {
+    await assert.rejects(server.cipher('slow').encrypt('x'), (error: ChannelError) => error.reason === 'timeout');
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(client.isClosed, false, 'the host is still attached');
+    assert.equal(server.hosts().length, 1);
+    assert.equal(await server.cipher('slow').decrypt(Buffer.from('still here')), 'still here');
+  } finally { client.close(); await server.stop(); }
+});
+
+test('a refused connection is cut off and its later frames are ignored', async () => {
+  const { root, core, server } = await started();
+  try {
+    const descriptor = readChannelDescriptor(root);
+    const socket = createConnection({ path: descriptor.socket, allowHalfOpen: true });
+    const reader = new FrameReader();
+    const frames: Array<Record<string, unknown>> = [];
+    socket.on('data', (chunk: Buffer) => frames.push(...(reader.push(chunk) as Array<Record<string, unknown>>)));
+    socket.on('error', () => undefined);
+    await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
+    socket.write(`${JSON.stringify({ t: 'hello', protocol: CHANNEL_PROTOCOL, token: 'f'.repeat(64), host })}\n`);
+    socket.write(`${JSON.stringify({ t: 'hello', protocol: CHANNEL_PROTOCOL, token: descriptor.token, host })}\n`);
+    socket.write(`${JSON.stringify({ t: 'req', id: 1, m: 'getProfile', a: [] })}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    assert.deepEqual(frames, [{ t: 'refused', reason: 'token', protocol: CHANNEL_PROTOCOL }], 'no second hello, no answer');
+    assert.deepEqual(core.calls, []);
+    // The core has cut the connection off although this side kept it open.
+    const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+    socket.write('{}\n');
+    await closed;
+    // Before its hello, a connection never buffers more than a small frame.
+    const big = createConnection(descriptor.socket);
+    const bigClosed = new Promise<void>((resolve) => big.on('close', () => resolve()));
+    big.on('error', () => undefined);
+    big.write(`{"t":"hello","pad":"${'x'.repeat(128 * 1024)}`);
+    await bigClosed;
+  } finally { await server.stop(); }
+});
+
+test('a host cipher answer that is not text is refused, not stored', async () => {
+  const { root, server } = await started({ hostRequestTimeoutMs: 2_000 });
+  const client = await HostChannelClient.connect(root, {
+    host,
+    services: { cipher: { label: 'odd', encrypt: () => Buffer.from('x'), decrypt: () => 42 as unknown as string } },
+  });
+  try {
+    await assert.rejects(server.cipher('odd').decrypt(Buffer.from('x')), (error: ChannelError) => error.reason === 'frame');
+  } finally { client.close(); await server.stop(); }
+});
+
+test('a welcome from another process than the descriptor names is refused (FR-15)', async () => {
+  const { root, server } = await started();
+  try {
+    const descriptor = readChannelDescriptor(root);
+    const moved = tempRoot();
+    writeFileSync(channelDescriptorFile(moved), JSON.stringify({ ...descriptor, pid: descriptor.pid + 1 }));
+    await assert.rejects(HostChannelClient.connect(moved, { host }), (error: ChannelError) => error.reason === 'descriptor');
+  } finally { await server.stop(); }
 });

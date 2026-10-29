@@ -235,6 +235,8 @@ export class BotCore implements BotHostApi {
       onHostsChanged: (hosts) => {
         this.log(`channel hosts: ${hosts.map((host) => `pid ${host.pid}`).join(', ') || 'none'}`);
         this.desktop.setHosts(hosts);
+        // A token that waited for a host's cipher is read once one attaches.
+        if (hosts.length > 0) this.startTelegram();
       },
     });
     this.stoppedSignal = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
@@ -546,6 +548,8 @@ export class BotCore implements BotHostApi {
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
     await this.channel.start();
+    // A host may stop the core over the channel while it is still starting.
+    if (this.stopped) return;
 
     this.conversations.load();
     this.conversations.home();
@@ -576,7 +580,9 @@ export class BotCore implements BotHostApi {
       await this.toolServer.start();
       this.log('tool server listening on loopback');
     }
+    if (this.stopped) return;
     await this.ensureRuntime();
+    if (this.stopped) return;
     const pollMs = this.options.handoffPollMs ?? 1_500;
     this.handoffTimer = setInterval(() => this.drainHandoffs(), pollMs);
     this.handoffTimer.unref?.();
@@ -584,6 +590,11 @@ export class BotCore implements BotHostApi {
     this.startTelegram();
     this.pump();
     } catch (error) {
+      // A stop that raced this start cleans up itself.
+      if (this.stopped) {
+        await this.whenStopped();
+        return;
+      }
       try { await this.stop(); }
       finally {
         await this.control.stop();
@@ -607,7 +618,9 @@ export class BotCore implements BotHostApi {
     void this.secrets.getAsync(SECRET_TELEGRAM_TOKEN).then((token) => {
       if (generation !== this.telegramGeneration || this.telegram || this.stopped || !this.profile.telegram.enabled) return;
       if (!token) {
-        this.log('telegram enabled but no token is stored; polling not started');
+        this.log(this.secrets.has(SECRET_TELEGRAM_TOKEN)
+          ? 'telegram token could not be opened; polling starts when a host serves its cipher'
+          : 'telegram enabled but no token is stored; polling not started');
         return;
       }
       this.beginTelegram(token);
@@ -734,6 +747,7 @@ export class BotCore implements BotHostApi {
     switch (event.type) {
       case 'state':
         this.bus.emit({ type: 'runtime.status', state: event.state, ...(event.detail ? { detail: event.detail } : {}) });
+        if (event.state === 'ready') this.retryRuntimeDeferred();
         break;
       case 'exit':
         this.log(`runtime exited code=${event.code ?? ''} signal=${event.signal ?? ''} expected=${event.expected}`);
@@ -751,6 +765,24 @@ export class BotCore implements BotHostApi {
       default:
         break;
     }
+  }
+
+  /**
+   * A turn sent while the Runtime was still starting (a host attaches before
+   * that) runs once it is ready, not when its retry delay ends.
+   */
+  private retryRuntimeDeferred(): void {
+    let woke = false;
+    for (const [id, entry] of [...this.deferred]) {
+      const current = this.workItems.get(id);
+      if (current?.state !== 'queued' || current.error !== 'runtime_unavailable') continue;
+      clearTimeout(entry.timer);
+      this.timers.delete(entry.timer);
+      this.deferred.delete(id);
+      this.queue.enqueue(current);
+      woke = true;
+    }
+    if (woke) this.pump();
   }
 
   private drainHandoffs(): void {
@@ -794,7 +826,9 @@ export class BotCore implements BotHostApi {
         // when this host has a cipher, re-stores it encrypted.
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ telegram: { enabled: payload.enabled } });
         if (payload.reloadToken === true) {
-          await this.protectSecretsAtRest();
+          // Re-storing waits for the host's cipher; the reload does not (SPEC-008 FR-15).
+          await this.protectSecretsAtRest().catch((error: unknown) =>
+            this.log(`secret re-store deferred: ${error instanceof Error ? error.message : 'error'}`));
           await this.stopTelegram();
           this.startTelegram();
         }

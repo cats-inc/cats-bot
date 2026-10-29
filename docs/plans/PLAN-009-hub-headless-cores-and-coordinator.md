@@ -253,6 +253,13 @@ Each entry names where it is implemented.
   30 seconds for a host that serves that label; status says `os` only when such
   a cipher is configured. Telegram starts once its token is read, so a later
   start or a stop supersedes an attempt still waiting.
+  - Writes of one secret take effect in call order: the last set or delete
+    wins, even while an earlier set still waits for the cipher. Re-storing
+    reads the file again and replaces only entries that still hold the same
+    plain value.
+  - A token that could not be opened is read again when a host attaches, and
+    a token handed off while no host serves the cipher starts Telegram anyway;
+    it is re-stored encrypted later.
 - **D5, the shell's core process (1.3).**
   - The shell starts `dist/cli/main.js run --json` with its own executable as
     Node, detached and hidden. The core keeps writing its log to
@@ -286,6 +293,10 @@ Each entry names where it is implemented.
   shell's process, which changed only the shell's PATH. The new host-only
   command `useCommandDirectory` puts that directory first on the core's PATH
   too, so the next Runtime start finds it without a restart (ADR-006).
+- **D10, turns before the Runtime is ready (1.3).** A host can send as soon as
+  the channel is up, while the Runtime still starts. Such a turn used to wait
+  for its 30-second retry; it now runs as soon as the Runtime is ready, for
+  every host including the CLI.
 
 ## Progress Log
 
@@ -297,6 +308,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
 | 2026-10-30 | Owner asked for the whole plan unattended, decisions logged above. Task 1.6 implemented: 246 tests, typecheck and build passed on Windows. |
 | 2026-10-30 | Tasks 1.1 and 1.2 implemented: the host channel and `cats-bot run` as a channel-hosted core. An integration test runs `cats-bot run` with the packed Runtime and the fixture CLI, converses through the channel and stops it there. |
+| 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
 | 2026-10-30 | Tasks 1.3 to 1.5 implemented. With the real Electron shell in an isolated home (Windows 11, fixture CLI): the shell started its core as a separate process; killing the shell left the core running; a new shell reattached to the same core; `cats-bot quit` ended both. First working set: shell 461 MB over five Electron processes, core 64 MB, Runtime 80 MB, fixture CLI 59 MB. |
 
 ---

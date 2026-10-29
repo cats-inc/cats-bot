@@ -92,6 +92,15 @@ export class FileSecretStore implements SecretStore {
       : this.asyncCipher;
   }
 
+  /** Each set or delete of a name, so that an older one still encrypting does not write. */
+  private readonly changes = new Map<string, number>();
+
+  private supersede(name: string): number {
+    const change = (this.changes.get(name) ?? 0) + 1;
+    this.changes.set(name, change);
+    return change;
+  }
+
   private read(): SecretsFile {
     const read = readJsonFile<Partial<SecretsFile>>(this.path);
     if (!read.ok || typeof read.value !== 'object' || read.value === null) {
@@ -160,6 +169,7 @@ export class FileSecretStore implements SecretStore {
 
   set(name: string, value: string): void {
     this.assertSync();
+    this.supersede(name);
     const file = this.read();
     file.entries[name] = this.cipher
       ? { cipher: this.cipher.label, value: this.cipher.encrypt(value).toString('base64') }
@@ -167,15 +177,26 @@ export class FileSecretStore implements SecretStore {
     this.write(file);
   }
 
+  /**
+   * The host's cipher answers later, so the file is read again before writing:
+   * only an entry still holding the same unprotected value is replaced, and a
+   * secret set or deleted meanwhile keeps that change.
+   */
   async protectAtRestAsync(): Promise<number> {
     const codec = this.codec();
     if (!codec) return 0;
-    const file = this.read();
-    let upgraded = 0;
-    for (const [name, entry] of Object.entries(file.entries)) {
+    const protectedValues = new Map<string, { from: string; to: string }>();
+    for (const [name, entry] of Object.entries(this.read().entries)) {
       if (entry.cipher !== 'none') continue;
       const plain = Buffer.from(entry.value, 'base64').toString('utf8');
-      file.entries[name] = { cipher: codec.label, value: (await codec.encrypt(plain)).toString('base64') };
+      protectedValues.set(name, { from: entry.value, to: (await codec.encrypt(plain)).toString('base64') });
+    }
+    const file = this.read();
+    let upgraded = 0;
+    for (const [name, { from, to }] of protectedValues) {
+      const current = file.entries[name];
+      if (current?.cipher !== 'none' || current.value !== from) continue;
+      file.entries[name] = { cipher: codec.label, value: to };
       upgraded += 1;
     }
     if (upgraded > 0) this.write(file);
@@ -199,17 +220,21 @@ export class FileSecretStore implements SecretStore {
     }
   }
 
+  /** The latest set or delete of a secret wins, even when an earlier set is still being encrypted. */
   async setAsync(name: string, value: string): Promise<void> {
+    const change = this.supersede(name);
     const codec = this.codec();
     const stored = codec
       ? { cipher: codec.label, value: (await codec.encrypt(value)).toString('base64') }
       : { cipher: 'none', value: Buffer.from(value, 'utf8').toString('base64') };
+    if (this.changes.get(name) !== change) return;
     const file = this.read();
     file.entries[name] = stored;
     this.write(file);
   }
 
   delete(name: string): void {
+    this.supersede(name);
     const file = this.read();
     if (!(name in file.entries)) return;
     delete file.entries[name];
