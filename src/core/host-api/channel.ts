@@ -60,6 +60,12 @@ export interface ChannelHostServices {
     encrypt(plain: string): Buffer | Promise<Buffer>;
     decrypt(data: Buffer): string | Promise<string>;
   };
+  /**
+   * SPEC-009: the hub's side of the coordinator tools. The hub decides from
+   * the connection which bot is calling; the core's own claims count for
+   * nothing.
+   */
+  hub?(call: unknown): Promise<unknown>;
 }
 
 export class ChannelError extends Error {
@@ -226,6 +232,8 @@ class HostConnection extends Peer {
   refused = false;
   host: ChannelHostIdentity | null = null;
   cipherLabel: string | null = null;
+  /** SPEC-009: the host brokers the coordinator tools. */
+  hub = false;
   /**
    * Conversations this host shows. Their views close with its connection, so a
    * host that crashed leaves no note focused (FR-15: a host that reattaches
@@ -330,6 +338,16 @@ export class HostChannelServer {
     };
   }
 
+  /**
+   * SPEC-009: a coordinator tool call, for the attached hub to authorize and
+   * carry out. It waits for no host: without a hub the tool is unavailable.
+   */
+  async hubCall(call: unknown, timeoutMs = 15 * 60_000): Promise<unknown> {
+    const host = [...this.connections].reverse().find((c) => c.ready && c.hub);
+    if (!host) throw new ChannelError('The Cats Bot hub is not attached.', 'no_host');
+    return resultOf(await host.request('hub.call', [call], timeoutMs));
+  }
+
   /** The newest attached host offering the cipher, waiting for one to attach until the timeout. */
   private async requestHost(label: string, method: string, args: unknown[]): Promise<unknown> {
     const timeoutMs = this.options.hostRequestTimeoutMs ?? 30_000;
@@ -419,6 +437,7 @@ export class HostChannelServer {
       const services = isJson(frame.services) ? frame.services : {};
       connection.host = host;
       connection.cipherLabel = typeof services.cipher === 'string' && services.cipher.length <= 100 ? services.cipher : null;
+      connection.hub = services.hub === true;
       connection.ready = true;
       connection.send({ t: 'welcome', protocol: CHANNEL_PROTOCOL, pid: process.pid, seq: this.seq });
       this.hostsChanged();
@@ -563,7 +582,10 @@ export class HostChannelClient {
       };
       this.peer.send({
         t: 'hello', protocol: CHANNEL_PROTOCOL, token: this.descriptor.token, host: this.options.host,
-        services: this.options.services?.cipher ? { cipher: this.options.services.cipher.label } : {},
+        services: {
+          ...(this.options.services?.cipher ? { cipher: this.options.services.cipher.label } : {}),
+          ...(this.options.services?.hub ? { hub: true } : {}),
+        },
       });
     });
   }
@@ -734,11 +756,14 @@ export class HostChannelClient {
     const args = Array.isArray(frame.a) ? frame.a : [];
     try {
       const cipher = this.options.services?.cipher;
+      const hub = this.options.services?.hub;
       let value: unknown;
       if (frame.m === 'cipher.encrypt' && cipher && typeof args[0] === 'string') {
         value = (await cipher.encrypt(args[0])).toString('base64');
       } else if (frame.m === 'cipher.decrypt' && cipher && typeof args[0] === 'string') {
         value = await cipher.decrypt(Buffer.from(args[0], 'base64'));
+      } else if (frame.m === 'hub.call' && hub) {
+        value = (await hub(args[0])) ?? null;
       } else {
         throw new ChannelError('Unsupported host service.', 'method');
       }

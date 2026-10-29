@@ -2,8 +2,8 @@ import { delimiter, isAbsolute } from 'node:path';
 
 import { isTerminalWorkState } from '../queue/workItems.ts';
 import type {
-  ApprovalDecision, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus, ConversationRecord,
-  DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
+  ApprovalDecision, BotDelivery, BotDeliveryState, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus,
+  ConversationRecord, DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
 } from '../types.ts';
 
 /**
@@ -27,7 +27,8 @@ export const CORE_COMMANDS = [
 
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
 export const HOST_ONLY_COMMANDS = [
-  'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory', 'quit',
+  'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory',
+  'admitBotMessage', 'botDeliveries', 'setCoordinator', 'quit',
 ] as const;
 
 export type CoreCommand = (typeof CORE_COMMANDS)[number] | (typeof HOST_ONLY_COMMANDS)[number];
@@ -50,6 +51,32 @@ export interface CoreCommandTarget extends BotHostApi {
   protectSecretsAtRest(): Promise<number>;
   /** The directory of a provider CLI the host's setup found or installed, put first on PATH (ADR-006). */
   useCommandDirectory(directory: string): MaybePromise<void>;
+  /** SPEC-009 FR-7 and FR-12: a delivery from another bot, admitted once per delivery id. */
+  admitBotMessage(delivery: BotDelivery): MaybePromise<WorkItem>;
+  /** SPEC-009 FR-12: how the named deliveries stand, read from the journal. */
+  botDeliveries(deliveryIds: string[]): MaybePromise<BotDeliveryState[]>;
+  /** SPEC-009 FR-3: whether the hub reports this bot as the coordinator holder. */
+  setCoordinator(holder: boolean): MaybePromise<void>;
+}
+
+const MAX_DELIVERY_TEXT = 64 * 1024;
+
+function asDelivery(value: unknown): BotDelivery {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('delivery must be an object');
+  const raw = value as Record<string, unknown>;
+  const hop = raw.hop;
+  if (typeof hop !== 'number' || !Number.isSafeInteger(hop) || hop < 1 || hop > 100) throw new Error('hop must be a positive integer');
+  if (raw.kind !== 'message' && raw.kind !== 'reply') throw new Error('kind must be message or reply');
+  return {
+    deliveryId: asString(raw.deliveryId, 'deliveryId'),
+    chainId: asString(raw.chainId, 'chainId'),
+    hop,
+    kind: raw.kind,
+    from: asString(raw.from, 'from'),
+    fromName: asString(raw.fromName, 'fromName'),
+    ...(raw.conversationId === undefined || raw.conversationId === null ? {} : { conversationId: asString(raw.conversationId, 'conversationId') }),
+    text: asString(raw.text, 'text', MAX_DELIVERY_TEXT),
+  };
 }
 
 const MAX_ID = 200;
@@ -177,6 +204,16 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       await target.setViewFocused(asString(args[0], 'conversationId'), args[1]);
       return null;
     case 'protectSecretsAtRest': return target.protectSecretsAtRest();
+    case 'admitBotMessage': return target.admitBotMessage(asDelivery(args[0]));
+    case 'botDeliveries': {
+      const ids = args[0];
+      if (!Array.isArray(ids) || ids.length > 1000) throw new Error('deliveryIds must be a list');
+      return target.botDeliveries(ids.map((id) => asString(id, 'deliveryId')));
+    }
+    case 'setCoordinator':
+      if (typeof args[0] !== 'boolean') throw new Error('holder must be true or false');
+      await target.setCoordinator(args[0]);
+      return null;
     case 'useCommandDirectory': {
       const directory = asString(args[0], 'directory', 4096);
       if (!isAbsolute(directory) || directory.includes('\0') || directory.includes(delimiter)) throw new Error('directory must be one absolute path');
