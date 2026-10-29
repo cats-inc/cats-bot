@@ -8,6 +8,8 @@
 export interface ExecutionTarget {
   provider: string;
   model: string | null;
+  /** Runtime's structured selection, including model-specific controls. */
+  modelSelection?: ModelSelection;
   /** Claude Code only: launch with `--chrome` so Claude in Chrome tools are available. */
   claudeInChrome?: boolean;
 }
@@ -337,10 +339,10 @@ export interface BotStatus {
   pendingInteractions: number;
   conversations: number;
   schedules: number;
-  heartbeat: { enabled: boolean; nextAt: string | null };
+  heartbeat: { enabled: boolean; nextAt: string | null; };
   lastTickAt: string | null;
   lock: InstanceLock | null;
-  telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null };
+  telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null; };
 }
 
 export interface ProviderDefinition {
@@ -360,6 +362,28 @@ export interface ModelOption {
   id: string;
   label: string;
   default: boolean;
+  controls?: ModelControl[];
+  controlDefaults?: Record<string, ModelControlValue>;
+}
+
+export type ModelControlValue = string | number | boolean;
+export interface ModelSelection {
+  catalogRevision?: string;
+  entryMode: 'explicit';
+  entryId: string;
+  controls?: Record<string, ModelControlValue>;
+}
+export interface ModelControl {
+  key: string;
+  label: string;
+  kind: 'enum' | 'boolean' | 'number' | 'string';
+  scope?: 'session_default' | 'request' | 'both';
+  values?: Array<{ value: ModelControlValue; label: string; } | ModelControlValue>;
+  default?: ModelControlValue;
+  minimum?: number;
+  maximum?: number;
+  step?: number;
+  applicableEntryIds?: string[];
 }
 
 /** `listModels`. */
@@ -367,6 +391,9 @@ export interface ModelCatalog {
   provider: string;
   defaultModel: string | null;
   models: ModelOption[];
+  catalogRevision?: string;
+  controls?: ModelControl[];
+  defaultSelection?: ModelSelection | null;
   /** `runtime` when the running runtime answered, `packaged` for the shipped catalog. */
   source: 'runtime' | 'packaged' | 'none';
 }
@@ -396,7 +423,7 @@ export interface TelegramSettingsStatus {
 export const INTERACTION_KINDS = [
   'command_approval', 'file_approval', 'tool_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url',
 ] as const;
-export type InteractionKind = typeof INTERACTION_KINDS[number];
+export type InteractionKind = (typeof INTERACTION_KINDS)[number];
 export type InteractionStatus = 'pending' | 'responding' | 'resolved' | 'expired'
   | 'cancelled' | 'interrupted' | 'unsupported';
 

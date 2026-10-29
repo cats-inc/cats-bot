@@ -1,3 +1,4 @@
+import { t, useI18n } from '../i18n.ts';
 import { useCallback, useEffect, useState } from 'react';
 
 import type { BotProfile, DesktopControlState } from '../../core/types.ts';
@@ -13,6 +14,7 @@ import { useToast } from './toast.ts';
 const api = window.catsBot;
 
 export function DesktopControlSettings({ onSaved }: { onSaved(profile: BotProfile): void }) {
+  useI18n();
   const toast = useToast();
   const [state, setState] = useState<DesktopControlState | null>(null);
   const [saving, setSaving] = useState(false);
@@ -36,9 +38,13 @@ export function DesktopControlSettings({ onSaved }: { onSaved(profile: BotProfil
     setSaving(true);
     try {
       onSaved(await api.invoke('updateProfile', { desktopControl: { enabled } }));
-      toast(enabled ? 'Desktop control on; turn it on in each note that should use it' : 'Desktop control off; every app grant is revoked');
+      toast(
+        enabled
+          ? t('Desktop control on; turn it on in each conversation that should use it')
+          : t('Desktop control off; every app grant is revoked'),
+      );
     } catch {
-      toast('Could not save the desktop control setting');
+      toast(t('Could not save the desktop control setting'));
     } finally {
       setSaving(false);
       await load();
@@ -49,12 +55,11 @@ export function DesktopControlSettings({ onSaved }: { onSaved(profile: BotProfil
   if (row.hidden) return null;
   return (
     <section className="provider-settings" id="desktop-control-settings">
-      <h3>Desktop control</h3>
+      <h3>{t('Desktop control')}</h3>
       <p className="hint">
-        Lets the bot see the Windows apps you grant, only in notes where you turn it on and only in messages you send from
-        this computer (the note or cats-bot say). Each tool call asks for your approval, so choose &quot;Choose access and
-        approval separately&quot; above with &quot;Ask when requested by the agent&quot; or &quot;Ask for untrusted
-        commands&quot;. The bot never sees other windows.
+        {t(
+          'Lets the bot see the Windows apps you grant, only in conversations where you turn it on and only in messages you send from this computer (the conversation or cats-bot say). Each tool call asks for your approval, so choose "Choose access and approval separately" above with "Ask when requested by the agent" or "Ask for untrusted commands". The bot never sees other windows.',
+        )}
       </p>
       <label className="check">
         <input
@@ -64,11 +69,23 @@ export function DesktopControlSettings({ onSaved }: { onSaved(profile: BotProfil
           disabled={saving || row.disabled}
           onChange={(event) => void save(event.target.checked)}
         />
-        <span>Allow desktop control</span>
+        <span>{t('Allow desktop control')}</span>
       </label>
-      {row.note && <p className="hint warn" id="desktop-control-note">{row.note}</p>}
-      {state?.enabled && !row.note && <p className="hint" id="desktop-control-notes">{enabledNotesText(state)}</p>}
-      <p className="hint">Off by default. Turning it off revokes every app grant. Stop it at any time from the tray or the note.</p>
+      {row.note && (
+        <p className="hint warn" id="desktop-control-note">
+          {row.note}
+        </p>
+      )}
+      {state?.enabled && !row.note && (
+        <p className="hint" id="desktop-control-notes">
+          {enabledNotesText(state)}
+        </p>
+      )}
+      <p className="hint">
+        {t(
+          'Off by default. Turning it off revokes every app grant. Stop it at any time from the tray or the conversation.',
+        )}
+      </p>
     </section>
   );
 }

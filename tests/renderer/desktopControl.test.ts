@@ -58,7 +58,10 @@ test('the DC-18 status reads as a sentence with its reason', () => {
   assert.match(at(capability('not_injected', 'policy_preapproves_tools'))!, /^Not in this session: the approval policy runs tools without asking/u);
   assert.match(at(capability('not_injected', 'policy_not_explicit'))!, /Choose access and approval separately/u);
   assert.equal(at(capability('not_injected', 'policy_mismatch')), 'Not in this session: policy mismatch.', 'an unknown code stays readable');
-  assert.match(at(capability('injected'))!, /^Ready\. The bot can use it in messages you send from this note or cats-bot say\.$/u);
+  assert.match(
+    at(capability('injected'))!,
+    /^Ready\. The bot can use it in messages you send from this conversation or cats-bot say\.$/u,
+  );
   assert.match(at(capability('injected'), { stopped: true })!, /^Stopped\./u);
   assert.equal(at(capability('active_turn')), 'The bot can use desktop control in this turn.');
   assert.equal(at(capability('unavailable', 'helper_crashed')),
@@ -121,7 +124,13 @@ test('the Settings switch is hidden off Windows, disabled where the helper canno
     hidden: false, disabled: true,
     note: 'Not available on this computer: the desktop control helper did not answer correctly; turn desktop control off and on in Settings to retry.',
   });
-  assert.equal(enabledNotesText({ ...state(), conversations: [] }), 'No note has it on yet: turn it on in each note that should use it.');
-  assert.equal(enabledNotesText({ ...state(), conversations: ['home'] }), 'On in 1 note.');
-  assert.equal(enabledNotesText({ ...state(), conversations: ['home', 'conv-1'] }), 'On in 2 notes.');
+  assert.equal(
+    enabledNotesText({ ...state(), conversations: [] }),
+    'No conversation has it on yet: turn it on in each conversation that should use it.',
+  );
+  assert.equal(enabledNotesText({ ...state(), conversations: ['home'] }), 'On in 1 conversation.');
+  assert.equal(
+    enabledNotesText({ ...state(), conversations: ['home', 'conv-1'] }),
+    'On in 2 conversations.',
+  );
 });

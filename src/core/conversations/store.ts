@@ -82,11 +82,17 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
     schemaVersion: 1,
     id: raw.id,
     role,
-    title: typeof raw.title === 'string' ? raw.title : role === 'home' ? 'Home' : 'Note',
+    title:
+      typeof raw.title === 'string'
+        ? raw.title
+        : role === 'home'
+          ? 'Direct message'
+          : 'Conversation',
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     attachment: normalizeAttachment(raw.attachment, now),
-    unreadCount: typeof raw.unreadCount === 'number' && raw.unreadCount >= 0 ? Math.floor(raw.unreadCount) : 0,
+    unreadCount:
+      typeof raw.unreadCount === 'number' && raw.unreadCount >= 0 ? Math.floor(raw.unreadCount) : 0,
     lastOwnerMessageAt: stringOrNull(raw.lastOwnerMessageAt),
     lastBotMessageAt: stringOrNull(raw.lastBotMessageAt),
     checkpoint,
@@ -156,7 +162,7 @@ export class ConversationStore {
   home(): ConversationRecord {
     const existing = this.list().find((record) => record.role === 'home');
     if (existing) return existing;
-    return this.create('Home', 'home', 'home');
+    return this.create('Direct message', 'home', 'home');
   }
 
   create(title: string, role: ConversationRole = 'note', id?: string): ConversationRecord {
@@ -199,7 +205,7 @@ export class ConversationStore {
   /** SPEC-001 FR-14: the record and transcript go together; the caller closed the session first. */
   remove(id: string): void {
     const record = this.require(id);
-    if (record.role === 'home') throw new Error('The home conversation cannot be deleted');
+    if (record.role === 'home') throw new Error('The direct message cannot be deleted');
     this.records.delete(id);
     this.nextSeq.delete(id);
     rmSync(conversationFile(this.paths, id), { force: true });

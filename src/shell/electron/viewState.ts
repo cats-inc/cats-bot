@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 
 import { readJsonFile, writeJsonAtomic } from '../../core/store/atomicFile.ts';
+import { isLanguagePreference, type LanguagePreference } from '../../shared/language.ts';
 
 /**
  * SPEC-001 FR-33: a sticky note is a view of a conversation (position, size,
@@ -50,12 +51,23 @@ export interface ShellState {
   views: Record<string, NoteViewState>;
   openAtLogin: boolean;
   floatingBot: FloatingBotState;
+  language?: LanguagePreference;
 }
 
 export const DEFAULT_NOTE_SIZE = { width: 340, height: 460 };
 
 export function shellStatePath(botRoot: string): string {
   return join(botRoot, 'shell-state.json');
+}
+
+/** Only a never-opened shell gets an initial direct message. An empty visible
+ * set after the owner hides every conversation is an intentional preference. */
+export function startupConversations(state: ShellState): string[] {
+  return Object.keys(state.views).length === 0
+    ? ['home']
+    : Object.entries(state.views)
+        .filter(([, view]) => view.open)
+        .map(([id]) => id);
 }
 
 function layerFields(raw: Partial<NoteViewState>): { layer: NoteLayer; alwaysOnTop: boolean } {
@@ -86,12 +98,16 @@ export function readShellState(botRoot: string): ShellState {
     : null;
   return {
     schemaVersion: 1,
+    language:
+      read.ok && isLanguagePreference(read.value?.language) ? read.value.language : 'system',
     views,
     openAtLogin: read.ok && read.value?.openAtLogin === true,
     floatingBot: {
       // Shown unless the owner hid it.
       visible: floating?.visible !== false,
-      ...(floating && Number.isFinite(floating.x) && Number.isFinite(floating.y) ? { x: floating.x, y: floating.y } : {}),
+      ...(floating && Number.isFinite(floating.x) && Number.isFinite(floating.y)
+        ? { x: floating.x, y: floating.y }
+        : {}),
     },
   };
 }

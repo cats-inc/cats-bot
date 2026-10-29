@@ -122,11 +122,19 @@ export interface SetupInput {
   provider: string;
   model: string | null;
   instructions: string;
+  modelSelection?: import('../core/types.ts').ModelSelection;
 }
 
 type Unsubscribe = () => void;
 
 export interface CatsBotBridge {
+  language: {
+    get(): Promise<import('../shared/language.ts').LanguageState>;
+    set(
+      value: import('../shared/language.ts').LanguagePreference,
+    ): Promise<import('../shared/language.ts').LanguageState>;
+    onChange(listener: (state: import('../shared/language.ts').LanguageState) => void): Unsubscribe;
+  };
   /** The note's conversation from `?conversation=`, `home` elsewhere. */
   conversationId: string;
   invoke<C extends HostCommandName>(command: C, ...args: HostCommands[C]['args']): Promise<HostCommands[C]['result']>;
@@ -164,6 +172,11 @@ export interface CatsBotBridge {
   };
   /** First-run page only. */
   setup: {
+    check(provider: string): Promise<import('../shared/providerSetup.ts').ProviderSetupState>;
+    install(
+      provider: string,
+      step: import('../shared/providerSetup.ts').SetupStepId,
+    ): Promise<import('../shared/providerSetup.ts').ProviderSetupState>;
     providers(): Promise<ProviderInfo[]>;
     models(provider: string): Promise<ModelCatalog>;
     finish(input: SetupInput): Promise<null>;

@@ -6,7 +6,7 @@
 
 ADRs capture the context, decision, and consequences of architectural choices. They help:
 
-- Future developers understand *why* decisions were made
+- Future developers understand _why_ decisions were made
 - Prevent re-discussing settled decisions
 - Create institutional memory across sessions and team members
 
@@ -36,14 +36,16 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 
 ## Index
 
-| ADR | Title | Status | Date |
-|-----|-------|--------|------|
-| [000-template](./000-template.md) | Template | - | - |
+| ADR                                                                                    | Title                                                                  | Status   | Date       |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------- | ---------- |
+| [000-template](./000-template.md)                                                      | Template                                                               | -        | -          |
 | [001](./001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) | Build a Resident Bot Core on cats-runtime with Disposable Presentation | Proposed | 2026-10-27 |
-| [002](./002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) | Give the Bot a Desktop Presence in the Electron Shell | Accepted | 2026-10-28 |
-| [003](./003-build-the-renderer-with-react-and-vite-like-cats-desktop.md) | Build the Renderer with React and Vite, Like Cats Desktop | Accepted | 2026-10-28 |
-| [004](./004-publish-standard-previews-with-host-owned-updates.md) | Publish Standard Previews with Host-Owned Updates | Accepted | 2026-10-28 |
-| [005](./005-give-the-bot-owner-consented-desktop-control.md) | Give the Bot Owner-Consented Desktop Control | Accepted | 2026-10-29 |
+| [002](./002-give-the-bot-a-desktop-presence-in-the-electron-shell.md)                  | Give the Bot a Desktop Presence in the Electron Shell                  | Accepted | 2026-10-28 |
+| [003](./003-build-the-renderer-with-react-and-vite-like-cats-desktop.md)               | Build the Renderer with React and Vite, Like Cats Desktop              | Accepted | 2026-10-28 |
+| [004](./004-publish-standard-previews-with-host-owned-updates.md)                      | Publish Standard Previews with Host-Owned Updates                      | Accepted | 2026-10-28 |
+| [005](./005-give-the-bot-owner-consented-desktop-control.md)                           | Give the Bot Owner-Consented Desktop Control                           | Accepted | 2026-10-29 |
+| [006](./006-share-runtime-catalogs-and-package-provider-setup-helpers.md)              | Share Runtime Catalogs and Package Provider Setup Helpers              | Accepted | 2026-10-29 |
+
 <!-- Add new ADRs above this line -->
 
 ## For AI Agents
@@ -54,4 +56,4 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 
 ---
 
-*See also: [AGENTS.md](../../AGENTS.md) for decision-making protocols*
+_See also: [AGENTS.md](../../AGENTS.md) for decision-making protocols_

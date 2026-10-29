@@ -21,15 +21,21 @@
   display: none !important;
 }
 
-html, body, .page-root {
+html,
+body,
+.page-root {
   margin: 0;
   height: 100%;
   background: var(--paper);
   color: var(--ink);
-  font: 14px/1.45 "Segoe UI", system-ui, sans-serif;
+  font:
+    14px/1.45 'Segoe UI',
+    system-ui,
+    sans-serif;
 }
 
-h1, h2 {
+h1,
+h2 {
   margin: 0 0 12px;
   font-weight: 600;
 }
@@ -83,7 +89,9 @@ button:disabled {
   cursor: default;
 }
 
-input, select, textarea {
+input,
+select,
+textarea {
   font: inherit;
   width: 100%;
   padding: 6px 8px;
@@ -93,7 +101,9 @@ input, select, textarea {
   color: var(--ink);
 }
 
-input:focus, select:focus, textarea:focus {
+input:focus,
+select:focus,
+textarea:focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
 }
@@ -276,7 +286,7 @@ textarea {
   padding: 8px 10px;
 }
 
-.tab[aria-selected="true"] {
+.tab[aria-selected='true'] {
   background: var(--panel);
   font-weight: 600;
   box-shadow: inset 3px 0 0 var(--accent);
@@ -294,6 +304,24 @@ textarea {
   align-items: center;
 }
 
+.provider-installation {
+  padding: 14px;
+  border: 1px solid #d9d3c8;
+  border-radius: 10px;
+  background: #fffcf4;
+}
+.provider-installation h3 {
+  margin-top: 0;
+}
+.setup-step {
+  margin: 12px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid #e8e2d5;
+}
+.setup-step p {
+  margin: 5px 0;
+  overflow-wrap: anywhere;
+}
 .notes {
   list-style: none;
   margin: 0;

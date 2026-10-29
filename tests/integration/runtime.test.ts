@@ -88,6 +88,27 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
     assert.match(providersYaml, /claude:/u);
     assert.match(providersYaml, /command: /u);
 
+    // The same advanced catalog/selection contract as Desktop, all the way to CLI arguments.
+    const catalog = await core.listModels('claude');
+    assert.equal(catalog.source, 'runtime');
+    assert.ok(catalog.catalogRevision);
+    const entry = catalog.models.find((model) =>
+      model.controls?.some((control) => control.key === 'claude.reasoning_effort'),
+    )!;
+    assert.ok(entry);
+    await core.updateProfile({
+      executionTarget: {
+        provider: 'claude',
+        model: entry.id,
+        modelSelection: {
+          entryMode: 'explicit',
+          entryId: entry.id,
+          catalogRevision: 'previous-factory-revision',
+          controls: { 'claude.reasoning_effort': 'high' },
+        },
+      },
+    });
+
     const first = await sendAndWait(core, 'home', 'hello', 60_000);
     assert.equal(first.state, 'completed', first.error);
     assert.equal(first.result?.text, 'echo: hello');
@@ -96,6 +117,12 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
     assert.ok(home1.attachment.providerSessionId, 'the init frame carried the provider session id');
     assert.equal(fixtureTurns().length, 1);
     assert.equal(fixtureTurns()[0]?.resumed, false);
+    const launchArgs = fixtureTurns()[0]!.args;
+    assert.equal(
+      launchArgs[launchArgs.indexOf('--effort') + 1],
+      'high',
+      'saved catalog effort reaches the real Runtime adapter',
+    );
 
     // The fixture's first turn received the persona through the session instructions.
     const instructed = await sendAndWait(core, 'home', 'instructions?', 60_000);

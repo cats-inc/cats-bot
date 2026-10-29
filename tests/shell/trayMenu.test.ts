@@ -8,7 +8,12 @@ import type { BotStatus } from '../../src/core/bot.ts';
 import type { ConversationRecord } from '../../src/core/types.ts';
 import { bubbleText, catReachable, FLOATING_CAT, FLOATING_SIZE, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
 import { buildTrayMenuTemplate, buildTrayTooltip } from '../../src/shell/electron/trayMenu.ts';
-import { readShellState, shellStatePath, writeShellState } from '../../src/shell/electron/viewState.ts';
+import {
+  readShellState,
+  shellStatePath,
+  startupConversations,
+  writeShellState,
+} from '../../src/shell/electron/viewState.ts';
 
 /** The shell's Electron-free pieces (SPEC-001 FR-33): the tray menu data and the note view state. */
 
@@ -17,6 +22,52 @@ before(() => {
   root = mkdtempSync(join(tmpdir(), 'cats-bots-shell-'));
 });
 after(() => rmSync(root, { recursive: true, force: true }));
+
+test('restart distinguishes first launch from deliberately hiding every conversation and the avatar', () => {
+  const dir = join(root, 'restart');
+  mkdirSync(dir);
+  const state = readShellState(dir);
+  assert.deepEqual(startupConversations(state), ['home'], 'first launch opens direct message');
+  state.views.home = {
+    width: 340,
+    height: 460,
+    x: 12,
+    y: 34,
+    layer: 'normal',
+    alwaysOnTop: false,
+    open: false,
+  };
+  state.views.work = {
+    width: 350,
+    height: 470,
+    x: -700,
+    y: 80,
+    layer: 'desktop',
+    alwaysOnTop: false,
+    open: false,
+  };
+  state.floatingBot = { visible: false, x: -400, y: 40 };
+  state.language = 'zh-TW';
+  writeShellState(dir, state);
+  const hidden = readShellState(dir);
+  assert.deepEqual(
+    startupConversations(hidden),
+    [],
+    'hiding all windows is not a new installation',
+  );
+  assert.deepEqual(
+    hidden,
+    state,
+    'visibility, screen coordinates, layer and language survive disk reload',
+  );
+  hidden.views.work!.open = true;
+  writeShellState(dir, hidden);
+  assert.deepEqual(
+    startupConversations(readShellState(dir)),
+    ['work'],
+    'direct message remains hidden',
+  );
+});
 
 function conversation(id: string, role: 'home' | 'note', unreadCount: number, title = id): ConversationRecord {
   return {
@@ -78,10 +129,10 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
   assert.deepEqual(labels, [
     'Mochi: runtime ready, 3 unread, 1 waiting for you',
     'separator',
-    'Open home note (2)',
-    'Notes',
-    'New note',
-    'Manage notes…',
+    'Open direct message (2)',
+    'Conversations',
+    'New conversation',
+    'Manage conversations…',
     'separator',
     'Pause heartbeat',
     'Show floating cat',
@@ -138,7 +189,12 @@ test('the tray shows desktop control while it is on, opens the note that waits a
   const waiting = { ...base, desktopControl: { enabled: true, pendingRequests: 2, waitingConversationId: 'conv-1', holding: [] } };
   const template = buildTrayMenuTemplate(waiting, actions);
   const labels = template.map((item) => item.label ?? item.type);
-  assert.deepEqual(labels.slice(0, 4), ['Mochi: runtime ready', 'separator', 'Open home note', 'Desktop control requests (2)']);
+  assert.deepEqual(labels.slice(0, 4), [
+    'Mochi: runtime ready',
+    'separator',
+    'Open direct message',
+    'Desktop control requests (2)',
+  ]);
   assert.ok(labels.indexOf('Stop desktop control') > labels.indexOf('Pause heartbeat'));
   template[3]!.click!();
   assert.equal(buildTrayTooltip(waiting), 'Mochi (runtime ready) - desktop control request waiting');
@@ -177,7 +233,13 @@ test('while the bot holds control the tray names the app and offers Stop first (
 
 test('note view state normalises what it reads and round-trips what it writes', () => {
   const empty = readShellState(root);
-  assert.deepEqual(empty, { schemaVersion: 1, views: {}, openAtLogin: false, floatingBot: { visible: true } });
+  assert.deepEqual(empty, {
+    schemaVersion: 1,
+    language: 'system',
+    views: {},
+    openAtLogin: false,
+    floatingBot: { visible: true },
+  });
   writeFileSync(shellStatePath(root), JSON.stringify({ views: { home: { x: 10, y: 20, width: 50, height: 'tall', alwaysOnTop: true, open: true }, bad: null }, openAtLogin: 'yes' }));
   const read = readShellState(root);
   assert.deepEqual(read.views.home, { x: 10, y: 20, width: 340, height: 460, layer: 'top', alwaysOnTop: true, open: true });

@@ -164,7 +164,7 @@ interface Attachment {
   /** `read_ui` id prefix (`ui<n>`) to the helper read it came from. */
   uiReads: Map<string, { windowId: string; hwnd: number; readId: number }>;
   /** The app the running turn holds control of, and that turn (DC-11). */
-  holding: { app: string; workItemId: string } | null;
+  holding: { app: string; workItemId: string; } | null;
   /** Input ops sent to the helper and not answered yet; they may outlive a cancelled turn. */
   inputsInFlight: number;
 }
@@ -197,10 +197,14 @@ function toolResult(value: Record<string, unknown>, summary: string): ToolCallRe
 function mapHelperError(error: unknown): DesktopControlToolError {
   if (error instanceof DesktopControlToolError) return error;
   if (!(error instanceof DesktopControlHelperError)) return new DesktopControlToolError('unavailable', 'Desktop control failed.');
-  const code: DesktopControlErrorCode = error.code === 'window_gone' ? 'window_changed'
-    : error.code === 'not_found' ? 'not_granted'
-      : (DESKTOP_CONTROL_ERROR_CODES as readonly string[]).includes(error.code) ? error.code as DesktopControlErrorCode
-        : 'unavailable';
+  const code: DesktopControlErrorCode =
+    error.code === 'window_gone'
+      ? 'window_changed'
+      : error.code === 'not_found'
+        ? 'not_granted'
+        : (DESKTOP_CONTROL_ERROR_CODES as readonly string[]).includes(error.code)
+          ? (error.code as DesktopControlErrorCode)
+          : 'unavailable';
   return new DesktopControlToolError(code, error.message);
 }
 
@@ -538,16 +542,20 @@ export class DesktopControlService {
   }
 
   private neverGrantable(path: string): boolean {
-    return NEVER_GRANTABLE_NAMES.includes(basename(path.replaceAll('\\', '/')).toLowerCase())
-      || this.neverGrantablePaths.has(path.toLowerCase());
+    return (
+      NEVER_GRANTABLE_NAMES.includes(basename(path.replaceAll('\\', '/')).toLowerCase()) ||
+      this.neverGrantablePaths.has(path.toLowerCase())
+    );
   }
 
   private requireTurn(attachment: Attachment): void {
     if (this.closed) throw new DesktopControlToolError('unavailable', 'Desktop control is closed.');
     const turn = this.options.turn(attachment.conversationId);
     if (!turn?.ownerPresent || turn.sessionId !== attachment.sessionId) {
-      throw new DesktopControlToolError('not_owner_present',
-        'Desktop tools work only in a turn the owner sent from the Bot note or the local command line.');
+      throw new DesktopControlToolError(
+        'not_owner_present',
+        'Desktop tools work only in a turn the owner sent from the Bot conversation or the local command line.',
+      );
     }
     const reason = this.unavailable();
     if (reason) throw new DesktopControlToolError('unavailable', `Desktop control is unavailable (${reason}).`);

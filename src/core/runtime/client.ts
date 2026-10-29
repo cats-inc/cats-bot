@@ -3,8 +3,16 @@
  * runtime's docs/api.md (sessions, messages, resume, cancel, close, delete,
  * observe, history, health). Nothing here imports runtime source (ADR-001 §1).
  */
-import type { InteractionHost, InteractionSnapshot, InteractionResponse, ProviderInteraction,
-  SessionCapabilitiesSnapshot, SessionExecutionPolicy } from '../types.ts';
+import type {
+  InteractionHost,
+  InteractionSnapshot,
+  InteractionResponse,
+  ProviderInteraction,
+  ModelCatalog,
+  ModelSelection,
+  SessionCapabilitiesSnapshot,
+  SessionExecutionPolicy,
+} from '../types.ts';
 import { INTERACTION_HOST } from './providerPolicy.ts';
 
 export type RuntimeSessionStatus = 'initializing' | 'ready' | 'busy' | 'closing' | 'closed';
@@ -41,6 +49,7 @@ export interface RuntimeMcpServer {
 export interface CreateSessionRequest {
   provider: string;
   model?: string;
+  modelSelection?: ModelSelection;
   cwd?: string;
   instructions?: string;
   workspaceKind?: 'source' | 'sandbox' | 'worktree';
@@ -205,7 +214,10 @@ export class RuntimeClient {
     return this.request<RuntimeHistory>('GET', `/sessions/${encodeURIComponent(id)}/history`);
   }
 
-  async sessionControls(provider: string, policy: SessionExecutionPolicy | null): Promise<Pick<CreateSessionRequest, 'interactionHost' | 'executionPolicy'>> {
+  async sessionControls(
+    provider: string,
+    policy: SessionExecutionPolicy | null,
+  ): Promise<Pick<CreateSessionRequest, 'interactionHost' | 'executionPolicy'>> {
     let unenforceable = false;
     try {
       const result = await this.request<{ providers: Record<string, { defaultInstance?: string; defaultBackend?: string;
@@ -218,13 +230,25 @@ export class RuntimeClient {
       const target = configured?.instances.find(t => t.id === configured.defaultInstance && t.backend === configured.defaultBackend);
       const c = target?.continuity;
       const ceilings = c?.sessionCapabilities?.admissibleCeilings;
-      if (policy && ceilings && !ceilings.some(ceiling => ceiling.access === policyAccess(policy) && ceiling.network === policyNetwork(policy))) {
+      if (
+        policy &&
+        ceilings &&
+        !ceilings.some(
+          (ceiling) =>
+            ceiling.access === policyAccess(policy) && ceiling.network === policyNetwork(policy),
+        )
+      ) {
         unenforceable = true;
-      } else if (c?.interactions?.version === 1 && (!policy || c.sessionCapabilities?.version === 1 && c.sessionCapabilities.executionPolicy)) {
+      } else if (
+        c?.interactions?.version === 1 &&
+        (!policy || (c.sessionCapabilities?.version === 1 && c.sessionCapabilities.executionPolicy))
+      ) {
         return { interactionHost: { ...INTERACTION_HOST, kinds: INTERACTION_HOST.kinds.filter(k => c.interactions!.kinds.includes(k)) },
           ...(policy ? { executionPolicy: policy } : {}) };
       }
-    } catch { /* Old Runtime remains usable only with the unchanged legacy policy. */ }
+    } catch {
+      /* Old Runtime remains usable only with the unchanged legacy policy. */
+    }
     if (unenforceable) throw new Error('The selected provider cannot enforce this access or network limit. Choose full access with network, or keep the existing tool settings.');
     if (policy) throw new Error('Selected Runtime/provider does not support provider policy v1. Upgrade Runtime or select legacy settings.');
     return {};
@@ -245,6 +269,29 @@ export class RuntimeClient {
   /** `GET /providers/{provider}/models`: the catalog of a configured provider (400 otherwise). */
   providerModels(provider: string): Promise<RuntimeModelCatalog> {
     return this.request<RuntimeModelCatalog>('GET', `/providers/${encodeURIComponent(provider)}/models`);
+  }
+
+  providerAdvancedModels(
+    provider: string,
+  ): Promise<Omit<ModelCatalog, 'models' | 'source'> & { entries: ModelCatalog['models'] }> {
+    return this.request(
+      'GET',
+      `/providers/${encodeURIComponent(provider)}/models/advanced?backend=cli&instance=native`,
+    );
+  }
+
+  async currentModelSelection(provider: string, saved: ModelSelection): Promise<ModelSelection> {
+    const catalog = await this.providerAdvancedModels(provider);
+    if (!catalog.entries.some((entry) => entry.id === saved.entryId)) {
+      throw new Error(`Saved model '${saved.entryId}' is unavailable. Choose a model in Settings.`);
+    }
+    // Refresh only the optimistic revision. Runtime validates the unchanged
+    // entry and every saved control against this revision, with no UI fallback.
+    const { catalogRevision: _previous, ...selection } = saved;
+    return {
+      ...selection,
+      ...(catalog.catalogRevision ? { catalogRevision: catalog.catalogRevision } : {}),
+    };
   }
 
   /**

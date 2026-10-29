@@ -1,3 +1,5 @@
+import { t, useI18n } from '../i18n.ts';
+import { conversationTitle } from '../localeStore.ts';
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { ConversationRecord } from '../../core/types.ts';
@@ -15,6 +17,7 @@ const api = window.catsBot;
 const ARM_MS = 4000;
 
 function RenameField({ record, onDone }: { record: ConversationRecord; onDone(): void }) {
+  useI18n();
   const toast = useToast();
   const [title, setTitle] = useState(record.title);
   const done = useRef(false);
@@ -26,7 +29,7 @@ function RenameField({ record, onDone }: { record: ConversationRecord; onDone():
       try {
         await api.invoke('renameConversation', record.id, next);
       } catch (failure) {
-        toast(`Could not rename: ${errorText(failure)}`);
+        toast(t('Could not rename: {value0}', { value0: errorText(failure) }));
       }
     }
     onDone();
@@ -49,7 +52,16 @@ function RenameField({ record, onDone }: { record: ConversationRecord; onDone():
   );
 }
 
-function NoteRow({ record, layers, onChanged }: { record: ConversationRecord; layers: NoteLayersView; onChanged(): void }) {
+function NoteRow({
+  record,
+  layers,
+  onChanged,
+}: {
+  record: ConversationRecord;
+  layers: NoteLayersView;
+  onChanged(): void
+}) {
+  useI18n();
   const toast = useToast();
   const [renaming, setRenaming] = useState(false);
   const [armed, setArmed] = useState(false);
@@ -65,16 +77,16 @@ function NoteRow({ record, layers, onChanged }: { record: ConversationRecord; la
     clearTimeout(armTimer.current);
     try {
       await api.invoke('deleteConversation', record.id);
-      toast(`Deleted ${record.title}`);
+      toast(t('Deleted {value0}', { value0: record.title }));
       onChanged();
     } catch (failure) {
-      toast(`Could not delete: ${errorText(failure)}`);
+      toast(t('Could not delete: {value0}', { value0: errorText(failure) }));
     }
   };
 
   const setLayer = async (layer: NoteLayer) => {
     await api.shell.setNoteLayer(record.id, layer);
-    toast(`${record.title}: ${layers.labels[layer]}`);
+    toast(`${record.title}: ${t(layers.labels[layer])}`);
     onChanged();
   };
 
@@ -92,9 +104,16 @@ function NoteRow({ record, layers, onChanged }: { record: ConversationRecord; la
         ) : (
           <>
             <div className="title">
-              {record.title}
-              {record.role === 'home' && <span className="badge home">home</span>}
-              {record.unreadCount > 0 && <span className="badge">{record.unreadCount} unread</span>}
+              {conversationTitle(record)}
+              {record.role === 'home' && conversationTitle(record) !== t('Direct message') && (
+                <span className="badge home">{t('Direct message')}</span>
+              )}
+              {record.unreadCount > 0 && (
+                <span className="badge">
+                  {record.unreadCount}
+                  {t('unread')}
+                </span>
+              )}
             </div>
             <div className="meta">{noteMeta(record)}</div>
           </>
@@ -104,25 +123,29 @@ function NoteRow({ record, layers, onChanged }: { record: ConversationRecord; la
         <>
           <select
             className="layer"
-            title="Where this note lives"
+            title={t('Where this conversation lives')}
             value={layers.views[record.id] ?? 'normal'}
             onChange={(event) => void setLayer(event.target.value as NoteLayer)}
           >
             {layers.layers.map((layer) => (
               <option key={layer} value={layer}>
-                {layers.labels[layer]}
+                {t(layers.labels[layer])}
               </option>
             ))}
           </select>
           <button type="button" onClick={() => void api.window.openConversation(record.id)}>
-            Open
+            {t('Open')}
           </button>
           <button type="button" onClick={() => setRenaming(true)}>
-            Rename
+            {t('Rename')}
           </button>
           {record.role !== 'home' && (
-            <button type="button" className={armed ? 'danger armed' : 'danger'} onClick={() => void remove()}>
-              {armed ? 'Delete for good?' : 'Delete'}
+            <button
+              type="button"
+              className={armed ? 'danger armed' : 'danger'}
+              onClick={() => void remove()}
+            >
+              {armed ? t('Delete for good?') : t('Delete')}
             </button>
           )}
         </>
@@ -132,6 +155,7 @@ function NoteRow({ record, layers, onChanged }: { record: ConversationRecord; la
 }
 
 export function NotesTab() {
+  useI18n();
   const [records, setRecords] = useState<ConversationRecord[]>([]);
   const [layers, setLayers] = useState<NoteLayersView | null>(null);
 
@@ -165,18 +189,26 @@ export function NotesTab() {
   return (
     <section className="panel" data-panel="notes">
       <div className="panel-head">
-        <h2>Notes</h2>
+        <h2>{t('Conversations')}</h2>
         <button className="primary" id="notes-new" onClick={() => void create()}>
-          New note
+          {t('New conversation')}
         </button>
       </div>
       <p className="lead">
-        Every note is its own conversation with the bot. Closing a note only hides it. A note on the desktop stays there
-        under your windows (Show Desktop keeps it); click it to type and it comes forward until you click elsewhere. A
-        note on the wallpaper sits below the icons; open it here to use it.
+        {t(
+          'Each conversation has its own history. Closing its window only hides it. Desktop windows stay below other apps; wallpaper windows stay below desktop icons. Open a conversation here to use it.',
+        )}
       </p>
       <ul className="notes" id="notes-list">
-        {layers && records.map((record) => <NoteRow key={record.id} record={record} layers={layers} onChanged={() => void load()} />)}
+        {layers &&
+          records.map((record) => (
+            <NoteRow
+              key={record.id}
+              record={record}
+              layers={layers}
+              onChanged={() => void load()}
+            />
+          ))}
       </ul>
     </section>
   );

@@ -7,20 +7,22 @@ import {
   appFacts,
   botForm,
   botPatch,
-  CUSTOM_MODEL,
   lifeForm,
   lifePatch,
   modelOptions,
   modelSelection,
+  modelControls,
+  controlOptions,
+  selectedModel,
   preferredProvider,
   providerChoices,
   providerHint,
-  readModel,
   RequestGate,
   saveNotice,
   sortNotes,
   telegramFacts,
 } from '../../src/renderer/settings/settingsLogic.ts';
+import { readPackagedModelCatalog, CLI_PROVIDERS } from '../../src/core/providers/catalog.ts';
 
 /** SPEC-002 FR-1–FR-6, SPEC-003 FR-6: the settings and first-run decisions, apart from React. */
 
@@ -47,6 +49,65 @@ const CLAUDE: ModelCatalog = {
   source: 'runtime',
 };
 
+test('the five provider menus keep Runtime catalog model and effort order without synthetic options', () => {
+  assert.deepEqual(
+    CLI_PROVIDERS.map((provider) => provider.id),
+    ['codex', 'claude', 'antigravity', 'grok', 'muse'],
+  );
+  for (const provider of CLI_PROVIDERS) {
+    const catalog = readPackagedModelCatalog(provider.id);
+    assert.deepEqual(
+      modelOptions(catalog),
+      catalog.models.map((model) => ({ value: model.id, text: model.label })),
+    );
+    for (const model of catalog.models) {
+      const selection = selectedModel(catalog, model.id);
+      assert.equal(selection?.entryId, model.id);
+      for (const control of modelControls(catalog, model.id)) {
+        if (control.kind === 'enum') {
+          assert.deepEqual(
+            controlOptions(control).map((option) => option.value),
+            control.values?.map((option) => (typeof option === 'object' ? option.value : option)),
+          );
+          assert.ok(
+            controlOptions(control).some(
+              (option) => option.value === selection?.controls?.[control.key],
+            ),
+          );
+        }
+      }
+      if (model.controls?.length === 0)
+        assert.deepEqual(
+          selection?.controls,
+          {},
+          'models without effort never invent an effort control',
+        );
+    }
+  }
+  const catalog = readPackagedModelCatalog('codex'),
+    entryId = catalog.models[0]!.id;
+  const saved = {
+    entryMode: 'explicit' as const,
+    entryId,
+    controls: { 'codex.reasoning_effort': 'max' },
+  };
+  assert.equal(selectedModel(catalog, entryId, saved)?.controls?.['codex.reasoning_effort'], 'max');
+});
+
+test('an explicit empty per-model control list opts out of shared controls like Runtime', () => {
+  const shared = { key: 'effort', label: 'Effort', kind: 'enum' as const, values: ['low', 'high'] };
+  const catalog: ModelCatalog = {
+    ...CLAUDE,
+    controls: [shared],
+    models: [
+      { id: 'inherit', label: 'Inherit', default: false },
+      { id: 'opt-out', label: 'Opt out', default: false, controls: [] },
+    ],
+  };
+  assert.deepEqual(modelControls(catalog, 'inherit'), [shared]);
+  assert.deepEqual(modelControls(catalog, 'opt-out'), []);
+});
+
 test('only the newest model request may fill the menu (2026-10-28 review)', () => {
   const gate = new RequestGate();
   const claude = gate.begin();
@@ -58,27 +119,33 @@ test('only the newest model request may fill the menu (2026-10-28 review)', () =
   assert.equal(gate.isLatest(again), true);
 });
 
-test('the model menu starts on the default, a listed model or a typed id, and reads back the same', () => {
-  assert.deepEqual(modelOptions(CLAUDE).map((option) => option.text), [
-    'Provider default (Opus 5.5)', 'Opus 5.5 · opus', 'Haiku 5.5 · haiku', 'raw', 'Other model id…',
-  ]);
-  assert.deepEqual(modelSelection(CLAUDE, null), { select: '', custom: '' });
+test('the model menu contains exactly catalog entries; legacy custom models are retained outside the menu', () => {
+  assert.deepEqual(
+    modelOptions(CLAUDE).map((option) => option.text),
+    ['Opus 5.5', 'Haiku 5.5', 'raw'],
+  );
+  assert.deepEqual(modelSelection(CLAUDE, null), { select: 'opus', custom: '' });
   assert.deepEqual(modelSelection(CLAUDE, 'haiku'), { select: 'haiku', custom: '' });
-  assert.deepEqual(modelSelection(CLAUDE, 'claude-next'), { select: CUSTOM_MODEL, custom: 'claude-next' });
-  assert.equal(readModel('', ''), null);
-  assert.equal(readModel('haiku', 'ignored'), 'haiku');
-  assert.equal(readModel(CUSTOM_MODEL, '  claude-next '), 'claude-next');
-  assert.equal(readModel(CUSTOM_MODEL, '  '), null);
+  assert.deepEqual(modelSelection(CLAUDE, 'claude-next'), { select: '', custom: 'claude-next' });
 });
 
-test('providers: a saved one this build does not list is kept, first run prefers an installed Claude', () => {
+test('providers: only supported choices are offered, always in the requested order', () => {
   const providers: ProviderInfo[] = [
     { id: 'codex', label: 'Codex', command: 'codex', installed: true },
     { id: 'claude', label: 'Claude Code', command: 'claude', installed: false },
   ];
-  assert.deepEqual(providerChoices(providers, 'kimi').map((provider) => provider.id), ['codex', 'claude', 'kimi']);
+  assert.deepEqual(
+    providerChoices(providers, 'kimi').map((provider) => provider.id),
+    ['codex', 'claude'],
+  );
   assert.equal(preferredProvider(providers), 'codex', 'Claude is not installed');
-  assert.equal(preferredProvider([{ id: 'claude', label: 'Claude Code', command: 'claude', installed: true }, providers[0]!]), 'claude');
+  assert.equal(
+    preferredProvider([
+      { id: 'claude', label: 'Claude Code', command: 'claude', installed: true },
+      providers[0]!,
+    ]),
+    'codex',
+  );
   assert.equal(providerHint(providers, 'claude').warn, true);
   assert.match(providerHint(providers, 'codex').text, /own "codex" sign-in/u);
   assert.deepEqual(providerHint(providers, 'kimi'), { text: '', warn: false });

@@ -32,11 +32,11 @@ created only at publication. No push or tag trigger publishes.
 
 ## Artifacts and signing
 
-| Platform | Architectures and assets | Standard trust |
-| --- | --- | --- |
-| Windows | x64/arm64 NSIS setup EXEs and portable EXEs; latest.yml | Authenticode when configured, otherwise explicitly unsigned |
-| macOS | Universal (x64 + arm64) DMG and updater ZIP; latest-mac.yml | Developer ID + notarization when fully configured; otherwise unsigned/manual updates |
-| Linux | amd64/arm64 DEBs; latest-linux.yml and latest-linux-arm64.yml | Unsigned, OS package manager authorization at installation |
+| Platform | Architectures and assets                                      | Standard trust                                                                       |
+| -------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Windows  | x64/arm64 NSIS setup EXEs and portable EXEs; latest.yml       | Authenticode when configured, otherwise explicitly unsigned                          |
+| macOS    | Universal (x64 + arm64) DMG and updater ZIP; latest-mac.yml   | Developer ID + notarization when fully configured; otherwise unsigned/manual updates |
+| Linux    | amd64/arm64 DEBs; latest-linux.yml and latest-linux-arm64.yml | Unsigned, OS package manager authorization at installation                           |
 
 Windows packages also carry the desktop control helper (SPEC-006 BDC-11) at
 `resources/native/windows-desktop-control/`. `build-preview.mjs` publishes it
@@ -59,10 +59,10 @@ Desktop repository secrets alone are not visible to Bots: they must first be
 shared at organization scope. Windows signing is configured separately with
 repository or applicable organization secrets.
 
-| Platform | Secrets |
-| --- | --- |
-| Windows | WIN_CSC_LINK (PFX file as base64 or supported certificate URL), WIN_CSC_KEY_PASSWORD |
-| macOS | CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER |
+| Platform | Secrets                                                                                 |
+| -------- | --------------------------------------------------------------------------------------- |
+| Windows  | WIN_CSC_LINK (PFX file as base64 or supported certificate URL), WIN_CSC_KEY_PASSWORD    |
+| macOS    | CSC_LINK, CSC_KEY_PASSWORD, APPLE_API_KEY_P8_BASE64, APPLE_API_KEY_ID, APPLE_API_ISSUER |
 
 Rotate the shared macOS values in the organization's **Settings → Secrets and
 variables → Actions**, retaining the selected-repository access. Do not create
@@ -101,7 +101,9 @@ passes without it.
 
 Use the tray/floating cat menu **Check for Updates…**, or Settings → App →
 **Check for Updates**. Checks only query the public cats-inc/cats-bots feed.
-Choose Download update, then Restart and install and confirm the native prompt.
+The tray menu presents the result in a native dialog, without opening Settings;
+Update and Restart explicitly authorizes download and installation. Settings keeps
+separate Download update / Restart and install actions with a native confirmation.
 Installation interrupts the current Bot task after stopping its Runtime. There
 are no background checks, automatic downloads or install-on-quit.
 

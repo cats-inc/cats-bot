@@ -1,3 +1,4 @@
+import { t } from '../localeStore.ts';
 import type { DesktopControlState, DesktopGrantRequest } from '../../core/types.ts';
 
 /**
@@ -9,19 +10,22 @@ const REASONS: Record<string, string> = {
   not_windows: 'it works only on Windows',
   no_helper: 'this build has no desktop control helper',
   helper_missing: 'the desktop control helper is missing from this installation',
-  handshake_failed: 'the desktop control helper did not answer correctly; turn desktop control off and on in Settings to retry',
-  helper_crashed: 'the desktop control helper stopped too often; turn desktop control off and on in Settings to retry',
+  handshake_failed:
+    'the desktop control helper did not answer correctly; turn desktop control off and on in Settings to retry',
+  helper_crashed:
+    'the desktop control helper stopped too often; turn desktop control off and on in Settings to retry',
   helper_failed: 'the desktop control helper could not start',
   server_failed: 'the desktop control server could not start',
   closed: 'the bot is shutting down',
   unavailable: 'the desktop control helper is not available',
   off: 'it is off in Settings',
-  conversation_off: 'it is off for this note',
+  conversation_off: 'it is off for this conversation',
   no_live_session: 'it starts with your next message',
   no_turn_yet: 'it starts with your next message',
   session_changed: 'it starts with your next message',
   policy_unknown: 'the session has not reported its approval policy yet',
-  policy_not_explicit: 'choose "Choose access and approval separately" under Provider access and tools in Settings',
+  policy_not_explicit:
+    'choose "Choose access and approval separately" under Provider access and tools in Settings',
   policy_preapproves_tools: 'the approval policy runs tools without asking; choose one that asks',
   no_tool_approval_host: 'this agent CLI cannot ask you before each tool call',
 };
@@ -29,28 +33,41 @@ const REASONS: Record<string, string> = {
 /** A reason code in the owner's words; an unknown code is shown with spaces. */
 export function reasonText(reason: string | null): string {
   if (!reason) return '';
-  return REASONS[reason] ?? reason.replaceAll('_', ' ');
+  return t(REASONS[reason] ?? reason.replaceAll('_', ' '));
 }
 
 type Conversation = NonNullable<DesktopControlState['conversation']>;
 
 /** The note shows desktop control while the profile switch is on, and always while something waits, is granted or held. */
-export function notePanelVisible(state: DesktopControlState | null): state is DesktopControlState & { conversation: Conversation } {
+export function notePanelVisible(
+  state: DesktopControlState | null,
+): state is DesktopControlState & { conversation: Conversation } {
   const conversation = state?.conversation;
   if (!state || !conversation) return false;
-  return state.enabled || conversation.grants.length > 0 || conversation.pendingRequests.length > 0 || conversation.holding !== null;
+  return (
+    state.enabled ||
+    conversation.grants.length > 0 ||
+    conversation.pendingRequests.length > 0 ||
+    conversation.holding !== null
+  );
 }
 
 /** Stop is offered whenever the conversation has grants or waiting requests, or holds control. */
 export function showStop(conversation: Conversation): boolean {
-  return conversation.grants.length > 0 || conversation.pendingRequests.length > 0 || conversation.holding !== null
-    || conversation.capability.status === 'holding';
+  return (
+    conversation.grants.length > 0 ||
+    conversation.pendingRequests.length > 0 ||
+    conversation.holding !== null ||
+    conversation.capability.status === 'holding'
+  );
 }
 
 /** BDC-10: the banner while this note's turn holds control (SPEC-133 DC-11), naming the app; null otherwise. */
 export function holdingBanner(conversation: Conversation): string | null {
   if (conversation.holding === null) return null;
-  return `The bot is operating ${conversation.holding}. Stop takes control back and ends its access.`;
+  return t('The bot is operating {value0}. Stop takes control back and ends its access.', {
+    value0: conversation.holding,
+  });
 }
 
 /** The conversation switch can always be turned off; it is turned on only where desktop control can work. */
@@ -60,27 +77,34 @@ export function switchDisabled(state: DesktopControlState, conversation: Convers
 
 /** One line under the switch: SPEC-133 DC-18 status with its reason, or null when there is nothing to say. */
 export function noteStatus(state: DesktopControlState, conversation: Conversation): string | null {
-  if (!state.available) return `Not available on this computer: ${reasonText(state.reason)}.`;
+  if (!state.available)
+    return t('Not available on this computer: {value0}.', { value0: reasonText(state.reason) });
   if (!conversation.enabled) return null;
   const { status, reason } = conversation.capability;
   switch (status) {
     case 'unavailable':
-      return `Not available on this computer: ${reasonText(reason)}.`;
+      return t('Not available on this computer: {value0}.', { value0: reasonText(reason) });
     case 'off':
-      return `Off: ${reasonText(reason)}.`;
+      return t('Off: {value0}.', { value0: reasonText(reason) });
     case 'not_injected':
-      if (reason === 'no_turn_yet' || reason === 'no_live_session' || reason === 'session_changed') {
-        return 'Ready from your next message.';
+      if (
+        reason === 'no_turn_yet' ||
+        reason === 'no_live_session' ||
+        reason === 'session_changed'
+      ) {
+        return t('Ready from your next message.');
       }
-      return `Not in this session: ${reasonText(reason)}.`;
+      return t('Not in this session: {value0}.', { value0: reasonText(reason) });
     case 'injected':
       return conversation.stopped && conversation.grants.length === 0
-        ? 'Stopped. The bot has to ask again before it can see an app.'
-        : 'Ready. The bot can use it in messages you send from this note or cats-bot say.';
+        ? t('Stopped. The bot has to ask again before it can see an app.')
+        : t(
+            'Ready. The bot can use it in messages you send from this conversation or cats-bot say.',
+          );
     case 'active_turn':
-      return 'The bot can use desktop control in this turn.';
+      return t('The bot can use desktop control in this turn.');
     case 'holding':
-      return 'The bot is operating your desktop.';
+      return t('The bot is operating your desktop.');
     default:
       return null;
   }
@@ -89,7 +113,11 @@ export function noteStatus(state: DesktopControlState, conversation: Conversatio
 /** The granted apps in one line. */
 export function grantedText(conversation: Conversation): string | null {
   if (conversation.grants.length === 0) return null;
-  return `Granted: ${conversation.grants.map((app) => app.tier === 'observe_only' ? `${app.name} (observe only)` : app.name).join(', ')}`;
+  return t('Granted: {value0}', {
+    value0: conversation.grants
+      .map((app) => (app.tier === 'observe_only' ? `${app.name} (observe only)` : app.name))
+      .join(', '),
+  });
 }
 
 export interface GrantCardText {
@@ -103,11 +131,16 @@ export interface GrantCardText {
 /** A grant request card (SPEC-133 DC-08): the app, its path, its publisher or "unsigned", and the bot's reason. */
 export function grantCardText(request: DesktopGrantRequest): GrantCardText {
   return {
-    title: `Let the bot see ${request.name}?`,
+    title: t('Let the bot see {value0}?', { value0: request.name }),
     path: request.path,
-    publisher: request.publisher ? `Publisher: ${request.publisher}` : 'Unsigned app: no publisher could be verified',
-    observeOnly: request.tier === 'observe_only' ? 'Observe only: the bot can never type into this app.' : null,
-    reason: `The bot's reason: ${request.reason}`,
+    publisher: request.publisher
+      ? t('Publisher: {value0}', { value0: request.publisher })
+      : t('Unsigned app: no publisher could be verified'),
+    observeOnly:
+      request.tier === 'observe_only'
+        ? t('Observe only: the bot can never type into this app.')
+        : null,
+    reason: t("The bot's reason: {value0}", { value0: request.reason }),
   };
 }
 
@@ -127,13 +160,15 @@ export function settingsRow(state: DesktopControlState | null): SettingsRow {
     hidden: state.reason === 'not_windows' && !state.enabled,
     // A switch that is on can always be turned off.
     disabled: !state.enabled,
-    note: `Not available on this computer: ${reasonText(state.reason)}.`,
+    note: t('Not available on this computer: {value0}.', { value0: reasonText(state.reason) }),
   };
 }
 
 /** How many notes have their own switch on, for the settings page. */
 export function enabledNotesText(state: DesktopControlState): string {
   const count = state.conversations.length;
-  if (count === 0) return 'No note has it on yet: turn it on in each note that should use it.';
-  return `On in ${count} ${count === 1 ? 'note' : 'notes'}.`;
+  if (count === 0)
+    return t('No conversation has it on yet: turn it on in each conversation that should use it.');
+  if (count === 1) return t('On in 1 conversation.');
+  return t('On in {count} conversations.', { count });
 }

@@ -108,12 +108,12 @@ last step, not the first.
   exclusion lists in `Exclusions.cs` (SPEC-006 BDC-11, PLAN-006 P1).
 - **Native check** (Windows only, manual): run `dotnet build -c Release` in the
   helper folder, then `node native/windows-desktop-control/native-check/check.mjs
-  [helper.exe]`. It opens two throwaway PowerShell windows for about 10 s, never
+[helper.exe]`. It opens two throwaway PowerShell windows for about 10 s, never
   sends keyboard or mouse input, and checks the handshake, window listing, app
   resolution, capture under a covering window (B4), UI reading without password
   values, the lock state and self exclusion. CI never starts the helper.
 - **Native input check** (Windows only, manual, B7): `node
-  native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
+native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   builds its probe app on first use and sends real keyboard and mouse input,
   but only to that probe window, after 5 quiet seconds from the owner before
   each action. Run it only on a desktop nobody else is using.
@@ -138,7 +138,7 @@ last step, not the first.
   times `devicePixelRatio`) before pressing.
 - Note layers (SPEC-002 FR-8) on Windows: put the note where no application
   window covers the desktop, confirm the parent with `GetAncestor(hwnd,
-  GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
+GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   and before sending any key check `GetForegroundWindow()` is the note: a
   click on an attached note does not make it the foreground window, so keys
   sent without that check land in whatever window the owner had active.
@@ -205,6 +205,28 @@ failure/retry, explicit download, progress, reload persistence and cancelled or
 confirmed fixture installation. No provider, real profile or installer is used;
 screenshots/results stay in ignored `tmp/updates-renderer-*` directories.
 
+Desktop parity acceptance uses two separate Electron processes after a build:
+
+```bash
+node node_modules/electron/cli.js scripts/test-desktop-parity.mjs
+node node_modules/electron/cli.js scripts/test-desktop-parity.mjs --restore tmp/desktop-parity-<printed-id>
+```
+
+The first process exercises provider-first setup with deterministic missing/installed
+helpers, exact model/effort menus, selection persistence, legacy-target preservation,
+live language switching and tooltip removal. It writes mixed visible/hidden windows
+and an all-hidden state. The second process confirms all-hidden startup, then
+restores mixed bounds/layers and the avatar from disk. Windows includes native
+Explorer desktop/wallpaper attachment; other OSes exercise normal/top only.
+`--native-dialog` also opens a real localized tray update result and waits for the
+operator or a scoped native UI driver to dismiss it. It asserts no Settings window
+was opened. Screenshots and JSON evidence stay in ignored `tmp/`.
+
+The helper runner/unit tests verify fixed arguments, prerequisite order, restart
+and failure handling, mutual exclusion, startup PATH recovery and source hashes.
+They do not install CLIs or access provider credentials. The real Runtime integration
+test verifies stale catalog revision recovery and saved effort reaching CLI arguments.
+
 ---
 
-*Last updated: 2026-10-29*
+_Last updated: 2026-10-29_

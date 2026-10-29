@@ -1,4 +1,5 @@
 import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
+import { t } from '../localeStore.ts';
 
 /**
  * SPEC-001 FR-33, SPEC-003: what the note shows, apart from React. The note
@@ -65,9 +66,13 @@ export function entryText(entry: TranscriptEntry): string {
 }
 
 /** The time under an owner or bot message; an unprompted (heartbeat) reply says so. */
-export function entryMeta(entry: TranscriptEntry, formatTime = (at: Date) => at.toLocaleTimeString()): string | null {
+export function entryMeta(
+  entry: TranscriptEntry,
+  formatTime = (at: Date) => at.toLocaleTimeString(),
+): string | null {
   if (!entry.at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
-  const unprompted = entry.kind === 'bot' && entry.origin === 'heartbeat' ? 'unprompted · ' : '';
+  const unprompted =
+    entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('unprompted')} · ` : '';
   return `${unprompted}${formatTime(new Date(entry.at))}`;
 }
 
@@ -119,7 +124,10 @@ function decisionStatus(item: WorkItem): DecisionStatus {
  * turns) become one card; the entry that asked the owner becomes a decision
  * with buttons while its work item waits. Everything else stays an entry.
  */
-export function buildNoteItems(entries: readonly TranscriptEntry[], workItems: readonly WorkItem[]): NoteItem[] {
+export function buildNoteItems(
+  entries: readonly TranscriptEntry[],
+  workItems: readonly WorkItem[],
+): NoteItem[] {
   const work = new Map(workItems.map((item) => [item.id, item]));
   const running = new Set(workItems.filter((item) => item.state === 'running').map((item) => item.id));
   const items: NoteItem[] = [];
@@ -147,7 +155,14 @@ export function buildNoteItems(entries: readonly TranscriptEntry[], workItems: r
     if (asking && DECIDED_BY_OWNER.has(asking.source) && !asked.has(asking.id)) {
       asked.add(asking.id);
       const status = decisionStatus(asking);
-      items.push({ type: 'decision', key: `decision:${asking.id}`, entry, workItemId: asking.id, status, detail: status === 'expired' ? asking.error ?? null : null });
+      items.push({
+        type: 'decision',
+        key: `decision:${asking.id}`,
+        entry,
+        workItemId: asking.id,
+        status,
+        detail: status === 'expired' ? (asking.error ?? null) : null,
+      });
       continue;
     }
     items.push({ type: 'entry', key: entryKey(entry), entry });

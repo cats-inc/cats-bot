@@ -18,7 +18,12 @@ import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
 import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
 import { createFileLogger, type Logger } from './log.ts';
-import { listProviders, readPackagedModelCatalog, type ModelCatalog, type ProviderInfo } from './providers/catalog.ts';
+import {
+  listProviders,
+  readLocalModelCatalog,
+  type ModelCatalog,
+  type ProviderInfo,
+} from './providers/catalog.ts';
 import {
   applyProfilePatch,
   createProfile,
@@ -237,12 +242,18 @@ export class BotCore implements BotHostApi {
     this.profile = profile;
     this.now = options.now ?? (() => new Date());
     this.log = createFileLogger(this.paths.logs, options.log);
-    this.interactions = new BotInteractions(this.paths.root, profile.id, (conversationId, pending, notify) => {
-      this.bus.emit({ type: 'provider.interactions', conversationId, pending, ...(notify ? { notify } : {}) });
-      if (notify && this.telegram && this.conversations.get(conversationId)?.role === 'home') {
-        void this.telegram.send('The provider is waiting for your response. Open the Bot note or use cats-bot interactions; Telegram text cannot approve this request.');
-      }
-    });
+    this.interactions = new BotInteractions(
+      this.paths.root,
+      profile.id,
+      (conversationId, pending, notify) => {
+        this.bus.emit({ type: 'provider.interactions', conversationId, pending, ...(notify ? { notify } : {}) });
+        if (notify && this.telegram && this.conversations.get(conversationId)?.role === 'home') {
+          void this.telegram.send(
+            'The provider is waiting for your response. Open the Bot conversation or use cats-bot interactions; Telegram text cannot approve this request.',
+          );
+        }
+      },
+    );
     this.control = new HostControlServer(this.paths.root, this);
     this.conversations = new ConversationStore({
       paths: this.paths,
@@ -483,10 +494,16 @@ export class BotCore implements BotHostApi {
       changed: (change) => {
         this.bus.emit({ type: 'desktop.control', ...change });
         // BDC-07 / BDC-12: Telegram only learns that something waits, never what or how to answer.
-        if (change.notify && this.telegram && change.conversationId
-          && this.conversations.get(change.conversationId)?.role === 'home') {
-          void this.telegram.send('A desktop control request is waiting for you. Open the Bot note or use cats-bot desktop; '
-            + 'Telegram cannot answer it.');
+        if (
+          change.notify &&
+          this.telegram &&
+          change.conversationId &&
+          this.conversations.get(change.conversationId)?.role === 'home'
+        ) {
+          void this.telegram.send(
+            'A desktop control request is waiting for you. Open the Bot conversation or use cats-bot desktop; ' +
+              'Telegram cannot answer it.',
+          );
         }
         // BDC-09: background work held for a waiting grant request resumes once it is answered.
         this.pump();
@@ -1192,20 +1209,37 @@ export class BotCore implements BotHostApi {
    */
   async listModels(provider: string): Promise<ModelCatalog> {
     const client = this.client();
-    if (client && provider === this.profile.executionTarget.provider && this.runtimeState() === 'ready') {
+    if (
+      client &&
+      provider === this.profile.executionTarget.provider &&
+      this.runtimeState() === 'ready'
+    ) {
       try {
-        const catalog = await client.providerModels(provider);
-        const models = (catalog.models ?? [])
+        const catalog = await client.providerAdvancedModels(provider);
+        const models = (catalog.entries ?? [])
           .filter((model) => typeof model.id === 'string' && model.id)
-          .map((model) => ({ id: model.id, label: model.label || model.id, default: model.default === true }));
+          .map((model) => ({
+            ...model,
+            id: model.id,
+            label: model.label || model.id,
+            default: model.default === true,
+          }));
         if (models.length > 0) {
-          return { provider, defaultModel: catalog.defaultModel ?? models.find((model) => model.default)?.id ?? null, models, source: 'runtime' };
+          return {
+            provider,
+            defaultModel: catalog.defaultModel ?? models.find((model) => model.default)?.id ?? null,
+            models,
+            source: 'runtime',
+            catalogRevision: catalog.catalogRevision,
+            controls: catalog.controls,
+            defaultSelection: catalog.defaultSelection,
+          };
         }
       } catch (error) {
         this.log(`model catalog for ${provider} from the runtime failed: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    return readPackagedModelCatalog(provider);
+    return readLocalModelCatalog(provider, this.paths.runtime);
   }
 
   /** SPEC-002 FR-5: a note's title is the owner's to choose; the home conversation keeps its role. */
@@ -1220,7 +1254,9 @@ export class BotCore implements BotHostApi {
   }
 
   async createConversation(title?: string): Promise<ConversationRecord> {
-    const record = this.conversations.create(title ?? `Note ${this.conversations.list().length}`);
+    const record = this.conversations.create(
+      title ?? `Conversation ${this.conversations.list().length}`,
+    );
     this.bus.emit({ type: 'conversation.updated', conversation: record });
     return structuredClone(record);
   }
@@ -1228,7 +1264,7 @@ export class BotCore implements BotHostApi {
   /** SPEC-001 FR-14: close, delete the runtime session, then remove the record and transcript. */
   async deleteConversation(conversationId: string): Promise<void> {
     const record = this.conversations.require(conversationId);
-    if (record.role === 'home') throw new Error('The home conversation cannot be deleted');
+    if (record.role === 'home') throw new Error('The direct message cannot be deleted');
     if (this.running?.item.conversationId === record.id) await this.cancelTurn(record.id);
     this.dropPendingWork((item) => item.conversationId === record.id, 'conversation deleted');
     for (const schedule of this.scheduleRecords()) {
@@ -1311,8 +1347,8 @@ export class BotCore implements BotHostApi {
     const sessionId = running.item.run?.sessionId;
     const client = this.client();
     if (sessionId && client) {
-      await client.cancelSession(sessionId).catch(() => undefined);
-    }
+        await client.cancelSession(sessionId).catch(() => undefined);
+      }
   }
 
   async markSeen(conversationId: string): Promise<void> {

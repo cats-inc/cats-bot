@@ -184,14 +184,21 @@ const server = createServer(async (req, res) => {
       } }],
     }])) });
   }
-  const models = /^\/providers\/([^/]+)\/models$/u.exec(path);
+  const models = /^\/providers\/([^/]+)\/models(?:\/advanced)?$/u.exec(path);
   if (req.method === 'GET' && models) {
     if (models[1] !== 'claude') {
       return json(res, 400, { error: `Failed to inspect provider models: Error: Provider '${models[1]}' is not configured`, code: 'provider_not_configured' });
     }
     return json(res, 200, {
-      provider: 'claude', backend: 'cli', instance: 'native', defaultModel: 'fake-opus', source: 'static',
-      models: [{ id: 'fake-opus', label: 'Fake Opus', default: true }, { id: 'fake-haiku', label: 'Fake Haiku', default: false }],
+      provider: 'claude',
+      backend: 'cli',
+      instance: 'native',
+      defaultModel: 'fake-opus',
+      source: 'static',
+      [path.endsWith('/advanced') ? 'entries' : 'models']: [
+        { id: 'fake-opus', label: 'Fake Opus', default: true },
+        { id: 'fake-haiku', label: 'Fake Haiku', default: false },
+      ],
     });
   }
   if (req.method === 'POST' && path === '/sessions') {
@@ -280,7 +287,12 @@ function lifecycle(event, extra = {}) {
 server.listen(port, host, () => {
   const address = server.address();
   const actualPort = typeof address === 'object' && address ? address.port : port;
-  lifecycle('runtime.ready', { host, port: actualPort, healthUrl: `http://${host}:${actualPort}/health`, ready: true });
+  lifecycle('runtime.ready', {
+    host,
+    port: actualPort,
+    healthUrl: `http://${host}:${actualPort}/health`,
+    ready: true,
+  });
   if (crashAfterMs > 0) {
     setTimeout(() => process.exit(3), crashAfterMs);
   }

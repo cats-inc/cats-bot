@@ -63,7 +63,24 @@ request to the running bot through the handoff directory (`open` shows a note,
 `quit` stops the instance); without a running instance it applies to the data
 root directly (a schedule added that way fires on the next run).
 
-## The tray and sticky-note shell
+## The tray and conversation windows
+
+Starting without an existing profile or `--provider` opens onboarding. Choose
+Codex, Claude, Antigravity, Grok or Muse first. The selected provider's packaged
+helper checks installation and provides an install button. Codex first requires
+Node/npm and a usable npm installation folder; native providers skip those steps.
+Installation and sign-in are reported separately. No other provider is installed.
+
+The model and effort lists use Runtime's catalog, matching Desktop. Model controls
+are saved for new sessions. Settings > App offers Follow system, English and
+Traditional Chinese; open conversation windows and the tray update immediately.
+Closing a conversation hides it. Avatar visibility/position and conversation
+visibility/position/layer survive restart, including an entirely hidden desktop.
+Check for Updates in the tray opens a native dialog with the result and available
+actions. It does not open Settings.
+
+The UI names the built-in conversation Direct message. Existing `home` CLI
+arguments, IDs, persisted roles and owner-assigned titles remain compatible.
 
 ```bash
 npm run build
@@ -72,8 +89,8 @@ npm run shell -- --id mochi                        # later launches
 ```
 
 The shell mounts the same core in the Electron main process: a tray icon
-(open home note, notes, new note, pause heartbeat, start at login, quit) and
-one frameless sticky note per conversation. Closing a note hides it; the bot
+(open direct message, conversations, new conversation, pause heartbeat, start at login, quit) and
+one frameless window per conversation. Closing a conversation hides its window; the bot
 keeps running until Quit. The same `CATS_BOTS_PROVIDER_*` variables apply.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
@@ -153,4 +170,4 @@ That is intentional: Node resolves the file that exists on disk, and
 
 ---
 
-*Last updated: 2026-10-27*
+_Last updated: 2026-10-27_

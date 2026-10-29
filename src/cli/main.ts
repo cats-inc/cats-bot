@@ -82,7 +82,7 @@ Commands:
   quit                                   ask the running instance (CLI or shell) to stop
   telegram set-token <token> | clear-token | enable | disable | status
                                          bind the bot to a Telegram bot token (long polling)
-  open [conversation|home]               ask the running shell to show a note window
+  open [conversation|home]               ask the running shell to show a conversation window
 
 Every command except init and run takes --id <id>. Bots live under CATS_BOTS_HOME
 (default ~/.cats/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -115,8 +115,10 @@ function describeEvent(event: BotHostEvent): string | null {
     case 'runtime.status':
       return `[runtime] ${event.state}${event.detail ? `: ${event.detail}` : ''}`;
     case 'work.updated':
-      return `[work] ${event.workItem.id} ${event.workItem.kind} ${event.workItem.state}`
-        + (event.workItem.error ? ` (${event.workItem.error})` : '');
+      return (
+        `[work] ${event.workItem.id} ${event.workItem.kind} ${event.workItem.state}` +
+        (event.workItem.error ? ` (${event.workItem.error})` : '')
+      );
     case 'turn.completed':
       return `[turn] ${event.workItem.id} ${event.workItem.state}`;
     case 'presence.changed':
@@ -127,9 +129,13 @@ function describeEvent(event: BotHostEvent): string | null {
       return `[approval] ${event.workItem.id} awaits the owner: ${event.workItem.prompt}`;
     case 'desktop.control':
       // BDC-12: no app, path or reason here; `cats-bot desktop` shows the request and the held app to the owner.
-      return `[desktop] ${event.conversationId ?? 'all conversations'}: ${event.pendingRequests} grant request(s) waiting`
-        + (event.holding ? `; the bot holds desktop control (stop: cats-bot desktop ${event.conversationId ?? '--all'} --stop)` : '')
-        + (event.notify ? `; see cats-bot desktop ${event.conversationId ?? 'home'}` : '');
+      return (
+        `[desktop] ${event.conversationId ?? 'all conversations'}: ${event.pendingRequests} grant request(s) waiting` +
+        (event.holding
+          ? `; the bot holds desktop control (stop: cats-bot desktop ${event.conversationId ?? '--all'} --stop)`
+          : '') +
+        (event.notify ? `; see cats-bot desktop ${event.conversationId ?? 'home'}` : '')
+      );
     default:
       return null;
   }
@@ -634,7 +640,9 @@ if (invokedDirectly) {
       process.exitCode = code;
     },
     (error: unknown) => {
-      process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+      process.stderr.write(
+        `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+      );
       process.exitCode = 1;
     },
   );

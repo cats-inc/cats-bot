@@ -2,13 +2,13 @@
 
 ## Metadata
 
-| Field | Value |
-|-------|-------|
-| **Status** | Accepted — 2026-10-28 together with [ADR-002](../decisions/002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) |
-| **Owner** | Claude |
-| **Reviewer** | Owner |
-| **Related decision** | ADR-002 |
-| **Related plan** | [PLAN-002](../plans/PLAN-002-desktop-presence.md) |
+| Field                | Value                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **Status**           | Accepted — 2026-10-28 together with [ADR-002](../decisions/002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) |
+| **Owner**            | Claude                                                                                                                   |
+| **Reviewer**         | Owner                                                                                                                    |
+| **Related decision** | ADR-002                                                                                                                  |
+| **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 
 ## Summary
 
@@ -20,6 +20,17 @@ layer. The core's behavior is still defined by SPEC-001; this document defines o
 `BotHostApi` commands it adds.
 
 ## Functional Requirements
+
+The owner's 2026-10-29 correction supersedes the original picker and setup details
+below: [PLAN-007](../plans/PLAN-007-desktop-experience-parity.md) and
+[ADR-006](../decisions/006-share-runtime-catalogs-and-package-provider-setup-helpers.md).
+Product text uses Conversation / Direct message. Provider-first setup runs packaged
+check/install helpers for the selected provider only; pickers expose the five
+approved providers and Runtime model/control entries with no synthetic default or
+custom rows. Existing saved targets stay unchanged until explicitly edited.
+Language offers System / English / Traditional Chinese. Startup restores each
+view's visibility, position and layer, including all hidden; the avatar has no
+hover tooltip. Tray Check for Updates uses a native result/action dialog.
 
 1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
    optional personality); after submission it creates the bot and opens the core and the home note;
