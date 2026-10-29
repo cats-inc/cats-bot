@@ -74,6 +74,12 @@ last step, not the first.
 
 ### Shell tests
 
+`tests/shell/noteWindows.test.ts` runs the real note window manager against a
+controllable Electron double. It covers a close after startup selected its restore
+list, overlapping opens during page load, explicit reopening, shutdown/deletion
+during a load, and delayed desktop focus after hiding. Page-load completion is
+released explicitly, without sleeps or real profile access.
+
 - **Location**: `tests/shell/trayMenu.test.ts`, `tests/shell/bridge.test.ts`,
   `tests/renderer/*.test.ts`
 - **Scope**: the Electron-free parts of the shell: the tray menu data and the
@@ -214,7 +220,8 @@ node node_modules/electron/cli.js scripts/test-desktop-parity.mjs --restore tmp/
 
 The first process exercises provider-first setup with deterministic missing/installed
 helpers, exact model/effort menus, selection persistence, legacy-target preservation,
-live language switching and tooltip removal. It writes mixed visible/hidden windows
+live language switching, tooltip removal and a close followed by a delayed startup
+restore through the real note/preload. It writes mixed visible/hidden windows
 and an all-hidden state. The second process confirms all-hidden startup, then
 restores mixed bounds/layers and the avatar from disk. Windows includes native
 Explorer desktop/wallpaper attachment; other OSes exercise normal/top only.

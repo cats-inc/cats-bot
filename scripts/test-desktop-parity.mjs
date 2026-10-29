@@ -312,7 +312,17 @@ async function main() {
       windows.setLayer(record.id, layer);
       shown.push(record.id);
     }
-    windows.hide('home');
+    // A slow startup can already have captured this restore list when the
+    // owner closes the direct message. The later restore must respect that close.
+    const pendingRestore = windows.previouslyOpen();
+    await dmUi.click('#hide');
+    await wait(() => !windows.shellState.views.home.open, 'direct message hidden');
+    for (const id of pendingRestore) await windows.open(id, { restore: true });
+    assert.equal(dm.isVisible(), false, 'startup restore must not reopen a closed direct message');
+    await windows.open('home');
+    assert.equal(dm.isVisible(), true, 'an explicit owner open still shows the direct message');
+    await dmUi.click('#hide');
+    await wait(() => !windows.shellState.views.home.open, 'direct message hidden again');
     await pause();
     windows.flush();
     for (const [index, id] of shown.entries()) {
