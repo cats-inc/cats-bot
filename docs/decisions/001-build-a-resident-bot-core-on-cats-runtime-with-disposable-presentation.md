@@ -10,6 +10,9 @@ channels (the session directories are not changed), and the reconciliation in §
 runtime's session status, with `initializing` and `busy` protected.
 For the spec see [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md),
 for the implementation see [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md).
+Pending (2026-10-29): [ADR-007](007-give-cats-bot-its-own-identity-and-data-root.md) replaces the §6 data
+root and [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md) supersedes §2's mounting and §8's
+per-bot lock and tray once PLAN-008/PLAN-009 land; until then this record describes the shipped code.
 
 ## Context
 
