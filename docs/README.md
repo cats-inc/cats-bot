@@ -16,7 +16,7 @@ and per-bot execution environments, native only at first
 ([ADR-008](decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
 [ADR-009](decisions/009-give-one-bot-a-bounded-coordinator-role.md),
 [ADR-010](decisions/010-bind-each-bot-to-an-execution-environment.md),
-[SPEC-008](specs/SPEC-008-hub-and-bot-fleet.md),
+[SPEC-008](specs/SPEC-008-hub-and-bots.md),
 [SPEC-009](specs/SPEC-009-coordinator-role.md),
 [PLAN-009](plans/PLAN-009-hub-headless-cores-and-coordinator.md)).
 

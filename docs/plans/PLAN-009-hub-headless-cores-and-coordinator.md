@@ -11,7 +11,7 @@
 
 ## Related Spec
 
-[SPEC-008: Hub and Bot Fleet](../specs/SPEC-008-hub-and-bot-fleet.md) and
+[SPEC-008: Hub and Bots](../specs/SPEC-008-hub-and-bots.md) and
 [SPEC-009: Coordinator Role](../specs/SPEC-009-coordinator-role.md), decided in
 [ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
 [ADR-009](../decisions/009-give-one-bot-a-bounded-coordinator-role.md) and
@@ -22,9 +22,9 @@
 Start after PLAN-008 Phase 1, so every new file uses the `~/.catsbot` layout.
 The two plans ship together as 0.3.0 (SPEC-007 FR-8), with no release in between.
 Phase 1 proves the split with today's single-bot shell talking to an
-out-of-process core. Later phases turn that shell into the hub and add the fleet,
-host services and the coordinator. Each phase is a separately reviewable PR and
-keeps the application usable.
+out-of-process core. Later phases turn that shell into the hub and add bot
+management, host services and the coordinator. Each phase is a separately
+reviewable PR and keeps the application usable.
 
 ## Implementation Phases
 
@@ -44,7 +44,7 @@ interactions and narrow-layout acceptance (Platform SPEC-134 FR-15 through FR-20
 UI-1 through UI-6). Coordinate Bot's live/durable data mapping and renderer adapter
 with the channel client introduced here; a shared renderer may first serve the
 current shell or the Hub, without a Platform API dependency. Hub acceptance does
-not complete this UI slice, and the UI slice does not implement fleet policy.
+not complete this UI slice, and the UI slice does not implement hub policy.
 Native window layers and the Electron host remain unchanged by UI extraction.
 
 ### Phase 1: Core out of Electron, still one bot
@@ -73,7 +73,7 @@ restarting the shell reattaches. First working-set measurement.
 ### Phase 2: The hub
 
 - [ ] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot`, installation id and
-      fleet lock (FR-1); fleet registry with lock and atomic writes (FR-2,
+      root lock (FR-1); bot registry with lock and atomic writes (FR-2,
       FR-3); hub state file for language and start at login (FR-18, FR-23).
 - [ ] 2.2: First run creates the registry, the native environment profile and the
       first bot, then assigns it as coordinator holder (FR-4, FR-24).
@@ -81,17 +81,17 @@ restarting the shell reattaches. First working-set measurement.
       (FR-17); one tray that matches today's menu for one bot (FR-16).
 - [ ] 2.4: `environment: { kind: 'native' }` in the bot profile; refuse any
       other kind.
-- [ ] 2.5: The hub's own control endpoint for owner CLI fleet commands (FR-25).
+- [ ] 2.5: The hub's own control endpoint for owner CLI hub commands (FR-25).
 
 **Deliverables**: the product runs as hub plus one core, with no visible
 regression.
 
-### Phase 3: Fleet management
+### Phase 3: Bot management
 
 - [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically and
       order; archive, restore, and delete from the archive under the instance
       lock, with `trash/` and start-time recovery, and `cats-bot run` refusing
-      archived ids (FR-3, FR-5); fleet cap of 3 (FR-6).
+      archived ids (FR-3, FR-5); bot cap of 3 (FR-6).
 - [ ] 3.2: Tray submenus per bot and aggregated attention (FR-16).
 - [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order
       for every managed core including reattached ones, process-tree kill
@@ -112,13 +112,13 @@ delete; tests also cover the cap.
 - [ ] 4.5: Account-wide desktop lease taken by every core, hub-started or not,
       before control and clipboard calls (FR-26).
 
-**Deliverables**: update, setup and secrets work for a fleet.
+**Deliverables**: update, setup and secrets work for several bots.
 
 ### Phase 5: Coordinator
 
 - [ ] 5.1: Role state, Settings assignment, a CLI command through the hub's
       control endpoint, and the default holder (SPEC-009 FR-1, FR-2, FR-10).
-- [ ] 5.2: The `cats-fleet` server in the holder's core, attached per send while the
+- [ ] 5.2: The `cats-hub` server in the holder's core, attached per send while the
       hub reports it as holder and the session supports session MCP servers,
       with hub-side authorization of every call and the refusals (FR-3, FR-4,
       FR-6, FR-11).
@@ -155,9 +155,9 @@ SPEC-009 FR-6 is enforced and tested.
 | `src/core/bot.ts`, `src/core/desktopControl/*` | Modify | Host PID and executable in self-exclusion |
 | `src/core/secrets.ts` | Modify | Asynchronous cipher path |
 | `src/shell/electron/main.ts`, `ipc.ts`, `windows.ts`, `tray.ts`, `trayMenu.ts`, `settingsWindow.ts`, `floatingBot.ts`, `viewState.ts` | Modify | Hub, bot-bound windows, one tray |
-| `src/shell/electron/fleet/` | Create | Registry, core supervisor, hub state |
+| `src/shell/electron/hub/` | Create | Registry, core supervisor, hub state |
 | `src/shell/electron/update/*` | Modify | Hub-owned update coordination |
-| `src/core/tools/` (fleet server) | Create | `cats-fleet` tools |
+| `src/core/tools/` (hub tool server) | Create | `cats-hub` tools |
 | `src/renderer/settings/` | Modify | Bots page, coordinator display |
 | `tests/core/`, `tests/shell/`, `tests/integration/`, `tests/architecture-boundaries.test.ts` | Create/Modify | Channel, registry, supervision, coordinator |
 

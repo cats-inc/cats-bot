@@ -20,7 +20,7 @@ or releases.
 
 - Every engineering identifier uses the singular product identity.
 - All Bot state lives under `~/.catsbot/`; nothing is created under `~/.cats/`.
-- Fleet-level files have a place that cannot collide with a bot id.
+- Hub files have a place that cannot collide with a bot id.
 
 ## Non-Goals
 
@@ -44,10 +44,10 @@ or releases.
 3. FR-3: The ecosystem root defaults to `~/.catsbot/`. Each bot root is
    `<root>/bots/<botId>/` with the SPEC-001 FR-2 layout unchanged inside it,
    including `runtime/` as `CATS_RUNTIME_DIR`. Everything directly under
-   `<root>/` other than `bots/`, including `archive/`, belongs to the fleet
+   `<root>/` other than `bots/`, including `archive/`, belongs to the hub
    (SPEC-008).
 4. FR-4: `CATS_BOT_HOME` overrides the ecosystem root, so one variable moves
-   the fleet files and every bot together.
+   the hub files and every bot together.
    `CATS_BOTS_HOME` is no longer read, and setting it has no effect. Every test
    sets `CATS_BOT_HOME` to a temporary directory. The development and fixture
    variables `CATS_BOTS_PROVIDER_*` and `CATS_BOTS_FIXTURE_*` become
@@ -78,7 +78,7 @@ or releases.
 
 ```
 ~/.catsbot/                      CATS_BOT_HOME
-  <fleet files>                  SPEC-008 registry, SPEC-009 role state
+  <hub files>                    SPEC-008 registry, SPEC-009 role state
   bots/
     <botId>/                     SPEC-001 FR-2 layout
       profile.json  conversations/  transcripts/  journal.jsonl
