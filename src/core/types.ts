@@ -349,6 +349,8 @@ export interface BotStatus {
   runtime: { state: RuntimeState; pid: number | null };
   queue: { queued: number; running: WorkItem | null };
   pendingInteractions: number;
+  /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
+  awaitingOwner: number;
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null; };

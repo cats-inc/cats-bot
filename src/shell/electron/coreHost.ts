@@ -2,7 +2,7 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { closeSync, mkdirSync, openSync, renameSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { HostChannelClient, readChannelOwner, type ChannelHostIdentity, type ChannelHostServices } from '../../core/host-api/channel.ts';
+import { ChannelError, HostChannelClient, readChannelOwner, type ChannelHostIdentity, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { remoteBotCore, type RemoteBotCore } from '../../core/host-api/remote.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor } from '../../core/store/paths.ts';
@@ -15,6 +15,9 @@ import { processIsAlive } from './update/installation.ts';
  * installation reattaches to it; Quit stops it through the channel. No
  * Electron here, so tests run it with node.
  */
+
+/** How long a stopping core may take to answer `quit` before only its process is watched. */
+const QUIT_ANSWER_MS = 5_000;
 
 export class CoreHostedElsewhereError extends Error {
   readonly pid: number;
@@ -96,17 +99,38 @@ export function coreErrorFile(root: string): string {
 }
 
 /** Reattaches to this installation's running core for the bot in `root`, or starts one. */
+/**
+ * Reattaches to this installation's running core for the bot in `root`, or
+ * starts one. A process that holds the bot's lock without a channel (a core
+ * starting or stopping, the CLI writing the profile) is waited for: the core
+ * starts as soon as the lock is free, or attaches once the channel is up.
+ */
 export async function attachOrStartCore(root: string, launch: CoreLaunch, options: CoreHostOptions): Promise<HostedCore> {
-  const attached = await attachRunning(root, launch.manager, options);
-  if (attached) return attached;
-  const lock = readInstanceLock(botPathsFor(root));
-  if (lock) {
-    // A core holds the bot's lock before it publishes its channel.
-    if (!(await waitFor(() => liveOwner(root), options.lockWaitMs ?? 10_000))) throw new CoreHostedElsewhereError(lock.pid);
-    const late = await attachRunning(root, launch.manager, options);
-    if (late) return late;
+  const paths = botPathsFor(root);
+  const deadline = Date.now() + (options.lockWaitMs ?? 10_000);
+  for (;;) {
+    const owner = liveOwner(root);
+    if (owner) {
+      // SPEC-008 FR-11: a core another host started is never taken over.
+      if (owner.manager !== launch.manager) throw new CoreHostedElsewhereError(owner.pid);
+      try {
+        return hosted(await connect(root, options), owner.pid, false, coreLogFile(root));
+      } catch (error) {
+        // A core that is stopping has closed its channel but still holds its lock.
+        if (!isGone(error)) throw error;
+      }
+    } else if (!readInstanceLock(paths)) {
+      return startCore(root, launch, options);
+    }
+    if (Date.now() >= deadline) throw new CoreHostedElsewhereError(readInstanceLock(paths)?.pid ?? owner?.pid ?? 0);
+    await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
-  return startCore(root, launch, options);
+}
+
+function isGone(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return code === 'ENOENT' || code === 'ECONNREFUSED' || code === 'EPIPE' || code === 'ECONNRESET'
+    || (error instanceof ChannelError && (error.reason === 'closed' || error.reason === 'descriptor'));
 }
 
 /** The descriptor's process while it also holds the bot's lock; a stale descriptor names neither. */
@@ -117,13 +141,6 @@ function liveOwner(root: string): { pid: number; manager: string | null } | null
   return lock?.pid === owner.pid ? owner : null;
 }
 
-async function attachRunning(root: string, manager: string, options: CoreHostOptions): Promise<HostedCore | null> {
-  const owner = liveOwner(root);
-  if (!owner) return null;
-  // SPEC-008 FR-11: a core another host started is never taken over.
-  if (owner.manager !== manager) throw new CoreHostedElsewhereError(owner.pid);
-  return hosted(await connect(root, options), owner.pid, false, coreLogFile(root));
-}
 
 function connect(root: string, options: CoreHostOptions): Promise<HostChannelClient> {
   return HostChannelClient.connect(root, { host: options.host, ...(options.services ? { services: options.services } : {}) });
@@ -173,8 +190,15 @@ function hosted(client: HostChannelClient, pid: number, started: boolean, logFil
     started,
     logFile,
     async stop(timeoutMs = 30_000) {
-      if (!client.isClosed) await client.call('quit').catch(() => { /* already stopping */ });
-      if (!(await waitFor(() => !processIsAlive(pid), timeoutMs))) {
+      const deadline = Date.now() + timeoutMs;
+      // A core that no longer answers is not waited for beyond the deadline.
+      if (!client.isClosed) {
+        await Promise.race([
+          client.call('quit').catch(() => { /* already stopping */ }),
+          new Promise((resolveWait) => setTimeout(resolveWait, Math.min(QUIT_ANSWER_MS, timeoutMs)).unref?.()),
+        ]);
+      }
+      if (!(await waitFor(() => !processIsAlive(pid), Math.max(0, deadline - Date.now())))) {
         killTree(pid);
         await waitFor(() => !processIsAlive(pid), 5_000);
       }

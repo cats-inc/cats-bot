@@ -715,7 +715,7 @@ export class BotCore implements BotHostApi {
       await this.supervisor.start();
       this.runtimeAttempt = 0;
       this.journal({ type: 'runtime', at: this.now().toISOString(), event: 'ready' });
-      void this.recoverInterrupted();
+      void this.recoverInterrupted().catch((error: unknown) => this.log(`recovery failed: ${error instanceof Error ? error.message : 'error'}`));
       this.pump();
       return true;
     } catch (error) {
@@ -744,7 +744,7 @@ export class BotCore implements BotHostApi {
     this.runtimeRestartTimer = this.schedule(delay, () => {
       this.runtimeRestartTimer = null;
       this.runtimeRestartAt = null;
-      void this.ensureRuntime();
+      void this.ensureRuntime().catch((error: unknown) => this.log(`runtime restart failed: ${error instanceof Error ? error.message : 'error'}`));
     });
   }
 
@@ -896,6 +896,7 @@ export class BotCore implements BotHostApi {
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       pendingInteractions: this.interactions.pending(),
+      awaitingOwner: [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner').length,
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
@@ -909,8 +910,11 @@ export class BotCore implements BotHostApi {
     };
   }
 
-  listWorkItems(): WorkItem[] {
-    return [...this.workItems.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  listWorkItems(conversationId?: string): WorkItem[] {
+    const id = conversationId === undefined ? undefined : this.resolveConversationId(conversationId);
+    return [...this.workItems.values()]
+      .filter((item) => id === undefined || item.conversationId === id)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
   providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
@@ -1494,7 +1498,7 @@ export class BotCore implements BotHostApi {
     }
     if (this.running || this.stopped || !this.started || this.swappingRuntime) return;
     if (this.runtimeSwapPending) {
-      void this.swapRuntime();
+      void this.swapRuntime().catch((error: unknown) => this.log(`runtime swap failed: ${error instanceof Error ? error.message : 'error'}`));
       return;
     }
     // SPEC-006 BDC-09: while a desktop grant request waits for the owner, only owner messages

@@ -1,5 +1,6 @@
 import { delimiter, isAbsolute } from 'node:path';
 
+import { isTerminalWorkState } from '../queue/workItems.ts';
 import type {
   ApprovalDecision, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus, ConversationRecord,
   DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
@@ -38,7 +39,8 @@ type MaybePromise<T> = T | Promise<T>;
 export interface CoreCommandTarget extends BotHostApi {
   transcript(conversationId: string): MaybePromise<TranscriptEntry[]>;
   conversationTranscript(conversationId: string): MaybePromise<TranscriptEntry[]>;
-  listWorkItems(): MaybePromise<WorkItem[]>;
+  /** Every work item, or one conversation's. */
+  listWorkItems(conversationId?: string): MaybePromise<WorkItem[]>;
   status(): MaybePromise<BotStatus>;
   listProviders(): MaybePromise<ProviderInfo[]>;
   listModels(provider: string): Promise<ModelCatalog>;
@@ -52,6 +54,37 @@ export interface CoreCommandTarget extends BotHostApi {
 
 const MAX_ID = 200;
 const MAX_TEXT = 1024 * 1024;
+
+/**
+ * What a host reads of a history that only grows: the newest part within a
+ * byte budget, so a snapshot stays far below the channel's frame limit
+ * however long the bot has run. Hosts show recent history.
+ */
+const TRANSCRIPT_BUDGET_BYTES = 4 * 1024 * 1024;
+const FINISHED_WORK_BUDGET_BYTES = 2 * 1024 * 1024;
+
+function newestWithin<T>(items: T[], budget: number): T[] {
+  let used = 0;
+  let from = items.length;
+  while (from > 0) {
+    const size = Buffer.byteLength(JSON.stringify(items[from - 1]));
+    if (used + size > budget) break;
+    used += size;
+    from -= 1;
+  }
+  return items.slice(from);
+}
+
+/** A transcript's newest entries within the budget. */
+export function recentEntries(entries: TranscriptEntry[], budget = TRANSCRIPT_BUDGET_BYTES): TranscriptEntry[] {
+  return newestWithin(entries, budget);
+}
+
+/** Every unfinished work item and the newest finished ones within the budget, in order. */
+export function recentWorkItems(items: WorkItem[], budget = FINISHED_WORK_BUDGET_BYTES): WorkItem[] {
+  const kept = new Set(newestWithin(items.filter((item) => isTerminalWorkState(item.state)), budget));
+  return items.filter((item) => !isTerminalWorkState(item.state) || kept.has(item));
+}
 
 function asString(value: unknown, name: string, max = MAX_ID): string {
   if (typeof value !== 'string' || !value) throw new Error(`${name} must be a non-empty string`);
@@ -86,8 +119,8 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'deleteConversation':
       await target.deleteConversation(asString(args[0], 'conversationId'));
       return null;
-    case 'transcript': return target.transcript(asString(args[0], 'conversationId'));
-    case 'conversationTranscript': return target.conversationTranscript(asString(args[0], 'conversationId'));
+    case 'transcript': return recentEntries(await target.transcript(asString(args[0], 'conversationId')));
+    case 'conversationTranscript': return recentEntries(await target.conversationTranscript(asString(args[0], 'conversationId')));
     case 'sendOwnerMessage': return target.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text', MAX_TEXT));
     case 'cancelTurn':
       await target.cancelTurn(asString(args[0], 'conversationId'));
@@ -99,7 +132,7 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'cancelSchedule':
       await target.cancelSchedule(asString(args[0], 'scheduleId'));
       return null;
-    case 'listWorkItems': return target.listWorkItems();
+    case 'listWorkItems': return recentWorkItems(await target.listWorkItems(asOptionalConversation(args[0])));
     case 'resolveApproval': {
       const decision = args[1];
       if (decision !== 'approve' && decision !== 'deny') throw new Error('decision must be approve or deny');

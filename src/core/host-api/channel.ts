@@ -444,7 +444,7 @@ export class HostChannelServer {
     if (method === 'quit') {
       // Answer first: quitting stops this server.
       connection.send({ t: 'res', id, ok: true, v: null, seq });
-      setImmediate(() => { void this.target.quit(); });
+      setImmediate(() => { void Promise.resolve().then(() => this.target.quit()).catch(() => undefined); });
       return;
     }
     try {

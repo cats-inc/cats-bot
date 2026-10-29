@@ -226,12 +226,12 @@ export class NoteWindows {
       window.hide();
       view.open = false;
       this.persist();
-      void this.options.core.closeView(conversationId);
+      void Promise.resolve(this.options.core.closeView(conversationId)).catch(() => undefined);
     });
     window.on('closed', () => {
       if (this.windows.get(conversationId) === window) this.windows.delete(conversationId);
       this.lifted.delete(conversationId);
-      void this.options.core.setViewFocused(conversationId, false);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, false)).catch(() => undefined);
       // Not closed by us: Explorer restarted and took its children down.
       if (!this.options.isQuitting() && view.open && isAttachedLayer(view.layer)) this.reopenLater(conversationId, REOPEN_TRIES);
     });
@@ -242,10 +242,10 @@ export class NoteWindows {
     // A note that is open but not in front (on the desktop, the wallpaper or behind other windows) has not read
     // a reply: unread counts follow focus, not whether the window exists.
     window.on('focus', () => {
-      void this.options.core.setViewFocused(conversationId, true);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, true)).catch(() => undefined);
     });
     window.on('blur', () => {
-      void this.options.core.setViewFocused(conversationId, false);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, false)).catch(() => undefined);
       if (this.lifted.has(conversationId)) this.settle(conversationId, window);
     });
     const remember = () => {

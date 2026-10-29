@@ -203,8 +203,11 @@ async function main(): Promise<void> {
     .filter((presenter): presenter is BotPresenter => presenter !== null && presenter !== undefined);
   const primary = (): BotPresenter | undefined => presented()[0];
 
-  // FR-19: one setup helper at a time for every bot; a CLI it found reaches every core's PATH.
+  // FR-19: one setup helper at a time for every bot; a CLI it found reaches every core's PATH,
+  // a core the hub reattaches to included.
+  const commandDirectories = new Set<string>();
   const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup'), (directory) => {
+    commandDirectories.add(directory);
     for (const presenter of presented()) {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
     }
@@ -481,6 +484,9 @@ async function main(): Promise<void> {
     }
     const identity = botWindowIdentity({ appId: APP_ID, botId, botName: profile.name, executable: process.execPath, packaged: app.isPackaged });
     const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity);
+    for (const directory of commandDirectories) {
+      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+    }
     opening.set(botId, presenter);
     try {
       await presenter.start();

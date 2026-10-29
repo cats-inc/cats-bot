@@ -9,6 +9,7 @@ import { describeSchedule, type CreateScheduleInput } from '../core/life/schedul
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { callHubControl } from '../core/host-api/hubControl.ts';
+import { createFileLogger } from '../core/log.ts';
 import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
@@ -233,6 +234,11 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
   });
   core.subscribe((event) => printEvent(event, json));
+  // A rejection nothing handled would end this process; the core logs it and keeps running.
+  const coreLog = createFileLogger(core.paths.logs);
+  process.on('unhandledRejection', (reason) => {
+    coreLog(`unhandled rejection: ${reason instanceof Error ? `${reason.name}: ${reason.message}` : typeof reason}`);
+  });
   await core.start();
   const status = core.status();
   if (!json) process.stdout.write(`cats-bot ${status.id} running (pid ${process.pid}); press Ctrl+C or run cats-bot quit to stop\n`);

@@ -45,7 +45,8 @@ export interface HostCommands {
   markSeen: { args: [conversationId: string]; result: null };
   listSchedules: { args: []; result: ScheduleRecord[] };
   cancelSchedule: { args: [scheduleId: string]; result: null };
-  listWorkItems: { args: []; result: WorkItem[] };
+  /** One conversation's work items: the unfinished ones and the newest finished ones. */
+  listWorkItems: { args: [conversationId?: string]; result: WorkItem[] };
   resolveApproval: { args: [workItemId: string, decision: ApprovalDecision]; result: null };
   status: { args: []; result: BotStatus };
   listProviders: { args: []; result: ProviderInfo[] };

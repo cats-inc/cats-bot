@@ -111,15 +111,15 @@ export class BotPresenter {
   }
 
   async trayModel(): Promise<BotTrayModel> {
-    const [profile, conversations, desktopControl, status, workItems] = await Promise.all([
-      this.core.getProfile(), this.core.listConversations(), this.trayDesktopControl(), this.core.status(), this.core.listWorkItems(),
+    const [profile, conversations, desktopControl, status] = await Promise.all([
+      this.core.getProfile(), this.core.listConversations(), this.trayDesktopControl(), this.core.status(),
     ]);
     return {
       botName: profile.name,
       status,
       conversations,
       heartbeatEnabled: profile.heartbeat.enabled,
-      awaitingOwner: workItems.filter((item) => item.state === 'awaiting_owner').length,
+      awaitingOwner: status.awaitingOwner,
       floatingVisible: this.windows.shellState.floatingBot.visible,
       desktopControl,
     };

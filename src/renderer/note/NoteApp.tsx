@@ -169,7 +169,7 @@ export function NoteApp() {
   const reload = useCallback(async () => {
     const id = conversation.current;
     try {
-      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems')]);
+      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems', id)]);
       for (const entry of transcript) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
       setEntries(current => mergeTranscriptEntries(current, visibleEntries(transcript)));
       setWorkItems(work.filter((item) => item.conversationId === id));
