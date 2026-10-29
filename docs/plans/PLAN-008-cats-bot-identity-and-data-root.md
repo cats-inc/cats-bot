@@ -83,8 +83,10 @@ repository, so the local folder rename cannot strand anyone's work.
       cannot be removed is reported. A per-machine install skips the page.
 - [x] 1b.2: Every per-user uninstall that is not an update removes the Run
       values named `io.catsinc.catsbot` and `io.catsinc.catsbot.<botId>` that
-      start this installation, with their StartupApproved values. A packaged
-      start registers Start at login again while the owner has it on.
+      start this installation, with their StartupApproved values. An installed
+      Windows copy registers Start at login again at a bot's next start when
+      the owner has it on and no entry starts that copy; an entry disabled in
+      Task Manager stays disabled, and a portable copy never registers.
 - [x] 1b.3: `tests/shell/installer.test.ts` ties the page, the guards, the three
       roots and the login-entry names to the app's and electron-builder's own
       names. Local checks on 2026-10-30:
@@ -98,18 +100,27 @@ repository, so the local folder rename cannot strand anyone's work.
         another folder's, a look-alike `Cats Bot2` folder's, the 0.2.x name
         and Desktop's `Cats`. The root removal kept the target of a junction
         inside a root and of a root that is itself a junction, removed
-        read-only files, and ignored a missing root.
+        read-only files, and ignored a missing root. Folders named with `%TEMP%`
+        and `!` were removed exactly, with `TEMP` and a neighbouring folder
+        untouched.
+      - The path check expects Electron's quoted form. 0.2.5's own entry, seen
+        on the owner's machine before it was deleted, was
+        `"C:\Users\…\Programs\Cats Bot\Cats Bot.exe" --id mochi`.
       - An NSIS `RMDir /r` control run emptied a junction's target, which is
         why it is not used.
 - [ ] 1b.4: Interactive uninstall in a disposable Windows account or sandbox,
       never on the owner's profile: unchecked keeps every root; checked
       removes them and keeps the target of a junction in a bot workspace;
       installing over a copy keeps Start at login; a reinstall that kept the
-      data starts at login again after the first launch. Run with PLAN-009 6.2,
-      before 0.3.0.
+      data starts at login again after the first launch. Also confirm that the
+      value Start at login writes begins with `"$INSTDIR\`, and that a directory
+      symlink (`mklink /D`) in a workspace keeps its target, which could not be
+      created without privileges on 2026-10-30. Run with PLAN-009 6.2, before
+      0.3.0.
 
-**Deliverables**: when asked, 0.3.0's uninstaller removes Cats Bot's data,
-update cache and login entries, and never anything outside them.
+**Deliverables**: 0.3.0's uninstaller removes this installation's login entries
+and, when asked, Cats Bot's data and update cache, and never anything outside
+them.
 
 ### Phase 2: GitHub (owner-confirmed, irreversible)
 
@@ -224,7 +235,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | 2026-10-30 | Phase 1 implemented. `npm ci`, typecheck, 237 tests and the build passed on Windows. The isolated shell start (temporary `CATS_BOT_HOME` and `--user-data-dir`, fixture CLI) created only `bots/smoke/`, its Runtime exited cleanly on `cats-bot quit`, and `~/.catsbot`, `~/.cats/bots` and `%APPDATA%\Cats Bot` were unchanged. The owner confirmed deleting v0.2.0–v0.2.5. |
 | 2026-10-30 | Independent review: no code defects. Its fixes: one release identity source with a regression test, the 0.2.x login-entry and redirect steps in SPEC-007 FR-8, ADR-001/ADR-004 status lines. Bot ids are not validated (pre-existing; `..` resolves into the hub's namespace), left for the owner to schedule. |
 | 2026-10-30 | Phase 1 merged as #60. Phases 2–3 done: releases and tags v0.2.0–v0.2.5 deleted, the repository renamed to `cats-inc/cats-bot` (secrets, branch protection and workflows checked), cats-one #31 and cats-platform #352 merged, the local folder renamed and the workspace synced. The owner scheduled bot-id validation as PLAN-009 task 1.6 (SPEC-008 FR-27). |
-| 2026-10-30 | Phase 1b at the owner's request: the uninstaller offers Remove all user data like Desktop's and removes Cats Bot's login entries (SPEC-007 FR-9). An independent review found that NSIS's `RMDir /r` empties junction targets, confirmed locally, so removal moved to `rd /s`; it also added the update cache (renamed `cats-bot-updater`), StartupApproved values, the per-machine guard, the loop fixes and the login re-registration. The interactive uninstall (1b.4) is still to run. |
+| 2026-10-30 | Phase 1b at the owner's request: the uninstaller offers Remove all user data like Desktop's and removes Cats Bot's login entries (SPEC-007 FR-9). An independent review found that NSIS's `RMDir /r` empties junction targets, confirmed locally, so removal moved to `rd /s`; it also added the update cache (renamed `cats-bot-updater`), StartupApproved values, the per-machine guard, the loop fixes and the login re-registration. A second review confirmed the fixes and found that the re-registration re-enabled an entry disabled in Task Manager and let a portable copy repoint the entry; it now runs only for an installed Windows copy that no entry starts. The interactive uninstall (1b.4) is still to run. |
 
 ---
 

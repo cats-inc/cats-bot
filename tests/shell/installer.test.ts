@@ -57,7 +57,9 @@ test('removing a root never follows a junction or symlink', () => {
   assert.doesNotMatch(code, /RMDir \/r/u);
   const remove = macro('removeDataRoot');
   assert.match(remove, /GetFileAttributesW\(w "\$\{DIR\}"\) i \.R0'[\s\S]*IntOp \$R0 \$R0 & 0x400/u);
-  assert.match(remove, /\$\{If\} \$R0 != 0\s+RMDir "\$\{DIR\}"\s+\$\{Else\}\s+nsExec::Exec '"\$SYSDIR\\cmd\.exe" \/d \/c rd \/s \/q "\$\{DIR\}"'\s+Pop \$R0/u);
+  assert.match(remove, /\$\{If\} \$R0 != 0\s+RMDir "\$\{DIR\}"\s+\$\{Else\}/u);
+  // The path reaches cmd through a variable, so % and ! in it are never expanded.
+  assert.match(remove, /SetEnvironmentVariableW\(w "CATS_REMOVE_ROOT", w "\$\{DIR\}"\) i \.R0'\s+nsExec::Exec '"\$SYSDIR\\cmd\.exe" \/d \/v:off \/c rd \/s \/q "%CATS_REMOVE_ROOT%"'\s+Pop \$R0/u);
 });
 
 test('a real per-user uninstall removes only this installation\'s login entries', () => {
@@ -71,6 +73,8 @@ test('a real per-user uninstall removes only this installation\'s login entries'
   // Electron names the Run value after the AUMID, which the shell derives from the appId.
   assert.match(main, new RegExp(`setAppUserModelId\\(\`${pkg.build.appId.replaceAll('.', '\\.')}\\.\\$\\{botId\\}\`\\)`, 'u'));
   assert.match(main, /app\.setLoginItemSettings\(\{ openAtLogin: enabled, args: \['--id', botId\] \}\)/u);
-  // An uninstall that kept the data deleted the entry, so a packaged start restores the owner's choice.
-  assert.match(main, /if \(app\.isPackaged && openAtLoginAvailable && windows\.shellState\.openAtLogin\) applyLoginItem\(true\);/u);
+  // An uninstall that kept the data deleted the entry, so an installed Windows
+  // copy restores the owner's choice, but only when no entry starts it: one
+  // disabled in Task Manager stays disabled, and a portable copy never registers.
+  assert.match(main, /if \(process\.platform === 'win32' && app\.isPackaged && !process\.env\.PORTABLE_EXECUTABLE_FILE\s+&& windows\.shellState\.openAtLogin && !app\.getLoginItemSettings\(\{ args: \['--id', botId\] \}\)\.openAtLogin\) applyLoginItem\(true\);/u);
 });

@@ -81,14 +81,16 @@ or releases.
    `build.extraMetadata.name`, `cats-bot`).
    - Deletion never follows a link. A junction or symlink inside a root is
      removed and its target kept, and a root that is itself a link loses only
-     the link. A root moved with `CATS_BOT_HOME` is never touched. Whatever
-     cannot be removed, for example files another program holds open, is
-     listed in a message.
+     the link. A root moved with `CATS_BOT_HOME` is never touched. Any root
+     that remains, for example because another program holds files in it or a
+     path is too long, is listed in a message.
    - Every uninstall also deletes the Run values that Start at login created,
      `io.catsinc.catsbot` and `io.catsinc.catsbot.<botId>`, when they start
-     this installation, with their StartupApproved values. A packaged start
-     registers Start at login again while the owner has it on, so a reinstall
-     that kept the data keeps the setting.
+     this installation, with their StartupApproved values. On Windows, an
+     installed copy registers Start at login again at a bot's next start when
+     the owner has it on and no entry starts that copy, so a reinstall that
+     kept the data keeps the setting. An entry disabled in Task Manager still
+     exists and stays disabled, and a portable copy never registers itself.
    - Installing over an existing copy, updates included, runs the old
      uninstaller silently with `--updated`, so it removes neither data nor
      login entries. The exception is an installer run with `--delete-app-data`:

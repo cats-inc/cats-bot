@@ -74,8 +74,11 @@
     ${If} $R0 != 0
       RMDir "${DIR}"
     ${Else}
-      nsExec::Exec '"$SYSDIR\cmd.exe" /d /c rd /s /q "${DIR}"'
+      ; The path reaches cmd through a variable, so % and ! in it stay literal.
+      System::Call 'kernel32::SetEnvironmentVariableW(w "CATS_REMOVE_ROOT", w "${DIR}") i .R0'
+      nsExec::Exec '"$SYSDIR\cmd.exe" /d /v:off /c rd /s /q "%CATS_REMOVE_ROOT%"'
       Pop $R0
+      System::Call 'kernel32::SetEnvironmentVariableW(w "CATS_REMOVE_ROOT", i 0) i .R0'
     ${EndIf}
   ${EndIf}
   Pop $R0
@@ -148,7 +151,7 @@ FunctionEnd
       !insertmacro noteDataRootLeft "$APPDATA\Cats Bot"
       !insertmacro noteDataRootLeft "$LOCALAPPDATA\cats-bot-updater"
       ${If} $RemoveUserDataLeft != ""
-        MessageBox MB_OK|MB_ICONEXCLAMATION "Some Cats Bot data could not be removed, probably because a program still has it open:$RemoveUserDataLeft$\r$\n$\r$\nClose that program and delete these folders by hand." /SD IDOK
+        MessageBox MB_OK|MB_ICONEXCLAMATION "Cats Bot could not remove all of these folders:$RemoveUserDataLeft$\r$\n$\r$\nDelete them by hand, for example after closing programs that use them." /SD IDOK
       ${EndIf}
     ${EndIf}
   ${EndIf}
