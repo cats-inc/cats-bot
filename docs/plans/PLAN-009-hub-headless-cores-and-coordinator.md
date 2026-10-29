@@ -20,6 +20,7 @@
 ## Overview
 
 Start after PLAN-008 Phase 1, so every new file uses the `~/.catsbot` layout.
+The two plans ship together as 0.3.0 (SPEC-007 FR-8), with no release in between.
 Phase 1 proves the split with today's single-bot shell talking to an
 out-of-process core. Later phases turn that shell into the hub and add the fleet,
 host services and the coordinator. Each phase is a separately reviewable PR and
@@ -77,15 +78,16 @@ regression.
 
 ### Phase 3: Fleet management
 
-- [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically, order,
-      remove with confirmation (FR-5); fleet cap (FR-6).
+- [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically and
+      order; archive, restore, and delete from the archive (FR-5); fleet cap of
+      3 (FR-6).
 - [ ] 3.2: Tray submenus per bot and aggregated attention (FR-16).
 - [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order,
-      process-tree kill fallback, and attaching to externally hosted cores (FR-9
+      process-tree kill fallback, and listing externally hosted cores (FR-9
       to FR-11).
 
-**Deliverables**: two or more bots managed from one hub (cap permitting in the
-shipped UI; always in tests).
+**Deliverables**: up to three bots managed from one hub, with archive and
+delete; tests also cover the cap.
 
 ### Phase 4: Host services
 
@@ -106,8 +108,9 @@ shipped UI; always in tests).
 - [ ] 5.2: The `cats-fleet` server in the holder's core, attached per send while the
       hub reports it as holder, with hub-side authorization of every call and
       the refusals (FR-3, FR-4, FR-6, FR-11).
-- [ ] 5.3: Owner confirmations, chains, limits, replies and audit (FR-5, FR-7 to
-      FR-9); work items with source `bot`.
+- [ ] 5.3: Owner confirmations, chains, limits (4 hops and 10 messages per hour
+      by default, adjustable in Settings), replies and audit (FR-5, FR-7 to
+      FR-9); work items with source `bot`, admitted at once.
 - [ ] 5.4: Independent security review.
 
 **Deliverables**: a holder hands work to another bot, and every boundary in
@@ -124,6 +127,7 @@ SPEC-009 FR-6 is enforced and tested.
       statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04
       and BDC-08; `docs/architecture.md`, `docs/services.md`,
       `docs/setup-guide.md`, `docs/testing.md`.
+- [ ] 6.4: Publish 0.3.0 through PLAN-008 Phase 4.
 
 ## Files to Create/Modify
 
@@ -153,9 +157,10 @@ SPEC-009 FR-6 is enforced and tested.
 
 ## Testing Strategy
 
-- **Unit Tests**: registry reads and writes, corruption handling, cap; channel auth,
-  versioning, size limits; coordinator authorization tables (holder or not, every
-  refused operation); chain and rate limits.
+- **Unit Tests**: registry reads and writes, corruption handling, cap; archive,
+  restore and delete; channel auth, versioning, size limits; coordinator
+  authorization tables (holder or not, every refused operation); chain and rate
+  limits.
 - **Integration Tests**: the packed Runtime behind a channel-hosted core; two cores
   in temporary roots; hub restart reattaches; core crash restarts; a coordinator
   message round trip with the fixture CLI.
@@ -177,6 +182,7 @@ SPEC-009 FR-6 is enforced and tested.
 | Date | Update |
 |------|--------|
 | 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
+| 2026-10-29 | Owner answered the SPEC-008 and SPEC-009 open questions: a cap of 3; archive before delete; externally hosted cores listed only; 4 hops and 10 messages per hour by default, adjustable; coordinator work admitted at once. |
 
 ---
 

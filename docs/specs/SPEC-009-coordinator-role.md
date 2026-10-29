@@ -33,9 +33,9 @@ tools, without ever acting with the owner's authority.
 1. FR-1: `fleet.json` (SPEC-008 FR-2) stores `coordinator`: the holder's bot id
    or null, when it was assigned, and how (`first-run`, `owner`, or
    `confirmed-proposal`).
-2. FR-2: First run assigns the first bot. Removing the holder clears the role.
-   The owner can assign or clear it in Settings → Bots, or with a CLI command
-   through the hub's control endpoint (SPEC-008 FR-25).
+2. FR-2: First run assigns the first bot. Archiving the holder clears the role
+   (SPEC-008 FR-5). The owner can assign or clear it in Settings → Bots, or with
+   a CLI command through the hub's control endpoint (SPEC-008 FR-25).
 3. FR-3: The holder's core attaches the `cats-fleet` session MCP descriptor to
    its sessions only while the hub reports it as holder. The decision is made
    before every send, as for `cats-desktop` (SPEC-006 BDC-04). The hub
@@ -43,10 +43,12 @@ tools, without ever acting with the owner's authority.
    from the former holder is refused, even if its session still holds the old
    descriptor.
 4. FR-4: Tools:
-   - `fleet_list`: bot ids, names and states. No transcripts.
-   - `fleet_message`: target bot id and text. The hub delivers it as a work item
-     in the target's home conversation, with source `bot`, `sourceRef` naming the
-     holder, a chain id and a hop count.
+   - `fleet_list`: ids, names and states of bots that are not archived. No
+     transcripts.
+   - `fleet_message`: target bot id and text. The target must be running and
+     started by the hub; otherwise the call is refused with the reason. The hub
+     delivers it as a work item in the target's home conversation, with source
+     `bot`, `sourceRef` naming the holder, a chain id and a hop count.
    - `fleet_create`: name and persona, plus a provider from those installed. It
      uses first-run defaults: desktop control off, Telegram off, the fleet's
      environment profile, and the fleet cap applies.
@@ -63,15 +65,19 @@ tools, without ever acting with the owner's authority.
    - changing any bot's provider policy, permissions, desktop or Telegram
      settings, or secrets;
    - reading another bot's transcripts or conversations;
-   - deleting bots;
+   - archiving, restoring or deleting bots;
    - assigning the role directly.
 7. FR-7: Work from `fleet_message` runs under the target's own execution target,
    policy and approvals. It is not an owner turn, so desktop control is
-   unavailable to it (SPEC-006).
+   unavailable to it (SPEC-006). The target admits it at once as a background
+   work item (SPEC-001 FR-16): it waits behind owner messages but not for the
+   target's heartbeat, and a paused heartbeat does not hold it.
 8. FR-8: The target's reply returns to the holder as a work item in the same
-   chain. Only the holder starts chains; other bots get no messaging tool. The
-   hub refuses a message beyond the hop limit, or beyond the holder's per-hour
-   message limit, and tells the holder why.
+   chain. Only the holder starts chains; other bots get no messaging tool. Each
+   delivery, the holder's message or a reply, is one hop. The hub refuses a
+   message beyond the hop limit (default 4 per chain) or beyond the holder's
+   per-hour limit (default 10 `fleet_message` calls), and tells the holder why.
+   The owner can change both limits in Settings → Bots.
 9. FR-9: Every coordinator call (tool, target, chain, outcome) goes to the hub
    log and to the journals of the holder and the target. Delivered text appears
    in the target's transcript, attributed to the holder bot.
@@ -105,9 +111,10 @@ holder core ──cats-fleet MCP──▶ (served by the holder core, backed by 
 
 ## Open Questions
 
-- [ ] Default limits: hop count and messages per hour.
-- [ ] Should a coordinator message wake a sleeping target bot immediately, or
-      wait for its next tick?
+- [x] Default limits (2026-10-29): 4 hops per chain and 10 messages per hour,
+      adjustable by the owner (FR-8).
+- [x] Delivery timing (2026-10-29): admitted at once as background work, not
+      held for the target's heartbeat (FR-7).
 
 ## References
 

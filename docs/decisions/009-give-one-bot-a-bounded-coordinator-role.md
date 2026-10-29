@@ -22,14 +22,14 @@ owner answers a bot's questions.
 
 - **A role, not a kind of bot.** The fleet registry names zero or one coordinator.
   The first bot created at first run holds it by default. Any bot can hold it,
-  and removing the holder leaves the role vacant.
+  and archiving the holder leaves the role vacant.
 - **Coordination only.** The holder's core attaches an extra session MCP server
   (`cats-fleet`) to its sessions only while the hub confirms that it holds the
   role. The decision is made before every send, as for `cats-desktop`. The hub
   brokers and authorizes every call over the host channel. Its tools can:
   - list bots and their states;
-  - hand a message or task to another bot (it arrives as that bot's work, marked
-    as coming from the coordinator, never as the owner);
+  - hand a message or task to another bot (it arrives at once as that bot's
+    background work, marked as coming from the coordinator, never as the owner);
   - ask the hub to create and initialize a bot from first-run defaults;
   - start or stop bots, and pause or resume their heartbeat.
 - **Never owner authority.** The coordinator cannot:
@@ -38,7 +38,7 @@ owner answers a bot's questions.
   - change any bot's provider policy, permissions, desktop or Telegram settings,
     or secrets;
   - read another bot's transcripts beyond the replies to its own requests;
-  - delete bots or change who holds the role.
+  - archive or delete bots, or change who holds the role.
   Work it hands over runs under the target bot's own policy and approvals, and is
   not an owner turn.
 - **Owner confirmation** is required before creating a bot, before starting a bot
@@ -47,9 +47,10 @@ owner answers a bot's questions.
   propose a transfer, which takes effect only after the owner confirms. The old
   holder loses the tools and the new one gains them at their next session send.
 - **Loop limits and audit.** Bot-originated work carries a chain id and hop count,
-  with per-chain and per-hour limits. Only the holder can start a chain, and other
-  bots can only reply to it. Every coordinator action is recorded in the hub log
-  and in the journals of both bots.
+  with per-chain and per-hour limits (by default 4 hops and 10 messages per hour,
+  adjustable by the owner). Only the holder can start a chain, and other bots can
+  only reply to it. Every coordinator action is recorded in the hub log and in the
+  journals of both bots.
 - **Native environments only** until Runtime supports session MCP in other
   environments (ADR-010).
 
@@ -71,7 +72,7 @@ owner answers a bot's questions.
 
 ### Neutral
 
-- With a fleet cap of one, the role exists but has no other bot to act on.
+- With one bot in the fleet, the role exists but has no other bot to act on.
 
 ## Alternatives Considered
 

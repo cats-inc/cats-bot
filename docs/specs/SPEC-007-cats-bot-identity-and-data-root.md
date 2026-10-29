@@ -43,10 +43,11 @@ or releases.
    not kept.
 3. FR-3: The ecosystem root defaults to `~/.catsbot/`. Each bot root is
    `<root>/bots/<botId>/` with the SPEC-001 FR-2 layout unchanged inside it,
-   including `runtime/` as `CATS_RUNTIME_DIR`. Files directly under `<root>/`
-   other than `bots/` belong to the fleet (SPEC-008).
-4. FR-4: `CATS_BOT_HOME` overrides the ecosystem root. This is the proposed
-   meaning, and SPEC-008 and PLAN-008 assume it; see Open Questions.
+   including `runtime/` as `CATS_RUNTIME_DIR`. Everything directly under
+   `<root>/` other than `bots/`, including `archive/`, belongs to the fleet
+   (SPEC-008).
+4. FR-4: `CATS_BOT_HOME` overrides the ecosystem root, so one variable moves
+   the fleet files and every bot together.
    `CATS_BOTS_HOME` is no longer read, and setting it has no effect. Every test
    sets `CATS_BOT_HOME` to a temporary directory. The development and fixture
    variables `CATS_BOTS_PROVIDER_*` and `CATS_BOTS_FIXTURE_*` become
@@ -59,9 +60,12 @@ or releases.
    feed, the packaged release descriptor and `parseBotRelease`, the release page
    link, `scripts/release-contract.mjs`, `scripts/build-preview.mjs`, build
    receipts and source manifests. No code path names `cats-inc/cats-bots`.
-8. FR-8: Release notes for 0.3.0 state that 0.2.x has no upgrade path: uninstall
-   0.2.x first (its uninstall entry has a different GUID), then install 0.3.0;
-   `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be deleted by hand.
+8. FR-8: 0.3.0 is the first release under the new identity and ships together
+   with the hub (SPEC-008, PLAN-009). No release is published between PLAN-008
+   Phase 1 and 0.3.0. Its release notes state that 0.2.x has no upgrade path:
+   uninstall 0.2.x first (its uninstall entry has a different GUID), then install
+   0.3.0; `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be deleted by
+   hand.
 
 ### Non-Functional Requirements
 
@@ -73,13 +77,15 @@ or releases.
 ## Design Overview
 
 ```
-~/.catsbot/                      CATS_BOT_HOME (proposed)
+~/.catsbot/                      CATS_BOT_HOME
   <fleet files>                  SPEC-008 registry, SPEC-009 role state
   bots/
     <botId>/                     SPEC-001 FR-2 layout
       profile.json  conversations/  transcripts/  journal.jsonl
       runtime/                   this bot's CATS_RUNTIME_DIR
       workspace/                 default CLI working directory
+  archive/
+    <botId>/                     an archived bot, same layout (SPEC-008 FR-5)
 ```
 
 ## Dependencies
@@ -89,11 +95,10 @@ or releases.
 
 ## Open Questions
 
-- [ ] Does `CATS_BOT_HOME` point at the ecosystem root (`~/.catsbot`, proposed:
-      one variable isolates fleet files and bots together) or at `bots/`, as
-      `CATS_BOTS_HOME` did?
-- [ ] Is 0.3.0 published with this change alone, or together with PLAN-009's
-      hub? Pre-launch, either works; one release means one reinstall.
+- [x] `CATS_BOT_HOME` meaning (2026-10-29): the ecosystem root `~/.catsbot`,
+      not `bots/` as `CATS_BOTS_HOME` was (FR-4).
+- [x] 0.3.0 scope (2026-10-29): published together with PLAN-009's hub, so the
+      owner reinstalls once (FR-8).
 
 ## References
 

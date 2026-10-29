@@ -47,17 +47,17 @@ releases and requires no upgrade path for installed copies.
   `~/.catsbot/bots/<id>/`, with its own Runtime directory at
   `~/.catsbot/bots/<id>/runtime/`. Fleet-level files (registry, roles, update
   coordination; ADR-008, ADR-009) live directly under `~/.catsbot/`, outside the
-  bot-id namespace. `CATS_BOT_HOME` replaces `CATS_BOTS_HOME` and is proposed to
-  point at the ecosystem root, which SPEC-008 and PLAN-008 assume; SPEC-007
-  settles it.
+  bot-id namespace. `CATS_BOT_HOME` replaces `CATS_BOTS_HOME` and points at the
+  ecosystem root, so one variable moves fleet files and bots together.
 - **Boundary.** Cats Bot never creates, reads or writes anything under `~/.cats/`
   and never depends on Desktop data. Provider CLI sign-in and native sessions stay
   in the CLIs' own folders (`~/.codex`, `~/.claude`, …), as today.
 - **No compatibility layer.** No migration from `~/.cats/bots`, no reading of
   `CATS_BOTS_HOME`, no reliance on GitHub's rename redirect, and existing
   releases v0.2.0–v0.2.4 and their tags are deleted (an owner-confirmed step in
-  PLAN-008). The next release is 0.3.0, so the version stays monotonic and the
-  release workflow's 0.2.0 floor still holds.
+  PLAN-008). The next release is 0.3.0, published together with the hub (ADR-008)
+  so the owner reinstalls once. The version stays monotonic and the release
+  workflow's 0.2.0 floor still holds.
 
 ## Consequences
 

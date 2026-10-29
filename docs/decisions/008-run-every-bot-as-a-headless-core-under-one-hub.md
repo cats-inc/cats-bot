@@ -74,10 +74,11 @@ precise total.
    graceful stop first, then the process tree. If the hub crashes, cores keep
    running and a restarted hub reattaches. If a core crashes, the hub restarts it
    with backoff and shows its state. A bot held by another host, such as a
-   developer's `cats-bot run`, is shown as externally hosted and never started
-   twice.
+   developer's `cats-bot run`, is listed as externally hosted, without windows,
+   and never started twice.
 5. **Fleet size.** The architecture supports N bots; the product cap is a hub
-   setting defined in SPEC-008.
+   setting, three in this version (SPEC-008). Removing a bot takes two steps:
+   archive it, then delete it from the archive.
 
 ## Consequences
 

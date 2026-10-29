@@ -12,15 +12,15 @@
 
 Implement [ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md):
 one Electron hub presents and manages a fleet of bots, each running as a headless
-core child process with its own Runtime and CLI. This applies even when the
-product cap is one bot.
+core child process with its own Runtime and CLI. This applies at any product
+cap; this version ships a cap of three bots.
 
 ## Goals
 
 - Every bot is an independent process; a UI failure never stops a bot.
 - One tray, one settings surface, one update coordinator and one login item for
   the whole fleet.
-- Bot creation and management in the product UI, up to a configurable cap.
+- Bot creation and management in the product UI, up to the fleet cap.
 
 ## Non-Goals
 
@@ -36,26 +36,42 @@ product cap is one bot.
    single-instance lock on the hub's user data (`%APPDATA%\Cats Bot` on
    Windows). A second launch hands its arguments to the running hub and exits.
 2. FR-2: The fleet registry is `<CATS_BOT_HOME>/fleet.json`, schema version 1:
-   bots (id, order, start automatically, created at), `environmentProfile`
-   (ADR-010) and the coordinator holder (SPEC-009). Only the hub writes it,
-   under a lock file, through temp file plus rename. Missing fields get
-   defaults; a corrupt file is reported and never overwritten (SPEC-001 FR-4
-   rules).
-3. FR-3: At start the hub reconciles the registry with `<root>/bots/`. A bot
-   directory without an entry is shown as unregistered for the owner to add; an
-   entry without a directory is shown as failed. Neither is deleted
-   automatically.
+   bots (id, order, start automatically, created at, archived at),
+   `environmentProfile` (ADR-010) and the coordinator holder (SPEC-009). Only
+   the hub writes it, under a lock file, through temp file plus rename. Missing
+   fields get defaults; a corrupt file is reported and never overwritten
+   (SPEC-001 FR-4 rules).
+3. FR-3: At start the hub reconciles the registry with `<root>/bots/` and
+   `<root>/archive/`. A directory without an entry is shown as unregistered for
+   the owner to add (as archived when it is under `archive/`); an entry without a
+   directory is shown as failed. Neither is deleted automatically.
 4. FR-4: First run starts when no registry exists. The owner picks the
    environment profile (only native in this version), then creates the first bot
    with SPEC-002 FR-1's provider-first flow. The registry is then written, with
    the first bot as coordinator holder.
-5. FR-5: Bot management in Settings lists every bot with its state (starting,
-   running, stopped, failed, externally hosted) and offers create, start, stop,
-   start automatically, order and remove. Removing a bot stops its core first
-   and needs explicit confirmation (see Open Questions).
-6. FR-6: The fleet cap is a hub setting (`maxBots`). Creating beyond it is
-   refused in the UI and in the hub's own API. Tests cover at least two bots
-   regardless of the shipped cap.
+5. FR-5: Bot management in Settings lists every bot that is not archived, with
+   its state (starting, running, stopped, failed, externally hosted), and offers
+   create, start, stop, start automatically and order. Archived bots are listed
+   separately. Removing a bot takes two separate steps, each with its own
+   confirmation, and nothing skips the first:
+   - **Archive** a bot that is not archived: the hub stops its core (FR-10),
+     renames `<root>/bots/<id>/` to `<root>/archive/<id>/` and records
+     `archivedAt`. An archived bot never runs and has no windows, tray items or
+     automatic start. It does not count toward the cap, and its id stays
+     reserved. Archiving the coordinator holder clears the role (SPEC-009). If
+     the rename fails, the bot stays registered and stopped and the error is
+     shown. An externally hosted bot (FR-11) cannot be archived while it runs.
+   - **Restore** an archived bot: the hub renames it back to `<root>/bots/<id>/`
+     and clears `archivedAt`, subject to the cap. It comes back stopped.
+   - **Delete** an archived bot, and only an archived bot: after a confirmation
+     that names the bot, the hub permanently removes `<root>/archive/<id>/`,
+     including its encrypted secrets, and its registry entry. This cannot be
+     undone. The provider CLIs' own folders (`~/.codex`, `~/.claude`, …) are
+     not touched.
+6. FR-6: The fleet cap is the hub setting `maxBots`, 3 in this version and not
+   offered in the UI. Archived bots do not count. Creating or restoring beyond
+   it is refused in the UI and in the hub's own API. Tests cover at least two
+   bots and the cap.
 
 ### Cores
 
@@ -77,9 +93,11 @@ product cap is one bot.
     kills a core's process tree only after a timeout. Externally hosted cores are
     left running.
 11. FR-11: A core started by another host (for example a developer's
-    `cats-bot run`) also publishes its channel descriptor. The hub may attach to
-    present it, but never starts a second copy, never stops it on Quit and never
-    restarts it.
+    `cats-bot run`) also publishes its channel descriptor. The hub lists it in
+    Settings → Bots as externally hosted, with its state, and gives it no notes,
+    floating Cat or tray items. The hub attaches to its channel only to read its
+    state and to serve the hub identity (FR-21). It never starts a second copy,
+    never stops it on Quit and never restarts it.
 
 ### Host channel
 
@@ -180,10 +198,11 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 
 ## Open Questions
 
-- [ ] Fleet cap for the first release: 1 or more?
-- [ ] Removing a bot: delete its data root, or move it to an archive the owner
-      can restore?
-- [ ] Should the hub present externally hosted cores (FR-11), or only list them?
+- [x] Fleet cap (2026-10-29): three bots in this version (FR-6).
+- [x] Removing a bot (2026-10-29): archive first; only an archived bot can be
+      deleted (FR-5).
+- [x] Externally hosted cores (2026-10-29): listed with their state, not
+      presented (FR-11).
 
 ## References
 
