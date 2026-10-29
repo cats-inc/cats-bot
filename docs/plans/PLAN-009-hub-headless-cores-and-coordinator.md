@@ -452,7 +452,9 @@ Each entry names where it is implemented.
   dialog the hub shows, which no page or bot can answer. The dialog names the
   holder and the request, and expires as declined after 10 minutes, when the
   hub stops, or when the holder's channel is lost. A decision card in the note
-  can replace it later.
+  can replace it later. A provider CLI whose own tool-call timeout is shorter
+  than the owner's answer reports a failure first; what the owner then allows
+  still happens.
 - **D26, which bot needs consent to start (5.3).** The owner confirms
   `hub_start_bot` for any stopped bot except one that failed. The hub cannot
   tell after its own restart whether the owner stopped a bot or never started
