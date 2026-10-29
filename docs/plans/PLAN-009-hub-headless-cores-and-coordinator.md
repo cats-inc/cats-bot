@@ -41,7 +41,8 @@ to it. Package extraction does not complete any Hub/coordinator acceptance task.
 ### Phase 1: Core out of Electron, still one bot
 
 - [ ] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client
-      for hosts, with version, token and descriptor (SPEC-008 FR-12 to FR-15). It
+      for hosts, with version, token, manager and descriptor, and attach by
+      subscribe, buffer and snapshot sequence (SPEC-008 FR-12 to FR-15). It
       carries every `BotHostApi` call from the host, and from the core the event
       stream and host-service requests (cipher, host identity). The owner control
       operations keep their behavior.
@@ -62,9 +63,9 @@ restarting the shell reattaches. First working-set measurement.
 
 ### Phase 2: The hub
 
-- [ ] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot` (FR-1); fleet
-      registry with lock and atomic writes (FR-2, FR-3); hub state file for
-      language and start at login (FR-18, FR-23).
+- [ ] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot`, installation id and
+      fleet lock (FR-1); fleet registry with lock and atomic writes (FR-2,
+      FR-3); hub state file for language and start at login (FR-18, FR-23).
 - [ ] 2.2: First run creates the registry, the native environment profile and the
       first bot, then assigns it as coordinator holder (FR-4, FR-24).
 - [ ] 2.3: Windows bound to a bot id with per-window AUMIDs and bot-scoped IPC
@@ -79,12 +80,13 @@ regression.
 ### Phase 3: Fleet management
 
 - [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically and
-      order; archive, restore, and delete from the archive (FR-5); fleet cap of
-      3 (FR-6).
+      order; archive, restore, and delete from the archive under the instance
+      lock, with `trash/` and start-time recovery, and `cats-bot run` refusing
+      archived ids (FR-3, FR-5); fleet cap of 3 (FR-6).
 - [ ] 3.2: Tray submenus per bot and aggregated attention (FR-16).
-- [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order,
-      process-tree kill fallback, and listing externally hosted cores (FR-9
-      to FR-11).
+- [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order
+      for every managed core including reattached ones, process-tree kill
+      fallback, and listing externally hosted cores (FR-9 to FR-11).
 
 **Deliverables**: up to three bots managed from one hub, with archive and
 delete; tests also cover the cap.
@@ -98,6 +100,8 @@ delete; tests also cover the cap.
       (FR-22).
 - [ ] 4.4: Hub PID changes reach every running core's helper before the next
       desktop-control call (FR-21).
+- [ ] 4.5: Account-wide desktop lease taken by every core, hub-started or not,
+      before control and clipboard calls (FR-26).
 
 **Deliverables**: update, setup and secrets work for a fleet.
 
@@ -106,11 +110,13 @@ delete; tests also cover the cap.
 - [ ] 5.1: Role state, Settings assignment, a CLI command through the hub's
       control endpoint, and the default holder (SPEC-009 FR-1, FR-2, FR-10).
 - [ ] 5.2: The `cats-fleet` server in the holder's core, attached per send while the
-      hub reports it as holder, with hub-side authorization of every call and
-      the refusals (FR-3, FR-4, FR-6, FR-11).
+      hub reports it as holder and the session supports session MCP servers,
+      with hub-side authorization of every call and the refusals (FR-3, FR-4,
+      FR-6, FR-11).
 - [ ] 5.3: Owner confirmations, chains, limits (4 hops and 10 messages per hour
       by default, adjustable in Settings), replies and audit (FR-5, FR-7 to
-      FR-9); work items with source `bot`, admitted at once.
+      FR-9); work items with source `bot`, admitted at once; delivery ids, the
+      delivery log, deduplication and resend (FR-12).
 - [ ] 5.4: Independent security review.
 
 **Deliverables**: a holder hands work to another bot, and every boundary in
@@ -121,11 +127,11 @@ SPEC-009 FR-6 is enforced and tested.
 - [ ] 6.1: Measurement table: hub alone, hub + 1 bot, hub + 2 bots, against the
       0.2.x baseline.
 - [ ] 6.2: Windows acceptance in isolated profiles: hub restart, core crash,
-      update with two bots, desktop-control self-exclusion; macOS and Linux
-      package smoke tests.
+      update with two bots, desktop-control self-exclusion, two bots contending
+      for the desktop lease; macOS and Linux package smoke tests.
 - [ ] 6.3: Make the superseded text real: ADR-001, ADR-002, ADR-004 and ADR-006
-      statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04
-      and BDC-08; `docs/architecture.md`, `docs/services.md`,
+      statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04,
+      BDC-08 and the desktop lease; `docs/architecture.md`, `docs/services.md`,
       `docs/setup-guide.md`, `docs/testing.md`.
 - [ ] 6.4: Publish 0.3.0 through PLAN-008 Phase 4.
 
@@ -158,12 +164,15 @@ SPEC-009 FR-6 is enforced and tested.
 ## Testing Strategy
 
 - **Unit Tests**: registry reads and writes, corruption handling, cap; archive,
-  restore and delete; channel auth, versioning, size limits; coordinator
-  authorization tables (holder or not, every refused operation); chain and rate
-  limits.
+  restore and delete, each interrupted after its rename; channel auth,
+  versioning, size limits; coordinator authorization tables (holder or not,
+  every refused operation, holder without session MCP); chain and rate limits;
+  delivery deduplication and resend.
 - **Integration Tests**: the packed Runtime behind a channel-hosted core; two cores
-  in temporary roots; hub restart reattaches; core crash restarts; a coordinator
-  message round trip with the fixture CLI.
+  in temporary roots; attach with events between subscribe and snapshot; hub
+  restart reattaches and keeps managing its cores; core crash restarts; two
+  cores contending for the desktop lease; a coordinator message round trip with
+  the fixture CLI, including a hub restart before the reply.
 - **Manual Testing**: isolated Windows hub with two bots over CDP; desktop-control
   native check with the hub PID; update handoff with two bots.
 
@@ -175,6 +184,9 @@ SPEC-009 FR-6 is enforced and tested.
 | Reattach races after a hub crash | Medium | PID and token check, instance lock as the single source |
 | A bot operates its own note UI through desktop control | High | Executable and hub-PID exclusion, native check in 6.2 |
 | Coordinator loops burn quota | Medium | Hop and rate limits, holder-only chains |
+| Two bots drive the desktop or clipboard at once | High | Account-wide desktop lease taken by every core (SPEC-008 FR-26) |
+| A native CLI reads a control token and calls the hub directly | High | Not prevented; stated as API limits, not a boundary (SPEC-008 Security) |
+| A crash loses or repeats a coordinator message | Medium | Delivery ids, a delivery log and receiver deduplication (SPEC-009 FR-12) |
 | Process-tree cleanup on Windows leaves orphans | Medium | Graceful stop first, tree kill fallback, acceptance check |
 
 ## Progress Log
@@ -183,6 +195,7 @@ SPEC-009 FR-6 is enforced and tested.
 |------|--------|
 | 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
 | 2026-10-29 | Owner answered the SPEC-008 and SPEC-009 open questions: a cap of 3; archive before delete; externally hosted cores listed only; 4 hops and 10 messages per hour by default, adjustable; coordinator work admitted at once. |
+| 2026-10-29 | Codex review: eight findings written back. Owner chose API limits stated as no security boundary, an account-wide desktop lease that external cores also take, and holders without session MCP keeping the role without tools. |
 
 ---
 

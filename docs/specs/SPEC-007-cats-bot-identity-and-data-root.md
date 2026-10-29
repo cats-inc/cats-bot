@@ -86,6 +86,7 @@ or releases.
       workspace/                 default CLI working directory
   archive/
     <botId>/                     an archived bot, same layout (SPEC-008 FR-5)
+  trash/                         confirmed deletes finishing (SPEC-008 FR-5)
 ```
 
 ## Dependencies
