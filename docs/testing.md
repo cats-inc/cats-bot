@@ -183,7 +183,21 @@ and the renderer (`tsconfig.renderer.json`).
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-15-intel` with Node 24 for every
-pull request and every push to `main`.
+pull request and every push to `main` that changes a path outside root `docs/`.
+The `changes` job follows the other Cats repositories' docs-only detection: PRs
+compare the test merge to its first parent; pushes compare the entire pushed
+range. Renames count both old and new paths. An unknown base, empty diff or failed
+detection runs full CI.
+
+For confirmed docs-only changes, the existing `node (...)` checks acknowledge the
+skip on lightweight Ubuntu runners; no Windows/macOS runner, dependency install,
+application test, build or candidate artifact is needed. `preview-contract` is
+skipped, while `validate` still checks the expected job results, required files
+and tracked YAML. Mixed changes still require all three platforms and the full
+package contract. The separate `Package` workflow also ignores docs-only pushes;
+its manual dispatch remains available. Application tests keep executable inputs
+outside repo documentation and exercise the actual workflow detector and final
+job gates. Manual publication still reads the prepared release notes.
 
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and

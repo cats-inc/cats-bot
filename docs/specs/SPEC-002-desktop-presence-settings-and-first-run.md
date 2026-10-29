@@ -78,7 +78,7 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    without `layer` derives it from `alwaysOnTop` (`top` or `normal`), and writing still keeps
    `alwaysOnTop`, so that versions that do not support layers still float a `top` note on top as
    before.
-9. FR-9: CI builds the Windows NSIS installer and portable build on every main update and uploads them
+9. FR-9: CI builds the Windows NSIS installer and portable build on every main update outside root `docs/` and uploads them
    as artifacts; starting from the shortcut after installation enters FR-1 or the existing bot.
 
 ## Acceptance
