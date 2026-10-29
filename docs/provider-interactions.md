@@ -76,6 +76,8 @@ option adds `--chrome` to the CLI launch and restarts the runtime after the
 current turn. Computer use is not available to headless Claude Code.
 
 The note displays native requests near the current turn, separate from `ask_owner`.
+Only pending and responding requests are shown; a finished request leaves the note,
+and its redacted receipt stays available through `cats-bot interactions`.
 Closing/reloading a note leaves the core request alive. The tray's pending-request
 entry opens the waiting note; floating/Telegram notifications contain no prompt.
 Bot settings separate access, network and approval, and can inspect each note's

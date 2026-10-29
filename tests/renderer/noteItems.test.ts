@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import type { TranscriptEntry, WorkItem } from '../../src/core/types.ts';
-import { buildNoteItems, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
+import type { BotInteraction, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
+import { buildNoteItems, liveInteractions, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
 
 /** SPEC-003 FR-4, FR-5: tool cards and the owner's decisions in the note. */
 
@@ -91,4 +91,14 @@ test('a card summary is the first non-empty line; work item events replace the n
   assert.deepEqual(after.map((item) => `${item.id}:${item.state}`), ['w1:running', 'w2:running']);
   assert.deepEqual(upsertWorkItem(before, work('w3', 'queued')).map((item) => item.id), ['w1', 'w2', 'w3']);
   assert.equal(before[0]!.state, 'queued', 'the old list is not changed');
+});
+
+test('the note shows only requests that can still be answered, never finished receipts', () => {
+  const statuses: BotInteraction['status'][] = ['resolved', 'pending', 'expired', 'responding', 'cancelled', 'interrupted', 'unsupported'];
+  const interactions = statuses.map((status, index): BotInteraction => ({
+    botId: 'b', conversationId: 'home', workItemId: 'w1', interactionId: `i${index}`, sessionId: 's', workerGeneration: 'g',
+    executionId: 'e', revision: 1, createdAt: AT, expiresAt: AT, status, kind: 'tool_approval',
+  }));
+  assert.deepEqual(liveInteractions(interactions).map((i) => i.status), ['pending', 'responding']);
+  assert.deepEqual(liveInteractions(interactions.filter((i) => i.status === 'resolved')), [], 'receipts alone leave the note empty');
 });
