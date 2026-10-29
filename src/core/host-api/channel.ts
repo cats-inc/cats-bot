@@ -600,7 +600,15 @@ export class HostChannelClient {
     return () => { this.gapListeners.delete(listener); };
   }
 
+  /** Called once when the channel closes; at once (asynchronously) if it already has. */
   onClose(listener: () => void): () => void {
+    if (this.closed) {
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) listener();
+      });
+      return () => { cancelled = true; };
+    }
     this.closeListeners.add(listener);
     return () => { this.closeListeners.delete(listener); };
   }

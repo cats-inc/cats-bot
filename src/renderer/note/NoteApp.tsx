@@ -161,6 +161,8 @@ export function NoteApp() {
     const profile = await api.invoke('getProfile');
     setSpeakerName(profile.name);
     setTitle(`${profile.name} · ${conversationTitle(record)}`);
+    // SPEC-008 FR-17: the window's title carries the bot's name too.
+    document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
     setLayer((await api.window.state()).layer);
   }, [requested, locale]);

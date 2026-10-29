@@ -45,6 +45,8 @@ export interface NoteWindowsOptions {
   log?(line: string): void;
   /** SPEC-008 FR-17: the AUMID of this bot's notes. */
   identity?: WindowIdentity;
+  /** The bot's place among the hub's bots: a note never placed before opens a step further. */
+  slot?: number;
 }
 
 const ATTACHED: readonly NoteLayer[] = ['desktop', 'wallpaper'];
@@ -191,9 +193,18 @@ export class NoteWindows {
       await this.options.core.openView(conversationId);
       return existing;
     }
+    const slot = this.options.slot ?? 0;
+    const area = slot > 0 ? screen.getPrimaryDisplay().workArea : null;
     const bounds = view.x !== undefined && view.y !== undefined
       ? clampToScreen({ x: view.x, y: view.y, width: view.width, height: view.height })
-      : { width: view.width, height: view.height };
+      : area
+        ? clampToScreen({
+          x: Math.round(area.x + (area.width - view.width) / 2 + slot * 40),
+          y: Math.round(area.y + (area.height - view.height) / 2 + slot * 40),
+          width: view.width,
+          height: view.height,
+        })
+        : { width: view.width, height: view.height };
     const window = new BrowserWindow({
       ...bounds,
       minWidth: 260,

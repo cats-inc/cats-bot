@@ -28,7 +28,9 @@ import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
-import { addBot, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, writeRegistry, type BotRegistry } from './hub/registry.ts';
+import {
+  addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, writeRegistry, type BotRegistry,
+} from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
 import { createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
@@ -161,7 +163,8 @@ async function main(): Promise<void> {
   // FR-1: two installations pointed at one root never manage the same bots.
   const hubLock = acquireHubLock(home, installationId, process.execPath);
   if (!hubLock.held) {
-    dialog.showErrorBox('Cats Bot', `Another Cats Bot (${hubLock.owner.executable}, pid ${hubLock.owner.pid}) manages the bots in ${home}.\n\nQuit it first.`);
+    dialog.showErrorBox('Cats Bot', `Another Cats Bot (${hubLock.owner.executable}, pid ${hubLock.owner.pid}) manages the bots in ${home}.\n\n`
+      + `Quit it first. If no other Cats Bot runs, delete ${hubPaths.lock} and start again.`);
     app.quit();
     return;
   }
@@ -263,8 +266,7 @@ async function main(): Promise<void> {
     const existing = listBotDirectories(hubPaths.bots).ids;
     let ids: string[];
     if (existing.length > 0) {
-      ids = [...(requested && existing.includes(requested) ? [requested] : []), ...existing.filter((id) => id !== requested)]
-        .slice(0, DEFAULT_MAX_BOTS);
+      ids = adoptionOrder(existing, requested, DEFAULT_MAX_BOTS);
     } else {
       const id = await createFirstBot();
       if (!id) return null;
@@ -437,6 +439,8 @@ async function main(): Promise<void> {
     refreshTray: () => { void refreshTray(); },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
     quitRequested: (presenter) => {
+      // A second quit for a bot that is already stopping changes nothing.
+      if (!presented().includes(presenter)) return;
       if (presented().length <= 1) {
         quit();
         return;
@@ -483,7 +487,8 @@ async function main(): Promise<void> {
       throw error;
     }
     const identity = botWindowIdentity({ appId: APP_ID, botId, botName: profile.name, executable: process.execPath, packaged: app.isPackaged });
-    const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity);
+    const slot = Math.max(0, manager.registry.bots.filter((bot) => bot.archivedAt === null).findIndex((bot) => bot.id === botId));
+    const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity, slot);
     for (const directory of commandDirectories) {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
     }
@@ -931,13 +936,14 @@ async function main(): Promise<void> {
   });
   // SPEC-002 FR-8: a note's layer, chosen from its own header or from the settings page.
   const isLayer = (value: unknown): value is NoteLayer => typeof value === 'string' && NOTE_LAYERS.includes(value as NoteLayer);
-  ipcMain.handle('window:state', (event) => {
+  ipcMain.handle('window:state', async (event) => {
     const presenter = senderOf(event)?.presenter;
     const owner = presenter?.windows.windowFor(event.sender.id);
     return {
       layer: presenter && owner ? presenter.windows.layerOf(owner.conversationId) : 'normal',
       layers: presenter?.windows.availableLayers() ?? ['normal'],
-      botName: app.getName(),
+      // FR-17: a window shows the name of the bot it belongs to.
+      botName: (presenter ? (await presenter.core.getProfile().catch(() => null))?.name : null) ?? app.getName(),
     };
   });
   ipcMain.handle('window:layerMenu', (event) => {
@@ -1049,11 +1055,37 @@ async function main(): Promise<void> {
     return null;
   });
 
+  // A launch that names a bot set up outside the hub (`cats-bot init`) takes it in, within the cap.
+  const adoptRequested = async (id: string): Promise<boolean> => {
+    if (manager.entry(id)) return true;
+    if (!listBotDirectories(hubPaths.bots).ids.includes(id)) return false;
+    try {
+      await manager.register(id);
+      botsChanged();
+      return true;
+    } catch (error) {
+      log(`bot ${id} was not added: ${errorMessage(error)}`);
+      openBots();
+      return false;
+    }
+  };
   app.on('second-instance', (_event, _argv, _cwd, data) => {
     const id = (data as { id?: unknown } | null)?.id;
-    const presenter = (typeof id === 'string' ? runners.get(id)?.handle : undefined) ?? primary();
-    if (presenter) void presenter.windows.open('home');
-    else openBots();
+    void (async () => {
+      if (typeof id === 'string' && isValidBotId(id) && await adoptRequested(id)) {
+        const entry = manager.entry(id);
+        if (entry && entry.archivedAt === null) {
+          const presenter = runners.get(id)?.handle ?? await runnerFor(id).start();
+          if (presenter) {
+            await presenter.windows.open('home');
+            return;
+          }
+        }
+      }
+      const presenter = primary();
+      if (presenter) await presenter.windows.open('home');
+      else openBots();
+    })().catch((error: unknown) => log(`second launch: ${errorMessage(error)}`));
   });
   app.on('before-quit', (event) => {
     if (quitting) return;
@@ -1071,7 +1103,8 @@ async function main(): Promise<void> {
   });
   await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
 
-  const starting = manager.registry.bots.filter((bot) => bot.archivedAt === null && bot.startAutomatically
+  if (requested) await adoptRequested(requested);
+  const starting = manager.registry.bots.filter((bot) => bot.archivedAt === null && (bot.startAutomatically || bot.id === requested)
     && existsSync(join(hubPaths.bots, bot.id)));
   // A new core inherits the hub's PATH, so each provider CLI is found first.
   if (!readProviderOverrides().providerCommand) {
@@ -1099,5 +1132,7 @@ main().catch((error: unknown) => {
   process.stderr.write(
     `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
   );
+  // The owner sees why Cats Bot did not start; this is safe before the app is ready.
+  dialog.showErrorBox('Cats Bot', error instanceof Error ? error.message : String(error));
   app.exit(1);
 });

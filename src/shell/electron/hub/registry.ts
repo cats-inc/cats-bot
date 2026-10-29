@@ -178,6 +178,15 @@ export function activeBots(registry: BotRegistry, home: string): RegistryBot[] {
   return registry.bots.filter((bot) => bot.archivedAt === null && present.has(bot.id));
 }
 
+/**
+ * D11: the bots a first hub takes in from directories made before it: a bot
+ * named at launch first, then the others by id, up to the cap.
+ */
+export function adoptionOrder(existing: string[], requested: string | undefined, cap: number): string[] {
+  const named = requested && existing.includes(requested) ? [requested] : [];
+  return [...named, ...[...existing].sort().filter((id) => id !== requested)].slice(0, cap);
+}
+
 export function addBot(registry: BotRegistry, id: string, now: Date = new Date()): BotRegistry {
   if (registry.bots.some((bot) => bot.id === id)) return registry;
   const order = registry.bots.reduce((max, bot) => Math.max(max, bot.order + 1), 0);

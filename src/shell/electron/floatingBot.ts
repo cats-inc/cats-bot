@@ -23,6 +23,8 @@ export interface FloatingBubble {
 export interface FloatingBotOptions extends PageWindowOptions {
   state(): FloatingBotState;
   persist(): void;
+  /** SPEC-008 FR-17: the bot's place among the hub's bots, for a cat that was never moved. */
+  slot?: number;
 }
 
 export class FloatingBot {
@@ -80,7 +82,7 @@ export class FloatingBot {
       existing.showInactive();
       return;
     }
-    const position = placeFloating(state, screen.getAllDisplays(), screen.getPrimaryDisplay());
+    const position = placeFloating(state, screen.getAllDisplays(), screen.getPrimaryDisplay(), undefined, this.options.slot ?? 0);
     const window = new BrowserWindow({
       ...position,
       ...FLOATING_SIZE,

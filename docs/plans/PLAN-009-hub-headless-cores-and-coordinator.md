@@ -316,7 +316,9 @@ Each entry names where it is implemented.
   directories registers them instead of running first-run setup, up to the
   cap. A bot named with `--id` comes first, then the others by id, and the
   first is the coordinator holder. Further directories stay unregistered.
-  This keeps `cats-bot init` and development shells working.
+  This keeps `cats-bot init` and development shells working. Later, a launch
+  that names an unregistered bot (`--id`) adds it within the cap and starts
+  it; at the cap the Bots page opens.
 - **D12, the first run (2.2).**
   - The environment step has nothing to choose while native is the only
     profile, so the page does not show it and the registry records native.
@@ -343,10 +345,10 @@ Each entry names where it is implemented.
   manager, replacing Phase 1's id derived from the executable. A core that a
   Phase 1 development shell started is therefore not taken over; stop it once.
 - **D16, the hub's user data (2.1).** The hub's Electron user data is
-  `%APPDATA%\Cats Bot` instead of `…\Cats Bot\bots\<id>`. Secrets that a
-  development build stored with the old user data's OS key cannot be opened
-  and need to be entered again, such as a Telegram token. Nothing was
-  released with the old layout.
+  `%APPDATA%\Cats Bot` instead of `…\Cats Bot\bots\<id>`. Secrets stored with
+  the old user data's OS key, as 0.2.0 to 0.2.5 did, cannot be opened and need
+  to be entered again, such as a Telegram token. Under the pre-launch policy
+  there is no migration.
 - **D17, Settings → Bots (3.1).**
   - Every bot's settings window gets a Bots tab. The hub also has a Bots page
     of its own (tray "Bots…" with no bot or several), which opens by itself
@@ -389,6 +391,22 @@ Each entry names where it is implemented.
   - Another local account could hold the name and keep this account's bots
     off the desktop. That is a denial of service only, within the account
     boundary SPEC-008 already states.
+- **D23, one user data per account, not per installation (review of 2.1).**
+  - Every copy of Cats Bot (installed, portable, `npm run shell` without
+    `--user-data-dir`) shares `%APPDATA%\Cats Bot`. Its installation id and
+    single-instance lock are therefore per account.
+  - A second copy hands its launch to the running hub even when it points at
+    another root, and copies cannot tell each other's cores apart by manager.
+  - This follows FR-1 to the letter. A user data per installation would also
+    give each copy its own OS key for secrets, so the choice is the owner's.
+- **D24, hub windows (review of 2.3).**
+  - A bot's notes and floating Cat that were never placed open a step further
+    per bot, so two bots never stack.
+  - A note's window title and the floating Cat carry the bot's name.
+  - A second quit handed to a bot that is already stopping changes nothing.
+  - A hub that cannot start shows why in a dialog.
+  - A hub lock left by a process that no longer runs is taken over. One whose
+    PID now belongs to another program names the file to delete.
 - **D22, hub-owned updates (4.3).**
   - Any bot that runs in another program blocks the install and is named,
     whatever executable runs it. This is stricter than "from this
@@ -410,6 +428,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 2.1 to 2.5 implemented. With the real Electron hub in an isolated home (Windows 11, fixture CLI): the first run wrote the registry, hub state, root lock and installation id; `cats-bot hub status` answered; a second launch handed over and exited; killing the hub left the core running and a new hub reattached; `cats-bot quit` ended both and released the hub's files. |
 | 2026-10-30 | Tasks 3.1 to 3.3 implemented. Unit tests cover the cap, archive, restore, delete through `trash/`, interrupted deletes, a junction inside a deleted bot, and restart limits. With the real Electron hub and two bots made by `cats-bot init`: both were taken in and ran; killing one core restarted only that bot; `cats-bot quit` stopped one bot alone and quitting the last one ended the hub. |
 | 2026-10-30 | Tasks 4.1 to 4.5 done: 4.1, 4.2 and 4.4 were in place from Phases 1 and 2; 4.3 refuses an install while a bot runs elsewhere; 4.5 adds the desktop lease, with a test of two processes. |
+| 2026-10-30 | Independent review of the Phase 2 commit: a corrupt profile ending the hub and the restart dialog stopping other bots were already gone with Phase 3; fixed a core lost before its close was watched, a second quit ending the hub, stacked windows of several bots, a launch-named bot that the hub ignored, window titles and a silent start failure; D23 records the reviewer's challenge of per-account user data. |
 
 ---
 

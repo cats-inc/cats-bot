@@ -9,8 +9,9 @@ import { readBotProfile } from '../../src/core/profile/initialize.ts';
 import { hubPathsFor } from '../../src/core/store/paths.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState } from '../../src/shell/electron/hub/hubState.ts';
 import {
-  activeBots, addBot, emptyRegistry, readRegistry, reconcileRegistry, writeRegistry,
+  activeBots, addBot, adoptionOrder, emptyRegistry, readRegistry, reconcileRegistry, writeRegistry,
 } from '../../src/shell/electron/hub/registry.ts';
+import { FLOATING_CAT, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
 import { applyWindowIdentity, botWindowIdentity } from '../../src/shell/electron/windowIdentity.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
@@ -175,4 +176,45 @@ test('a bot\'s windows carry its own AUMID and relaunch the hub on it (FR-17)', 
     appId: 'io.catsinc.catsbot.mochi',
     relaunchCommand: '"C:\\Cats Bot\\Cats Bot.exe" --id mochi', relaunchDisplayName: 'Cats Bot - Mochi', appIconPath: 'C:\\Cats Bot\\Cats Bot.exe',
   }]);
+});
+
+test('review of Phase 2: locks of a process that ended on this host are taken over; a live registry lock is honoured', async () => {
+  const root = freshHome();
+  const { spawn } = await import('node:child_process');
+  const { hostname } = await import('node:os');
+  const child = spawn(process.execPath, ['-e', '0'], { stdio: 'ignore' });
+  const deadPid = await new Promise<number>((resolveExit) => child.once('exit', () => resolveExit(child.pid!)));
+  writeFileSync(hubPathsFor(root).lock, JSON.stringify({ pid: deadPid, host: hostname(), installationId: 'x', executable: 'y', startedAt: '' }));
+  const lock = acquireHubLock(root, 'install-a', 'C:\A\Cats Bot.exe');
+  assert.equal(lock.held, true, 'a lock naming an ended process on this host is stale');
+  if (lock.held) lock.release();
+  // Another live process holds the registry's write lock.
+  writeFileSync(hubPathsFor(root).registryLock, JSON.stringify({ pid: process.ppid, host: hostname(), startedAt: '' }));
+  assert.throws(() => writeRegistry(root, emptyRegistry()), /being written by another process/u);
+});
+
+test('review of Phase 2: only folders with a profile are bots, and a launch-named bot is taken in first (D11)', () => {
+  const root = freshHome();
+  mkdirSync(join(root, 'bots', 'empty'), { recursive: true });
+  initializeBot(join(root, 'bots'), { id: 'real', name: 'Real', provider: 'claude' });
+  assert.deepEqual(reconcileRegistry(root, emptyRegistry()).unregistered, ['real']);
+  assert.deepEqual(adoptionOrder(['c', 'a', 'b', 'd'], 'd', 3), ['d', 'a', 'b']);
+  assert.deepEqual(adoptionOrder(['c', 'a', 'b', 'd'], 'zz', 3), ['a', 'b', 'c'], 'an unknown name changes nothing');
+});
+
+test('review of Phase 2: a descriptor left by a hub that is gone means no hub runs', async () => {
+  const root = freshHome();
+  const socket = process.platform === 'win32' ? `\\.\pipe\cats-bot-gone-${process.pid}` : join(root, 'gone.sock');
+  writeFileSync(hubPathsFor(root).control, JSON.stringify({ version: 1, socket, token: 'a'.repeat(64), pid: 1, installationId: 'x' }));
+  await assert.rejects(callHubControl(root, { operation: 'status' }), HubNotRunningError);
+  await assert.rejects(callHubControl(root, { operation: 'status', padding: 'x'.repeat(20_000) }), /size limit/u);
+});
+
+test('review of Phase 2: a further bot\'s floating cat starts one cat to the left (FR-17)', () => {
+  const display = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: { x: 0, y: 0, width: 1920, height: 1040 } };
+  const first = placeFloating({}, [display], display);
+  const second = placeFloating({}, [display], display, undefined, 1);
+  assert.equal(second.y, first.y);
+  assert.equal(first.x - second.x, FLOATING_CAT.width + 16);
+  assert.deepEqual(placeFloating({ x: 100, y: 100 }, [display], display, undefined, 2), { x: 100, y: 100 }, 'a remembered place wins');
 });

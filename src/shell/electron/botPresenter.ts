@@ -45,8 +45,13 @@ export class BotPresenter {
   readonly floating: FloatingBot;
   private readonly host: PresenterHost;
   private stopping = false;
+  private unsubscribe: (() => void) | null = null;
 
-  constructor(host: PresenterHost, botId: string, root: string, hosted: HostedCore, identity: WindowIdentity) {
+  /**
+   * `slot` is the bot's place among the hub's bots: windows that have no
+   * remembered position open a step apart, so two bots never stack exactly.
+   */
+  constructor(host: PresenterHost, botId: string, root: string, hosted: HostedCore, identity: WindowIdentity, slot = 0) {
     this.host = host;
     this.botId = botId;
     this.root = root;
@@ -60,12 +65,14 @@ export class BotPresenter {
       isQuitting: () => this.stopping || host.isQuitting(),
       desktop: host.desktop,
       log: host.log,
+      slot,
     });
     this.settings = new SettingsWindow(pages);
     this.floating = new FloatingBot({
       ...pages,
       state: () => this.windows.shellState.floatingBot,
       persist: () => this.windows.persist(),
+      slot,
     });
   }
 
@@ -166,7 +173,7 @@ export class BotPresenter {
 
   /** Follows the core's events and opens what was open before. */
   async start(): Promise<void> {
-    this.core.subscribe((event) => this.onEvent(event));
+    this.unsubscribe = this.core.subscribe((event) => this.onEvent(event));
     // A token the CLI stored as a file is re-stored with the OS facility.
     void this.core.protectSecretsAtRest().catch((error: unknown) => this.host.log(`secret re-store failed: ${errorMessage(error)}`));
     if (this.windows.shellState.floatingBot.visible) this.setFloatingVisible(true);
@@ -192,6 +199,9 @@ export class BotPresenter {
   /** Closes this bot's windows without touching its core. */
   close(): void {
     this.stopping = true;
+    // A closed presenter acts on no later event, a second quit handed to its core included.
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     this.windows.destroyAll();
     this.settings.destroy();
     this.floating.destroy();
