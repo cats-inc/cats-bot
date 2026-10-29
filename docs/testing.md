@@ -107,6 +107,29 @@ released explicitly, without sleeps or real profile access.
   running core with a fake helper. `tests/core/desktopControl.test.ts` covers
   the phase B guard fixtures (PLAN-006 P5).
 
+### Hub, cores and coordinator (PLAN-009)
+
+- **Location**: `tests/core/channel.test.ts`, `channelCore.test.ts`,
+  `tests/integration/channelRun.test.ts`, `coreProcess.test.ts`,
+  `tests/shell/hub.test.ts`, `botManagement.test.ts`, `coordinator.test.ts`,
+  `tests/core/desktopControl.test.ts` (the lease) and
+  `tests/architecture-boundaries.test.ts`.
+- **Scope**: the host channel's protocol rules against a fake core and with real
+  cores on the fake runtime, the shell's core host starting, reattaching to and
+  stopping `cats-bot run` (a slow Runtime, a stop during start, a lock released
+  while waiting, a core that answers nothing), the snapshot budgets, the hub's
+  registry, state, locks and control endpoint, archive, restore and delete
+  through `trash/` with a junction inside a bot, the cap, supervision limits,
+  the desktop lease held by another process, and the coordinator between two
+  cores reached only through their channels: deliveries once, answers back,
+  limits, consent and authorization. The shell may take from `src/core` only
+  modules that start no core.
+- **Manual**: the real Electron hub in an isolated `CATS_BOT_HOME` and
+  `--user-data-dir`, with the fixture CLI: first run, a second launch, a hub
+  crash and reattach, two bots with a killed core, `cats-bot quit` per bot, and
+  `cats-bot hub coordinator`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot` and
+  the provider folders before and after; nothing may change.
+
 ### Windows desktop control helper
 
 - **Location**: `tests/shell/windowsDesktopControl.test.ts` and

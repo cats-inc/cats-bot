@@ -10,7 +10,7 @@
 | Baseline | Bots `a0a9ec5`; 2026-10-29 |
 | Decision | [ADR-005](../decisions/005-give-the-bot-owner-consented-desktop-control.md); Platform ADR-141 |
 | Plan | [PLAN-006](../plans/PLAN-006-desktop-control-session-mcp.md) |
-| Pending change | BDC-04 also requires a native environment binding ([ADR-010](../decisions/010-bind-each-bot-to-an-execution-environment.md)); BDC-08 self-exclusion includes the hub PID ([SPEC-008](SPEC-008-hub-and-bots.md) FR-21); one bot at a time holds an account-wide desktop lease, which also covers the clipboard tools (SPEC-008 FR-26) |
+| Hub changes (PLAN-009, 2026-10-30) | BDC-04 also requires a native environment binding, which every bot has in this version ([ADR-010](../decisions/010-bind-each-bot-to-an-execution-environment.md)); BDC-08 self-exclusion includes every attached host's PID and executable, the hub's included, and a change restarts the helper before its next call ([SPEC-008](SPEC-008-hub-and-bots.md) FR-21); one bot at a time holds an account-wide desktop lease before input and clipboard calls, until its turn ends, Stop or the core stops (SPEC-008 FR-26) |
 | Contract | [Platform SPEC-133 § Cross-implementation contract](../../../cats-platform/docs/specs/SPEC-133-desktop-control-session-mcp.md#cross-implementation-contract) |
 
 ## Summary

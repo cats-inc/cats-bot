@@ -167,12 +167,30 @@ SPEC-009 FR-6 is enforced and tested.
 
 ### Phase 6: Acceptance and documentation
 
-- [ ] 6.1: Measurement table: hub alone, hub + 1 bot, hub + 2 bots, against the
-      0.2.x baseline.
+- [x] 6.1: Measurement table: hub alone, hub + 1 bot, hub + 2 bots, against the
+      0.2.x baseline. Windows 11, development build, isolated home, fixture CLI,
+      working sets 15 seconds after every bot ran; "ready" is from launch until
+      `cats-bot hub status` reports every bot running.
+
+      | Setup | Hub processes | Hub | Per bot: core + Runtime + CLI | Total | Ready |
+      |-------|---------------|-----|-------------------------------|-------|-------|
+      | 0.2.x, one bot | - | - | - | about 560 MB | - |
+      | Hub alone (Bots page) | 4 | 355 MB | - | 355 MB | 1.0 s |
+      | Hub + 1 bot | 5 | 449 MB | 65 + 144 + 49 MB | 707 MB | 1.1 s |
+      | Hub + 2 bots | 7 | 646 MB | 65-96 + 145-172 + 49 MB | 1224 MB | 1.8 s |
+
+      One bot costs about 150 MB more than 0.2.x, mostly the core's own process.
+      Each further bot adds its windows to the hub and one core with its Runtime.
 - [ ] 6.2: Windows acceptance in isolated profiles: hub restart, core crash,
       update with two bots, desktop-control self-exclusion, two bots contending
       for the desktop lease; macOS and Linux package smoke tests.
-- [ ] 6.3: Make the superseded text real: ADR-001, ADR-002, ADR-004 and ADR-006
+      Done with the development build: hub restart and reattach, a killed core
+      restarting alone, two bots, per-bot quit, the coordinator role, and the
+      lease held by another process (a test). Still open: an update with two
+      bots (needs a published release to update from), the native helper check
+      with the hub's PID (needs the built helper), and the macOS and Linux
+      package smoke tests.
+- [x] 6.3: Make the superseded text real: ADR-001, ADR-002, ADR-004 and ADR-006
       statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04,
       BDC-08 and the desktop lease; `docs/architecture.md`, `docs/services.md`,
       `docs/setup-guide.md`, `docs/testing.md`.
@@ -477,6 +495,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 4.1 to 4.5 done: 4.1, 4.2 and 4.4 were in place from Phases 1 and 2; 4.3 refuses an install while a bot runs elsewhere; 4.5 adds the desktop lease, with a test of two processes. |
 | 2026-10-30 | Independent review of the Phase 2 commit: a corrupt profile ending the hub and the restart dialog stopping other bots were already gone with Phase 3; fixed a core lost before its close was watched, a second quit ending the hub, stacked windows of several bots, a launch-named bot that the hub ignored, window titles and a silent start failure; D23 records the reviewer's challenge of per-account user data. |
 | 2026-10-30 | Tasks 5.1 to 5.3 implemented. Tests with two cores on the fake runtime, reached through their channels: a message reached the other bot once and its answer returned to the holder's conversation, also after the hub started again; refusals for a non-holder, unknown tools, other chains, hop and hourly limits; consent for create and transfer. With the real Electron hub and two bots, `cats-bot hub coordinator` moved and cleared the role and each core heard it. |
+| 2026-10-30 | Tasks 6.1 and 6.3 done: the measurement table above; ADR-001, ADR-002, ADR-004, ADR-006 and ADR-008 statuses, SPEC-001 FR-3, SPEC-002 FR-1, FR-4 and FR-7, SPEC-006's hub changes, and `architecture.md`, `services.md`, `setup-guide.md` and `testing.md` describe the hub. Task 6.2 is partly done; 6.4 waits for the owner. |
 | 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
 
 ---
