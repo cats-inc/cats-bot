@@ -1,70 +1,17 @@
-import type { BotCore } from '../../core/bot.ts';
-import type { ApprovalDecision, BotProfilePatch, BotInteractionResponse, DesktopGrantDecision } from '../../core/types.ts';
+import { CORE_COMMANDS, runCoreCommand, type CoreCommandTarget } from '../../core/host-api/commands.ts';
 
 /**
  * SPEC-001 FR-32 / FR-34: the command side of `BotHostApi` as the renderer
- * may call it. Every command is a plain name with JSON arguments; the
- * renderer never receives the runtime's URL or key because the core never
- * exposes them. Window-only commands (hide, pin) are handled by the window
- * layer, not here. The settings page (SPEC-002) adds the provider and model
- * catalogs, renaming and the Telegram token. SPEC-006 adds desktop control:
- * its state, the conversation switch, grant answers and stop.
+ * may call it. The commands and their argument checks live in the core
+ * (`src/core/host-api/commands.ts`), shared with the host channel; this layer
+ * adds which window may send which command and the one command that needs the
+ * shell itself, opening a provider's URL request. Window-only commands (hide,
+ * pin) are handled by the window layer, not here.
  */
 
-export type HostCommand =
-  | 'providerInteractions'
-  | 'respondProviderInteraction'
-  | 'sessionCapabilities'
-  | 'openProviderInteractionUrl'
-  | 'getProfile'
-  | 'updateProfile'
-  | 'listConversations'
-  | 'createConversation'
-  | 'deleteConversation'
-  | 'transcript'
-  | 'conversationTranscript'
-  | 'sendOwnerMessage'
-  | 'cancelTurn'
-  | 'markSeen'
-  | 'listSchedules'
-  | 'cancelSchedule'
-  | 'listWorkItems'
-  | 'resolveApproval'
-  | 'status'
-  | 'listProviders'
-  | 'listModels'
-  | 'renameConversation'
-  | 'telegramStatus'
-  | 'setTelegramToken'
-  | 'desktopControlState'
-  | 'setConversationDesktopControl'
-  | 'respondDesktopGrant'
-  | 'stopDesktopControl';
+export type HostCommand = (typeof CORE_COMMANDS)[number] | 'openProviderInteractionUrl';
 
-export const HOST_COMMANDS: readonly HostCommand[] = [
-  'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities', 'openProviderInteractionUrl',
-  'getProfile',
-  'updateProfile',
-  'listConversations',
-  'createConversation',
-  'deleteConversation',
-  'transcript',
-  'conversationTranscript',
-  'sendOwnerMessage',
-  'cancelTurn',
-  'markSeen',
-  'listSchedules',
-  'cancelSchedule',
-  'listWorkItems',
-  'resolveApproval',
-  'status',
-  'listProviders',
-  'listModels',
-  'renameConversation',
-  'telegramStatus',
-  'setTelegramToken',
-  'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
-];
+export const HOST_COMMANDS: readonly HostCommand[] = [...CORE_COMMANDS, 'openProviderInteractionUrl'];
 
 /**
  * Commands only the note of the named conversation may send. SPEC-006 BDC-07: grants are
@@ -102,89 +49,19 @@ function asString(value: unknown, name: string): string {
   return value;
 }
 
-export async function runHostCommand(core: BotCore, command: string, args: unknown[], openExternal?: (url: string) => Promise<void>): Promise<unknown> {
-  switch (command as HostCommand) {
-    case 'providerInteractions': return core.providerInteractions(asString(args[0], 'conversationId'));
-    case 'respondProviderInteraction':
-      await core.respondProviderInteraction(asString(args[0], 'conversationId'), asString(args[1], 'interactionId'), args[2] as BotInteractionResponse);
-      return null;
-    case 'sessionCapabilities': return core.sessionCapabilities(asString(args[0], 'conversationId'), args[1] === true);
-    case 'openProviderInteractionUrl': {
-      const snapshot = await core.providerInteractions(asString(args[0], 'conversationId'));
-      if (!snapshot.supported) throw new Error('The provider request cannot currently be verified.');
-      const interaction = snapshot.interactions.find(i => i.interactionId === asString(args[1], 'interactionId'));
-      if (!interaction?.prompt?.url || interaction.kind !== 'mcp_url' || interaction.status !== 'pending'
-        || Date.parse(interaction.expiresAt) <= Date.now() || !openExternal) throw new Error('No active URL request.');
-      const url = new URL(interaction.prompt.url);
-      if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported request URL.');
-      await openExternal(url.href);
-      return null;
-    }
-    case 'getProfile':
-      return core.getProfile();
-    case 'updateProfile':
-      return core.updateProfile((args[0] ?? {}) as BotProfilePatch);
-    case 'listConversations':
-      return core.listConversations();
-    case 'createConversation':
-      return core.createConversation(typeof args[0] === 'string' ? args[0] : undefined);
-    case 'deleteConversation':
-      await core.deleteConversation(asString(args[0], 'conversationId'));
-      return null;
-    case 'transcript':
-      return core.transcript(asString(args[0], 'conversationId'));
-    case 'conversationTranscript':
-      return core.conversationTranscript(asString(args[0], 'conversationId'));
-    case 'sendOwnerMessage':
-      return core.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text'));
-    case 'cancelTurn':
-      await core.cancelTurn(asString(args[0], 'conversationId'));
-      return null;
-    case 'markSeen':
-      await core.markSeen(asString(args[0], 'conversationId'));
-      return null;
-    case 'listSchedules':
-      return core.listSchedules();
-    case 'cancelSchedule':
-      await core.cancelSchedule(asString(args[0], 'scheduleId'));
-      return null;
-    case 'listWorkItems':
-      return core.listWorkItems();
-    case 'resolveApproval': {
-      const decision = args[1];
-      if (decision !== 'approve' && decision !== 'deny') throw new Error('decision must be approve or deny');
-      await core.resolveApproval(asString(args[0], 'workItemId'), decision as ApprovalDecision);
-      return null;
-    }
-    case 'status':
-      return core.status();
-    case 'listProviders':
-      return core.listProviders();
-    case 'listModels':
-      return core.listModels(asString(args[0], 'provider'));
-    case 'renameConversation':
-      return core.renameConversation(asString(args[0], 'conversationId'), asString(args[1], 'title'));
-    case 'telegramStatus':
-      return core.telegramStatus();
-    case 'setTelegramToken':
-      // The token goes into the secret store and is never echoed back to a renderer.
-      await core.setTelegramToken(typeof args[0] === 'string' && args[0].trim() ? args[0] : null);
-      return core.telegramStatus();
-    case 'desktopControlState':
-      return core.desktopControlState(args[0] === undefined || args[0] === null ? undefined : asString(args[0], 'conversationId'));
-    case 'setConversationDesktopControl':
-      if (typeof args[1] !== 'boolean') throw new Error('enabled must be true or false');
-      return core.setConversationDesktopControl(asString(args[0], 'conversationId'), args[1]);
-    case 'respondDesktopGrant': {
-      const decision = args[2];
-      if (decision !== 'allow' && decision !== 'deny') throw new Error('decision must be allow or deny');
-      await core.respondDesktopGrant(asString(args[0], 'conversationId'), asString(args[1], 'requestId'), decision as DesktopGrantDecision);
-      return core.desktopControlState(asString(args[0], 'conversationId'));
-    }
-    case 'stopDesktopControl':
-      await core.stopDesktopControl(asString(args[0], 'conversationId'));
-      return core.desktopControlState(asString(args[0], 'conversationId'));
-    default:
-      throw new Error(`Unknown host command ${command}`);
+export async function runHostCommand(core: CoreCommandTarget, command: string, args: unknown[], openExternal?: (url: string) => Promise<void>): Promise<unknown> {
+  if (command === 'openProviderInteractionUrl') {
+    const snapshot = await core.providerInteractions(asString(args[0], 'conversationId'));
+    if (!snapshot.supported) throw new Error('The provider request cannot currently be verified.');
+    const interaction = snapshot.interactions.find(i => i.interactionId === asString(args[1], 'interactionId'));
+    if (!interaction?.prompt?.url || interaction.kind !== 'mcp_url' || interaction.status !== 'pending'
+      || Date.parse(interaction.expiresAt) <= Date.now() || !openExternal) throw new Error('No active URL request.');
+    const url = new URL(interaction.prompt.url);
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('Unsupported request URL.');
+    await openExternal(url.href);
+    return null;
   }
+  // Window lifecycle and quit stay with the window layer; a renderer cannot send them.
+  if (!(CORE_COMMANDS as readonly string[]).includes(command)) throw new Error(`Unknown host command ${command}`);
+  return runCoreCommand(core, command, args);
 }

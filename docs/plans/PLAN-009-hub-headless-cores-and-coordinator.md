@@ -49,15 +49,19 @@ Native window layers and the Electron host remain unchanged by UI extraction.
 
 ### Phase 1: Core out of Electron, still one bot
 
-- [ ] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client
+- [x] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client
       for hosts, with version, token, manager and descriptor, and attach by
       subscribe, buffer and snapshot sequence (SPEC-008 FR-12 to FR-15). It
       carries every `BotHostApi` call from the host, and from the core the event
       stream and host-service requests (cipher, host identity). The owner control
-      operations keep their behavior.
-- [ ] 1.2: The headless host (`cats-bot run`) serves the channel and accepts from
+      operations keep their behavior. `channel.ts` holds the server and client;
+      `commands.ts` holds the command table both the renderer IPC and the
+      channel dispatch through; `endpoint.ts` holds what owner control shares.
+- [x] 1.2: The headless host (`cats-bot run`) serves the channel and accepts from
       its host the packaged Runtime entry, the helper path and the secret cipher.
       Give `src/core/secrets.ts` an asynchronous cipher path (FR-7, FR-20).
+      `run` takes `--runtime-entry`, `--desktop-control-helper`, `--manager` and
+      `--host-cipher`, and exits when a host stops the core over the channel.
 - [ ] 1.3: The current shell spawns its bot's core with `ELECTRON_RUN_AS_NODE`
       (already used for the Runtime child, so the RunAsNode fuse stays enabled)
       and routes `ipc.ts` through the channel client instead of an in-process
@@ -223,6 +227,27 @@ Each entry names where it is implemented.
   - `cats-bot init` without `--id` truncates the derived id to 64 characters
     and appends `-bot` to a device name, so `Con` becomes `con-bot`.
   - The CLI's bot listing skips a directory whose name is not a valid id.
+- **D3, host channel shape (1.1).**
+  - A pipe and descriptor of its own (`host-channel.json`) beside owner control,
+    which keeps its HTTP endpoint unchanged; both share `endpoint.ts`.
+  - Newline-delimited JSON over one duplex connection per host. A `hello` with
+    the token and protocol comes first; a mismatch is refused with its reason.
+    Frames are bounded to 16 MiB, bodies are never logged, and a host that
+    reads too slowly (32 MiB queued) is disconnected rather than sent a gap.
+  - Every core response carries the event number current when the request
+    started, and appliers are idempotent, so a host that subscribed first
+    misses nothing (FR-13).
+  - The host sends its identity (PID, executable, installation id) in its hello
+    instead of the core asking for it; the core keeps the identities of the
+    attached hosts for the helper's self-exclusion (FR-21, task 1.4).
+  - Commands live in one table shared with the renderer IPC. The host also gets
+    the window lifecycle commands, `protectSecretsAtRest`, `quit` and
+    `stopAllDesktopControl`, which no renderer can send.
+- **D4, secrets through the host (1.2).** A core started with `--host-cipher`
+  reads and writes secrets through the attached host's cipher, waiting up to
+  30 seconds for a host that serves that label; status says `os` only when such
+  a cipher is configured. Telegram starts once its token is read, so a later
+  start or a stop supersedes an attempt still waiting.
 
 ## Progress Log
 
@@ -233,6 +258,7 @@ Each entry names where it is implemented.
 | 2026-10-29 | Codex review: eight findings written back. Owner chose API limits stated as no security boundary, an account-wide desktop lease that external cores also take, and holders without session MCP keeping the role without tools. |
 | 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
 | 2026-10-30 | Owner asked for the whole plan unattended, decisions logged above. Task 1.6 implemented: 246 tests, typecheck and build passed on Windows. |
+| 2026-10-30 | Tasks 1.1 and 1.2 implemented: the host channel and `cats-bot run` as a channel-hosted core. An integration test runs `cats-bot run` with the packed Runtime and the fixture CLI, converses through the channel and stops it there. |
 
 ---
 

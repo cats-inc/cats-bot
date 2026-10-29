@@ -62,7 +62,8 @@ const USAGE = `Usage: cats-bot <command> [options]
 Commands:
   init --name <name> --provider <provider> [--model <model>] [--id <id>] [--cwd <dir>]
        [--instructions <text>] [--permission-mode skip|whitelist|default]
-  run [--json]                           run the bot core in the foreground
+  run [--json]                           run the bot core in the foreground; a presenting host adds
+       [--manager <id>] [--host-cipher <label>] [--runtime-entry <path>] [--desktop-control-helper <path>]
   say <conversation|home> <text...>      send an owner message
   status                                 show profile, runtime, queue and life state
   conversations [--json]                 list conversations
@@ -207,12 +208,23 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
   return 0;
 }
 
+/**
+ * The headless host, and the core a presenting host (the shell, later the hub) starts
+ * (SPEC-008 FR-7): that host passes the packaged Runtime entry and desktop-control helper,
+ * names its installation as manager and serves the secret cipher over the host channel.
+ */
 async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
   const target = resolveTarget(parsed, env);
   const json = parsed.flags.get('json') === true;
+  const runtimeEntry = flagString(parsed.flags, 'runtime-entry');
+  const helperPath = flagString(parsed.flags, 'desktop-control-helper');
+  const hostCipher = flagString(parsed.flags, 'host-cipher');
   const core = BotCore.open({
     root: target.root,
-    runtime: runtimeOverrides(env),
+    runtime: { ...runtimeOverrides(env), ...(runtimeEntry ? { runtimeEntry } : {}) },
+    ...(helperPath ? { desktopControl: { helperPath } } : {}),
+    channel: { manager: flagString(parsed.flags, 'manager') ?? null },
+    ...(hostCipher ? { hostCipher } : {}),
     log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
   });
   core.subscribe((event) => printEvent(event, json));
@@ -228,6 +240,8 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     core.subscribe((event) => {
       if (event.type === 'host.handoff' && event.message.kind === 'quit') stop();
     });
+    // A host may also stop the core over the host channel.
+    void core.whenStopped().then(resolve);
   });
   return 0;
 }
