@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Phase 1 implemented (2026-10-30); GitHub and workspace steps in PLAN-008 |
+| **Status** | Implemented on 2026-10-30 (PLAN-008 Phases 1–3) except FR-8, which the 0.3.0 release completes |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 
@@ -20,7 +20,8 @@ or releases.
 
 - Every engineering identifier uses the singular product identity.
 - All Bot state lives under `~/.catsbot/`; nothing is created under `~/.cats/`.
-- Hub files have a place that cannot collide with a bot id.
+- Hub files have a place that cannot collide with a bot id (bot ids follow
+  SPEC-008 FR-27).
 
 ## Non-Goals
 

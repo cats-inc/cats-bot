@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In progress: Phase 1 implemented (2026-10-30) |
+| **Status** | Phases 1–3 done (2026-10-30); Phase 4 waits for PLAN-009 6.1–6.3 |
 | **Owner** | Product owner |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Independent agent |
@@ -74,31 +74,37 @@ repository, so the local folder rename cannot strand anyone's work.
 
 ### Phase 2: GitHub (owner-confirmed, irreversible)
 
-- [ ] 2.1: Delete releases v0.2.0–v0.2.5 and their tags. The owner confirmed all
-      six on 2026-10-30; v0.2.5 was published after this plan was written.
-- [ ] 2.2: Rename the repository to `cats-inc/cats-bot`. Nothing may depend on
+- [x] 2.1: Delete releases v0.2.0–v0.2.5 and their tags. The owner confirmed all
+      six on 2026-10-30; v0.2.5 was published after this plan was written. All
+      six were deleted after the Phase 1 merge.
+- [x] 2.2: Rename the repository to `cats-inc/cats-bot`. Nothing may depend on
       the automatic redirect.
-- [ ] 2.3: Verify organization secrets with selected-repository access (macOS
+- [x] 2.3: Verify organization secrets with selected-repository access (macOS
       signing) still include the renamed repository, branch protection still
       requires `node (ubuntu-latest)`, `node (windows-latest)` and `validate` (no
       ruleset applies to this repository, checked 2026-10-30), and the CI and
-      release workflows resolve under the new name.
+      release workflows resolve under the new name. After the rename all five
+      secrets were listed for `cats-inc/cats-bot`, the three checks were
+      unchanged and "Cats Bot Standard Preview" was an active workflow; the
+      first CI run under the new name is the PR that records this.
 
 **Deliverables**: renamed repository with no releases.
 
 ### Phase 3: Workspace and other repositories
 
-- [ ] 3.1: cats-one: `config/developer-workspace.json` (id, path,
+- [x] 3.1: cats-one: `config/developer-workspace.json` (id, path,
       `packageName`), `scripts/shared/workspace-inventory.mjs`, README,
       `docs/architecture.md`, `docs/setup-guide.md`; regenerate AGENTS.md and run
       workspace sync. Sync requires each member's folder and package name to match
       its id, so it fails from the Phase 1 merge until 3.1 and 3.3 are both done;
-      do them together.
-- [ ] 3.2: cats-platform `docs/deployment.md`: shared macOS secrets are scoped to
+      do them together. Merged as cats-one #31.
+- [x] 3.2: cats-platform `docs/deployment.md`: shared macOS secrets are scoped to
       `cats-platform` and `cats-bot`. Historical ADR/SPEC/PLAN mentions in
-      cats-platform and cats-runtime stay as written.
-- [ ] 3.3: Rename the local checkout folder to `cats-bot`, update remotes, and
-      update project memory that names the old repository.
+      cats-platform and cats-runtime stay as written. Merged as cats-platform
+      #352.
+- [x] 3.3: Rename the local checkout folder to `cats-bot`, update remotes, and
+      update project memory that names the old repository. Workspace sync then
+      regenerated the parent AGENTS.md with `cats-bot/`.
 
 **Deliverables**: the workspace builds and syncs with the new member name.
 
@@ -176,6 +182,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | 2026-10-29 | Review fix: Phase 4 follows PLAN-009 tasks 6.1–6.3, so the two plans no longer wait on each other. |
 | 2026-10-30 | Phase 1 implemented. `npm ci`, typecheck, 237 tests and the build passed on Windows. The isolated shell start (temporary `CATS_BOT_HOME` and `--user-data-dir`, fixture CLI) created only `bots/smoke/`, its Runtime exited cleanly on `cats-bot quit`, and `~/.catsbot`, `~/.cats/bots` and `%APPDATA%\Cats Bot` were unchanged. The owner confirmed deleting v0.2.0–v0.2.5. |
 | 2026-10-30 | Independent review: no code defects. Its fixes: one release identity source with a regression test, the 0.2.x login-entry and redirect steps in SPEC-007 FR-8, ADR-001/ADR-004 status lines. Bot ids are not validated (pre-existing; `..` resolves into the hub's namespace), left for the owner to schedule. |
+| 2026-10-30 | Phase 1 merged as #60. Phases 2–3 done: releases and tags v0.2.0–v0.2.5 deleted, the repository renamed to `cats-inc/cats-bot` (secrets, branch protection and workflows checked), cats-one #31 and cats-platform #352 merged, the local folder renamed and the workspace synced. The owner scheduled bot-id validation as PLAN-009 task 1.6 (SPEC-008 FR-27). |
 
 ---
 

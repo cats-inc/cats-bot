@@ -66,6 +66,10 @@ Native window layers and the Electron host remain unchanged by UI extraction.
       self-exclusion (FR-21).
 - [ ] 1.5: Extend `tests/architecture-boundaries.test.ts`: `src/shell/**` reaches
       the core only through the channel client and core types.
+- [ ] 1.6: Bot id validation (SPEC-008 FR-27) in `src/core/store/paths.ts`, used
+      by the CLI, the core and the shell before any path is resolved; Phase 3's
+      create and reconcile reuse it. Tests cover `..`, path separators,
+      uppercase, length and device names.
 
 **Deliverables**: closing or crashing the shell leaves the bot running, and
 restarting the shell reattaches. First working-set measurement.
@@ -154,6 +158,7 @@ SPEC-009 FR-6 is enforced and tested.
 | `src/core/types.ts`, `src/core/profile/profile.ts` | Modify | `environment` binding; work-item source `bot` |
 | `src/core/bot.ts`, `src/core/desktopControl/*` | Modify | Host PID and executable in self-exclusion |
 | `src/core/secrets.ts` | Modify | Asynchronous cipher path |
+| `src/core/store/paths.ts`, `src/cli/main.ts`, `src/shell/electron/main.ts` | Modify | Bot id validation (FR-27) |
 | `src/shell/electron/main.ts`, `ipc.ts`, `windows.ts`, `tray.ts`, `trayMenu.ts`, `settingsWindow.ts`, `floatingBot.ts`, `viewState.ts` | Modify | Hub, bot-bound windows, one tray |
 | `src/shell/electron/hub/` | Create | Registry, core supervisor, hub state |
 | `src/shell/electron/update/*` | Modify | Hub-owned update coordination |
@@ -176,7 +181,7 @@ SPEC-009 FR-6 is enforced and tested.
   restore and delete, each interrupted after its rename; channel auth,
   versioning, size limits; coordinator authorization tables (holder or not,
   every refused operation, holder without session MCP); chain and rate limits;
-  delivery deduplication and resend.
+  delivery deduplication and resend; bot id validation.
 - **Integration Tests**: the packed Runtime behind a channel-hosted core; two cores
   in temporary roots; attach with events between subscribe and snapshot; hub
   restart reattaches and keeps managing its cores; core crash restarts; two
@@ -205,6 +210,7 @@ SPEC-009 FR-6 is enforced and tested.
 | 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
 | 2026-10-29 | Owner answered the SPEC-008 and SPEC-009 open questions: a cap of 3; archive before delete; externally hosted cores listed only; 4 hops and 10 messages per hour by default, adjustable; coordinator work admitted at once. |
 | 2026-10-29 | Codex review: eight findings written back. Owner chose API limits stated as no security boundary, an account-wide desktop lease that external cores also take, and holders without session MCP keeping the role without tools. |
+| 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
 
 ---
 

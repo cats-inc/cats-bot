@@ -2,10 +2,11 @@
 
 ## Status
 
-Accepted — 2026-10-29, owner decisions recorded from discussion. PLAN-008 Phase 1
-implemented the names and the data root on 2026-10-30, replacing the default data
-root of ADR-001 §6 and SPEC-001 FR-2; the GitHub and workspace steps follow in
-[PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md).
+Accepted — 2026-10-29, owner decisions recorded from discussion. On 2026-10-30
+[PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md) Phases 1–3
+implemented the names and the data root, replacing the default data root of
+ADR-001 §6 and SPEC-001 FR-2, deleted releases v0.2.0–v0.2.5 and renamed the
+repository. The 0.3.0 release (Phase 4) follows PLAN-009.
 
 ## Context
 
