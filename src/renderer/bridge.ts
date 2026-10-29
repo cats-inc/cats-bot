@@ -130,6 +130,8 @@ export interface BotRow {
   pid: number | null;
   startAutomatically: boolean;
   coordinator: boolean;
+  /** SPEC-009 FR-11: for the holder, whether its provider gives it the coordinator tools. */
+  coordinatorTools: boolean | null;
 }
 
 export interface BotListing {
@@ -138,9 +140,12 @@ export interface BotListing {
   unregistered: string[];
   maxBots: number;
   active: number;
+  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  limits: { hopsPerChain: number; messagesPerHour: number };
 }
 
-export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete';
+export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete'
+  | 'makeCoordinator' | 'clearCoordinator';
 
 export interface SetupInput {
   name: string;
@@ -200,6 +205,7 @@ export interface CatsBotBridge {
     bots(): Promise<BotListing>;
     action(action: BotAction, id: string, value?: boolean): Promise<BotListing>;
     create(): Promise<null>;
+    setLimits(limits: { hopsPerChain: number; messagesPerHour: number }): Promise<BotListing>;
     onChange(listener: () => void): Unsubscribe;
   };
   /** First-run page only. */

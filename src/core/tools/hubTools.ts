@@ -103,3 +103,17 @@ export function createHubToolHandlers(forward: (call: HubCall) => Promise<ToolCa
       forward({ tool: name, args, conversationId: context.conversationId }),
   };
 }
+
+/** The hub's answer as a tool result; anything else becomes an error. */
+export function hubAnswer(value: unknown): ToolCallResult {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { text: 'The hub gave no usable answer.', isError: true };
+  const raw = value as Record<string, unknown>;
+  const structured = raw.structuredContent && typeof raw.structuredContent === 'object' && !Array.isArray(raw.structuredContent)
+    ? raw.structuredContent as Record<string, unknown>
+    : undefined;
+  return {
+    text: typeof raw.text === 'string' ? raw.text : '',
+    ...(raw.isError === true ? { isError: true } : {}),
+    ...(structured ? { structuredContent: structured } : {}),
+  };
+}

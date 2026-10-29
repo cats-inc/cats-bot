@@ -158,9 +158,13 @@ export function NoteApp() {
       ?? (requested === 'home' ? conversations.find((item) => item.role === 'home') : undefined);
     if (!record) return;
     conversation.current = record.id;
-    const profile = await api.invoke('getProfile');
+    const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     setSpeakerName(profile.name);
-    setTitle(`${profile.name} · ${conversationTitle(record)}`);
+    // SPEC-009 FR-10 and FR-11: the coordinator's note says so, and says when its provider gives it no tools.
+    const role = status.coordinator?.holder
+      ? ` · ${status.coordinator.tools ? t('Coordinator') : t('Coordinator, without tools on this provider')}`
+      : '';
+    setTitle(`${profile.name} · ${conversationTitle(record)}${role}`);
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);

@@ -394,6 +394,8 @@ export interface BotStatus {
   pendingInteractions: number;
   /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
   awaitingOwner: number;
+  /** SPEC-009 FR-10 and FR-11: whether the hub reports this bot as coordinator, and whether its provider gives it the tools. */
+  coordinator: { holder: boolean; tools: boolean };
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null; };

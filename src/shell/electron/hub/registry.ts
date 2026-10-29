@@ -31,9 +31,31 @@ export interface BotRegistry {
   bots: RegistryBot[];
   /** ADR-010: only native in this version. */
   environmentProfile: { kind: 'native' };
-  /** SPEC-009: the bot holding the coordinator role. */
-  coordinator: { holder: string | null };
+  /** SPEC-009 FR-1: the bot holding the coordinator role, when it was assigned and how. */
+  coordinator: CoordinatorRole;
   maxBots: number;
+  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  limits: CoordinatorLimits;
+}
+
+export type CoordinatorAssignment = 'first-run' | 'owner' | 'confirmed-proposal';
+
+export interface CoordinatorRole {
+  holder: string | null;
+  assignedAt: string | null;
+  how: CoordinatorAssignment | null;
+}
+
+export interface CoordinatorLimits {
+  hopsPerChain: number;
+  messagesPerHour: number;
+}
+
+export const DEFAULT_LIMITS: CoordinatorLimits = { hopsPerChain: 4, messagesPerHour: 10 };
+
+/** SPEC-009 FR-1 and FR-2: who holds the role now, recorded with when and how. */
+export function withHolder(registry: BotRegistry, holder: string | null, how: CoordinatorAssignment, now: Date = new Date()): BotRegistry {
+  return { ...registry, coordinator: holder ? { holder, assignedAt: now.toISOString(), how } : { holder: null, assignedAt: null, how: null } };
 }
 
 export type RegistryRead =
@@ -48,7 +70,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function emptyRegistry(): BotRegistry {
-  return { schemaVersion: 1, bots: [], environmentProfile: { kind: 'native' }, coordinator: { holder: null }, maxBots: DEFAULT_MAX_BOTS };
+  return {
+    schemaVersion: 1, bots: [], environmentProfile: { kind: 'native' },
+    coordinator: { holder: null, assignedAt: null, how: null }, maxBots: DEFAULT_MAX_BOTS, limits: { ...DEFAULT_LIMITS },
+  };
 }
 
 /** Field by field: defaults for what is missing, a refusal for what cannot be read safely. */
@@ -79,8 +104,26 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
   }
   const coordinator = isRecord(raw.coordinator) ? raw.coordinator : {};
   const holder = typeof coordinator.holder === 'string' && seen.has(coordinator.holder) ? coordinator.holder : null;
+  const how = holder && ['first-run', 'owner', 'confirmed-proposal'].includes(coordinator.how as string)
+    ? coordinator.how as CoordinatorAssignment : null;
   const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
-  return { schemaVersion: 1, bots: sortBots(bots), environmentProfile: { kind: 'native' }, coordinator: { holder }, maxBots };
+  const limits = isRecord(raw.limits) ? raw.limits : {};
+  const limit = (value: unknown, fallback: number) => (Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 1000 ? value as number : fallback);
+  return {
+    schemaVersion: 1,
+    bots: sortBots(bots),
+    environmentProfile: { kind: 'native' },
+    coordinator: {
+      holder,
+      assignedAt: holder && typeof coordinator.assignedAt === 'string' ? coordinator.assignedAt : null,
+      how,
+    },
+    maxBots,
+    limits: {
+      hopsPerChain: limit(limits.hopsPerChain, DEFAULT_LIMITS.hopsPerChain),
+      messagesPerHour: limit(limits.messagesPerHour, DEFAULT_LIMITS.messagesPerHour),
+    },
+  };
 }
 
 function sortBots(bots: RegistryBot[]): RegistryBot[] {

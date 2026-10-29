@@ -39,6 +39,9 @@ function BotLine({ bot, first, last, act }: { bot: BotRow; first: boolean; last:
           {bot.coordinator ? ` · ${t('Coordinator')}` : ''}
         </small>
         {bot.error && bot.state === 'failed' ? <small className="error">{bot.error}</small> : null}
+        {bot.coordinator && bot.coordinatorTools === false
+          ? <small>{t('This provider gives the coordinator no tools; the role stays with the bot.')}</small>
+          : null}
       </div>
       {bot.state === 'archived' ? (
         <div className="row">
@@ -56,6 +59,9 @@ function BotLine({ bot, first, last, act }: { bot: BotRow; first: boolean; last:
           </label>
           <button type="button" aria-label={t('Move up')} disabled={first} onClick={() => act('moveUp')}>↑</button>
           <button type="button" aria-label={t('Move down')} disabled={last} onClick={() => act('moveDown')}>↓</button>
+          {bot.coordinator
+            ? <button type="button" onClick={() => act('clearCoordinator')}>{t('Clear coordinator')}</button>
+            : <button type="button" onClick={() => act('makeCoordinator')}>{t('Make coordinator')}</button>}
           <button type="button" disabled={bot.state === 'external'} onClick={() => act('archive')}>{t('Archive…')}</button>
         </div>
       )}
@@ -98,6 +104,17 @@ export function BotsTab() {
     }
   };
 
+  // SPEC-009 FR-8: the owner's limits on what the coordinator sends.
+  const setLimit = async (key: 'hopsPerChain' | 'messagesPerHour', value: number) => {
+    if (!listing || !Number.isSafeInteger(value) || value < 1) return;
+    try {
+      setListing(await api.hub.setLimits({ ...listing.limits, [key]: value }));
+    } catch (failure) {
+      toast(errorText(failure));
+      await load();
+    }
+  };
+
   const active = listing?.bots.filter((bot) => bot.state !== 'archived') ?? [];
   const archived = listing?.bots.filter((bot) => bot.state === 'archived') ?? [];
   const full = listing ? listing.active >= listing.maxBots : false;
@@ -119,6 +136,26 @@ export function BotsTab() {
           <BotLine key={bot.id} bot={bot} first={index === 0} last={index === active.length - 1} act={act(bot.id)} />
         ))}
       </ul>
+      {listing && (
+        <>
+          <h3>{t('Coordinator')}</h3>
+          <p className="lead">
+            {t('The coordinator can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.')}
+          </p>
+          <div className="row">
+            <label>
+              <span>{t('Hops per chain')}</span>
+              <input type="number" min={2} max={1000} defaultValue={listing.limits.hopsPerChain} key={`hops-${listing.limits.hopsPerChain}`}
+                onBlur={(event) => void setLimit('hopsPerChain', Number(event.target.value))} />
+            </label>
+            <label>
+              <span>{t('Messages per hour')}</span>
+              <input type="number" min={1} max={1000} defaultValue={listing.limits.messagesPerHour} key={`rate-${listing.limits.messagesPerHour}`}
+                onBlur={(event) => void setLimit('messagesPerHour', Number(event.target.value))} />
+            </label>
+          </div>
+        </>
+      )}
       {listing && listing.unregistered.length > 0 && (
         <>
           <h3>{t('Found in the bots folder')}</h3>

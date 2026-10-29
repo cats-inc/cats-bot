@@ -21,6 +21,16 @@ export interface LanguageState {
 }
 
 export const zhTW: Record<string, string> = {
+  'Coordinator, without tools on this provider': '協調者（這個 provider 沒有工具）',
+  'This provider gives the coordinator no tools; the role stays with the bot.': '這個 provider 不提供協調者工具；角色仍由這個機器人保留。',
+  'Clear coordinator': '取消協調者',
+  'Make coordinator': '設為協調者',
+  'The coordinator can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.': '協調者可以把工作交給其他機器人。建立或啟動機器人、轉交角色，都要等你確認。',
+  'Hops per chain': '每條對話鏈的轉送次數',
+  'Messages per hour': '每小時訊息數',
+  'from {name}': '來自 {name}',
+  'Only you can allow this. The request expires in 10 minutes.': '只有你能允許這件事。這個請求 10 分鐘後失效。',
+
   Start: '啟動',
   Restore: '還原',
   Archive: '封存',

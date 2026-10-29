@@ -146,13 +146,17 @@ delete; tests also cover the cap.
 
 ### Phase 5: Coordinator
 
-- [ ] 5.1: Role state, Settings assignment, a CLI command through the hub's
+- [x] 5.1: Role state, Settings assignment, a CLI command through the hub's
       control endpoint, and the default holder (SPEC-009 FR-1, FR-2, FR-10).
-- [ ] 5.2: The `cats-hub` server in the holder's core, attached per send while the
+      `bots.json` records holder, time and how; Settings → Bots and
+      `cats-bot hub coordinator <id> | --clear` assign it; the holder's note
+      title shows the role.
+- [x] 5.2: The `cats-hub` server in the holder's core, attached per send while the
       hub reports it as holder and the session supports session MCP servers,
       with hub-side authorization of every call and the refusals (FR-3, FR-4,
-      FR-6, FR-11).
-- [ ] 5.3: Owner confirmations, chains, limits (4 hops and 10 messages per hour
+      FR-6, FR-11). `src/core/tools/hubTools.ts`; the hub binds each channel to
+      its bot and answers the calls in `src/shell/electron/hub/coordinator.ts`.
+- [x] 5.3: Owner confirmations, chains, limits (4 hops and 10 messages per hour
       by default, adjustable in Settings), replies and audit (FR-5, FR-7 to
       FR-9); work items with source `bot`, admitted at once; delivery ids, the
       delivery log, deduplication and resend (FR-12).
@@ -425,6 +429,30 @@ Each entry names where it is implemented.
   - A hub that cannot start shows why in a dialog.
   - A hub lock left by a process that no longer runs is taken over. One whose
     PID now belongs to another program names the file to delete.
+- **D25, owner confirmations (5.3).** SPEC-009 FR-5 shows a request as a
+  decision in the holder's note and in the tray. This version asks in a native
+  dialog the hub shows, which no page or bot can answer. The dialog names the
+  holder and the request, and expires as declined after 10 minutes, when the
+  hub stops, or when the holder's channel is lost. A decision card in the note
+  can replace it later.
+- **D26, which bot needs consent to start (5.3).** The owner confirms
+  `hub_start_bot` for any stopped bot except one that failed. The hub cannot
+  tell after its own restart whether the owner stopped a bot or never started
+  it.
+- **D27, providers without the tools (5.2).** The holder gets no `cats-hub`
+  tools on the providers that FR-11 names for the pinned Runtime: Antigravity,
+  Grok and Muse. Its note title and Settings → Bots say so. A capability probe
+  can replace the list when Runtime reports it.
+- **D28, chains and deliveries (5.3).**
+  - A chain is the holder's: only the bot that started a chain can continue it.
+  - A message is accepted only when it and its reply fit the hop limit, so a
+    reply is never refused.
+  - A reply returns to the holder's conversation that sent the message, as
+    background work. A message arrives in the target's direct message.
+  - The delivery log (`coordinator/deliveries.jsonl` under the Cats Bot root)
+    keeps each delivery's text so it can be sent again. The audit
+    (`logs/hub-audit.jsonl`) and the bots' journals record calls without text.
+  - A target that fails or is archived answers the holder with the reason.
 - **D22, hub-owned updates (4.3).**
   - Any bot that runs in another program blocks the install and is named,
     whatever executable runs it. This is stricter than "from this
@@ -448,6 +476,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 3.1 to 3.3 implemented. Unit tests cover the cap, archive, restore, delete through `trash/`, interrupted deletes, a junction inside a deleted bot, and restart limits. With the real Electron hub and two bots made by `cats-bot init`: both were taken in and ran; killing one core restarted only that bot; `cats-bot quit` stopped one bot alone and quitting the last one ended the hub. |
 | 2026-10-30 | Tasks 4.1 to 4.5 done: 4.1, 4.2 and 4.4 were in place from Phases 1 and 2; 4.3 refuses an install while a bot runs elsewhere; 4.5 adds the desktop lease, with a test of two processes. |
 | 2026-10-30 | Independent review of the Phase 2 commit: a corrupt profile ending the hub and the restart dialog stopping other bots were already gone with Phase 3; fixed a core lost before its close was watched, a second quit ending the hub, stacked windows of several bots, a launch-named bot that the hub ignored, window titles and a silent start failure; D23 records the reviewer's challenge of per-account user data. |
+| 2026-10-30 | Tasks 5.1 to 5.3 implemented. Tests with two cores on the fake runtime, reached through their channels: a message reached the other bot once and its answer returned to the holder's conversation, also after the hub started again; refusals for a non-holder, unknown tools, other chains, hop and hourly limits; consent for create and transfer. With the real Electron hub and two bots, `cats-bot hub coordinator` moved and cleared the role and each core heard it. |
 | 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
 
 ---
