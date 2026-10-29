@@ -572,6 +572,24 @@ test('the helper client handshakes with the self lists, restarts after a crash a
   mismatched.close();
 });
 
+test('attached hosts join the self lists, and a change restarts the helper before its next call (SPEC-008 FR-21)', async () => {
+  const helper = fakeHelper({ apps: {}, windows: [] });
+  const client = createDesktopControlHelperClient({ path: 'fake.exe', selfProcessIds: [11], selfExecutables: ['C:\\Bot\\Cats Bot.exe'],
+    spawn: helper.spawn });
+  client.setHosts([22], ['C:\\Hub\\Cats Bot.exe']);
+  await client.handshake();
+  assert.deepEqual(helper.hellos[0], { protocol: 1, selfProcessIds: [11, 22], selfExecutables: ['C:\\Bot\\Cats Bot.exe', 'C:\\Hub\\Cats Bot.exe'] });
+  client.setHosts([22], ['C:\\Hub\\Cats Bot.exe']);
+  await client.call('state');
+  assert.equal(helper.spawned, 1, 'the same hosts keep the running helper');
+  client.setHosts([33], ['C:\\Node\\node.exe']);
+  await client.call('state');
+  assert.equal(helper.spawned, 2);
+  assert.deepEqual(helper.hellos[1], { protocol: 1, selfProcessIds: [11, 33], selfExecutables: ['C:\\Bot\\Cats Bot.exe', 'C:\\Node\\node.exe'] });
+  assert.equal(client.unavailableReason(), null, 'a restart for new hosts is not a crash');
+  client.close();
+});
+
 test('an unexpected helper exit reports exception types and frames, never their messages (BDC-12)', async () => {
   const exits: Array<{ code: number | null; summary: string }> = [];
   const world: FakeWorld = { apps: {}, windows: [], crashOn: 'list_windows',

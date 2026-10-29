@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { delimiter, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { HostChannelClient } from '../../src/core/host-api/channel.ts';
@@ -88,5 +89,25 @@ test('two cores in one root each serve only their own host', async () => {
     clientTwo.close();
     await one.stop();
     await two.stop();
+  }
+});
+
+test('a host hands the core the directory of a provider CLI its setup found (ADR-006)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'paths' });
+  await core.start();
+  const client = await HostChannelClient.connect(core.paths.root, { host });
+  const before = process.env.PATH;
+  try {
+    const directory = join(home.root, 'cli-bin');
+    assert.equal(await client.call('useCommandDirectory', directory), null);
+    assert.equal(process.env.PATH?.split(delimiter)[0], directory, 'later Runtime starts find the CLI first');
+    await client.call('useCommandDirectory', directory);
+    assert.equal(process.env.PATH?.split(delimiter).filter((entry) => entry === directory).length, 1);
+    await assert.rejects(client.call('useCommandDirectory', join('relative', 'bin')), /one absolute path/u);
+    await assert.rejects(client.call('useCommandDirectory', `${directory}${delimiter}${directory}`), /one absolute path/u);
+  } finally {
+    process.env.PATH = before;
+    client.close();
+    await core.stop();
   }
 });

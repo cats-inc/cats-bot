@@ -117,6 +117,33 @@ test('the shell never holds the runtime client directly', () => {
   assert.deepEqual(offenders, []);
 });
 
+test('the shell reaches the core only through the channel client and core types (PLAN-009 1.5)', () => {
+  const coreRoot = join(srcRoot, 'core');
+  // Besides the channel client and the command table, only helpers that start no core:
+  // paths and the lock reader, the profile reader, provider catalogs, the packaged
+  // helper path and the view-state file writer. Types may come from anywhere in the core.
+  const allowed = [
+    'host-api/channel.ts', 'host-api/commands.ts', 'host-api/remote.ts', 'types.ts',
+    'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'profile/initialize.ts', 'hostEnv.ts',
+    'providers/catalog.ts', 'providers/selection.ts', 'desktopControl/helper.ts',
+  ].map((file) => join(coreRoot, ...file.split('/')));
+  const statement = /\b(?:import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/gu;
+  const dynamic = /\b(?:import|require)\s*\(\s*['"]([^'"]+)['"]/gu;
+  const offenders: string[] = [];
+  for (const file of filesUnder('shell')) {
+    const source = readFileSync(file, 'utf8');
+    const values = [
+      ...[...source.matchAll(statement)].filter((match) => !match[1]).map((match) => match[2]!),
+      ...[...source.matchAll(dynamic)].map((match) => match[1]!),
+    ];
+    for (const specifier of values) {
+      if (!isRelative(specifier) || !resolvesInside(file, specifier, coreRoot)) continue;
+      if (!allowed.includes(resolve(dirname(file), specifier))) offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 test('the renderer takes only types from the core, and nothing from Node or Electron (ADR-003)', () => {
   const rendererRoot = join(srcRoot, 'renderer');
   const typesFile = join(srcRoot, 'core', 'types.ts');

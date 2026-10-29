@@ -213,6 +213,12 @@ class HostConnection extends Peer {
   ready = false;
   host: ChannelHostIdentity | null = null;
   cipherLabel: string | null = null;
+  /**
+   * Conversations this host shows. Their views close with its connection, so a
+   * host that crashed leaves no note focused (FR-15: a host that reattaches
+   * opens its views again). One presenting host shows a core's notes.
+   */
+  readonly views = new Set<string>();
 }
 
 export interface HostChannelServerOptions {
@@ -348,6 +354,9 @@ export class HostChannelServer {
       clearTimeout(helloTimer);
       this.connections.delete(connection);
       connection.close();
+      for (const conversationId of connection.views) {
+        void Promise.resolve().then(() => this.target.closeView(conversationId)).catch(() => { /* deleted meanwhile */ });
+      }
       if (connection.ready) this.hostsChanged();
     });
   }
@@ -410,6 +419,11 @@ export class HostChannelServer {
     }
     try {
       const value = await runCoreCommand(this.target, method, frame.a);
+      const conversationId = frame.a[0];
+      if (typeof conversationId === 'string') {
+        if (method === 'openView' || (method === 'setViewFocused' && frame.a[1] === true)) connection.views.add(conversationId);
+        else if (method === 'closeView') connection.views.delete(conversationId);
+      }
       const line = encodeFrame({ t: 'res', id, ok: true, v: value ?? null, seq });
       if (Buffer.byteLength(line) > MAX_FRAME_BYTES) throw new ChannelError('The result exceeds the channel frame limit.', 'size');
       connection.write(line);
@@ -422,6 +436,21 @@ export class HostChannelServer {
     this.seq += 1;
     const line = encodeFrame({ t: 'ev', seq: this.seq, ev: event });
     for (const connection of this.connections) if (connection.ready) connection.write(line);
+  }
+}
+
+/**
+ * Which process published the descriptor in `root` and for which manager,
+ * whatever its protocol, so a host can tell a running core from a stale file;
+ * null when there is none.
+ */
+export function readChannelOwner(root: string): { pid: number; manager: string | null } | null {
+  try {
+    const value = readDescriptor(channelDescriptorFile(root));
+    if (!Number.isSafeInteger(value.pid) || (value.pid as number) <= 0) return null;
+    return { pid: value.pid as number, manager: typeof value.manager === 'string' ? value.manager : null };
+  } catch {
+    return null;
   }
 }
 
@@ -455,6 +484,8 @@ export class HostChannelClient {
   private readonly eventListeners = new Set<EventListener>();
   private readonly gapListeners = new Set<() => void>();
   private readonly closeListeners = new Set<() => void>();
+  private readonly inbound: unknown[] = [];
+  private paused = false;
   private lastSeq = 0;
   private closed = false;
 
@@ -486,7 +517,8 @@ export class HostChannelClient {
         this.fail(error as Error);
         return;
       }
-      for (const frame of frames) this.onFrame(frame);
+      for (const frame of frames) this.inbound.push(frame);
+      this.drain();
     });
     socket.on('error', (error) => this.fail(error));
     socket.on('close', () => this.fail(new ChannelError('The channel is closed.', 'closed')));
@@ -583,6 +615,26 @@ export class HostChannelClient {
     this.peer.close();
     this.peer.socket.destroy();
     for (const listener of [...this.closeListeners]) listener();
+  }
+
+  /**
+   * Frames are handled in the order the core wrote them. After a response the
+   * rest waits for the next turn of the event loop, so whoever awaited that
+   * response has it before a later event arrives: a snapshot never lands after
+   * an event that it predates (FR-13).
+   */
+  private drain(): void {
+    while (!this.paused && !this.closed && this.inbound.length > 0) {
+      const frame = this.inbound.shift();
+      this.onFrame(frame);
+      if (isJson(frame) && frame.t === 'res' && this.inbound.length > 0) {
+        this.paused = true;
+        setImmediate(() => {
+          this.paused = false;
+          this.drain();
+        });
+      }
+    }
   }
 
   private onFrame(frame: unknown): void {

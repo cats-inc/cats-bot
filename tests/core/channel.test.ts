@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createConnection } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -9,6 +9,7 @@ import {
   ChannelError, ChannelRemoteError, CHANNEL_PROTOCOL, channelDescriptorFile, FrameReader, HostChannelClient,
   HostChannelServer, readChannelDescriptor, type ChannelTarget,
 } from '../../src/core/host-api/channel.ts';
+import { newLocalSocket } from '../../src/core/host-api/endpoint.ts';
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 
 // SPEC-008 FR-12 to FR-15 against a fake core, so each protocol rule is checked alone.
@@ -41,6 +42,9 @@ function fakeCore() {
       return [];
     },
     async quit() { quits += 1; },
+    async openView(id: string) { calls.push(`open ${id}`); },
+    async closeView(id: string) { calls.push(`close ${id}`); },
+    async setViewFocused(id: string, focused: boolean) { calls.push(`focus ${id} ${focused}`); },
   };
   return { target: target as unknown as ChannelTarget, emit, calls, get quits() { return quits; } };
 }
@@ -200,4 +204,56 @@ test('stopping the core closes attached hosts', async () => {
   await closed;
   assert.equal(client.isClosed, true);
   await assert.rejects(client.call('getProfile'), (error: ChannelError) => error.reason === 'closed');
+});
+
+test('the views a host opened close when its connection ends (FR-15)', async () => {
+  const { root, core, server } = await started();
+  const client = await HostChannelClient.connect(root, { host });
+  try {
+    await client.call('openView', 'home');
+    await client.call('openView', 'c1');
+    await client.call('setViewFocused', 'c2', true);
+    await client.call('closeView', 'c1');
+    core.calls.length = 0;
+    client.close();
+    const deadline = Date.now() + 2_000;
+    while (core.calls.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual([...core.calls].sort(), ['close c2', 'close home'], 'a view the host closed itself is not closed again');
+  } finally { await server.stop(); }
+});
+
+test('a response reaches its caller before an event the core wrote after it (FR-13)', async () => {
+  // A raw core that writes the response and a later event in one chunk.
+  const root = tempRoot();
+  const socketPath = newLocalSocket('cats-bot-order');
+  const raw = createServer((socket) => {
+    const reader = new FrameReader();
+    socket.on('data', (chunk: Buffer) => {
+      for (const frame of reader.push(chunk) as Array<Record<string, unknown>>) {
+        if (frame.t === 'hello') socket.write(`${JSON.stringify({ t: 'welcome', protocol: CHANNEL_PROTOCOL, pid: process.pid, seq: 0 })}\n`);
+        if (frame.t === 'req') {
+          socket.write(`${JSON.stringify({ t: 'res', id: frame.id, ok: true, v: 'snapshot', seq: 0 })}\n${JSON.stringify({ t: 'ev', seq: 1, ev: event(1) })}\n`);
+        }
+      }
+    });
+  });
+  await new Promise<void>((resolve) => raw.listen(socketPath, resolve));
+  writeFileSync(channelDescriptorFile(root), JSON.stringify({
+    protocol: CHANNEL_PROTOCOL, socket: socketPath, token: 'a'.repeat(64), pid: process.pid, manager: null, startedAt: new Date().toISOString(),
+  }));
+  const client = await HostChannelClient.connect(root, { host });
+  try {
+    const order: string[] = [];
+    client.onEvent(() => order.push('event'));
+    // Several awaits, like the way from a channel response to a renderer's IPC reply.
+    const value = await client.call('getProfile');
+    await null;
+    await null;
+    order.push(`response ${String(value)}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(order, ['response snapshot', 'event']);
+  } finally {
+    client.close();
+    await new Promise<void>((resolve) => raw.close(() => resolve()));
+  }
 });

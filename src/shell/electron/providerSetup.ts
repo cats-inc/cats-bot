@@ -76,7 +76,11 @@ export function helperInvocation(
   };
 }
 
-export function createHelperRunner(assets: string): SetupHelperRunner {
+/**
+ * `onCommandDirectory` hears of each provider CLI directory a helper found, so
+ * the shell can hand it to its core, which runs in another process.
+ */
+export function createHelperRunner(assets: string, onCommandDirectory?: (directory: string) => void): SetupHelperRunner {
   return async (helper, apply) => {
     const invocation = helperInvocation(assets, process.platform, helper, apply);
     // Electron's bundled Node must never pretend to be the user's Node/npm.
@@ -109,11 +113,11 @@ export function createHelperRunner(assets: string): SetupHelperRunner {
       throw new Error('The provider helper returned no status.');
     // Check-only helpers resolve the actual installed binary. Make the same
     // directory available to Runtime without requiring the app to relaunch.
-    process.env.PATH = installedCommandPath(
-      result,
-      process.env.PATH ?? process.env.Path ?? '',
-      process.platform,
-    );
+    process.env.PATH = installedCommandPath(result, process.env.PATH ?? process.env.Path ?? '', process.platform);
+    const paths = process.platform === 'win32' ? win32 : posix;
+    if (result.installed && result.commandPath && paths.isAbsolute(result.commandPath)) {
+      onCommandDirectory?.(paths.dirname(result.commandPath));
+    }
     return result;
   };
 }

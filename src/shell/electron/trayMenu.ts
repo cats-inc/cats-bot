@@ -1,5 +1,4 @@
-import type { BotStatus } from '../../core/bot.ts';
-import type { ConversationRecord, DesktopControlHolding } from '../../core/types.ts';
+import type { BotStatus, ConversationRecord, DesktopControlHolding } from '../../core/types.ts';
 import { translate, type Locale } from '../../shared/language.ts';
 
 /**
