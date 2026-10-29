@@ -66,10 +66,12 @@ Native window layers and the Electron host remain unchanged by UI extraction.
       self-exclusion (FR-21).
 - [ ] 1.5: Extend `tests/architecture-boundaries.test.ts`: `src/shell/**` reaches
       the core only through the channel client and core types.
-- [ ] 1.6: Bot id validation (SPEC-008 FR-27) in `src/core/store/paths.ts`, used
+- [x] 1.6: Bot id validation (SPEC-008 FR-27) in `src/core/store/paths.ts`, used
       by the CLI, the core and the shell before any path is resolved; Phase 3's
       create and reconcile reuse it. Tests cover `..`, path separators,
-      uppercase, length and device names.
+      uppercase, length and device names. Every bot root is resolved through
+      `botRootIn`, which refuses an invalid id; the shell shows the rule in a
+      dialog before the id reaches Electron's user data.
 
 **Deliverables**: closing or crashing the shell leaves the bot running, and
 restarting the shell reattaches. First working-set measurement.
@@ -203,6 +205,25 @@ SPEC-009 FR-6 is enforced and tested.
 | A crash loses or repeats a coordinator message | Medium | Delivery ids, a delivery log and receiver deduplication (SPEC-009 FR-12) |
 | Process-tree cleanup on Windows leaves orphans | Medium | Graceful stop first, tree kill fallback, acceptance check |
 
+## Decisions to Confirm
+
+The owner asked on 2026-10-30 for the whole plan to be implemented unattended,
+with open questions decided by best practice and reviewed together afterwards.
+Each entry names where it is implemented.
+
+- **D1, WSL and docker (scope).** Not in 0.3.0. SPEC-008's Non-Goals and
+  ADR-010 keep this version native, and non-native profiles need a cats-runtime
+  ADR for session MCP outside native first. Task 2.4 records the `native` binding
+  and refuses any other kind, so the profiles can open later without reshaping
+  data.
+- **D2, bot id details (1.6).**
+  - `com0` and `lpt0` are refused with the other device names, as Microsoft's
+    naming rules reserve them too.
+  - An explicit invalid `--id` or `CATS_BOT_ID` is refused, never corrected.
+  - `cats-bot init` without `--id` truncates the derived id to 64 characters
+    and appends `-bot` to a device name, so `Con` becomes `con-bot`.
+  - The CLI's bot listing skips a directory whose name is not a valid id.
+
 ## Progress Log
 
 | Date | Update |
@@ -211,6 +232,7 @@ SPEC-009 FR-6 is enforced and tested.
 | 2026-10-29 | Owner answered the SPEC-008 and SPEC-009 open questions: a cap of 3; archive before delete; externally hosted cores listed only; 4 hops and 10 messages per hour by default, adjustable; coordinator work admitted at once. |
 | 2026-10-29 | Codex review: eight findings written back. Owner chose API limits stated as no security boundary, an account-wide desktop lease that external cores also take, and holders without session MCP keeping the role without tools. |
 | 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
+| 2026-10-30 | Owner asked for the whole plan unattended, decisions logged above. Task 1.6 implemented: 246 tests, typecheck and build passed on Windows. |
 
 ---
 

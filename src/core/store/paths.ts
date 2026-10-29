@@ -35,8 +35,31 @@ export function resolveBotsHome(env: NodeJS.ProcessEnv = process.env): string {
   return join(resolveCatsBotHome(env), 'bots');
 }
 
+// SPEC-008 FR-27: one path segment, so no id names a path outside its own bot root.
+const BOT_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+// Microsoft's naming rules also reserve com0 and lpt0.
+const WINDOWS_DEVICE_NAME = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])$/u;
+export const BOT_ID_RULE = 'A bot id is 1 to 64 lowercase letters, digits and single hyphens, '
+  + 'such as "mochi" or "desk-cat", and not a Windows device name such as "con" or "nul".';
+
+export class InvalidBotIdError extends Error {
+  constructor(id: string) {
+    super(`Invalid bot id ${JSON.stringify(id.length > 80 ? `${id.slice(0, 80)}…` : id)}. ${BOT_ID_RULE}`);
+    this.name = 'InvalidBotIdError';
+  }
+}
+
+export function isValidBotId(id: string): boolean {
+  return id.length >= 1 && id.length <= 64 && BOT_ID.test(id) && !WINDOWS_DEVICE_NAME.test(id);
+}
+
+export function assertValidBotId(id: string): string {
+  if (!isValidBotId(id)) throw new InvalidBotIdError(id);
+  return id;
+}
+
 export function botRootIn(botsHome: string, botId: string): string {
-  return join(resolve(botsHome), botId);
+  return join(resolve(botsHome), assertValidBotId(botId));
 }
 
 export function resolveBotRoot(botId: string, env: NodeJS.ProcessEnv = process.env): string {

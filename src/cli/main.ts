@@ -8,7 +8,7 @@ import { callHostControl, HostControlRejectedError } from '../core/host-api/cont
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
-import { botPathsFor, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
+import { botPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
 /**
@@ -86,12 +86,19 @@ Commands:
 
 Every command except init and run takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
+An id is 1 to 64 lowercase letters, digits and single hyphens; init derives one from --name.
 `;
+
+/** `init` without `--id`: the name in SPEC-008 FR-27's form; a device name such as "con" becomes "con-bot". */
+export function deriveBotId(name: string): string {
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').slice(0, 64).replace(/^-+|-+$/gu, '') || 'bot';
+  return isValidBotId(id) ? id : `${id.slice(0, 60)}-bot`;
+}
 
 function listBotIds(botsHome: string): string[] {
   if (!existsSync(botsHome)) return [];
   return readdirSync(botsHome, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && existsSync(join(botsHome, entry.name, 'profile.json')))
+    .filter((entry) => entry.isDirectory() && isValidBotId(entry.name) && existsSync(join(botsHome, entry.name, 'profile.json')))
     .map((entry) => entry.name)
     .sort();
 }
@@ -184,8 +191,7 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
     process.stderr.write('init needs --name and --provider\n');
     return 2;
   }
-  const id = flagString(parsed.flags, 'id')
-    ?? (name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '') || 'bot');
+  const id = flagString(parsed.flags, 'id') ?? deriveBotId(name);
   const permissionMode = flagString(parsed.flags, 'permission-mode') as PermissionMode | undefined;
   const { profile, root } = initializeBot(resolveBotsHome(env), {
     id,
