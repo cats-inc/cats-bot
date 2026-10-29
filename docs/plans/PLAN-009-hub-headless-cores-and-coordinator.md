@@ -44,7 +44,7 @@ interactions and narrow-layout acceptance (Platform SPEC-134 FR-15 through FR-20
 UI-1 through UI-6). Coordinate Bot's live/durable data mapping and renderer adapter
 with the channel client introduced here; a shared renderer may first serve the
 current shell or the Hub, without a Platform API dependency. Hub acceptance does
-not complete this UI slice, and the UI slice does not implement fleet policy.
+not complete this UI slice, and the UI slice does not implement hub policy.
 Native window layers and the Electron host remain unchanged by UI extraction.
 
 ### Phase 1: Core out of Electron, still one bot
