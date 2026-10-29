@@ -104,8 +104,11 @@ repository, so the local folder rename cannot strand anyone's work.
 
 ### Phase 4: First 0.3.0 release (after PLAN-009 6.1–6.3, per SPEC-007 FR-8)
 
-- [ ] 4.1: Release notes per SPEC-007 FR-8; owner reinstalls on the
-      development machine and removes `~/.cats/bots` by hand.
+- [ ] 4.1: Release notes per SPEC-007 FR-8. On the development machine the owner
+      turns off Start at login in 0.2.5 (on 2026-10-30 its entry was
+      `io.catsinc.cats-bot.mochi` under `HKCU\...\CurrentVersion\Run`),
+      uninstalls 0.2.5 without updating it in place, installs 0.3.0 and removes
+      `~/.cats/bots` by hand.
 
 ## Files to Create/Modify
 
@@ -124,9 +127,10 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | `tests/support/harness.ts` | Modify | Temporary `CATS_BOT_HOME` with bots in `bots/` |
 | `tests/core/store.test.ts`, `tests/core/hostEnv.test.ts`, `tests/integration/runtime.test.ts` | Modify, Create | Root resolution, old variables ignored, `managedBy` |
 | `tests/core/secrets.test.ts`, `tests/core/providers.test.ts`, `tests/core/bot.test.ts`, `tests/core/profile.test.ts`, `tests/core/life.test.ts`, `tests/core/telegram.test.ts`, `tests/core/providerInteractions.test.ts`, `tests/core/desktopControlCore.test.ts` | Modify | Environment variables and temporary prefixes |
-| `tests/shell/updates.test.ts`, `tests/shell/trayMenu.test.ts`, `tests/shell/windowsDesktopControl.test.ts`, `tests/integration/tools.test.ts`, `tests/integration/multinote.test.ts` | Modify | Same |
+| `tests/shell/trayMenu.test.ts`, `tests/shell/windowsDesktopControl.test.ts`, `tests/integration/tools.test.ts`, `tests/integration/multinote.test.ts` | Modify | Same |
+| `tests/shell/releasePipeline.test.ts`, `tests/shell/updates.test.ts` | Modify | Contract, packaged identity check, updater feed and workflow name agree |
 | README, AGENTS.md and the docs in 1.6 | Modify | Current behavior |
-| ADR-007, SPEC-007, PLAN-008, `docs/README.md`, the spec and plan indexes | Modify | Status; releases to delete are v0.2.0–v0.2.5 |
+| ADR-001, ADR-004, ADR-007, SPEC-007, PLAN-008, `docs/README.md`, the spec and plan indexes | Modify | Status lines; releases to delete are v0.2.0–v0.2.5; 0.2.x upgrade steps |
 
 ## Technical Decisions
 
@@ -134,12 +138,20 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
   (ADR-007).
 - AUMID changes twice (here, then in PLAN-009) rather than waiting, so this
   plan stays independent of the hub. No release ships between them, so only
-  development builds see the intermediate form.
+  development builds see the intermediate form. A development build with Start
+  at login on keeps a login entry named after the AUMID it ran with; turn it off
+  before switching builds.
+- The release repository and preview workflow name live in
+  `scripts/release-contract.mjs`; `build-preview.mjs` uses them, and
+  `tests/shell/releasePipeline.test.ts` checks the updater identity and the
+  workflow file against them.
 
 ## Testing Strategy
 
 - **Unit Tests**: path resolution with and without `CATS_BOT_HOME`; the old
-  variable has no effect; segment-aware containment.
+  variables have no effect; the release contract, packaged identity check,
+  updater feed and preview workflow name agree. No path check compares the
+  data root, so there is no containment test.
 - **Integration Tests**: the packed Runtime starts with the new `--managed-by`
   and `runtime/` under the new bot root.
 - **Manual Testing**: isolated Windows shell start; release workflow dry run
@@ -153,6 +165,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | Renaming the folder strands another agent's worktree | Medium | Phase 0.1; rename last |
 | Secrets lose repository access after rename | Medium | Phase 2.3 check before any release |
 | Owner's machine keeps a 0.2.x uninstall entry pointing at the new install | Medium | SPEC-007 FR-8 instructions; uninstall first |
+| 0.2.x offers 0.3.0 through GitHub's rename redirect, or its login entry starts 0.3.0 against an empty root | Medium | SPEC-007 FR-8: no in-app update from 0.2.x, Start at login off before uninstalling |
 
 ## Progress Log
 
@@ -162,6 +175,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | 2026-10-29 | Owner answered SPEC-007's open questions: `CATS_BOT_HOME` is `~/.catsbot`; 0.3.0 ships with the hub. |
 | 2026-10-29 | Review fix: Phase 4 follows PLAN-009 tasks 6.1–6.3, so the two plans no longer wait on each other. |
 | 2026-10-30 | Phase 1 implemented. `npm ci`, typecheck, 237 tests and the build passed on Windows. The isolated shell start (temporary `CATS_BOT_HOME` and `--user-data-dir`, fixture CLI) created only `bots/smoke/`, its Runtime exited cleanly on `cats-bot quit`, and `~/.catsbot`, `~/.cats/bots` and `%APPDATA%\Cats Bot` were unchanged. The owner confirmed deleting v0.2.0–v0.2.5. |
+| 2026-10-30 | Independent review: no code defects. Its fixes: one release identity source with a regression test, the 0.2.x login-entry and redirect steps in SPEC-007 FR-8, ADR-001/ADR-004 status lines. Bot ids are not validated (pre-existing; `..` resolves into the hub's namespace), left for the owner to schedule. |
 
 ---
 

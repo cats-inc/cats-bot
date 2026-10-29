@@ -3,6 +3,9 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { parse } from 'yaml';
+
+import { parseBotRelease, UPDATE_REPOSITORY } from '../../src/shell/electron/update/release.ts';
 
 // CI scripts are intentionally plain JavaScript, also loaded by github-script.
 const contract = await import(new URL('../../scripts/release-contract.mjs', import.meta.url).href);
@@ -44,6 +47,16 @@ test('plain-version preview publication is monotonic; incomplete signing inputs 
   assert.throws(() => contract.signingTrust('macos', { CSC_LINK: 'cert' }), /complete/u);
   assert.throws(() => contract.signingTrust('windows', { WIN_CSC_KEY_PASSWORD: 'password' }), /no certificate/u);
   assert.equal(contract.signingTrust('macos', { CSC_LINK: 'cert', CSC_KEY_PASSWORD: 'pass', APPLE_API_KEY: 'key', APPLE_API_KEY_ID: 'id', APPLE_API_ISSUER: 'issuer' }), 'signed-notarized');
+});
+
+test('the release contract, packaged identity check and preview workflow name one repository (SPEC-007 FR-7)', async t => {
+  const f = await inputs(t);
+  assert.equal(contract.repository, UPDATE_REPOSITORY);
+  for (const [platform, os, trust] of [['windows', 'win32', 'unsigned-no-certificate'], ['macos', 'darwin', 'signed-notarized'], ['linux', 'linux', 'not-applicable']] as const) {
+    assert.ok(parseBotRelease(contract.descriptor(f.input, platform, sourceCommit, trust), '0.3.0', os, 'x64'), platform);
+  }
+  const workflow = parse(await readFile(new URL('../../.github/workflows/bot-preview.yml', import.meta.url), 'utf8'));
+  assert.equal(workflow.name, contract.workflowName, 'scripts/build-preview.mjs only publishes from this workflow name');
 });
 
 test('release guard only resumes its own draft and rejects reused tags, publication and drift', async t => {

@@ -175,9 +175,9 @@ and the renderer (`tsconfig.renderer.json`).
 ## Rules
 
 - **State hygiene**: tests only write under a temporary directory they create;
-  `CATS_BOT_HOME` and `CATS_RUNTIME_DIR` always point there. No test touches
-  the real `~/.catsbot` or `~/.cats`, and no test reads any provider
-  credential file.
+  every bot root, and `CATS_BOT_HOME` and `CATS_RUNTIME_DIR` wherever a test
+  sets them, point there. No test touches the real `~/.catsbot` or `~/.cats`,
+  and no test reads any provider credential file.
 - **Erasable syntax only**: tests are `.ts` files run by Node's type stripping.
   Use `import type` for types and keep to the syntax `erasableSyntaxOnly`
   allows.

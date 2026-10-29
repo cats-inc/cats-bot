@@ -3,6 +3,7 @@ import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 
 export const repository = 'cats-inc/cats-bot';
+export const workflowName = 'Cats Bot Standard Preview';
 export const platforms = ['windows', 'macos', 'linux'];
 export const digest = (bytes, algorithm = 'sha256', encoding = 'hex') => createHash(algorithm).update(bytes).digest(encoding);
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
