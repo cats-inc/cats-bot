@@ -13,12 +13,13 @@ import {
   type MenuItemConstructorOptions,
 } from 'electron';
 
-import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../../core/bot.ts';
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
+import type { ChannelHostServices } from '../../core/host-api/channel.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
-import { FileSecretStore, type SecretCipher } from '../../core/secrets.ts';
-import { InvalidBotIdError, isValidBotId, resolveBotRoot, resolveBotsHome } from '../../core/store/paths.ts';
-import type { BotHostEvent } from '../../core/types.ts';
+import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
+import { InvalidBotIdError, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../../core/store/paths.ts';
+import type { BotHostEvent, BotProfile } from '../../core/types.ts';
+import { attachOrStartCore, CoreHostedElsewhereError, shellManagerId, type HostedCore } from './coreHost.ts';
 import { FloatingBot } from './floatingBot.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { SettingsWindow } from './settingsWindow.ts';
@@ -40,11 +41,14 @@ import { isLanguagePreference, resolveLocale, translate } from '../../shared/lan
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
 
 /**
- * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The bot
- * core is mounted in the Electron main process; every timer lives here; the
- * tray, the sticky-note windows, the settings window and the floating bot
- * are clients of `BotHostApi`. All windows closed means the bot keeps running until Quit. A
- * bot that was never set up opens the first-run page (SPEC-002 FR-1).
+ * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The tray,
+ * the sticky-note windows, the settings window and the floating bot are
+ * clients of `BotHostApi`. All windows closed means the bot keeps running
+ * until Quit. A bot that was never set up opens the first-run page (SPEC-002
+ * FR-1). PLAN-009 1.3: the core runs as a process of its own, started with
+ * this executable as Node, and the shell reaches it through the host channel;
+ * a shell that closes or crashes leaves it running, and the next shell of this
+ * installation reattaches.
  */
 
 const require = createRequire(import.meta.url);
@@ -130,39 +134,36 @@ async function main(): Promise<void> {
   const rendererDir = join(appPath, 'dist', 'renderer');
   const preloadPath = join(assetsDir, 'preload.cjs');
   const iconPath = join(assetsDir, 'icon.png');
-  const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup')));
+  const log = (line: string) => process.stderr.write(`${line}\n`);
+  let hosted: HostedCore | null = null;
+  // A CLI that setup found or installed reaches the core's PATH as well as the shell's.
+  const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup'), (directory) => {
+    void hosted?.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+  }));
 
-  // SPEC-001 NFR security: the shell keeps secrets encrypted with the OS facility when it has one.
-  const cipher: SecretCipher | undefined = safeStorage.isEncryptionAvailable()
+  // SPEC-001 NFR security and SPEC-008 FR-20: the core keeps secrets encrypted with the
+  // OS facility, which the shell serves it over the channel when it has one.
+  const services: ChannelHostServices = safeStorage.isEncryptionAvailable()
     ? {
-      label: 'os-safe-storage',
-      encrypt: (plain) => safeStorage.encryptString(plain),
-      decrypt: (buffer) => safeStorage.decryptString(buffer),
+      cipher: {
+        label: 'os-safe-storage',
+        encrypt: (plain) => safeStorage.encryptString(plain),
+        decrypt: (buffer) => safeStorage.decryptString(buffer),
+      },
     }
-    : undefined;
-  const secrets = new FileSecretStore(root, { ...(cipher ? { cipher } : {}), warn: (line) => process.stderr.write(`${line}\n`) });
-  const openCore = () => BotCore.open({
-    root,
-    runtime: { ...readProviderOverrides(), runtimeEntry: resolvePackagedRuntimeEntry() },
-    // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
-    ...(app.isPackaged ? { desktopControl: { helperPath: packagedHelperPath(process.resourcesPath) } } : {}),
-    secrets,
-    log: (line) => process.stderr.write(`${line}\n`),
-  });
-  let core: BotCore;
+    : {};
+  let profile: BotProfile | null;
   try {
-    core = openCore();
+    profile = readBotProfile(root);
   } catch (error) {
-    if (!(error instanceof BotNotInitializedError)) {
-      dialog.showErrorBox('Cats Bot', errorMessage(error));
-      app.quit();
-      return;
-    }
+    dialog.showErrorBox('Cats Bot', errorMessage(error));
+    app.quit();
+    return;
+  }
+  if (!profile) {
     if (args.provider) {
       initializeBot(botsHome, { id: botId, name: args.name ?? botId, provider: args.provider, model: args.model ?? null });
-      core = openCore();
     } else {
-      const opened: { core: BotCore | null } = { core: null };
       const done = await runFirstRunSetup({
         botRoot: root,
         systemLocale: app.getLocale(),
@@ -179,21 +180,50 @@ async function main(): Promise<void> {
             ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
             ...(input.instructions ? { instructions: input.instructions } : {}),
           });
-          opened.core = openCore();
         },
       });
-      if (!done || !opened.core) {
+      if (!done) {
+        app.quit();
+        return;
+      }
+    }
+    profile = readBotProfile(root)!;
+  }
+
+  const manager = shellManagerId(process.execPath);
+  try {
+    // A new core inherits the shell's PATH, so the provider CLI is found first.
+    if (!readProviderOverrides().providerCommand) {
+      await providerSetup
+        .prepareEnvironment(profile.executionTarget.provider)
+        .catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+    }
+    const runtimeEntry = resolvePackagedRuntimeEntry();
+    hosted = await attachOrStartCore(root, {
+      execPath: process.execPath,
+      runAsNode: true,
+      entry: join(appPath, 'dist', 'cli', 'main.js'),
+      catsBotHome: resolveCatsBotHome(),
+      botId,
+      manager,
+      ...(services.cipher ? { hostCipher: services.cipher.label } : {}),
+      ...(runtimeEntry ? { runtimeEntry } : {}),
+      // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
+      ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
+    }, { host: { pid: process.pid, executable: process.execPath, installationId: manager }, services });
+  } catch (error) {
+    dialog.showErrorBox('Cats Bot', error instanceof CoreHostedElsewhereError
+      ? `${error.message}\n\nStop the other instance (for example cats-bot run) first.`
+      : errorMessage(error));
     app.quit();
     return;
   }
-      core = opened.core;
-    }
-  }
-  // A token the CLI stored as a file is re-stored with the OS facility before Telegram reads it.
-  void core.protectSecretsAtRest().catch((error: unknown) => process.stderr.write(`secret re-store failed: ${errorMessage(error)}\n`));
+  const hostedCore = hosted;
+  const core = hostedCore.core;
+  // A token the CLI stored as a file is re-stored with the OS facility.
+  void core.protectSecretsAtRest().catch((error: unknown) => log(`secret re-store failed: ${errorMessage(error)}`));
 
   let quitting = false;
-  const log = (line: string) => process.stderr.write(`${line}\n`);
   const windows = new NoteWindows({
     core,
     botRoot: root,
@@ -248,23 +278,30 @@ async function main(): Promise<void> {
     return { enabled: state.enabled, pendingRequests: state.pendingRequests, waitingConversationId, holding: state.holding };
   };
   const trayModel = async (): Promise<TrayMenuModel> => {
-    const [profile, conversations, desktopControl] = await Promise.all([core.getProfile(), core.listConversations(), trayDesktopControl()]);
+    const [current, conversations, desktopControl, status, workItems] = await Promise.all([
+      core.getProfile(), core.listConversations(), trayDesktopControl(), core.status(), core.listWorkItems(),
+    ]);
     return {
-      botName: profile.name,
+      botName: current.name,
       locale: resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
-      status: core.status(),
+      status,
       conversations,
-      heartbeatEnabled: profile.heartbeat.enabled,
+      heartbeatEnabled: current.heartbeat.enabled,
       openAtLogin: windows.shellState.openAtLogin,
       openAtLoginAvailable,
-      awaitingOwner: core.listWorkItems().filter((item) => item.state === 'awaiting_owner').length,
+      awaitingOwner: workItems.filter((item) => item.state === 'awaiting_owner').length,
       floatingVisible: windows.shellState.floatingBot.visible,
       desktopControl,
     };
   };
   const refreshTray = async () => {
-    if (!tray) return;
-    tray.update(await trayModel());
+    if (!tray || quitting) return;
+    try {
+      tray.update(await trayModel());
+    } catch (error) {
+      // The core may be stopping; the next event refreshes the tray again.
+      if (!quitting) log(`tray refresh failed: ${errorMessage(error)}`);
+    }
   };
 
   const applyLoginItem = (enabled: boolean) => {
@@ -288,6 +325,13 @@ async function main(): Promise<void> {
     void refreshTray();
   };
 
+  const closeAll = () => {
+    windows.destroyAll();
+    settings.destroy();
+    floating.destroy();
+    tray?.dispose();
+    app.quit();
+  };
   const quit = () => {
     if (quitting) return;
     quitting = true;
@@ -295,14 +339,9 @@ async function main(): Promise<void> {
     windows.flush();
     void providerSetup
       .whenIdle()
-      .then(() => core.stop())
-      .finally(() => {
-        windows.destroyAll();
-        settings.destroy();
-        floating.destroy();
-        tray?.dispose();
-        app.quit();
-      });
+      .then(() => hostedCore.stop())
+      .catch((error: unknown) => log(`core stop failed: ${errorMessage(error)}`))
+      .finally(closeAll);
   };
 
   let release: BotRelease | null = null;
@@ -344,9 +383,9 @@ async function main(): Promise<void> {
         floating.remember();
         windows.flush();
         await providerSetup.whenIdle();
-        const runtimePid = core.status().runtime.pid;
-        await core.stop();
-        if (core.status().runtime.pid || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
+        const runtimePid = (await core.status().catch(() => null))?.runtime.pid ?? null;
+        await hostedCore.stop();
+        if (processIsAlive(hostedCore.pid) || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
         assertNoOtherUsers(process.execPath);
       },
       recover: async (uncertain, error) => {
@@ -399,7 +438,7 @@ async function main(): Promise<void> {
     onToggleFloating: (visible) => setFloatingVisible(visible),
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
-      void core.stopDesktopControl().then(refreshTray).catch((error: unknown) => {
+      void core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {
         process.stderr.write(`stop desktop control failed: ${errorMessage(error)}\n`);
       });
     },
@@ -656,25 +695,24 @@ async function main(): Promise<void> {
     event.preventDefault();
     quit();
   });
-
-  try {
-    if (!readProviderOverrides().providerCommand) {
-      await providerSetup
-        .prepareEnvironment((await core.getProfile()).executionTarget.provider)
-        .catch((error) => log(`Provider environment: ${errorMessage(error)}`));
-    }
+  // Until Phase 3 supervises cores, a core that ends unasked restarts with the shell.
+  hostedCore.client.onClose(() => {
     if (quitting) return;
-    await core.start();
-  } catch (error) {
-    if (error instanceof BotInstanceRunningError) {
-      dialog.showErrorBox('Cats Bot', `${error.message}\n\nStop the other instance (for example cats-bot run) first.`);
-      quitting = true;
-      tray.dispose();
-      app.quit();
-      return;
-    }
-    throw error;
-  }
+    quitting = true;
+    log(`The Bot core stopped unexpectedly; see ${hostedCore.logFile}`);
+    void dialog.showMessageBox({
+      type: 'error',
+      title: 'Cats Bot',
+      message: t('The Bot core stopped unexpectedly.'),
+      detail: hostedCore.logFile,
+      buttons: [t('Restart Cats Bot'), t('Quit')],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(({ response }) => {
+      if (response === 0) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+    }).finally(closeAll);
+  });
+
   await refreshTray();
   if (windows.shellState.floatingBot.visible) setFloatingVisible(true);
   const reopen = windows.previouslyOpen();

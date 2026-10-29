@@ -62,14 +62,19 @@ Native window layers and the Electron host remain unchanged by UI extraction.
       Give `src/core/secrets.ts` an asynchronous cipher path (FR-7, FR-20).
       `run` takes `--runtime-entry`, `--desktop-control-helper`, `--manager` and
       `--host-cipher`, and exits when a host stops the core over the channel.
-- [ ] 1.3: The current shell spawns its bot's core with `ELECTRON_RUN_AS_NODE`
+- [x] 1.3: The current shell spawns its bot's core with `ELECTRON_RUN_AS_NODE`
       (already used for the Runtime child, so the RunAsNode fuse stays enabled)
       and routes `ipc.ts` through the channel client instead of an in-process
-      `BotCore`.
-- [ ] 1.4: Pass the shell PID and executable path to the desktop-control helper's
-      self-exclusion (FR-21).
-- [ ] 1.5: Extend `tests/architecture-boundaries.test.ts`: `src/shell/**` reaches
-      the core only through the channel client and core types.
+      `BotCore`. `src/shell/electron/coreHost.ts` starts or reattaches to the
+      core and stops it; `src/core/host-api/remote.ts` gives the shell a
+      `BotCore`-shaped client; `initializeBot` and the profile reader moved to
+      `src/core/profile/initialize.ts`.
+- [x] 1.4: Pass the shell PID and executable path to the desktop-control helper's
+      self-exclusion (FR-21). Every attached host's PID and executable join the
+      helper's self lists; a change restarts the helper before its next call.
+- [x] 1.5: Extend `tests/architecture-boundaries.test.ts`: `src/shell/**` reaches
+      the core only through the channel client and core types. Value imports
+      from `src/core` are limited to a list of modules that start no core.
 - [x] 1.6: Bot id validation (SPEC-008 FR-27) in `src/core/store/paths.ts`, used
       by the CLI, the core and the shell before any path is resolved; Phase 3's
       create and reconcile reuse it. Tests cover `..`, path separators,
@@ -248,6 +253,50 @@ Each entry names where it is implemented.
   30 seconds for a host that serves that label; status says `os` only when such
   a cipher is configured. Telegram starts once its token is read, so a later
   start or a stop supersedes an attempt still waiting.
+  - Writes of one secret take effect in call order: the last set or delete
+    wins, even while an earlier set still waits for the cipher. Re-storing
+    reads the file again and replaces only entries that still hold the same
+    plain value.
+  - A token that could not be opened is read again when a host attaches, and
+    a token handed off while no host serves the cipher starts Telegram anyway;
+    it is re-stored encrypted later.
+- **D5, the shell's core process (1.3).**
+  - The shell starts `dist/cli/main.js run --json` with its own executable as
+    Node, detached and hidden. The core keeps writing its log to
+    `<bot root>/logs/core.log`. Its stderr, such as a crash before that log
+    opens, goes to `core-stderr.log`, and the previous start's copy is kept as
+    `core-stderr.previous.log`. Its stdout carries events with conversation
+    text and is discarded.
+  - The manager a shell names is derived from its executable path, so a shell
+    reattaches only to cores started by the same installation. A core with any
+    other manager, or a `cats-bot run`, gets today's "another instance" dialog.
+    Phase 2 can replace this with the hub's installation id.
+  - Quit asks the core to stop through the channel and waits 30 seconds for
+    its process, then kills its process tree. The update drain does the same
+    and then checks that the core and Runtime PIDs are gone.
+  - A core that ends while the shell is not quitting shows a dialog offering
+    to restart Cats Bot. This stands in for Phase 3's supervision.
+  - A shell's first window waits only for the channel, not for the Runtime,
+    which keeps starting in the core.
+- **D6, event order across the channel (1.3).** The client handles frames in
+  the order the core wrote them, and after a response it lets that response's
+  awaiters run before the next frame. A renderer therefore never gets an
+  event before a snapshot the event postdates, as in-process before.
+- **D7, views belong to a connection (1.3).** The views and focus a host set
+  are cleared when its connection ends, so a crashed shell leaves no note
+  counted as read; the next shell opens its notes again.
+- **D8, helper exclusion on a host change (1.4).** The helper takes its self
+  lists only in `hello`, so a changed set of hosts ends the running helper
+  (failing a call in flight) and the next call starts one that names them.
+  There is no new helper protocol.
+- **D9, provider CLI directories (1.3).** Setup found or installed a CLI in the
+  shell's process, which changed only the shell's PATH. The new host-only
+  command `useCommandDirectory` puts that directory first on the core's PATH
+  too, so the next Runtime start finds it without a restart (ADR-006).
+- **D10, turns before the Runtime is ready (1.3).** A host can send as soon as
+  the channel is up, while the Runtime still starts. Such a turn used to wait
+  for its 30-second retry; it now runs as soon as the Runtime is ready, for
+  every host including the CLI.
 
 ## Progress Log
 
@@ -259,6 +308,8 @@ Each entry names where it is implemented.
 | 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
 | 2026-10-30 | Owner asked for the whole plan unattended, decisions logged above. Task 1.6 implemented: 246 tests, typecheck and build passed on Windows. |
 | 2026-10-30 | Tasks 1.1 and 1.2 implemented: the host channel and `cats-bot run` as a channel-hosted core. An integration test runs `cats-bot run` with the packed Runtime and the fixture CLI, converses through the channel and stops it there. |
+| 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
+| 2026-10-30 | Tasks 1.3 to 1.5 implemented. With the real Electron shell in an isolated home (Windows 11, fixture CLI): the shell started its core as a separate process; killing the shell left the core running; a new shell reattached to the same core; `cats-bot quit` ended both. First working set: shell 461 MB over five Electron processes, core 64 MB, Runtime 80 MB, fixture CLI 59 MB. |
 
 ---
 

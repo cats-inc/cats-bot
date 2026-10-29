@@ -234,7 +234,7 @@ export class DesktopControlService {
   /** Bumped by stop and revocation, so a helper answer that arrives afterwards is discarded. */
   private readonly generations = new Map<string, number>();
   private readonly lastReason = new Map<string, string>();
-  private readonly neverGrantablePaths: Set<string>;
+  private neverGrantablePaths: Set<string>;
   private closed = false;
 
   constructor(options: DesktopControlServiceOptions) {
@@ -255,6 +255,16 @@ export class DesktopControlService {
         call: (name, args, context) => this.callTool(name, args, context.conversationId),
       },
     });
+  }
+
+  /**
+   * SPEC-008 FR-21: the hosts attached to the core are never grantable either,
+   * and the helper learns of them before it serves another call.
+   */
+  setHosts(hosts: ReadonlyArray<{ pid: number; executable: string }>): void {
+    const executables = hosts.map((host) => host.executable).filter(Boolean);
+    this.neverGrantablePaths = new Set([...(this.options.selfExecutables ?? []), ...executables].map((path) => path.toLowerCase()));
+    this.options.helper?.setHosts(hosts.map((host) => host.pid), executables);
   }
 
   /** Why desktop control cannot be used at all; null while it can (BDC-01). */

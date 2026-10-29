@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { createConnection } from 'node:net';
+import { createConnection, createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -9,6 +9,7 @@ import {
   ChannelError, ChannelRemoteError, CHANNEL_PROTOCOL, channelDescriptorFile, FrameReader, HostChannelClient,
   HostChannelServer, readChannelDescriptor, type ChannelTarget,
 } from '../../src/core/host-api/channel.ts';
+import { newLocalSocket } from '../../src/core/host-api/endpoint.ts';
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 
 // SPEC-008 FR-12 to FR-15 against a fake core, so each protocol rule is checked alone.
@@ -41,6 +42,9 @@ function fakeCore() {
       return [];
     },
     async quit() { quits += 1; },
+    async openView(id: string) { calls.push(`open ${id}`); },
+    async closeView(id: string) { calls.push(`close ${id}`); },
+    async setViewFocused(id: string, focused: boolean) { calls.push(`focus ${id} ${focused}`); },
   };
   return { target: target as unknown as ChannelTarget, emit, calls, get quits() { return quits; } };
 }
@@ -147,17 +151,22 @@ test('events arrive numbered, and attach applies only the events above the snaps
     core.emit(event(2));
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.deepEqual(seen, [1, 2]);
-    // listWorkItems emits event 3 while it builds its snapshot; the snapshot reflects sequence 2.
-    const applied: string[] = [];
-    const { value, detach } = await client.attach(
-      async () => client.callWithSeq('listWorkItems') as Promise<{ value: WorkItem[]; seq: number }>,
-      (applied_, seq) => applied.push(`${(applied_ as { detail?: string }).detail}@${seq}`),
-    );
-    assert.deepEqual(value, []);
-    assert.deepEqual(applied, ['e99@3'], 'the event during the snapshot is applied, the earlier ones are not');
-    core.emit(event(4));
+    // Event 3 arrives after attach subscribed but before the snapshot request, so the
+    // snapshot includes it; listWorkItems emits event 4 while it builds that snapshot.
+    const steps: string[] = [];
+    const detach = await client.attach({
+      snapshot: async () => {
+        core.emit(event(3));
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        return client.callWithSeq('listWorkItems') as Promise<{ value: WorkItem[]; seq: number }>;
+      },
+      install: (value) => steps.push(`install ${value.length}`),
+      apply: (applied, seq) => steps.push(`${(applied as { detail?: string }).detail}@${seq}`),
+    });
+    assert.deepEqual(steps, ['install 0', 'e99@4'], 'the snapshot first, then only the events it does not include');
+    core.emit(event(5));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    assert.deepEqual(applied, ['e99@3', 'e4@4']);
+    assert.deepEqual(steps, ['install 0', 'e99@4', 'e5@5']);
     detach();
     assert.equal(gaps, 0);
   } finally { client.close(); await server.stop(); }
@@ -200,4 +209,124 @@ test('stopping the core closes attached hosts', async () => {
   await closed;
   assert.equal(client.isClosed, true);
   await assert.rejects(client.call('getProfile'), (error: ChannelError) => error.reason === 'closed');
+});
+
+test('the views a host opened close when its connection ends (FR-15)', async () => {
+  const { root, core, server } = await started();
+  const client = await HostChannelClient.connect(root, { host });
+  try {
+    await client.call('openView', 'home');
+    await client.call('openView', 'c1');
+    await client.call('setViewFocused', 'c2', true);
+    await client.call('closeView', 'c1');
+    core.calls.length = 0;
+    client.close();
+    const deadline = Date.now() + 2_000;
+    while (core.calls.length < 2 && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.deepEqual([...core.calls].sort(), ['close c2', 'close home'], 'a view the host closed itself is not closed again');
+  } finally { await server.stop(); }
+});
+
+test('a response reaches its caller before an event the core wrote after it (FR-13)', async () => {
+  // A raw core that writes the response and a later event in one chunk.
+  const root = tempRoot();
+  const socketPath = newLocalSocket('cats-bot-order');
+  const raw = createServer((socket) => {
+    const reader = new FrameReader();
+    socket.on('data', (chunk: Buffer) => {
+      for (const frame of reader.push(chunk) as Array<Record<string, unknown>>) {
+        if (frame.t === 'hello') socket.write(`${JSON.stringify({ t: 'welcome', protocol: CHANNEL_PROTOCOL, pid: process.pid, seq: 0 })}\n`);
+        if (frame.t === 'req') {
+          socket.write(`${JSON.stringify({ t: 'res', id: frame.id, ok: true, v: 'snapshot', seq: 0 })}\n${JSON.stringify({ t: 'ev', seq: 1, ev: event(1) })}\n`);
+        }
+      }
+    });
+  });
+  await new Promise<void>((resolve) => raw.listen(socketPath, resolve));
+  writeFileSync(channelDescriptorFile(root), JSON.stringify({
+    protocol: CHANNEL_PROTOCOL, socket: socketPath, token: 'a'.repeat(64), pid: process.pid, manager: null, startedAt: new Date().toISOString(),
+  }));
+  const client = await HostChannelClient.connect(root, { host });
+  try {
+    const order: string[] = [];
+    client.onEvent(() => order.push('event'));
+    // Several awaits, like the way from a channel response to a renderer's IPC reply.
+    const value = await client.call('getProfile');
+    await null;
+    await null;
+    order.push(`response ${String(value)}`);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.deepEqual(order, ['response snapshot', 'event']);
+  } finally {
+    client.close();
+    await new Promise<void>((resolve) => raw.close(() => resolve()));
+  }
+});
+
+test('a late answer to a request that timed out is dropped, and the connection stays (review of 1.1)', async () => {
+  const { root, server } = await started({ hostRequestTimeoutMs: 100 });
+  let release: () => void = () => {};
+  const slow = new Promise<void>((resolve) => { release = resolve; });
+  const client = await HostChannelClient.connect(root, {
+    host,
+    services: { cipher: { label: 'slow', encrypt: async (plain) => { await slow; return Buffer.from(plain); }, decrypt: (data) => data.toString('utf8') } },
+  });
+  try {
+    await assert.rejects(server.cipher('slow').encrypt('x'), (error: ChannelError) => error.reason === 'timeout');
+    release();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(client.isClosed, false, 'the host is still attached');
+    assert.equal(server.hosts().length, 1);
+    assert.equal(await server.cipher('slow').decrypt(Buffer.from('still here')), 'still here');
+  } finally { client.close(); await server.stop(); }
+});
+
+test('a refused connection is cut off and its later frames are ignored', async () => {
+  const { root, core, server } = await started();
+  try {
+    const descriptor = readChannelDescriptor(root);
+    const socket = createConnection({ path: descriptor.socket, allowHalfOpen: true });
+    const reader = new FrameReader();
+    const frames: Array<Record<string, unknown>> = [];
+    socket.on('data', (chunk: Buffer) => frames.push(...(reader.push(chunk) as Array<Record<string, unknown>>)));
+    socket.on('error', () => undefined);
+    await new Promise<void>((resolve) => socket.on('connect', () => resolve()));
+    socket.write(`${JSON.stringify({ t: 'hello', protocol: CHANNEL_PROTOCOL, token: 'f'.repeat(64), host })}\n`);
+    socket.write(`${JSON.stringify({ t: 'hello', protocol: CHANNEL_PROTOCOL, token: descriptor.token, host })}\n`);
+    socket.write(`${JSON.stringify({ t: 'req', id: 1, m: 'getProfile', a: [] })}\n`);
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    assert.deepEqual(frames, [{ t: 'refused', reason: 'token', protocol: CHANNEL_PROTOCOL }], 'no second hello, no answer');
+    assert.deepEqual(core.calls, []);
+    // The core has cut the connection off although this side kept it open.
+    const closed = new Promise<void>((resolve) => socket.on('close', () => resolve()));
+    socket.write('{}\n');
+    await closed;
+    // Before its hello, a connection never buffers more than a small frame.
+    const big = createConnection(descriptor.socket);
+    const bigClosed = new Promise<void>((resolve) => big.on('close', () => resolve()));
+    big.on('error', () => undefined);
+    big.write(`{"t":"hello","pad":"${'x'.repeat(128 * 1024)}`);
+    await bigClosed;
+  } finally { await server.stop(); }
+});
+
+test('a host cipher answer that is not text is refused, not stored', async () => {
+  const { root, server } = await started({ hostRequestTimeoutMs: 2_000 });
+  const client = await HostChannelClient.connect(root, {
+    host,
+    services: { cipher: { label: 'odd', encrypt: () => Buffer.from('x'), decrypt: () => 42 as unknown as string } },
+  });
+  try {
+    await assert.rejects(server.cipher('odd').decrypt(Buffer.from('x')), (error: ChannelError) => error.reason === 'frame');
+  } finally { client.close(); await server.stop(); }
+});
+
+test('a welcome from another process than the descriptor names is refused (FR-15)', async () => {
+  const { root, server } = await started();
+  try {
+    const descriptor = readChannelDescriptor(root);
+    const moved = tempRoot();
+    writeFileSync(channelDescriptorFile(moved), JSON.stringify({ ...descriptor, pid: descriptor.pid + 1 }));
+    await assert.rejects(HostChannelClient.connect(moved, { host }), (error: ChannelError) => error.reason === 'descriptor');
+  } finally { await server.stop(); }
 });

@@ -1,3 +1,5 @@
+import { delimiter, isAbsolute } from 'node:path';
+
 import type {
   ApprovalDecision, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus, ConversationRecord,
   DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
@@ -23,7 +25,9 @@ export const CORE_COMMANDS = [
 ] as const;
 
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
-export const HOST_ONLY_COMMANDS = ['openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'quit'] as const;
+export const HOST_ONLY_COMMANDS = [
+  'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory', 'quit',
+] as const;
 
 export type CoreCommand = (typeof CORE_COMMANDS)[number] | (typeof HOST_ONLY_COMMANDS)[number];
 export const CHANNEL_COMMANDS: readonly CoreCommand[] = [...CORE_COMMANDS, ...HOST_ONLY_COMMANDS];
@@ -42,6 +46,8 @@ export interface CoreCommandTarget extends BotHostApi {
   telegramStatus(): MaybePromise<TelegramSettingsStatus>;
   setTelegramToken(token: string | null): Promise<void>;
   protectSecretsAtRest(): Promise<number>;
+  /** The directory of a provider CLI the host's setup found or installed, put first on PATH (ADR-006). */
+  useCommandDirectory(directory: string): MaybePromise<void>;
 }
 
 const MAX_ID = 200;
@@ -137,6 +143,12 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       await target.setViewFocused(asString(args[0], 'conversationId'), args[1]);
       return null;
     case 'protectSecretsAtRest': return target.protectSecretsAtRest();
+    case 'useCommandDirectory': {
+      const directory = asString(args[0], 'directory', 4096);
+      if (!isAbsolute(directory) || directory.includes('\0') || directory.includes(delimiter)) throw new Error('directory must be one absolute path');
+      await target.useCommandDirectory(directory);
+      return null;
+    }
     case 'quit':
       await target.quit();
       return null;

@@ -83,9 +83,9 @@ does not establish browser/desktop helper availability or successful invocation.
 │ host: cats-bot CLI / Electron │◀────────────────────────────────┐
 │ tray + sticky notes (shell)   │                                 │
 └───────────────┬───────────────┘                                 │
-                │ in-process (CLI) / contextBridge IPC (shell)    │
+                │ in-process (CLI) / host channel (shell)         │
 ┌───────────────▼───────────────────────────────────────────────┐ │
-│ bot core  src/core                                            │ │
+│ bot core  src/core  (its own process under the shell)         │ │
 │  profile  conversations+transcripts  queue+journal  timers    │─┘
 │  life loop (tick, schedules, heartbeat)   tool server (MCP)   │
 │  runtime supervisor ──── runtime client (HTTP, bearer key)    │

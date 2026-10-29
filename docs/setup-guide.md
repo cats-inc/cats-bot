@@ -90,10 +90,14 @@ npm run shell -- --provider claude --name Mochi   # first launch initializes the
 npm run shell -- --id mochi                        # later launches
 ```
 
-The shell mounts the same core in the Electron main process: a tray icon
-(open direct message, conversations, new conversation, pause heartbeat, start at login, quit) and
-one frameless window per conversation. Closing a conversation hides its window; the bot
-keeps running until Quit. The same `CATS_BOT_PROVIDER_*` variables apply.
+The shell runs the same core as a process of its own (`cats-bot run`, started
+with the shell's executable as Node) and talks to it over the host channel. It
+shows a tray icon (open direct message, conversations, new conversation, pause
+heartbeat, start at login, quit) and one frameless window per conversation.
+Closing a conversation hides its window; the bot keeps running until Quit. A
+shell that closes or crashes leaves the core running, and the next shell
+reattaches to it. The core writes its log lines to `<bot root>/logs/core.log`.
+The same `CATS_BOT_PROVIDER_*` variables apply.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
 

@@ -83,6 +83,12 @@ export interface DesktopControlHelperClient {
   unavailableReason(): string | null;
   /** Ends the process and forgets crash and handshake history, for example when the owner turns the feature off. */
   reset(): void;
+  /**
+   * SPEC-008 FR-21: the processes of the hosts attached to the core, excluded
+   * like the core's own. A change ends the running helper, so the next call
+   * starts one whose `hello` names them.
+   */
+  setHosts(processIds: number[], executables: string[]): void;
   close(): void;
 }
 
@@ -109,6 +115,8 @@ export function createDesktopControlHelperClient(options: DesktopControlHelperOp
   let crashes: number[] = [];
   let idleTimer: unknown = null;
   let closed = false;
+  let hostProcessIds: number[] = [];
+  let hostExecutables: string[] = [];
 
   function failAll(code: string, message: string): void {
     for (const [id, entry] of pending) {
@@ -193,8 +201,8 @@ export function createDesktopControlHelperClient(options: DesktopControlHelperOp
     });
     return send('hello', {
       protocol: DESKTOP_CONTROL_PROTOCOL,
-      selfProcessIds: options.selfProcessIds,
-      selfExecutables: options.selfExecutables,
+      selfProcessIds: [...new Set([...options.selfProcessIds, ...hostProcessIds])],
+      selfExecutables: [...new Set([...options.selfExecutables, ...hostExecutables])],
     }, 15_000).then((result) => {
       const hello = result as { protocol?: unknown; platform?: unknown };
       if (hello.protocol !== DESKTOP_CONTROL_PROTOCOL || hello.platform !== 'win32') {
@@ -247,6 +255,17 @@ export function createDesktopControlHelperClient(options: DesktopControlHelperOp
       crashes = [];
       handshakeFailed = null;
       verified = false;
+    },
+    setHosts(processIds, executables) {
+      const same = (a: readonly unknown[], b: readonly unknown[]) => a.length === b.length && a.every((value, index) => value === b[index]);
+      const paths = executables.filter(Boolean);
+      if (same(processIds, hostProcessIds) && same(paths, hostExecutables)) return;
+      hostProcessIds = [...processIds];
+      hostExecutables = paths;
+      if (child) {
+        failAll('executor_failed', 'The desktop control helper restarted for another Bot host.');
+        stop();
+      }
     },
     close() {
       closed = true;

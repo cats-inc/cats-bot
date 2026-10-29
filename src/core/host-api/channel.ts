@@ -21,13 +21,15 @@ import { isToken, newLocalSocket, newToken, readDescriptor, removeDescriptor, re
  * request started. A host that subscribed first applies only the events above
  * a snapshot's number (FR-13); events during the request may already be part
  * of the snapshot, so appliers are idempotent (upsert by id or entry `seq`).
- * A slow host is disconnected rather than sent a gap; after reconnecting, the
- * jump in sequence numbers tells it to read its snapshots again.
- * Frames are size-bounded and their bodies are never logged.
+ * A slow host is disconnected rather than sent a gap, so a host that
+ * reconnects reads its snapshots again. Frames are size-bounded (a frame
+ * before the hello to 64 KiB) and their bodies are never logged.
  */
 
 export const CHANNEL_PROTOCOL = 1;
 export const MAX_FRAME_BYTES = 16 * 1024 * 1024;
+/** A hello is small; an unauthenticated connection never buffers more. */
+const MAX_HELLO_BYTES = 64 * 1024;
 const HELLO_TIMEOUT_MS = 5_000;
 const MAX_BUFFERED_BYTES = 32 * 1024 * 1024;
 const CALL_TIMEOUT_MS = 120_000;
@@ -84,8 +86,12 @@ const isJson = (value: unknown): value is Json => typeof value === 'object' && v
 export class FrameReader {
   private parts: Buffer[] = [];
   private size = 0;
-  private readonly max: number;
+  private max: number;
   constructor(max = MAX_FRAME_BYTES) {
+    this.max = max;
+  }
+  /** Raises or lowers the limit for later frames, for example after the hello. */
+  limit(max: number): void {
     this.max = max;
   }
   push(chunk: Buffer): unknown[] {
@@ -133,6 +139,8 @@ class Peer {
   readonly socket: Socket;
   private nextId = 1;
   private readonly pending = new Map<number, PendingRequest>();
+  /** Requests that timed out; a late answer to one is dropped instead of ending the connection. */
+  private readonly expired = new Set<number>();
   constructor(socket: Socket) {
     this.socket = socket;
   }
@@ -154,6 +162,8 @@ class Peer {
     return new Promise<Json>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
+        this.expired.add(id);
+        if (this.expired.size > 1024) this.expired.delete(this.expired.values().next().value!);
         reject(new ChannelError(`The channel request ${method} timed out.`, 'timeout'));
       }, timeoutMs);
       timer.unref?.();
@@ -166,9 +176,11 @@ class Peer {
       }
     });
   }
-  /** A response to one of this side's requests; false for an unknown id. */
+  /** A response to one of this side's requests; false for an id this side never sent. */
   receive(frame: Json): boolean {
-    return typeof frame.id === 'number' && this.settle(frame.id, frame, null);
+    if (typeof frame.id !== 'number') return false;
+    if (this.settle(frame.id, frame, null)) return true;
+    return this.expired.delete(frame.id);
   }
   private settle(id: number, frame: Json | null, error: Error | null): boolean {
     const pending = this.pending.get(id);
@@ -211,8 +223,15 @@ function parseHost(value: unknown): ChannelHostIdentity | null {
 
 class HostConnection extends Peer {
   ready = false;
+  refused = false;
   host: ChannelHostIdentity | null = null;
   cipherLabel: string | null = null;
+  /**
+   * Conversations this host shows. Their views close with its connection, so a
+   * host that crashed leaves no note focused (FR-15: a host that reattaches
+   * opens its views again). One presenting host shows a core's notes.
+   */
+  readonly views = new Set<string>();
 }
 
 export interface HostChannelServerOptions {
@@ -261,7 +280,12 @@ export class HostChannelServer {
     try {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
-        server.listen(this.descriptor.socket, () => { server.off('error', reject); resolve(); });
+        server.listen(this.descriptor.socket, () => {
+          server.off('error', reject);
+          // A failed accept (for example no file descriptors left) leaves the server listening.
+          server.on('error', () => undefined);
+          resolve();
+        });
       });
       restrictSocket(this.descriptor.socket);
       this.unsubscribe = this.target.subscribe((event) => this.broadcast(event));
@@ -295,10 +319,14 @@ export class HostChannelServer {
 
   /** A cipher an attached host serves under this label (SPEC-008 FR-20). */
   cipher(label: string): AsyncSecretCipher {
+    const text = (value: unknown): string => {
+      if (typeof value !== 'string') throw new ChannelError('The host answered its cipher with something other than text.', 'frame');
+      return value;
+    };
     return {
       label,
-      encrypt: async (plain) => Buffer.from(String(await this.requestHost(label, 'cipher.encrypt', [plain])), 'base64'),
-      decrypt: async (data) => String(await this.requestHost(label, 'cipher.decrypt', [data.toString('base64')])),
+      encrypt: async (plain) => Buffer.from(text(await this.requestHost(label, 'cipher.encrypt', [plain])), 'base64'),
+      decrypt: async (data) => text(await this.requestHost(label, 'cipher.decrypt', [data.toString('base64')])),
     };
   }
 
@@ -330,7 +358,7 @@ export class HostChannelServer {
   private accept(socket: Socket): void {
     const connection = new HostConnection(socket);
     this.connections.add(connection);
-    const reader = new FrameReader(this.options.maxFrameBytes ?? MAX_FRAME_BYTES);
+    const reader = new FrameReader(Math.min(MAX_HELLO_BYTES, this.options.maxFrameBytes ?? MAX_FRAME_BYTES));
     const helloTimer = setTimeout(() => this.refuse(connection, 'hello'), this.options.helloTimeoutMs ?? HELLO_TIMEOUT_MS);
     helloTimer.unref?.();
     socket.on('data', (chunk: Buffer) => {
@@ -341,23 +369,34 @@ export class HostChannelServer {
         socket.destroy();
         return;
       }
-      for (const frame of frames) this.onFrame(connection, frame, helloTimer);
+      for (const frame of frames) {
+        this.onFrame(connection, frame, helloTimer);
+        if (connection.ready) reader.limit(this.options.maxFrameBytes ?? MAX_FRAME_BYTES);
+      }
     });
     socket.on('error', () => { /* A broken connection ends like a closed one. */ });
     socket.on('close', () => {
       clearTimeout(helloTimer);
       this.connections.delete(connection);
       connection.close();
+      for (const conversationId of connection.views) {
+        void Promise.resolve().then(() => this.target.closeView(conversationId)).catch(() => { /* deleted meanwhile */ });
+      }
       if (connection.ready) this.hostsChanged();
     });
   }
 
   private refuse(connection: HostConnection, reason: 'hello' | 'token' | 'protocol'): void {
+    if (connection.refused) return;
+    connection.refused = true;
     connection.send({ t: 'refused', reason, protocol: CHANNEL_PROTOCOL });
     connection.socket.end();
+    // A peer that keeps its side open is cut off.
+    setTimeout(() => connection.socket.destroy(), 1_000).unref?.();
   }
 
   private onFrame(connection: HostConnection, frame: unknown, helloTimer: NodeJS.Timeout): void {
+    if (connection.refused) return;
     if (!isJson(frame)) {
       connection.socket.destroy();
       return;
@@ -410,6 +449,11 @@ export class HostChannelServer {
     }
     try {
       const value = await runCoreCommand(this.target, method, frame.a);
+      const conversationId = frame.a[0];
+      if (typeof conversationId === 'string') {
+        if (method === 'openView' || (method === 'setViewFocused' && frame.a[1] === true)) connection.views.add(conversationId);
+        else if (method === 'closeView') connection.views.delete(conversationId);
+      }
       const line = encodeFrame({ t: 'res', id, ok: true, v: value ?? null, seq });
       if (Buffer.byteLength(line) > MAX_FRAME_BYTES) throw new ChannelError('The result exceeds the channel frame limit.', 'size');
       connection.write(line);
@@ -422,6 +466,21 @@ export class HostChannelServer {
     this.seq += 1;
     const line = encodeFrame({ t: 'ev', seq: this.seq, ev: event });
     for (const connection of this.connections) if (connection.ready) connection.write(line);
+  }
+}
+
+/**
+ * Which process published the descriptor in `root` and for which manager,
+ * whatever its protocol, so a host can tell a running core from a stale file;
+ * null when there is none.
+ */
+export function readChannelOwner(root: string): { pid: number; manager: string | null } | null {
+  try {
+    const value = readDescriptor(channelDescriptorFile(root));
+    if (!Number.isSafeInteger(value.pid) || (value.pid as number) <= 0) return null;
+    return { pid: value.pid as number, manager: typeof value.manager === 'string' ? value.manager : null };
+  } catch {
+    return null;
   }
 }
 
@@ -455,6 +514,8 @@ export class HostChannelClient {
   private readonly eventListeners = new Set<EventListener>();
   private readonly gapListeners = new Set<() => void>();
   private readonly closeListeners = new Set<() => void>();
+  private readonly inbound: unknown[] = [];
+  private paused = false;
   private lastSeq = 0;
   private closed = false;
 
@@ -486,7 +547,8 @@ export class HostChannelClient {
         this.fail(error as Error);
         return;
       }
-      for (const frame of frames) this.onFrame(frame);
+      for (const frame of frames) this.inbound.push(frame);
+      this.drain();
     });
     socket.on('error', (error) => this.fail(error));
     socket.on('close', () => this.fail(new ChannelError('The channel is closed.', 'closed')));
@@ -545,22 +607,27 @@ export class HostChannelClient {
 
   /**
    * FR-13: attach without a gap. Events are buffered while the snapshot is
-   * read; afterwards only those above the snapshot's sequence number are
-   * applied, then events flow to `apply` directly until the returned
-   * function detaches it.
+   * read. The snapshot is handed to `install`; then only the buffered events
+   * above its sequence number go to `apply`, and later events go there
+   * directly until the returned function detaches it.
    */
-  async attach<T>(snapshot: () => Promise<{ value: T; seq: number }>, apply: EventListener): Promise<{ value: T; detach: () => void }> {
+  async attach<T>(view: {
+    snapshot: () => Promise<{ value: T; seq: number }>;
+    install: (value: T) => void;
+    apply: EventListener;
+  }): Promise<() => void> {
     const buffered: Array<[BotHostEvent, number]> = [];
     let live = false;
     const detach = this.onEvent((event, seq) => {
-      if (live) apply(event, seq);
+      if (live) view.apply(event, seq);
       else buffered.push([event, seq]);
     });
     try {
-      const { value, seq } = await snapshot();
-      for (const [event, eventSeq] of buffered) if (eventSeq > seq) apply(event, eventSeq);
+      const { value, seq } = await view.snapshot();
+      view.install(value);
+      for (const [event, eventSeq] of buffered) if (eventSeq > seq) view.apply(event, eventSeq);
       live = true;
-      return { value, detach };
+      return detach;
     } catch (error) {
       detach();
       throw error;
@@ -585,6 +652,26 @@ export class HostChannelClient {
     for (const listener of [...this.closeListeners]) listener();
   }
 
+  /**
+   * Frames are handled in the order the core wrote them. After a response the
+   * rest waits for the next turn of the event loop, so whoever awaited that
+   * response has it before a later event arrives: a snapshot never lands after
+   * an event that it predates (FR-13).
+   */
+  private drain(): void {
+    while (!this.paused && !this.closed && this.inbound.length > 0) {
+      const frame = this.inbound.shift();
+      this.onFrame(frame);
+      if (isJson(frame) && frame.t === 'res' && this.inbound.length > 0) {
+        this.paused = true;
+        setImmediate(() => {
+          this.paused = false;
+          this.drain();
+        });
+      }
+    }
+  }
+
   private onFrame(frame: unknown): void {
     if (!isJson(frame)) {
       this.fail(new ChannelError('Invalid channel frame.', 'frame'));
@@ -593,9 +680,13 @@ export class HostChannelClient {
     if (this.welcome) {
       const welcome = this.welcome;
       this.welcome = null;
-      if (frame.t === 'welcome' && frame.protocol === CHANNEL_PROTOCOL) {
+      if (frame.t === 'welcome' && frame.protocol === CHANNEL_PROTOCOL && frame.pid === this.descriptor.pid) {
         this.lastSeq = typeof frame.seq === 'number' ? frame.seq : 0;
         welcome.resolve();
+      } else if (frame.t === 'welcome' && frame.protocol === CHANNEL_PROTOCOL) {
+        // FR-15: the core that answered must be the process its descriptor names.
+        welcome.reject(new ChannelError('The Bot core that answered is not the one its descriptor names.', 'descriptor'));
+        this.fail(new ChannelError('The channel is closed.', 'closed'));
       } else if (frame.t === 'refused') {
         const reason = typeof frame.reason === 'string' ? frame.reason : 'refused';
         welcome.reject(new ChannelError(reason === 'protocol'

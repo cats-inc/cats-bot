@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 
 import { BrowserWindow, screen } from 'electron';
 
-import type { BotCore } from '../../core/bot.ts';
+import type { RemoteBotCore } from '../../core/host-api/remote.ts';
 import type { BotHostEvent } from '../../core/types.ts';
 import type { LanguageState } from '../../shared/language.ts';
 import {
@@ -32,7 +32,7 @@ import type { DesktopHost } from './win32Desktop.ts';
  */
 
 export interface NoteWindowsOptions {
-  core: BotCore;
+  core: Pick<RemoteBotCore, 'openView' | 'closeView' | 'setViewFocused'>;
   botRoot: string;
   preloadPath: string;
   /** The built pages (`dist/renderer`, ADR-003). */

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'node:fs';
+import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { ConversationStore } from './conversations/store.ts';
@@ -19,6 +19,7 @@ import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
 import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
 import { createFileLogger, type Logger } from './log.ts';
+import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
 import {
   listProviders,
   readLocalModelCatalog,
@@ -27,10 +28,8 @@ import {
 } from './providers/catalog.ts';
 import {
   applyProfilePatch,
-  createProfile,
   loadProfile,
   saveProfile,
-  type CreateProfileInput,
 } from './profile/profile.ts';
 import { WorkQueue } from './queue/queue.ts';
 import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turnRunner.ts';
@@ -47,7 +46,7 @@ import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent }
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
-import { botPathsFor, botRootIn, type BotPaths } from './store/paths.ts';
+import { botPathsFor, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import { BotToolServer } from './tools/server.ts';
 import type {
@@ -142,13 +141,7 @@ export interface BotCoreOptions {
 }
 
 export type { BotStatus } from './types.ts';
-
-export class BotNotInitializedError extends Error {
-  constructor(root: string) {
-    super(`No bot profile at ${root}; run init first`);
-    this.name = 'BotNotInitializedError';
-  }
-}
+export { BotNotInitializedError, initializeBot, readBotProfile, type InitializeBotInput } from './profile/initialize.ts';
 
 export class BotInstanceRunningError extends Error {
   readonly owner: InstanceLock;
@@ -158,34 +151,6 @@ export class BotInstanceRunningError extends Error {
     this.name = 'BotInstanceRunningError';
     this.owner = owner;
   }
-}
-
-export interface InitializeBotInput extends Omit<CreateProfileInput, 'cwd' | 'id'> {
-  id: string;
-  cwd?: string;
-}
-
-/** `cats-bot init`: writes the profile and the directory layout, never over an existing bot. */
-export function initializeBot(
-  botsHome: string,
-  input: InitializeBotInput,
-): { profile: BotProfile; root: string } {
-  const root = botRootIn(botsHome, input.id);
-  const paths = botPathsFor(root);
-  const placeholder = createProfile({ id: input.id, name: input.name, provider: input.provider, cwd: root });
-  const existing = loadProfile(paths, placeholder);
-  if (existing.ok) {
-    throw new Error(`Bot ${input.id} already exists at ${root}`);
-  }
-  if (existing.reason === 'corrupt') {
-    throw new Error(`Bot ${input.id} has a corrupt profile at ${paths.profile}: ${existing.error}`);
-  }
-  for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
-    mkdirSync(dir, { recursive: true });
-  }
-  const profile = createProfile({ ...input, cwd: input.cwd ?? paths.workspace });
-  saveProfile(paths, profile);
-  return { profile, root };
 }
 
 interface RunningTurn {
@@ -266,6 +231,13 @@ export class BotCore implements BotHostApi {
     this.channel = new HostChannelServer(this.paths.root, this, {
       manager: options.channel?.manager ?? null,
       ...(options.channel?.hostRequestTimeoutMs ? { hostRequestTimeoutMs: options.channel.hostRequestTimeoutMs } : {}),
+      // SPEC-008 FR-21: the shell (later the hub) runs outside this process now.
+      onHostsChanged: (hosts) => {
+        this.log(`channel hosts: ${hosts.map((host) => `pid ${host.pid}`).join(', ') || 'none'}`);
+        this.desktop.setHosts(hosts);
+        // A token that waited for a host's cipher is read once one attaches.
+        if (hosts.length > 0) this.startTelegram();
+      },
     });
     this.stoppedSignal = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
     this.conversations = new ConversationStore({
@@ -363,14 +335,9 @@ export class BotCore implements BotHostApi {
 
   /** Loads an initialized bot without starting anything. */
   static open(options: BotCoreOptions): BotCore {
-    const paths = botPathsFor(options.root);
-    const placeholder = createProfile({ id: 'bot', name: 'bot', provider: 'claude', cwd: paths.workspace });
-    const loaded = loadProfile(paths, placeholder);
-    if (!loaded.ok) {
-      if (loaded.reason === 'missing') throw new BotNotInitializedError(options.root);
-      throw new Error(`Corrupt profile at ${paths.profile}: ${loaded.error}`);
-    }
-    return new BotCore(options, loaded.profile);
+    const profile = readBotProfile(options.root);
+    if (!profile) throw new BotNotInitializedError(options.root);
+    return new BotCore(options, profile);
   }
 
   private createSupervisor(): RuntimeSupervisor {
@@ -472,9 +439,9 @@ export class BotCore implements BotHostApi {
         ...(options?.helperPath !== undefined ? { helperPath: options.helperPath } : {}),
         skipExistenceCheck: Boolean(options?.spawn),
       });
-    // BDC-08: the core runs inside the Electron main process (or the CLI's node), so this
-    // process and its executable cover the shell, its renderer and GPU children and the
-    // runtime child, which runs the same executable. The parent is the launcher, not the Bot.
+    // BDC-08: this process and its executable cover the core and the runtime child, which
+    // runs the same executable. The shell (the same executable as a packaged core) and any
+    // other attached host are added as they attach (SPEC-008 FR-21).
     const selfExecutables = [process.execPath, ...catsDesktopExecutables(), ...(options?.selfExecutables ?? [])];
     const helper = resolution.path === null ? null : createDesktopControlHelperClient({
       path: resolution.path,
@@ -581,6 +548,8 @@ export class BotCore implements BotHostApi {
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
     await this.channel.start();
+    // A host may stop the core over the channel while it is still starting.
+    if (this.stopped) return;
 
     this.conversations.load();
     this.conversations.home();
@@ -611,7 +580,9 @@ export class BotCore implements BotHostApi {
       await this.toolServer.start();
       this.log('tool server listening on loopback');
     }
+    if (this.stopped) return;
     await this.ensureRuntime();
+    if (this.stopped) return;
     const pollMs = this.options.handoffPollMs ?? 1_500;
     this.handoffTimer = setInterval(() => this.drainHandoffs(), pollMs);
     this.handoffTimer.unref?.();
@@ -619,6 +590,11 @@ export class BotCore implements BotHostApi {
     this.startTelegram();
     this.pump();
     } catch (error) {
+      // A stop that raced this start cleans up itself.
+      if (this.stopped) {
+        await this.whenStopped();
+        return;
+      }
       try { await this.stop(); }
       finally {
         await this.control.stop();
@@ -642,7 +618,9 @@ export class BotCore implements BotHostApi {
     void this.secrets.getAsync(SECRET_TELEGRAM_TOKEN).then((token) => {
       if (generation !== this.telegramGeneration || this.telegram || this.stopped || !this.profile.telegram.enabled) return;
       if (!token) {
-        this.log('telegram enabled but no token is stored; polling not started');
+        this.log(this.secrets.has(SECRET_TELEGRAM_TOKEN)
+          ? 'telegram token could not be opened; polling starts when a host serves its cipher'
+          : 'telegram enabled but no token is stored; polling not started');
         return;
       }
       this.beginTelegram(token);
@@ -769,6 +747,7 @@ export class BotCore implements BotHostApi {
     switch (event.type) {
       case 'state':
         this.bus.emit({ type: 'runtime.status', state: event.state, ...(event.detail ? { detail: event.detail } : {}) });
+        if (event.state === 'ready') this.retryRuntimeDeferred();
         break;
       case 'exit':
         this.log(`runtime exited code=${event.code ?? ''} signal=${event.signal ?? ''} expected=${event.expected}`);
@@ -786,6 +765,24 @@ export class BotCore implements BotHostApi {
       default:
         break;
     }
+  }
+
+  /**
+   * A turn sent while the Runtime was still starting (a host attaches before
+   * that) runs once it is ready, not when its retry delay ends.
+   */
+  private retryRuntimeDeferred(): void {
+    let woke = false;
+    for (const [id, entry] of [...this.deferred]) {
+      const current = this.workItems.get(id);
+      if (current?.state !== 'queued' || current.error !== 'runtime_unavailable') continue;
+      clearTimeout(entry.timer);
+      this.timers.delete(entry.timer);
+      this.deferred.delete(id);
+      this.queue.enqueue(current);
+      woke = true;
+    }
+    if (woke) this.pump();
   }
 
   private drainHandoffs(): void {
@@ -829,7 +826,9 @@ export class BotCore implements BotHostApi {
         // when this host has a cipher, re-stores it encrypted.
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ telegram: { enabled: payload.enabled } });
         if (payload.reloadToken === true) {
-          await this.protectSecretsAtRest();
+          // Re-storing waits for the host's cipher; the reload does not (SPEC-008 FR-15).
+          await this.protectSecretsAtRest().catch((error: unknown) =>
+            this.log(`secret re-store deferred: ${error instanceof Error ? error.message : 'error'}`));
           await this.stopTelegram();
           this.startTelegram();
         }
@@ -1352,6 +1351,15 @@ export class BotCore implements BotHostApi {
 
   listViews(): string[] {
     return [...this.views];
+  }
+
+  /**
+   * ADR-006: a provider CLI the host's setup found or installed. Runtime
+   * launches after this find it on PATH without restarting the core.
+   */
+  useCommandDirectory(directory: string): void {
+    const current = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
+    process.env.PATH = [...new Set([directory, ...current])].join(delimiter);
   }
 
   async sendOwnerMessage(
