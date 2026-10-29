@@ -7,12 +7,49 @@ on:
     branches: [main]
 
 jobs:
+  # Match the other Cats repos: detect docs-only changes inside the workflow so
+  # required checks still report. Unknown bases and failed detection run CI.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.paths.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Detect documentation-only changes
+        id: paths
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          case "$EVENT" in
+            pull_request) base=HEAD^1 ;;
+            push) base="$BEFORE" ;;
+            *) base= ;;
+          esac
+          code=true
+          if [ -n "$base" ] && git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
+            # Include both sides of renames across the docs/ boundary.
+            changed=$(git diff --no-renames --name-only "$base" HEAD)
+            code_changed=$(git diff --no-renames --name-only "$base" HEAD -- . ':(top,exclude)docs/')
+            printf 'Changed files:\n%s\n' "$changed"
+            if [ -n "$changed" ] && [ -z "$code_changed" ]; then code=false; fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   # ADR-001 §9 / PLAN-005: test and package on each supported platform.
-  # Keep the required check names stable. Tests run `.ts` files directly through
+  # Keep required matrix names stable, but use only lightweight Ubuntu jobs for
+  # docs-only acknowledgements. Tests run `.ts` files directly through
   # Node 24 type stripping, so the source stays limited to erasable syntax.
   node:
     name: node (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    needs: changes
+    if: ${{ !cancelled() }}
+    runs-on: ${{ needs.changes.result == 'success' && needs.changes.outputs.code == 'false' && 'ubuntu-latest' || matrix.os }}
+    env:
+      DOCS_ONLY: ${{ needs.changes.result == 'success' && needs.changes.outputs.code == 'false' }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,27 +61,37 @@ jobs:
           - os: macos-15-intel
             platform: macos
     steps:
+      - name: Documentation-only change
+        if: env.DOCS_ONLY == 'true'
+        run: echo "Only docs/ changed; install, typecheck, tests and packaging are skipped."
       - uses: actions/checkout@v4
+        if: env.DOCS_ONLY != 'true'
 
       - name: Use Node.js 24
+        if: env.DOCS_ONLY != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
+        if: env.DOCS_ONLY != 'true'
         run: npm ci
 
       - name: Typecheck
+        if: env.DOCS_ONLY != 'true'
         run: npm run typecheck
 
       - name: Test
+        if: env.DOCS_ONLY != 'true'
         run: npm test
 
       - name: Build
+        if: env.DOCS_ONLY != 'true'
         run: npm run build
 
       - name: Build candidate packages (updates disabled)
+        if: env.DOCS_ONLY != 'true'
         shell: bash
         env:
           RELEASE_PLATFORM: ${{ matrix.platform }}
@@ -53,6 +100,7 @@ jobs:
           tag="v$(node -p 'require("./package.json").version')"
           node scripts/build-preview.mjs --platform "$RELEASE_PLATFORM" --tag "$tag" --source "$SOURCE_COMMIT"
       - uses: actions/upload-artifact@v4
+        if: env.DOCS_ONLY != 'true'
         with:
           name: candidate-${{ matrix.platform }}
           path: |
@@ -66,7 +114,8 @@ jobs:
           if-no-files-found: error
 
   preview-contract:
-    needs: node
+    needs: [changes, node]
+    if: ${{ !cancelled() && needs.node.result == 'success' && (needs.changes.result != 'success' || needs.changes.outputs.code != 'false') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -101,15 +150,24 @@ jobs:
 
   validate:
     # This existing required check also gates every platform's package contract.
-    needs: [node, preview-contract]
+    needs: [changes, node, preview-contract]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Require every platform and the combined package contract
+      - name: Require the expected platform and package checks
         env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CODE: ${{ needs.changes.outputs.code }}
           NODE_RESULT: ${{ needs.node.result }}
           CONTRACT_RESULT: ${{ needs.preview-contract.result }}
-        run: test "$NODE_RESULT" = success && test "$CONTRACT_RESULT" = success
+        run: |
+          set -euo pipefail
+          test "$NODE_RESULT" = success
+          if [ "$CHANGES_RESULT" = success ] && [ "$CODE" = false ]; then
+            test "$CONTRACT_RESULT" = skipped
+          else
+            test "$CONTRACT_RESULT" = success
+          fi
       - uses: actions/checkout@v4
 
       - name: Check required files exist

@@ -9,7 +9,7 @@ export async function guardRelease({ github, root, tag, sourceCommit }) {
   const [owner, repo] = repository.split('/');
   const releases = await github.paginate(github.rest.repos.listReleases, { owner, repo, per_page: 100 });
   assertNewerRelease(tag, releases);
-  const notes = await readFile(join(root, 'docs', 'releases', `${tag}.md`), 'utf8');
+  const notes = await readFile(join(root, 'docs', 'releases', `${tag}.md`), 'utf8'); // docs-boundary-ignore: manual publication reads notes; CI tests supply a temporary root.
   if (notes.trim().length < 80) throw new Error('Prepare release notes, compatibility, source pins and signing policy before dispatch.');
   const existing = releases.find(item => item.tag_name === tag);
   const identity = `Source commit: \`${sourceCommit}\``;

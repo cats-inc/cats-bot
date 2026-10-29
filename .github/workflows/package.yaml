@@ -1,11 +1,13 @@
 name: Package
 
-# SPEC-002 FR-9 / ADR-002 §6: every main update builds the Windows installer
+# SPEC-002 FR-9 / ADR-002 §6: every main update outside docs/ builds the Windows installer
 # and the portable exe and keeps them as a workflow artifact. Publishing a
 # GitHub Release stays with the release SOP and the owner's authorization.
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
   workflow_dispatch:
 
 permissions:
