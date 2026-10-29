@@ -261,13 +261,20 @@ async function main(): Promise<void> {
     tray.update(await trayModel());
   };
 
-  const setOpenAtLogin = (enabled: boolean) => {
-    windows.setOpenAtLogin(enabled);
+  const applyLoginItem = (enabled: boolean) => {
     try {
       app.setLoginItemSettings({ openAtLogin: enabled, args: ['--id', botId] });
     } catch (error) {
       process.stderr.write(`login item failed: ${errorMessage(error)}\n`);
     }
+  };
+  // SPEC-007 FR-9: an uninstall that keeps the data deletes the login entry, and
+  // a reinstall may sit in another folder, so re-register the owner's choice.
+  if (app.isPackaged && openAtLoginAvailable && windows.shellState.openAtLogin) applyLoginItem(true);
+
+  const setOpenAtLogin = (enabled: boolean) => {
+    windows.setOpenAtLogin(enabled);
+    applyLoginItem(enabled);
     void refreshTray();
   };
 

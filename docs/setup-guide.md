@@ -124,8 +124,9 @@ workflow artifact (`cats-bot-windows-<sha>`, 30 days). The installer is
 per-user, needs no administrator, adds Start menu and desktop shortcuts and
 starts the app; a bot that was never set up opens the first-run page
 (SPEC-002 FR-1). Uninstalling removes Cats Bot's login entries and offers an
-unchecked "Remove all user data" box for `~/.catsbot` and `%APPDATA%\Cats Bot`
-(SPEC-007 FR-9); installing over a copy, updates included, removes neither. Icons come from `src/renderer/cat.svg` through
+unchecked "Remove all user data" box for `~/.catsbot`, `%APPDATA%\Cats Bot` and
+the update cache, which never follows links inside them (SPEC-007 FR-9);
+installing over a copy, updates included, removes neither. Icons come from `src/renderer/cat.svg` through
 `npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the

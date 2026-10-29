@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Implemented on 2026-10-30 (PLAN-008 Phases 1, 1b, 2 and 3) except FR-8, which the 0.3.0 release completes |
+| **Status** | Implemented on 2026-10-30 (PLAN-008 Phases 1–3 and 1b) except FR-8, which the 0.3.0 release completes; FR-9's interactive acceptance is PLAN-008 1b.4 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 
@@ -69,19 +69,34 @@ or releases.
    redirect to 0.3.0. Turn off Start at login in 0.2.x first, because its login
    entry is named after the old AUMID and would start 0.3.0 against an empty
    root. Then uninstall 0.2.x (its uninstall entry has a different GUID) and
-   install 0.3.0; `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be
-   deleted by hand.
+   install 0.3.0; `~/.cats/bots`, `%APPDATA%\Cats Bot` and the update cache
+   `%LOCALAPPDATA%\@cats-inccats-bots-updater` from 0.2.x may be deleted by
+   hand.
 9. FR-9: Like Cats Desktop's, the Windows uninstaller has a page with an
    unchecked "Remove all user data" box. When it is checked, the uninstaller
-   deletes `%USERPROFILE%\.catsbot` (every bot, archived bot and hub file,
-   default workspaces included) and `%APPDATA%\Cats Bot` (Electron user data
-   and installation gates). A root moved with `CATS_BOT_HOME` and folders a bot
-   was pointed at are never touched. Every uninstall also deletes the Run
-   values that Start at login created, `io.catsinc.catsbot` and
-   `io.catsinc.catsbot.<botId>`. Installing over an existing copy, updates
-   included, runs the old uninstaller silently with `--updated`, so it removes
-   neither data nor login entries. The 0.2.x uninstaller has neither feature
-   (FR-8), and macOS and Linux packages have no uninstaller hook.
+   deletes three roots: `%USERPROFILE%\.catsbot` (every bot, archived bot and
+   hub file, default workspaces included), `%APPDATA%\Cats Bot` (Electron user
+   data and installation gates) and `%LOCALAPPDATA%\cats-bot-updater`
+   (downloaded updates; electron-builder names the cache after
+   `build.extraMetadata.name`, `cats-bot`).
+   - Deletion never follows a link. A junction or symlink inside a root is
+     removed and its target kept, and a root that is itself a link loses only
+     the link. A root moved with `CATS_BOT_HOME` is never touched. Whatever
+     cannot be removed, for example files another program holds open, is
+     listed in a message.
+   - Every uninstall also deletes the Run values that Start at login created,
+     `io.catsinc.catsbot` and `io.catsinc.catsbot.<botId>`, when they start
+     this installation, with their StartupApproved values. A packaged start
+     registers Start at login again while the owner has it on, so a reinstall
+     that kept the data keeps the setting.
+   - Installing over an existing copy, updates included, runs the old
+     uninstaller silently with `--updated`, so it removes neither data nor
+     login entries. The exception is an installer run with `--delete-app-data`:
+     its old uninstaller removes the login entries, and electron-builder itself
+     deletes `%APPDATA%\Cats Bot`. A per-machine install (`/allusers`) skips the
+     page and removes neither.
+   - The 0.2.x uninstaller has none of this (FR-8), and macOS and Linux
+     packages have no uninstaller hook.
 
 ### Non-Functional Requirements
 
