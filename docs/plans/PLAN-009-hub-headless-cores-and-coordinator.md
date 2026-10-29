@@ -38,6 +38,15 @@ state. Until a reviewed package exists, this plan can use the current adapters.
 Do not make the Hub depend on the Platform application or pass Runtime credentials
 to it. Package extraction does not complete any Hub/coordinator acceptance task.
 
+PLAN-127 Phase 4 additionally requires the Desktop-derived conversation renderer
+in both Desktop and Bot, including internal message hierarchy, streaming/recovery,
+interactions and narrow-layout acceptance (Platform SPEC-134 FR-15 through FR-20,
+UI-1 through UI-6). Coordinate Bot's live/durable data mapping and renderer adapter
+with the channel client introduced here; a shared renderer may first serve the
+current shell or the Hub, without a Platform API dependency. Hub acceptance does
+not complete this UI slice, and the UI slice does not implement fleet policy.
+Native window layers and the Electron host remain unchanged by UI extraction.
+
 ### Phase 1: Core out of Electron, still one bot
 
 - [ ] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client
