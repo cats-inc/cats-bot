@@ -9,6 +9,7 @@
 | **Reviewer**         | Owner                                                                                                                    |
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
+| **Pending change**   | [SPEC-008](SPEC-008-hub-and-bot-fleet.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
 
 ## Summary
 

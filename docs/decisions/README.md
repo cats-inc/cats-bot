@@ -45,6 +45,10 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [004](./004-publish-standard-previews-with-host-owned-updates.md)                      | Publish Standard Previews with Host-Owned Updates                      | Accepted | 2026-10-28 |
 | [005](./005-give-the-bot-owner-consented-desktop-control.md)                           | Give the Bot Owner-Consented Desktop Control                           | Accepted | 2026-10-29 |
 | [006](./006-share-runtime-catalogs-and-package-provider-setup-helpers.md)              | Share Runtime Catalogs and Package Provider Setup Helpers              | Accepted | 2026-10-29 |
+| [007](./007-give-cats-bot-its-own-identity-and-data-root.md)                           | Give Cats Bot Its Own Identity and Data Root                           | Accepted | 2026-10-29 |
+| [008](./008-run-every-bot-as-a-headless-core-under-one-hub.md)                         | Run Every Bot as a Headless Core under One Hub                         | Accepted | 2026-10-29 |
+| [009](./009-give-one-bot-a-bounded-coordinator-role.md)                                | Give One Bot a Bounded Coordinator Role                                | Accepted | 2026-10-29 |
+| [010](./010-bind-each-bot-to-an-execution-environment.md)                              | Bind Each Bot to an Execution Environment                              | Accepted | 2026-10-29 |
 
 <!-- Add new ADRs above this line -->
 

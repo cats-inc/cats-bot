@@ -1,5 +1,18 @@
 # Documentation Index
 
+The next design (2026-10-29, not implemented) gives Cats Bot its own identity
+and `~/.catsbot` root ([ADR-007](decisions/007-give-cats-bot-its-own-identity-and-data-root.md),
+[SPEC-007](specs/SPEC-007-cats-bot-identity-and-data-root.md),
+[PLAN-008](plans/PLAN-008-cats-bot-identity-and-data-root.md)). It also runs
+every bot as a headless core under one hub, with a transferable coordinator role
+and per-bot execution environments, native only at first
+([ADR-008](decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
+[ADR-009](decisions/009-give-one-bot-a-bounded-coordinator-role.md),
+[ADR-010](decisions/010-bind-each-bot-to-an-execution-environment.md),
+[SPEC-008](specs/SPEC-008-hub-and-bot-fleet.md),
+[SPEC-009](specs/SPEC-009-coordinator-role.md),
+[PLAN-009](plans/PLAN-009-hub-headless-cores-and-coordinator.md)).
+
 [Desktop experience parity](plans/PLAN-007-desktop-experience-parity.md) tracks
 provider-first packaged setup, Runtime catalog controls, language selection,
 native tray update dialogs and conversation/avatar restoration.

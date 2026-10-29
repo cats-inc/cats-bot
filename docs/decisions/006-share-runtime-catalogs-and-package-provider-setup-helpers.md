@@ -5,6 +5,8 @@
 Accepted — 2026-10-29, implementing the owner's desktop parity request in
 [PLAN-007](../plans/PLAN-007-desktop-experience-parity.md). This updates ADR-002
 sections 2–3 and SPEC-002 FR-1/FR-3. The resident-core boundary stays unchanged.
+Pending (2026-10-29): under [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md) the setup
+helpers run in the hub and display language becomes a fleet preference once PLAN-009 lands.
 
 ## Context
 

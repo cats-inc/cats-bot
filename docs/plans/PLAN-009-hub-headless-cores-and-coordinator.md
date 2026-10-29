@@ -1,0 +1,174 @@
+# PLAN-009: Hub, Headless Cores and Coordinator
+
+## Metadata
+
+| Field | Value |
+|-------|-------|
+| **Status** | Draft |
+| **Owner** | Product owner |
+| **Assigned To** | Unassigned |
+| **Reviewer** | Independent agent; security review for Phase 5 |
+
+## Related Spec
+
+[SPEC-008: Hub and Bot Fleet](../specs/SPEC-008-hub-and-bot-fleet.md) and
+[SPEC-009: Coordinator Role](../specs/SPEC-009-coordinator-role.md), decided in
+[ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
+[ADR-009](../decisions/009-give-one-bot-a-bounded-coordinator-role.md) and
+[ADR-010](../decisions/010-bind-each-bot-to-an-execution-environment.md).
+
+## Overview
+
+Start after PLAN-008 Phase 1, so every new file uses the `~/.catsbot` layout.
+Phase 1 proves the split with today's single-bot shell talking to an
+out-of-process core. Later phases turn that shell into the hub and add the fleet,
+host services and the coordinator. Each phase is a separately reviewable PR and
+keeps the application usable.
+
+## Implementation Phases
+
+### Phase 1: Core out of Electron, still one bot
+
+- [ ] 1.1: Host channel in `src/core/host-api/`: a server in the core and a client
+      for hosts, with version, token and descriptor (SPEC-008 FR-12 to FR-15). It
+      carries every `BotHostApi` call from the host, and from the core the event
+      stream and host-service requests (cipher, host identity). The owner control
+      operations keep their behavior.
+- [ ] 1.2: The headless host (`cats-bot run`) serves the channel and accepts from
+      its host the packaged Runtime entry, the helper path and the secret cipher.
+      Give `src/core/secrets.ts` an asynchronous cipher path (FR-7, FR-20).
+- [ ] 1.3: The current shell spawns its bot's core with `ELECTRON_RUN_AS_NODE`
+      (already used for the Runtime child, so the RunAsNode fuse stays enabled)
+      and routes `ipc.ts` through the channel client instead of an in-process
+      `BotCore`.
+- [ ] 1.4: Pass the shell PID and executable path to the desktop-control helper's
+      self-exclusion (FR-21).
+- [ ] 1.5: Extend `tests/architecture-boundaries.test.ts`: `src/shell/**` reaches
+      the core only through the channel client and core types.
+
+**Deliverables**: closing or crashing the shell leaves the bot running, and
+restarting the shell reattaches. First working-set measurement.
+
+### Phase 2: The hub
+
+- [ ] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot` (FR-1); fleet
+      registry with lock and atomic writes (FR-2, FR-3); hub state file for
+      language and start at login (FR-18, FR-23).
+- [ ] 2.2: First run creates the registry, the native environment profile and the
+      first bot, then assigns it as coordinator holder (FR-4, FR-24).
+- [ ] 2.3: Windows bound to a bot id with per-window AUMIDs and bot-scoped IPC
+      (FR-17); one tray that matches today's menu for one bot (FR-16).
+- [ ] 2.4: `environment: { kind: 'native' }` in the bot profile; refuse any
+      other kind.
+- [ ] 2.5: The hub's own control endpoint for owner CLI fleet commands (FR-25).
+
+**Deliverables**: the product runs as hub plus one core, with no visible
+regression.
+
+### Phase 3: Fleet management
+
+- [ ] 3.1: Settings → Bots: list, create, start, stop, start automatically, order,
+      remove with confirmation (FR-5); fleet cap (FR-6).
+- [ ] 3.2: Tray submenus per bot and aggregated attention (FR-16).
+- [ ] 3.3: Core supervision: crash restart with backoff and limits, Quit order,
+      process-tree kill fallback, and attaching to externally hosted cores (FR-9
+      to FR-11).
+
+**Deliverables**: two or more bots managed from one hub (cap permitting in the
+shipped UI; always in tests).
+
+### Phase 4: Host services
+
+- [ ] 4.1: Secret cipher served by the hub through the asynchronous path from 1.2;
+      truthful protection status (FR-20).
+- [ ] 4.2: Provider setup helpers run in the hub, one operation at a time (FR-19).
+- [ ] 4.3: Hub-owned updates replace the cross-shell exclusion for hub-hosted bots
+      (FR-22).
+- [ ] 4.4: Hub PID changes reach every running core's helper before the next
+      desktop-control call (FR-21).
+
+**Deliverables**: update, setup and secrets work for a fleet.
+
+### Phase 5: Coordinator
+
+- [ ] 5.1: Role state, Settings assignment, a CLI command through the hub's
+      control endpoint, and the default holder (SPEC-009 FR-1, FR-2, FR-10).
+- [ ] 5.2: The `cats-fleet` server in the holder's core, attached per send while the
+      hub reports it as holder, with hub-side authorization of every call and
+      the refusals (FR-3, FR-4, FR-6, FR-11).
+- [ ] 5.3: Owner confirmations, chains, limits, replies and audit (FR-5, FR-7 to
+      FR-9); work items with source `bot`.
+- [ ] 5.4: Independent security review.
+
+**Deliverables**: a holder hands work to another bot, and every boundary in
+SPEC-009 FR-6 is enforced and tested.
+
+### Phase 6: Acceptance and documentation
+
+- [ ] 6.1: Measurement table: hub alone, hub + 1 bot, hub + 2 bots, against the
+      0.2.x baseline.
+- [ ] 6.2: Windows acceptance in isolated profiles: hub restart, core crash,
+      update with two bots, desktop-control self-exclusion; macOS and Linux
+      package smoke tests.
+- [ ] 6.3: Make the superseded text real: ADR-001, ADR-002, ADR-004 and ADR-006
+      statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04
+      and BDC-08; `docs/architecture.md`, `docs/services.md`,
+      `docs/setup-guide.md`, `docs/testing.md`.
+
+## Files to Create/Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/core/host-api/channel.ts` (name indicative) | Create | Channel server, client, descriptor, protocol |
+| `src/core/host-api/control.ts` | Modify | Share transport and auth with the channel |
+| `src/cli/main.ts` | Modify | `run` serves the channel and takes a host cipher |
+| `src/core/types.ts`, `src/core/profile/profile.ts` | Modify | `environment` binding; work-item source `bot` |
+| `src/core/bot.ts`, `src/core/desktopControl/*` | Modify | Host PID and executable in self-exclusion |
+| `src/core/secrets.ts` | Modify | Asynchronous cipher path |
+| `src/shell/electron/main.ts`, `ipc.ts`, `windows.ts`, `tray.ts`, `trayMenu.ts`, `settingsWindow.ts`, `floatingBot.ts`, `viewState.ts` | Modify | Hub, bot-bound windows, one tray |
+| `src/shell/electron/fleet/` | Create | Registry, core supervisor, hub state |
+| `src/shell/electron/update/*` | Modify | Hub-owned update coordination |
+| `src/core/tools/` (fleet server) | Create | `cats-fleet` tools |
+| `src/renderer/settings/` | Modify | Bots page, coordinator display |
+| `tests/core/`, `tests/shell/`, `tests/integration/`, `tests/architecture-boundaries.test.ts` | Create/Modify | Channel, registry, supervision, coordinator |
+
+## Technical Decisions
+
+- Reuse the headless `run` host as the core entry rather than adding another
+  one, so CLI and hub cores behave the same.
+- Phase 1 changes no product surface, so the riskiest change (the split) is
+  reviewed alone.
+- Events are not persisted for replay; snapshots recover state after reattach
+  (SPEC-008 FR-15).
+
+## Testing Strategy
+
+- **Unit Tests**: registry reads and writes, corruption handling, cap; channel auth,
+  versioning, size limits; coordinator authorization tables (holder or not, every
+  refused operation); chain and rate limits.
+- **Integration Tests**: the packed Runtime behind a channel-hosted core; two cores
+  in temporary roots; hub restart reattaches; core crash restarts; a coordinator
+  message round trip with the fixture CLI.
+- **Manual Testing**: isolated Windows hub with two bots over CDP; desktop-control
+  native check with the hub PID; update handoff with two bots.
+
+## Risks & Mitigations
+
+| Risk | Impact | Mitigation |
+|------|--------|------------|
+| Streaming deltas over IPC add latency or drop events | Medium | Sequence numbers, snapshots after gaps, measurements in Phase 1 |
+| Reattach races after a hub crash | Medium | PID and token check, instance lock as the single source |
+| A bot operates its own note UI through desktop control | High | Executable and hub-PID exclusion, native check in 6.2 |
+| Coordinator loops burn quota | Medium | Hop and rate limits, holder-only chains |
+| Process-tree cleanup on Windows leaves orphans | Medium | Graceful stop first, tree kill fallback, acceptance check |
+
+## Progress Log
+
+| Date | Update |
+|------|--------|
+| 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
+
+---
+
+*Created: 2026-10-29*
+*Author: Claude*

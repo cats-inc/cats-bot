@@ -5,6 +5,9 @@
 Accepted — 2026-10-28. The owner requested manually triggered GitHub releases,
 Check for Updates, and Windows/macOS/Linux coverage. This authorizes the delivery
 mechanism, not a version bump or release dispatch.
+Pending (2026-10-29): [ADR-007](007-give-cats-bot-its-own-identity-and-data-root.md) renames the release
+repository to `cats-inc/cats-bot`, and [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md)
+replaces the exclusion between Bot shells with hub-owned update coordination.
 
 ## Context
 

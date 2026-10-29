@@ -9,6 +9,7 @@
 | **Reviewer** | Owner |
 | **Related decision** | ADR-001 |
 | **Related plan** | [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md) |
+| **Pending change** | [SPEC-007](SPEC-007-cats-bot-identity-and-data-root.md) changes the FR-2 data root and FR-5 `--managed-by` (PLAN-008); [SPEC-008](SPEC-008-hub-and-bot-fleet.md) hosts the core under a hub (PLAN-009) |
 
 ## Summary
 
