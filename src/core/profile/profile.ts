@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
+import { parseModelSelection } from '../providers/selection.ts';
 
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
 import type { BotPaths } from '../store/paths.ts';
@@ -40,6 +41,7 @@ export interface CreateProfileInput {
   instructions?: string;
   provider: string;
   model?: string | null;
+  modelSelection?: ExecutionTarget['modelSelection'];
   cwd: string;
   permissionMode?: PermissionMode;
   workspaceAccess?: WorkspaceAccess;
@@ -54,7 +56,13 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
     name: input.name,
     instructions: input.instructions ?? '',
-    executionTarget: { provider: input.provider, model: input.model ?? null },
+    executionTarget: {
+      provider: input.provider,
+      model: input.model ?? null,
+      ...(input.modelSelection
+        ? { modelSelection: parseModelSelection(input.modelSelection) }
+        : {}),
+    },
     configRevision: 1,
     permissions: {
       workspaceAccess: input.workspaceAccess ?? 'read_write',
@@ -113,9 +121,19 @@ function normalizeExecutionTarget(value: unknown, fallback: ExecutionTarget): Ex
   if (!isRecord(value)) return { ...fallback };
   const model = value.model;
   const chrome = typeof value.claudeInChrome === 'boolean' ? value.claudeInChrome : fallback.claudeInChrome === true;
+  const modelSelection = parseModelSelection(
+    Object.hasOwn(value, 'modelSelection')
+      ? value.modelSelection
+      : (value.provider === undefined || value.provider === fallback.provider) &&
+          (value.model === undefined || value.model === fallback.model)
+        ? fallback.modelSelection
+        : undefined,
+  );
   return {
     provider: stringOr(value.provider, fallback.provider),
-    model: typeof model === 'string' && model.trim() ? model : model === null ? null : fallback.model,
+    model:
+      typeof model === 'string' && model.trim() ? model : model === null ? null : fallback.model,
+    ...(modelSelection ? { modelSelection } : {}),
     // Absent means off, so profiles written before this option keep their launch.
     ...(chrome ? { claudeInChrome: true } : {}),
   };
@@ -186,21 +204,32 @@ export type ProfileLoadResult =
   | { ok: false; reason: 'missing' }
   | { ok: false; reason: 'corrupt'; error: string };
 
-export function loadProfile(paths: BotPaths, fallback: BotProfile, migrate = false): ProfileLoadResult {
+export function loadProfile(
+  paths: BotPaths,
+  fallback: BotProfile,
+  migrate = false,
+): ProfileLoadResult {
   const read = readJsonFile<unknown>(paths.profile);
   if (!read.ok) return read;
   try {
     const raw = read.value;
-    if (!isRecord(raw) || ![1, 2].includes(raw.schemaVersion as number)
-      || raw.schemaVersion === 2 && !Object.hasOwn(raw, 'providerPolicy')) {
+    if (
+      !isRecord(raw) ||
+      ![1, 2].includes(raw.schemaVersion as number) ||
+      (raw.schemaVersion === 2 && !Object.hasOwn(raw, 'providerPolicy'))
+    ) {
       throw new Error('Unsupported profile schema; restore a compatible backup or use a newer Bot.');
     }
     // Never use defaults to broaden a malformed access boundary during upgrade.
-    if (!isRecord(raw.permissions) || typeof raw.permissions.cwd !== 'string'
-      || !PERMISSION_MODES.includes(raw.permissions.permissionMode as PermissionMode)
-      || !WORKSPACE_ACCESS.includes(raw.permissions.workspaceAccess as WorkspaceAccess)
-      || raw.permissions.allowedTools !== undefined && (!Array.isArray(raw.permissions.allowedTools)
-        || raw.permissions.allowedTools.some(t => typeof t !== 'string'))) {
+    if (
+      !isRecord(raw.permissions) ||
+      typeof raw.permissions.cwd !== 'string' ||
+      !PERMISSION_MODES.includes(raw.permissions.permissionMode as PermissionMode) ||
+      !WORKSPACE_ACCESS.includes(raw.permissions.workspaceAccess as WorkspaceAccess) ||
+      (raw.permissions.allowedTools !== undefined &&
+        (!Array.isArray(raw.permissions.allowedTools) ||
+          raw.permissions.allowedTools.some((t) => typeof t !== 'string')))
+    ) {
       throw new Error('Invalid profile permissions; original data was preserved.');
     }
     const profile = normalizeProfile(raw, fallback);
@@ -223,8 +252,13 @@ export function saveProfile(paths: BotPaths, profile: BotProfile): void {
 }
 
 export function sameExecutionTarget(a: ExecutionTarget, b: ExecutionTarget): boolean {
-  return a.provider === b.provider && (a.model ?? null) === (b.model ?? null)
-    && (a.claudeInChrome === true) === (b.claudeInChrome === true);
+  return (
+    a.provider === b.provider &&
+    (a.model ?? null) === (b.model ?? null) &&
+    JSON.stringify(parseModelSelection(a.modelSelection)) ===
+      JSON.stringify(parseModelSelection(b.modelSelection)) &&
+    (a.claudeInChrome === true) === (b.claudeInChrome === true)
+  );
 }
 
 function samePermissions(a: BotPermissions, b: BotPermissions): boolean {

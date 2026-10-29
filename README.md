@@ -8,14 +8,19 @@ wrapping an agent CLI through `cats-runtime`.
 PLAN-001 Phases 0 to 4 are in place: the headless bot core and the `cats-bot` CLI run a
 provider CLI through a private cats-runtime child, with conversations, transcripts, a work
 journal, cancel, resume and restart recovery, and the bot stays alive on its own: a reconcile
-tick keeps the home session attached, durable schedules (one-time and cron in an IANA zone)
+tick keeps the direct-message session attached, durable schedules (one-time and cron in an IANA zone)
 fire into work items, hidden heartbeat turns let the bot decide whether to speak, and the
 bot's own MCP tool server lets the model create schedules and ask the owner. The first
-shell is an Electron tray with sticky-note windows that mounts the same core; notes keep
+shell is an Electron tray with conversation windows that mounts the same core; conversations keep
 their context apart, a global provider/model change replaces sessions instead of resuming
 them, and an optional Telegram binding (long polling, one consumer per bot) mirrors the
-home conversation to the owner's phone. Desktop presence (Phase 5) needs its own ADR.
-Nothing is released.
+direct message to the owner's phone.
+
+The desktop shell restores avatar and conversation visibility, bounds and layers,
+offers System/English/Traditional Chinese display languages, and shows tray update
+results in a native dialog. Onboarding checks and installs the selected provider;
+the picker offers Codex, Claude, Antigravity, Grok and Muse with Runtime's exact
+model and effort choices. See [desktop parity](docs/plans/PLAN-007-desktop-experience-parity.md).
 
 Manual **Bots Standard Preview** publication and host-owned **Check for Updates**
 support Windows x64/arm64, macOS universal and Linux x64/arm64 packages. See the
@@ -43,36 +48,36 @@ Decided in ADR-001:
 - One executable is one bot instance: a resident Node bot core (profile, conversations,
   work journal, timers, one global provider/model) that runs `cats-runtime` as an
   app-managed child process, which in turn runs the provider CLI. The core runs headless;
-  the shell (tray icon, sticky-note windows) is a disposable client of it.
-- The bot stays alive: a per-minute reconciliation tick keeps the home conversation session
+  the shell (tray icon, conversation windows) is a disposable client of it.
+- The bot stays alive: a per-minute reconciliation tick keeps the direct-message session
   attached without calling the model, durable schedules in the bot journal summon it on
   time, hidden heartbeat turns let it decide whether to speak, and events (owner messages,
   later Telegram) reach it at any time.
-- Each sticky note shows one conversation with its own session attachment; one home
-  conversation is the inbox the bot keeps warm. Provider and model are set once per
+- Each window shows one conversation with its own session attachment; Direct message
+  is the inbox the bot keeps warm. Provider and model are set once per
   bot, never per conversation.
 - The bot depends on `@cats-inc/cats-runtime` over its process + loopback HTTP
   contract. It copies patterns from `cats-platform` but does not import it.
 
 ## Relationship to other Cats members
 
-| Member | Role for this project |
-| --- | --- |
-| `cats-runtime` | Execution engine: provider CLI adapters, sessions, resume, turn streaming, wakeups |
-| `cats-platform` | Reference only: companion life loop, Telegram transport and Desktop host patterns |
-| `cats-one` | Workspace composition and release policy; this member is registered in its manifest |
+| Member          | Role for this project                                                               |
+| --------------- | ----------------------------------------------------------------------------------- |
+| `cats-runtime`  | Execution engine: provider CLI adapters, sessions, resume, turn streaming, wakeups  |
+| `cats-platform` | Reference only: companion life loop, Telegram transport and Desktop host patterns   |
+| `cats-one`      | Workspace composition and release policy; this member is registered in its manifest |
 
 ## Layout
 
-| Path | Content |
-| --- | --- |
-| `docs/research/` | Two independent 2026-10-27 research notes (Claude and Codex) |
-| `docs/decisions/`, `docs/specs/`, `docs/plans/` | ADR-001, SPEC-001 and PLAN-001 (proposed and draft) plus the templates |
-| `src/core/` | The bot core: profile, store, runtime supervisor and client, conversations, queue, `BotCore` |
-| `src/cli/` | The headless `cats-bot` entry point |
-| `src/shell/electron/`, `assets/` | The Electron tray and sticky-note shell, its preload bridge and renderer page |
-| `tests/` | Boundary, unit, fake-runtime core and real-runtime integration tests |
-| `scripts/` | Skill sync and merged-branch sweep helpers from the bootstrap |
+| Path                                            | Content                                                                                      |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `docs/research/`                                | Two independent 2026-10-27 research notes (Claude and Codex)                                 |
+| `docs/decisions/`, `docs/specs/`, `docs/plans/` | ADR-001, SPEC-001 and PLAN-001 (proposed and draft) plus the templates                       |
+| `src/core/`                                     | The bot core: profile, store, runtime supervisor and client, conversations, queue, `BotCore` |
+| `src/cli/`                                      | The headless `cats-bot` entry point                                                          |
+| `src/shell/electron/`, `assets/`                | The Electron tray and sticky-note shell, its preload bridge and renderer page                |
+| `tests/`                                        | Boundary, unit, fake-runtime core and real-runtime integration tests                         |
+| `scripts/`                                      | Skill sync and merged-branch sweep helpers from the bootstrap                                |
 
 ## Development
 
@@ -108,11 +113,13 @@ The updater is not copied into this child. Existing originals and pending review
 copies are preserved; resolve each proposed change intentionally.
 
 **Windows**
+
 ```powershell
 .\scripts\windows\Update-Project.ps1 -TargetPath "C:/Path/To/cats-bots"
 ```
 
 **Linux / macOS**
+
 ```bash
 bash scripts/linux/update-project.sh --target-path /path/to/cats-bots
 ```

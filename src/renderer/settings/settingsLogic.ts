@@ -1,3 +1,4 @@
+import { t } from '../localeStore.ts';
 import type {
   BotPermissions,
   BotProfile,
@@ -6,6 +7,9 @@ import type {
   ConversationRecord,
   HeartbeatPolicy,
   ModelCatalog,
+  ModelSelection,
+  ModelControl,
+  ModelControlValue,
   ProviderInfo,
   TelegramSettingsStatus,
 } from '../../core/types.ts';
@@ -17,34 +21,44 @@ import type {
 
 // ---- Providers and models ---------------------------------------------------------
 
-/** The model menu's "type your own" entry. */
-export const CUSTOM_MODEL = '__custom__';
-
 export function providerLabel(provider: ProviderInfo): string {
-  return `${provider.label} · ${provider.command}${provider.installed === false ? ' (not found)' : ''}`;
+  return provider.label;
 }
 
-/** The provider menu; a saved provider this build does not list is kept so it is not lost on save. */
-export function providerChoices(providers: readonly ProviderInfo[], current: string | null): ProviderInfo[] {
-  const list = [...providers];
-  if (current && !list.some((provider) => provider.id === current)) list.push({ id: current, label: current, command: current, installed: null });
-  return list;
+/** Only the supported providers are selectable; saved legacy targets are preserved separately. */
+export function providerChoices(
+  providers: readonly ProviderInfo[],
+  current: string | null,
+): ProviderInfo[] {
+  return ['codex', 'claude', 'antigravity', 'grok', 'muse'].flatMap((id) =>
+    providers.filter((provider) => provider.id === id),
+  );
 }
 
-/** First run: Claude when installed, else any installed CLI, else the first one. */
+/** First run uses the product's provider order, independently of installation state. */
 export function preferredProvider(providers: readonly ProviderInfo[]): string {
-  return (providers.find((provider) => provider.id === 'claude' && provider.installed)
-    ?? providers.find((provider) => provider.installed)
-    ?? providers[0])?.id ?? 'claude';
+  return providerChoices(providers, null)[0]?.id ?? 'codex';
 }
 
-export function providerHint(providers: readonly ProviderInfo[], id: string): { text: string; warn: boolean } {
+export function providerHint(
+  providers: readonly ProviderInfo[],
+  id: string,
+): { text: string; warn: boolean } {
   const provider = providers.find((item) => item.id === id);
   if (!provider || provider.installed === null) return { text: '', warn: false };
   if (provider.installed === false) {
-    return { text: `"${provider.command}" was not found on PATH. Install it and sign in once in a terminal before the bot can answer.`, warn: true };
+    return {
+      text: t(
+        '"{value0}" was not found on PATH. Install it and sign in once in a terminal before the bot can answer.',
+        { value0: provider.command },
+      ),
+      warn: true,
+    };
   }
-  return { text: `Uses your own "${provider.command}" sign-in and subscription.`, warn: false };
+  return {
+    text: t('Uses your own "{value0}" sign-in and subscription.', { value0: provider.command }),
+    warn: false,
+  };
 }
 
 export interface MenuOption {
@@ -53,34 +67,73 @@ export interface MenuOption {
 }
 
 export function modelOptions(catalog: ModelCatalog): MenuOption[] {
-  const fallback = catalog.models.find((model) => model.id === catalog.defaultModel);
-  return [
-    { value: '', text: `Provider default${fallback ? ` (${fallback.label})` : ''}` },
-    ...catalog.models.map((model) => ({ value: model.id, text: model.label === model.id ? model.id : `${model.label} · ${model.id}` })),
-    { value: CUSTOM_MODEL, text: 'Other model id…' },
-  ];
+  return catalog.models.map((model) => ({ value: model.id, text: model.label }));
 }
 
-/** Where the menu starts for a saved model: the default, a listed model, or "other" with the id typed in. */
-export function modelSelection(catalog: ModelCatalog, current: string | null): { select: string; custom: string } {
-  if (!current) return { select: '', custom: '' };
+/** New choices use catalog order; unknown saved IDs remain outside the selectable menu. */
+export function modelSelection(
+  catalog: ModelCatalog,
+  current: string | null,
+): { select: string; custom: string } {
+  if (!current) return { select: catalog.defaultModel ?? catalog.models[0]?.id ?? '', custom: '' };
   if (catalog.models.some((model) => model.id === current)) return { select: current, custom: '' };
-  return { select: CUSTOM_MODEL, custom: current };
+  return { select: '', custom: current };
 }
 
-export function readModel(select: string, custom: string): string | null {
-  if (select === CUSTOM_MODEL) return custom.trim() || null;
-  return select || null;
+export function modelControls(catalog: ModelCatalog, entryId: string): ModelControl[] {
+  const entry = catalog.models.find((model) => model.id === entryId);
+  if (!entry) return [];
+  if (entry.controls?.length === 0) return [];
+  const controls = new Map((catalog.controls ?? []).map((control) => [control.key, control]));
+  for (const control of entry.controls ?? []) controls.set(control.key, control);
+  return [...controls.values()].filter(
+    (control) => !control.applicableEntryIds || control.applicableEntryIds.includes(entryId),
+  );
 }
 
-export function modelSourceHint(source: ModelCatalog['source']): string {
-  if (source === 'runtime') return 'Models reported by the running runtime.';
-  if (source === 'packaged') return 'Models from the catalog shipped with cats-runtime.';
-  return 'No catalog for this CLI; type a model id or keep the default.';
+export function controlOptions(
+  control: ModelControl,
+): Array<{ value: ModelControlValue; label: string }> {
+  return (control.values ?? []).map((value) =>
+    typeof value === 'object' ? value : { value, label: String(value) },
+  );
 }
 
-export function emptyCatalog(provider: string): ModelCatalog {
-  return { provider, defaultModel: null, models: [], source: 'none' };
+export function selectedModel(
+  catalog: ModelCatalog,
+  entryId: string,
+  saved?: ModelSelection,
+): ModelSelection | undefined {
+  const entry = catalog.models.find((model) => model.id === entryId);
+  if (!entry) return undefined;
+  const controls: Record<string, ModelControlValue> = {};
+  for (const control of modelControls(catalog, entryId)) {
+    const options = controlOptions(control);
+    const previous = saved?.entryId === entryId ? saved.controls?.[control.key] : undefined;
+    const fallback =
+      entry.controlDefaults?.[control.key] ??
+      control.default ??
+      (catalog.defaultSelection?.entryId === entryId
+        ? catalog.defaultSelection.controls?.[control.key]
+        : undefined);
+    const valid = (value: ModelControlValue | undefined) =>
+      value !== undefined &&
+      (control.kind !== 'enum' || options.some((option) => option.value === value));
+    const value = valid(previous)
+      ? previous
+      : valid(fallback)
+        ? fallback
+        : control.kind === 'enum'
+          ? options[0]?.value
+          : undefined;
+    if (value !== undefined) controls[control.key] = value;
+  }
+  return {
+    entryMode: 'explicit',
+    entryId,
+    ...(catalog.catalogRevision ? { catalogRevision: catalog.catalogRevision } : {}),
+    controls,
+  };
 }
 
 /**
@@ -106,6 +159,7 @@ export interface BotForm {
   name: string;
   provider: string;
   model: string | null;
+  modelSelection?: ModelSelection;
   /** Applies only while the provider is Claude Code. */
   claudeInChrome: boolean;
   instructions: string;
@@ -120,6 +174,9 @@ export function botForm(profile: BotProfile): BotForm {
     name: profile.name,
     provider: profile.executionTarget.provider,
     model: profile.executionTarget.model,
+    ...(profile.executionTarget.modelSelection
+      ? { modelSelection: profile.executionTarget.modelSelection }
+      : {}),
     claudeInChrome: profile.executionTarget.claudeInChrome === true,
     instructions: profile.instructions,
     cwd: profile.permissions.cwd,
@@ -139,10 +196,19 @@ export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | 
   const name = form.name.trim();
   if (name && name !== profile.name) patch.name = name;
   const chrome = form.provider === 'claude' && form.claudeInChrome;
-  if (form.provider !== profile.executionTarget.provider || form.model !== profile.executionTarget.model
-    || chrome !== (profile.executionTarget.claudeInChrome === true)) {
-    patch.executionTarget = { provider: form.provider, model: form.model,
-      ...(chrome || profile.executionTarget.claudeInChrome ? { claudeInChrome: chrome } : {}) };
+  if (
+    form.provider !== profile.executionTarget.provider ||
+    form.model !== profile.executionTarget.model ||
+    JSON.stringify(form.modelSelection) !==
+      JSON.stringify(profile.executionTarget.modelSelection) ||
+    chrome !== (profile.executionTarget.claudeInChrome === true)
+  ) {
+    patch.executionTarget = {
+      provider: form.provider,
+      model: form.model,
+      ...(form.modelSelection ? { modelSelection: form.modelSelection } : {}),
+      ...(chrome || profile.executionTarget.claudeInChrome ? { claudeInChrome: chrome } : {}),
+    };
   }
   if (form.instructions !== profile.instructions) patch.instructions = form.instructions;
   const permissions: Partial<BotPermissions> = {};
@@ -162,19 +228,36 @@ export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | 
 export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProfilePatch): string {
   const lines: string[] = [];
   if (after.configRevision !== before.configRevision) {
-    lines.push('Each conversation continues in a fresh session that gets a summary of what was said so far.');
+    lines.push(
+      t(
+        'Each conversation continues in a fresh session that gets a summary of what was said so far.',
+      ),
+    );
   }
   if (patch.executionTarget && patch.executionTarget.provider !== before.executionTarget.provider) {
-    lines.push(`The runtime restarts for ${patch.executionTarget.provider} once the current reply has finished.`);
-  } else if (patch.executionTarget && (after.executionTarget.claudeInChrome === true) !== (before.executionTarget.claudeInChrome === true)) {
-    lines.push(`The runtime restarts with Claude in Chrome ${after.executionTarget.claudeInChrome ? 'on' : 'off'} once the current reply has finished.`);
+    lines.push(
+      t('The runtime restarts for {value0} once the current reply has finished.', {
+        value0: patch.executionTarget.provider,
+      }),
+    );
+  } else if (
+    patch.executionTarget &&
+    (after.executionTarget.claudeInChrome === true) !==
+      (before.executionTarget.claudeInChrome === true)
+  ) {
+    lines.push(
+      t(
+        'The runtime restarts with Claude in Chrome {value0} once the current reply has finished.',
+        { value0: after.executionTarget.claudeInChrome ? 'on' : 'off' },
+      ),
+    );
   }
   return lines.join(' ');
 }
 
 export function brandState(profile: BotProfile | null, status: BotStatus): string {
   const target = profile ? `${profile.executionTarget.provider}${profile.executionTarget.model ? ` · ${profile.executionTarget.model}` : ''}` : '';
-  return `${target} · runtime ${status.runtime.state}`;
+  return t('{value0} · runtime {value1}', { value0: target, value1: status.runtime.state });
 }
 
 // ---- Notes tab --------------------------------------------------------------------
@@ -203,18 +286,22 @@ export function sortNotes(records: readonly ConversationRecord[]): ConversationR
   });
 }
 
-export function ago(iso: string | null, now = Date.now(), formatDate = (at: Date) => at.toLocaleDateString()): string {
-  if (!iso) return 'no messages yet';
+export function ago(
+  iso: string | null,
+  now = Date.now(),
+  formatDate = (at: Date) => at.toLocaleDateString(),
+): string {
+  if (!iso) return t('no messages yet');
   const minutes = Math.round((now - new Date(iso).getTime()) / 60000);
-  if (minutes < 1) return 'just now';
-  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 1) return t('just now');
+  if (minutes < 60) return t('{value0} min ago', { value0: minutes });
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h ago`;
+  if (hours < 48) return t('{value0} h ago', { value0: hours });
   return formatDate(new Date(iso));
 }
 
 export function noteMeta(record: ConversationRecord, now = Date.now()): string {
-  return `${ago(lastActivity(record), now)} · ${SESSION_WORDS[record.attachment.state] ?? record.attachment.state}`;
+  return `${ago(lastActivity(record), now)} · ${t(SESSION_WORDS[record.attachment.state] ?? record.attachment.state)}`;
 }
 
 // ---- Life, Telegram and App tabs --------------------------------------------------
@@ -258,18 +345,43 @@ export function lifePatch(form: LifeForm): { heartbeat: HeartbeatPolicy; idleSle
   };
 }
 
-export function nextHeartbeatText(status: BotStatus, formatTime = (at: Date) => at.toLocaleTimeString()): string {
-  if (status.heartbeat.enabled && status.heartbeat.nextAt) return `Next heartbeat around ${formatTime(new Date(status.heartbeat.nextAt))}.`;
-  return status.heartbeat.enabled ? 'The next heartbeat is drawn once the bot is up.' : 'Heartbeat is paused.';
+export function nextHeartbeatText(
+  status: BotStatus,
+  formatTime = (at: Date) => at.toLocaleTimeString(),
+): string {
+  if (status.heartbeat.enabled && status.heartbeat.nextAt)
+    return t('Next heartbeat around {value0}.', {
+      value0: formatTime(new Date(status.heartbeat.nextAt)),
+    });
+  return status.heartbeat.enabled
+    ? t('The next heartbeat is drawn once the bot is up.')
+    : t('Heartbeat is paused.');
 }
 
 export type Fact = [label: string, value: string];
 
 export function telegramFacts(status: TelegramSettingsStatus, profile: BotProfile): Fact[] {
   const facts: Fact[] = [
-    ['Token', status.tokenStored ? `stored, ${status.protection === 'os' ? 'encrypted by the OS' : 'in a plain file'}` : 'not set'],
-    ['Polling', status.transport?.polling ? `on (${status.transport.health})` : 'off'],
-    ['Owner chat', profile.telegram.ownerChatId !== null ? String(profile.telegram.ownerChatId) : 'not bound yet: send your bot a private message'],
+    [
+      'Token',
+      status.tokenStored
+        ? t('stored, {protection}', {
+            protection: t(status.protection === 'os' ? 'encrypted by the OS' : 'in a plain file'),
+          })
+        : t('not set'),
+    ],
+    [
+      'Polling',
+      status.transport?.polling
+        ? t('on ({health})', { health: t(status.transport.health) })
+        : t('off'),
+    ],
+    [
+      'Owner chat',
+      profile.telegram.ownerChatId !== null
+        ? String(profile.telegram.ownerChatId)
+        : t('not bound yet: send your bot a private message'),
+    ],
   ];
   if (status.transport?.lastError) facts.push(['Last error', status.transport.lastError]);
   return facts;
@@ -279,7 +391,10 @@ export function appFacts(status: BotStatus, version: string): Fact[] {
   return [
     ['Bot id', status.id],
     ['Data folder', status.root],
-    ['Runtime', `${status.runtime.state}${status.runtime.pid ? ` (pid ${status.runtime.pid})` : ''}`],
+    [
+      'Runtime',
+      `${t(status.runtime.state)}${status.runtime.pid ? ` (pid ${status.runtime.pid})` : ''}`,
+    ],
     ['Version', version],
   ];
 }

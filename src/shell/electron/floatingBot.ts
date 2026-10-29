@@ -112,14 +112,16 @@ export class FloatingBot {
     window.setIgnoreMouseEvents(true, { forward: true });
     // Forwarded moves go to the page's own child window, which a load replaces.
     window.webContents.on('did-finish-load', () => window.setIgnoreMouseEvents(true, { forward: true }));
-    window.on('moved', () => this.remember());
+    window.on('move', () => this.remember());
     window.on('closed', () => {
       if (this.window === window) this.window = null;
       this.watchDisplays(false);
     });
     this.watchDisplays(true);
     await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html'));
-    window.showInactive();
+    // The owner may hide the avatar while its renderer is still loading.
+    if (this.options.state().visible) window.showInactive();
+    this.remember();
   }
 
   hide(): void {
@@ -141,6 +143,7 @@ export class FloatingBot {
     if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
     // setPosition at a fractional scale factor grows the window a pixel at a time; fixed bounds do not.
     window.setBounds({ x: Math.round(x), y: Math.round(y), ...FLOATING_SIZE });
+    this.remember();
   }
 
   remember(): void {

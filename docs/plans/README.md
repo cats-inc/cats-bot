@@ -9,7 +9,7 @@
   — ready, 2026-10-28; core/CLI, life loop/recovery, shell
   and isolated native/packaged acceptance. All phases pending.
 
-> This directory contains implementation plans that define *how* to build features.
+> This directory contains implementation plans that define _how_ to build features.
 
 ## Purpose
 
@@ -53,13 +53,15 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 
 ## Index
 
-| Plan | Title | Status | Related Spec |
-|------|-------|--------|--------------|
-| [000-template](./000-template.md) | Template | - | - |
-| [PLAN-001](./PLAN-001-resident-bot-core-foundation.md) | Resident Bot Core Foundation | Draft | [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md) |
-| [PLAN-002](./PLAN-002-desktop-presence.md) | Desktop Presence | In progress | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
-| [PLAN-003](./PLAN-003-react-renderer.md) | React Renderer | Done | [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) |
-| [PLAN-005](./PLAN-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented; CI gate in PR #32 | [SPEC-005](../specs/SPEC-005-standard-preview-releases-and-updates.md) |
+| Plan                                                            | Title                                 | Status                          | Related Spec                                                             |
+| --------------------------------------------------------------- | ------------------------------------- | ------------------------------- | ------------------------------------------------------------------------ |
+| [000-template](./000-template.md)                               | Template                              | -                               | -                                                                        |
+| [PLAN-001](./PLAN-001-resident-bot-core-foundation.md)          | Resident Bot Core Foundation          | Draft                           | [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md)  |
+| [PLAN-002](./PLAN-002-desktop-presence.md)                      | Desktop Presence                      | In progress                     | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
+| [PLAN-003](./PLAN-003-react-renderer.md)                        | React Renderer                        | Done                            | [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md)     |
+| [PLAN-005](./PLAN-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented; CI gate in PR #32  | [SPEC-005](../specs/SPEC-005-standard-preview-releases-and-updates.md)   |
+| [PLAN-007](./PLAN-007-desktop-experience-parity.md)             | Desktop Experience Parity             | Implemented; validation in plan | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
+
 <!-- Add new plans above this line -->
 
 ## For AI Agents
@@ -70,4 +72,4 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 
 ---
 
-*See also: [specs/](../specs/) for feature specifications*
+_See also: [specs/](../specs/) for feature specifications_

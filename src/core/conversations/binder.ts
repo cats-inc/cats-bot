@@ -86,7 +86,12 @@ export class SessionBinder {
     if (attachment.sessionId && live && current) {
       return { ok: true, sessionId: attachment.sessionId, how: 'kept' };
     }
-    if (attachment.sessionId && !current && attachment.state !== 'stale' && attachment.state !== 'none') {
+    if (
+      attachment.sessionId &&
+      !current &&
+      attachment.state !== 'stale' &&
+      attachment.state !== 'none'
+    ) {
       this.deps.log(`conversation ${conversation.id}: attachment is stale after a configuration change`);
       this.deps.conversations.setAttachment(conversation.id, { state: 'stale' });
       this.deps.conversations.append(conversation.id, {
@@ -97,8 +102,13 @@ export class SessionBinder {
     } else if (attachment.sessionId && attachment.state === 'sleeping' && current) {
       try {
         const view = await client.resumeSession(attachment.sessionId, {
-          ...await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy),
-          ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id, attachment.sessionId) } : {}),
+          ...(await client.sessionControls(
+            profile.executionTarget.provider,
+            profile.providerPolicy,
+          )),
+          ...(this.deps.mcpServers
+            ? { mcpServers: this.deps.mcpServers(conversation.id, attachment.sessionId) }
+            : {}),
         });
         this.deps.conversations.setAttachment(conversation.id, {
           state: view.status === 'ready' ? 'ready' : 'initializing',
@@ -150,6 +160,11 @@ export class SessionBinder {
     };
     const replaced = conversation.attachment.sessionId;
     try {
+      if (profile.executionTarget.modelSelection)
+        request.modelSelection = await client.currentModelSelection(
+          profile.executionTarget.provider,
+          profile.executionTarget.modelSelection,
+        );
       Object.assign(request, await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy));
       const view = await client.createSession(request);
       this.deps.conversations.setAttachment(conversation.id, {

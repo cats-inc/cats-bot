@@ -173,7 +173,9 @@ export class LifeLoop {
     try {
       await this.tick();
     } catch (error) {
-      this.deps.log(`tick failed: ${error instanceof Error ? error.stack ?? error.message : String(error)}`);
+      this.deps.log(
+        `tick failed: ${error instanceof Error ? (error.stack ?? error.message) : String(error)}`,
+      );
     }
   }
 
@@ -372,10 +374,12 @@ export class LifeLoop {
       try {
         await client.closeSession(attachment.sessionId);
         this.deps.conversations.setAttachment(note.id, { state: 'sleeping' });
-        this.deps.log(`note ${note.id}: idle, session ${attachment.sessionId} closed`);
+        this.deps.log(`conversation ${note.id}: idle, session ${attachment.sessionId} closed`);
         report.sleptNotes.push(note.id);
       } catch (error) {
-        this.deps.log(`note ${note.id}: idle close failed: ${error instanceof Error ? error.message : String(error)}`);
+        this.deps.log(
+          `conversation ${note.id}: idle close failed: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     }
   }

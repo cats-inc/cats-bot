@@ -127,12 +127,30 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
       const typeOnly = Boolean(match[1]);
       const specifier = match[2]!;
       const where = `${relative(repoRoot, file)} imports ${specifier}`;
-      if (specifier === 'electron' || specifier.startsWith('electron/') || specifier.startsWith('node:')) {
+      if (
+        specifier === 'electron' ||
+        specifier.startsWith('electron/') ||
+        specifier.startsWith('node:')
+      ) {
         offenders.push(where);
       } else if (isRelative(specifier) && !resolvesInside(file, specifier, rendererRoot)) {
         // Outside the renderer only the core's type contract, and only as types (erased from the bundle).
-        const allowed = [typesFile, join(srcRoot, 'shared', 'shellUpdate.ts')];
-        if (!typeOnly || !allowed.includes(resolve(dirname(file), specifier))) offenders.push(`${where} (only browser-safe type contracts)`);
+        const allowed = [
+          typesFile,
+          join(srcRoot, 'shared', 'shellUpdate.ts'),
+          join(srcRoot, 'shared', 'providerSetup.ts'),
+        ];
+        const target = resolve(dirname(file), specifier);
+        // Translation is intentionally shared with native menus; it has no platform imports.
+        const language = target === join(srcRoot, 'shared', 'language.ts');
+        if (!language && (!typeOnly || !allowed.includes(target)))
+          offenders.push(`${where} (only browser-safe contracts and translations)`);
+        if (language)
+          assert.deepEqual(
+            importSpecifiers(target),
+            [],
+            'shared translations stay platform independent',
+          );
       }
     }
   }

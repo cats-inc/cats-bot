@@ -1,5 +1,6 @@
 import type { BotStatus } from '../../core/bot.ts';
 import type { ConversationRecord, DesktopControlHolding } from '../../core/types.ts';
+import { translate, type Locale } from '../../shared/language.ts';
 
 /**
  * SPEC-001 FR-33: what the tray menu offers, as plain data so it can be
@@ -22,6 +23,7 @@ export interface TrayDesktopControl {
 }
 
 export interface TrayMenuModel {
+  locale?: Locale;
   botName: string;
   status: BotStatus;
   conversations: ConversationRecord[];
@@ -57,16 +59,17 @@ export interface TrayMenuItem {
   submenu?: TrayMenuItem[];
 }
 
-export function runtimeLabel(status: BotStatus): string {
+export function runtimeLabel(status: BotStatus, locale: Locale = 'en'): string {
+  const t = (text: string) => translate(locale, text);
   switch (status.runtime.state) {
     case 'ready':
-      return 'runtime ready';
+      return t('runtime ready');
     case 'starting':
-      return 'runtime starting';
+      return t('runtime starting');
     case 'failed':
-      return 'runtime failed, retrying';
+      return t('runtime failed, retrying');
     default:
-      return 'runtime stopped';
+      return t('runtime stopped');
   }
 }
 
@@ -79,20 +82,27 @@ export function heldApps(desktop: TrayDesktopControl): string[] {
   return [...new Set(desktop.holding.map((row) => row.app))];
 }
 
-export function desktopControlLabel(desktop: TrayDesktopControl): string {
+export function desktopControlLabel(desktop: TrayDesktopControl, locale: Locale = 'en'): string {
+  const t = (message: string, values?: Record<string, unknown>) =>
+    translate(locale, message, values);
   const held = heldApps(desktop);
-  if (held.length) return `the bot is operating ${held.join(', ')}`;
-  if (desktop.pendingRequests) return 'desktop control request waiting';
-  return desktop.enabled ? 'desktop control on' : '';
+  if (held.length) return t('the bot is operating {apps}', { apps: held.join(', ') });
+  if (desktop.pendingRequests) return t('desktop control request waiting');
+  return desktop.enabled ? t('desktop control on') : '';
 }
 
 export function buildTrayTooltip(model: TrayMenuModel): string {
   const unread = unreadTotal(model.conversations);
-  const desktop = desktopControlLabel(model.desktopControl);
-  return `${model.botName} (${runtimeLabel(model.status)})${unread ? ` - ${unread} unread` : ''}${desktop ? ` - ${desktop}` : ''}`;
+  const desktop = desktopControlLabel(model.desktopControl, model.locale);
+  return `${model.botName} (${runtimeLabel(model.status, model.locale)})${unread ? ` - ${translate(model.locale ?? 'en', '{count} unread', { count: unread })}` : ''}${desktop ? ` - ${desktop}` : ''}`;
 }
 
-export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuActions): TrayMenuItem[] {
+export function buildTrayMenuTemplate(
+  model: TrayMenuModel,
+  actions: TrayMenuActions,
+): TrayMenuItem[] {
+  const t = (text: string, values?: Record<string, unknown>) =>
+    translate(model.locale ?? 'en', text, values);
   const home = model.conversations.find((record) => record.role === 'home');
   const notes = model.conversations.filter((record) => record.role === 'note');
   const unread = unreadTotal(model.conversations);
@@ -106,13 +116,17 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
   }
   template.push(
     {
-      label: `${model.botName}: ${runtimeLabel(model.status)}${unread ? `, ${unread} unread` : ''}`
-        + `${model.awaitingOwner ? `, ${model.awaitingOwner} waiting for you` : ''}`,
+      label:
+        `${model.botName}: ${runtimeLabel(model.status)}${unread ? `, ${unread} unread` : ''}` +
+        `${model.awaitingOwner ? `, ${model.awaitingOwner} waiting for you` : ''}`,
       enabled: false,
     },
     { type: 'separator' },
     {
-      label: home && home.unreadCount ? `Open home note (${home.unreadCount})` : 'Open home note',
+      label:
+        home && home.unreadCount
+          ? `Open direct message (${home.unreadCount})`
+          : 'Open direct message',
       click: () => actions.onOpenConversation(home?.id ?? 'home'),
     },
   );
@@ -129,7 +143,7 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
   }
   if (notes.length > 0) {
     template.push({
-      label: 'Notes',
+      label: 'Conversations',
       submenu: notes.map((note) => ({
         label: note.unreadCount ? `${note.title} (${note.unreadCount})` : note.title,
         click: () => actions.onOpenConversation(note.id),
@@ -137,8 +151,8 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
     });
   }
   template.push(
-    { label: 'New note', click: () => actions.onNewNote() },
-    { label: 'Manage notes…', click: () => actions.onOpenSettings('notes') },
+    { label: 'New conversation', click: () => actions.onNewNote() },
+    { label: 'Manage conversations…', click: () => actions.onOpenSettings('notes') },
     { type: 'separator' },
     {
       label: model.heartbeatEnabled ? 'Pause heartbeat' : 'Resume heartbeat',
@@ -168,5 +182,21 @@ export function buildTrayMenuTemplate(model: TrayMenuModel, actions: TrayMenuAct
     { type: 'separator' },
     { label: 'Quit', click: () => actions.onQuit() },
   );
+  // Translate only product-owned labels. Conversation titles remain the owner's words.
+  for (const item of template) {
+    if (item.label) {
+      const count =
+        /^(Open direct message|Provider requests|Desktop control requests|Stop desktop control) \((.+)\)$/u.exec(
+          item.label,
+        );
+      item.label = count ? `${t(count[1]!)} (${count[2]})` : t(item.label);
+    }
+  }
+  template.find((item) => item.enabled === false)!.label =
+    `${model.botName}: ${runtimeLabel(model.status, model.locale)}` +
+    (unread ? `, ${t('{count} unread', { count: unread })}` : '') +
+    (model.awaitingOwner
+      ? `, ${t('{count} waiting for you', { count: model.awaitingOwner })}`
+      : '');
   return template;
 }

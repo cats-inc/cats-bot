@@ -5,9 +5,11 @@ import { BrowserWindow, screen } from 'electron';
 
 import type { BotCore } from '../../core/bot.ts';
 import type { BotHostEvent } from '../../core/types.ts';
+import type { LanguageState } from '../../shared/language.ts';
 import {
   DEFAULT_NOTE_SIZE,
   readShellState,
+  startupConversations,
   writeShellState,
   type NoteLayer,
   type NoteViewState,
@@ -121,6 +123,22 @@ export class NoteWindows {
     this.saveTimer.unref?.();
   }
 
+  flush(): void {
+    for (const [id, window] of this.windows) this.rememberBounds(id, window);
+    if (this.saveTimer) clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+    writeShellState(this.options.botRoot, this.state);
+  }
+
+  private rememberBounds(conversationId: string, window: BrowserWindow): void {
+    if (window.isDestroyed() || window.isMinimized()) return;
+    // Electron reports logical bounds even for Explorer-attached windows.
+    // GetWindowRect includes invisible Windows resize borders and would shift
+    // and grow the saved window at fractional display scaling.
+    const bounds = window.getBounds();
+    Object.assign(this.viewState(conversationId), bounds);
+  }
+
   private viewState(conversationId: string): NoteViewState {
     let view = this.state.views[conversationId];
     if (!view) {
@@ -136,7 +154,7 @@ export class NoteWindows {
 
   /** Conversations whose note was open when the shell last ran. */
   previouslyOpen(): string[] {
-    return Object.entries(this.state.views).filter(([, view]) => view.open).map(([id]) => id);
+    return startupConversations(this.state);
   }
 
   /**
@@ -194,6 +212,7 @@ export class NoteWindows {
     window.on('close', (event) => {
       if (this.options.isQuitting()) return;
       event.preventDefault();
+      this.rememberBounds(conversationId, window);
       window.hide();
       view.open = false;
       this.persist();
@@ -220,17 +239,18 @@ export class NoteWindows {
     });
     const remember = () => {
       if (window.isDestroyed() || !window.isVisible()) return;
-      const { x, y, width, height } = window.getBounds();
-      Object.assign(view, { x, y, width, height });
+      this.rememberBounds(conversationId, window);
       this.persist();
     };
-    window.on('moved', remember);
-    window.on('resized', remember);
+    window.on('move', remember);
+    window.on('resize', remember);
     window.on('show', () => {
       view.open = true;
+      this.rememberBounds(conversationId, window);
       this.persist();
     });
     await window.loadURL(url.href);
+    if (options.restore && view.x !== undefined && view.y !== undefined) window.setBounds(bounds);
     if (layered && options.restore) {
       window.showInactive();
       this.applyLayer(conversationId, window);
@@ -239,9 +259,12 @@ export class NoteWindows {
       window.show();
       this.lift(conversationId, window);
     } else {
-      window.show();
+      if (options.restore) window.showInactive();
+      else window.show();
       this.applyLayer(conversationId, window);
     }
+    this.rememberBounds(conversationId, window);
+    this.persist();
     await this.options.core.openView(conversationId);
     return window;
   }
@@ -256,7 +279,9 @@ export class NoteWindows {
       if (this.lifted.has(conversationId) || desktop.attachedLayer(handle) === view.layer) return;
       // attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other.
       if (!desktop.attach(handle, view.layer)) {
-        this.log(`note ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`);
+        this.log(
+          `conversation ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`,
+        );
       }
       return;
     }
@@ -303,11 +328,14 @@ export class NoteWindows {
   private reopenLater(conversationId: string, tries: number): void {
     const timer = setTimeout(() => {
       if (this.options.isQuitting() || this.windows.has(conversationId)) return;
-      const view = this.state.views[conversationId];
+      let view = this.state.views[conversationId];
       if (!view || !view.open) return;
       this.options.desktop?.refresh();
       void this.open(conversationId, { restore: true }).then(
-        () => this.log(`note ${conversationId}: reopened in the ${view.layer} layer after Explorer restarted`),
+        () =>
+          this.log(
+            `conversation ${conversationId}: reopened in the ${view.layer} layer after Explorer restarted`,
+          ),
         () => {
           if (tries > 1) this.reopenLater(conversationId, tries - 1);
         },
@@ -322,12 +350,13 @@ export class NoteWindows {
     if (!desktop) return;
     desktop.refresh();
     for (const [conversationId, window] of this.windows) {
-      const view = this.state.views[conversationId];
+      let view = this.state.views[conversationId];
       if (!view || window.isDestroyed() || !window.isVisible() || !isAttachedLayer(view.layer) || this.lifted.has(conversationId)) continue;
       const handle = handleOf(window);
       if (!desktop.isAttached(handle) || !desktop.hostAlive(handle)) {
         desktop.detach(handle);
-        if (desktop.attach(handle, view.layer)) this.log(`note ${conversationId}: attached to the ${view.layer} layer again`);
+        if (desktop.attach(handle, view.layer))
+          this.log(`conversation ${conversationId}: attached to the ${view.layer} layer again`);
       }
     }
   }
@@ -340,7 +369,9 @@ export class NoteWindows {
   /** Whether the note of a conversation is the window the owner is looking at. */
   isFocused(conversationId: string): boolean {
     const window = this.windows.get(conversationId);
-    return window !== undefined && !window.isDestroyed() && window.isVisible() && window.isFocused();
+    return (
+      window !== undefined && !window.isDestroyed() && window.isVisible() && window.isFocused()
+    );
   }
 
   windowFor(webContentsId: number): { conversationId: string; window: BrowserWindow } | null {
@@ -356,6 +387,11 @@ export class NoteWindows {
     }
   }
 
+  sendLanguage(state: LanguageState): void {
+    for (const window of this.windows.values())
+      if (!window.isDestroyed()) window.webContents.send('ui:languageChanged', state);
+  }
+
   forget(conversationId: string): void {
     const window = this.windows.get(conversationId);
     if (window && !window.isDestroyed()) window.destroy();
@@ -369,11 +405,7 @@ export class NoteWindows {
       clearInterval(this.healthTimer);
       this.healthTimer = null;
     }
-    if (this.saveTimer) {
-      clearTimeout(this.saveTimer);
-      this.saveTimer = null;
-      writeShellState(this.options.botRoot, this.state);
-    }
+    this.flush();
     for (const window of this.windows.values()) {
       if (!window.isDestroyed()) window.destroy();
     }

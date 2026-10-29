@@ -2,7 +2,16 @@ import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 
-import { Menu, app, dialog, ipcMain, safeStorage, shell, type MenuItemConstructorOptions } from 'electron';
+import {
+  BaseWindow,
+  Menu,
+  app,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+  type MenuItemConstructorOptions,
+} from 'electron';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../../core/bot.ts';
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
@@ -25,6 +34,10 @@ import { BotInstallation, InstallationRecoveryRequired, processIsAlive } from '.
 import { isUpdateSender, updateAction } from './update/ipc.ts';
 import { assertNoOtherUsers } from './update/otherUsers.ts';
 import { initialUpdateState, parseBotRelease, type BotRelease } from './update/release.ts';
+import { TrayUpdateDialog } from './update/dialog.ts';
+import { showDesktopUpdateMessageBox } from './update/presenter.ts';
+import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
+import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The bot
@@ -111,6 +124,7 @@ async function main(): Promise<void> {
   const rendererDir = join(appPath, 'dist', 'renderer');
   const preloadPath = join(assetsDir, 'preload.cjs');
   const iconPath = join(assetsDir, 'icon.png');
+  const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup')));
 
   // SPEC-001 NFR security: the shell keeps secrets encrypted with the OS facility when it has one.
   const cipher: SecretCipher | undefined = safeStorage.isEncryptionAvailable()
@@ -144,6 +158,9 @@ async function main(): Promise<void> {
     } else {
       const opened: { core: BotCore | null } = { core: null };
       const done = await runFirstRunSetup({
+        botRoot: root,
+        systemLocale: app.getLocale(),
+        providers: providerSetup,
         preloadPath,
         rendererDir,
         iconPath,
@@ -153,15 +170,16 @@ async function main(): Promise<void> {
             name: input.name,
             provider: input.provider,
             model: input.model,
+            ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
             ...(input.instructions ? { instructions: input.instructions } : {}),
           });
           opened.core = openCore();
         },
       });
       if (!done || !opened.core) {
-        app.quit();
-        return;
-      }
+    app.quit();
+    return;
+  }
       core = opened.core;
     }
   }
@@ -181,6 +199,8 @@ async function main(): Promise<void> {
     log,
   });
   const settings = new SettingsWindow({ preloadPath, rendererDir, iconPath });
+  const t = (message: string) =>
+    translate(resolveLocale(windows.shellState.language ?? 'system', app.getLocale()), message);
   const openSettings = (tab?: string) => {
     void settings.open(tab).catch((error: unknown) => {
       process.stderr.write(`open settings failed: ${errorMessage(error)}\n`);
@@ -225,6 +245,7 @@ async function main(): Promise<void> {
     const [profile, conversations, desktopControl] = await Promise.all([core.getProfile(), core.listConversations(), trayDesktopControl()]);
     return {
       botName: profile.name,
+      locale: resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
       status: core.status(),
       conversations,
       heartbeatEnabled: profile.heartbeat.enabled,
@@ -253,13 +274,18 @@ async function main(): Promise<void> {
   const quit = () => {
     if (quitting) return;
     quitting = true;
-    void core.stop().finally(() => {
-      windows.destroyAll();
-      settings.destroy();
-      floating.destroy();
-      tray?.dispose();
-      app.quit();
-    });
+    floating.remember();
+    windows.flush();
+    void providerSetup
+      .whenIdle()
+      .then(() => core.stop())
+      .finally(() => {
+        windows.destroyAll();
+        settings.destroy();
+        floating.destroy();
+        tray?.dispose();
+        app.quit();
+      });
   };
 
   let release: BotRelease | null = null;
@@ -271,45 +297,84 @@ async function main(): Promise<void> {
     portable: process.platform === 'win32' && Boolean(process.env.PORTABLE_EXECUTABLE_FILE) });
   const autoUpdater = initialUpdate.canCheck ? (require('electron-updater') as typeof import('electron-updater')).autoUpdater : null;
   if (autoUpdater) configureUpdater(autoUpdater);
-  const updates = new BotUpdateController(initialUpdate, autoUpdater ? createUpdaterAdapter(autoUpdater, {
-    onQuit: listener => { app.once('quit', listener); return () => { app.removeListener('quit', listener); }; },
-    ...(process.platform === 'linux' ? { installDeb: (file: string) => installDebianUpdate(file, () => {
-      app.relaunch({ args: [...process.argv.slice(1), '--id', botId] }); app.quit();
-    }) } : {}),
-  }) : null, {
-    acquireInstall: version => {
-      if (!installation) throw new Error('This installation cannot update itself.');
-      assertNoOtherUsers(process.execPath);
-      return installation.acquire(version);
-    },
-    drain: async () => {
-      quitting = true;
-      const runtimePid = core.status().runtime.pid;
-      await core.stop();
-      if (core.status().runtime.pid || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
-      assertNoOtherUsers(process.execPath);
-    },
-    recover: async (uncertain, error) => {
-      dialog.showErrorBox('Cats Bot update', `${error.message}\n\n${uncertain
+  const updates = new BotUpdateController(
+    initialUpdate,
+    autoUpdater
+      ? createUpdaterAdapter(autoUpdater, {
+          onQuit: (listener) => {
+            app.once('quit', listener);
+            return () => { app.removeListener('quit', listener); };
+          },
+          ...(process.platform === 'linux'
+            ? {
+                installDeb: (file: string) =>
+                  installDebianUpdate(file, () => {
+                    app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+                    app.quit();
+                  }),
+              }
+            : {}),
+        })
+      : null,
+    {
+      acquireInstall: (version) => {
+        if (!installation) throw new Error('This installation cannot update itself.');
+        assertNoOtherUsers(process.execPath);
+        return installation.acquire(version);
+      },
+      drain: async () => {
+        quitting = true;
+        floating.remember();
+        windows.flush();
+        await providerSetup.whenIdle();
+        const runtimePid = core.status().runtime.pid;
+        await core.stop();
+        if (core.status().runtime.pid || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
+        assertNoOtherUsers(process.execPath);
+      },
+      recover: async (uncertain, error) => {
+        dialog.showErrorBox('Cats Bot update', `${error.message}\n\n${uncertain
         ? 'Check the installer before reopening Cats Bot.' : 'Cats Bot will restart the current installation.'}`);
-      if (!uncertain) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
-      app.quit();
+        if (!uncertain) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+        app.quit();
+      },
+      openRelease: (url) => shell.openExternal(url),
+      changed: (state) => {
+        settings.browserWindow?.webContents.send('shell:update', state);
+      },
     },
-    openRelease: url => shell.openExternal(url),
-    changed: state => { settings.browserWindow?.webContents.send('shell:update', state); },
-  });
+  );
 
+  const trayUpdates = new TrayUpdateDialog({
+    controller: updates,
+    locale: () => resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
+    stopping: () => quitting,
+    show: (dialogSpec) =>
+      showDesktopUpdateMessageBox({
+        platform: process.platform,
+        dialogSpec,
+        createOwner: (options) => new BaseWindow(options),
+        focusApp: () => app.focus({ steal: true }),
+        showMessageBox: (options, owner) =>
+          owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
+      }),
+  });
   const trayActions: TrayMenuActions = {
     onOpenConversation: (conversationId) => {
-      void windows.open(conversationId).then(refreshTray).catch((error: unknown) => {
-        process.stderr.write(`open note failed: ${errorMessage(error)}\n`);
-      });
+      void windows
+        .open(conversationId)
+        .then(refreshTray)
+        .catch((error: unknown) => {
+          process.stderr.write(`open conversation failed: ${errorMessage(error)}\n`);
+        });
     },
     onNewNote: () => {
       void core.createConversation().then((record) => windows.open(record.id)).then(refreshTray);
     },
     onOpenSettings: openSettings,
-    onCheckForUpdates: () => { openSettings('app'); void updates.check(); },
+    onCheckForUpdates: () => {
+      void trayUpdates.open().catch((error) => log(errorMessage(error)));
+    },
     onToggleHeartbeat: (enabled) => {
       void core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
@@ -328,6 +393,43 @@ async function main(): Promise<void> {
   const fromNote = (event: Electron.IpcMainInvokeEvent) => windows.windowFor(event.sender.id) !== null;
   const fromSettings = (event: Electron.IpcMainInvokeEvent) => settings.owns(event.sender.id);
   const fromFloating = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => floating.owns(event.sender.id);
+  const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
+    event.senderFrame === event.sender.mainFrame;
+  const languageState = () => ({
+    preference: windows.shellState.language ?? 'system',
+    locale: resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
+  });
+  ipcMain.handle('ui:language', (event) => {
+    if (
+      !ownedMainFrame(event) ||
+      (!fromNote(event) && !fromSettings(event) && !fromFloating(event))
+    )
+      throw new Error('Unknown window');
+    return languageState();
+  });
+  ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
+    if (!ownedMainFrame(event) || !fromSettings(event) || !isLanguagePreference(value))
+      throw new Error('Invalid display language');
+    windows.shellState.language = value;
+    windows.flush();
+    windows.sendLanguage(languageState());
+    settings.browserWindow?.webContents.send('ui:languageChanged', languageState());
+    floating.browserWindow?.webContents.send('ui:languageChanged', languageState());
+    void refreshTray();
+    return languageState();
+  });
+  ipcMain.handle('setup:check', (event, provider: unknown) => {
+    if (quitting) throw new Error('Cats Bot is stopping');
+    if (!ownedMainFrame(event) || !fromSettings(event))
+      throw new Error('Provider setup is available only from Settings');
+    return providerSetup.check(provider);
+  });
+  ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
+    if (quitting) throw new Error('Cats Bot is stopping');
+    if (!ownedMainFrame(event) || !fromSettings(event))
+      throw new Error('Provider setup is available only from Settings');
+    return providerSetup.install(provider, step);
+  });
 
   ipcMain.handle('shell:updateState', event => {
     if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
@@ -335,9 +437,24 @@ async function main(): Promise<void> {
   });
   ipcMain.handle('shell:updateAction', (event, action: unknown) => {
     if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
-    return updateAction(updates, action, async () => (await dialog.showMessageBox({ type: 'question', title: 'Install Cats Bot update',
-      message: 'Stop this bot and install the downloaded update?', detail: 'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.',
-      buttons: ['Cancel', 'Restart and install'], defaultId: 0, cancelId: 0 })).response === 1);
+    return updateAction(
+      updates,
+      action,
+      async () =>
+        (
+          await dialog.showMessageBox({
+            type: 'question',
+            title: t('Install Cats Bot update'),
+            message: t('Stop this bot and install the downloaded update?'),
+            detail: t(
+              'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.',
+            ),
+            buttons: [t('Cancel'), t('Restart and install')],
+            defaultId: 0,
+            cancelId: 0,
+          })
+        ).response === 1,
+    );
   });
 
   ipcMain.handle('bot:invoke', async (event, command: unknown, args: unknown) => {
@@ -353,7 +470,8 @@ async function main(): Promise<void> {
     const list = Array.isArray(args) ? args : [];
     // Provider requests and desktop control belong to one note (SPEC-004, SPEC-006 BDC-07).
     const sender = { note: windows.windowFor(event.sender.id)?.conversationId ?? null, settings: fromSettings(event), floating: fromFloating(event) };
-    if (!senderMayInvoke(command, list, sender)) throw new Error('This request belongs to another note.');
+    if (!senderMayInvoke(command, list, sender))
+      throw new Error('This request belongs to another conversation.');
     const result = await runHostCommand(core, command, list, url => shell.openExternal(url));
     if (command === 'deleteConversation' && typeof list[0] === 'string') windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
@@ -383,7 +501,7 @@ async function main(): Promise<void> {
     if (!owner) return null;
     const current = windows.layerOf(owner.conversationId);
     const template: MenuItemConstructorOptions[] = windows.availableLayers().map((layer) => ({
-      label: NOTE_LAYER_LABELS[layer],
+      label: t(NOTE_LAYER_LABELS[layer]),
       type: 'radio',
       checked: layer === current,
       click: () => {
@@ -456,11 +574,11 @@ async function main(): Promise<void> {
     const owner = settings.browserWindow;
     if (!fromSettings(event) || !owner) return null;
     const result = await dialog.showOpenDialog(owner, {
-      title: 'Workspace folder',
+      title: t('Workspace folder'),
       properties: ['openDirectory', 'createDirectory'],
       ...(typeof current === 'string' && current ? { defaultPath: current } : {}),
     });
-    return result.canceled ? null : result.filePaths[0] ?? null;
+    return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle('shell:openDataFolder', async (event) => {
     if (!fromSettings(event)) return null;
@@ -479,14 +597,14 @@ async function main(): Promise<void> {
     floating.broadcast(event);
     if (event.type === 'provider.interactions') {
       if (event.notify && !windows.isFocused(event.conversationId)) {
-        void showBubble(event.conversationId, 'The provider is waiting for your response.');
+        void showBubble(event.conversationId, t('The provider is waiting for your response.'));
       }
       void refreshTray();
     }
     if (event.type === 'desktop.control') {
       // BDC-12: like the Telegram notice, the bubble names no app, path or request.
       if (event.notify && event.conversationId && !windows.isFocused(event.conversationId)) {
-        void showBubble(event.conversationId, 'A desktop control request is waiting for you.');
+        void showBubble(event.conversationId, t('A desktop control request is waiting for you.'));
       }
       void refreshTray();
     }
@@ -516,11 +634,19 @@ async function main(): Promise<void> {
   app.on('second-instance', () => {
     void windows.open('home');
   });
-  app.on('before-quit', () => {
-    quitting = true;
+  app.on('before-quit', (event) => {
+    if (quitting) return;
+    event.preventDefault();
+    quit();
   });
 
   try {
+    if (!readProviderOverrides().providerCommand) {
+      await providerSetup
+        .prepareEnvironment((await core.getProfile()).executionTarget.provider)
+        .catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+    }
+    if (quitting) return;
     await core.start();
   } catch (error) {
     if (error instanceof BotInstanceRunningError) {
@@ -535,14 +661,16 @@ async function main(): Promise<void> {
   await refreshTray();
   if (windows.shellState.floatingBot.visible) setFloatingVisible(true);
   const reopen = windows.previouslyOpen();
-  for (const conversationId of reopen.length > 0 ? reopen : ['home']) {
+  for (const conversationId of reopen) {
     await windows.open(conversationId, { restore: true }).catch((error: unknown) => {
-      process.stderr.write(`reopen note failed: ${errorMessage(error)}\n`);
+      process.stderr.write(`reopen conversation failed: ${errorMessage(error)}\n`);
     });
   }
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(`${error instanceof Error ? error.stack ?? error.message : String(error)}\n`);
+  process.stderr.write(
+    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
+  );
   app.exit(1);
 });

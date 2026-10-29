@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron';
 
-import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
+import { join } from 'node:path';
+import { listProviders, readLocalModelCatalog } from '../../core/providers/catalog.ts';
+import type { ProviderSetup } from './providerSetup.ts';
+import { isLanguagePreference, resolveLocale } from '../../shared/language.ts';
+import { readShellState, writeShellState } from './viewState.ts';
 import { createPageWindow, pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { validateSetupInput, type SetupInput } from './setupInput.ts';
 
@@ -13,27 +17,71 @@ import { validateSetupInput, type SetupInput } from './setupInput.ts';
 
 export interface FirstRunOptions extends PageWindowOptions {
   create(input: SetupInput): Promise<void>;
+  botRoot: string;
+  systemLocale: string;
+  providers: ProviderSetup;
 }
 
 export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
   return new Promise((resolve) => {
     const window = createPageWindow(options, { width: 560, height: 800, title: 'Set up Cats Bot' });
     let finished = false;
-    const fromSetup = (event: Electron.IpcMainInvokeEvent) => event.sender.id === window.webContents.id;
+    let submitting = false;
+    window.on('close', (event) => {
+      if (options.providers.busy || submitting) event.preventDefault();
+    });
+    const fromSetup = (event: Electron.IpcMainInvokeEvent) =>
+      event.sender.id === window.webContents.id && event.senderFrame === event.sender.mainFrame;
+    const state = readShellState(options.botRoot);
+    const language = () => ({
+      preference: state.language ?? 'system',
+      locale: resolveLocale(state.language ?? 'system', options.systemLocale),
+    });
     const cleanup = () => {
       ipcMain.removeHandler('setup:providers');
       ipcMain.removeHandler('setup:models');
       ipcMain.removeHandler('setup:finish');
+      for (const channel of ['setup:check', 'setup:install', 'ui:language', 'ui:setLanguage'])
+        ipcMain.removeHandler(channel);
     };
     ipcMain.handle('setup:providers', (event) => (fromSetup(event) ? listProviders() : []));
     ipcMain.handle('setup:models', (event, provider: unknown) => {
       if (!fromSetup(event) || typeof provider !== 'string') return { provider: '', defaultModel: null, models: [], source: 'none' };
-      return readPackagedModelCatalog(provider);
+      return readLocalModelCatalog(provider, join(options.botRoot, 'runtime'));
+    });
+    ipcMain.handle('setup:check', (event, provider: unknown) => {
+      if (!fromSetup(event)) throw new Error('Unknown setup window');
+      return options.providers.check(provider);
+    });
+    ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
+      if (!fromSetup(event)) throw new Error('Unknown setup window');
+      return options.providers.install(provider, step);
+    });
+    ipcMain.handle('ui:language', (event) => {
+      if (!fromSetup(event)) throw new Error('Unknown setup window');
+      return language();
+    });
+    ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
+      if (!fromSetup(event) || !isLanguagePreference(value))
+        throw new Error('Invalid display language');
+      state.language = value;
+      writeShellState(options.botRoot, state);
+      window.webContents.send('ui:languageChanged', language());
+      return language();
     });
     ipcMain.handle('setup:finish', async (event, raw: unknown) => {
-      if (!fromSetup(event) || finished) return null;
+      if (!fromSetup(event) || finished || submitting)
+        throw new Error('Setup is already finishing');
       const input = validateSetupInput(raw);
-      await options.create(input);
+      submitting = true;
+      try {
+        const checked = await options.providers.check(input.provider);
+        if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
+        await options.create(input);
+      } catch (error) {
+        submitting = false;
+        throw error;
+      }
       finished = true;
       cleanup();
       resolve(true);

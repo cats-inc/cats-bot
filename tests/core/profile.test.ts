@@ -21,6 +21,83 @@ after(() => home.cleanup());
 
 const now = new Date('2026-10-27T10:00:00.000Z');
 
+test('catalog selection and controls survive restart and changing effort invalidates the session', () => {
+  const paths = botPathsFor(`${home.botsHome}/selection`);
+  mkdirSync(paths.root, { recursive: true });
+  const selection = {
+    entryMode: 'explicit' as const,
+    entryId: 'gpt-6.1-sol',
+    catalogRevision: 'factory:fixture',
+    controls: { 'codex.reasoning_effort': 'high' },
+  };
+  const profile = createProfile({
+    id: 'selection',
+    name: 'Bot',
+    provider: 'codex',
+    model: selection.entryId,
+    modelSelection: selection,
+    cwd: paths.root,
+    now,
+  });
+  saveProfile(paths, profile);
+  const loaded = loadProfile(paths, profile);
+  assert.ok(loaded.ok);
+  assert.deepEqual(loaded.profile.executionTarget.modelSelection, selection);
+  const rename = applyProfilePatch(loaded.profile, { name: 'Renamed' }, now);
+  assert.equal(rename.sessionChanged, false);
+  assert.deepEqual(rename.profile.executionTarget, profile.executionTarget);
+  const changed = applyProfilePatch(
+    profile,
+    {
+      executionTarget: {
+        ...profile.executionTarget,
+        modelSelection: { ...selection, controls: { 'codex.reasoning_effort': 'max' } },
+      },
+    },
+    now,
+  );
+  assert.equal(changed.sessionChanged, true);
+  assert.equal(changed.providerChanged, false);
+  assert.equal(changed.profile.configRevision, profile.configRevision + 1);
+  const same = applyProfilePatch(
+    changed.profile,
+    { executionTarget: { provider: 'codex', model: selection.entryId } },
+    now,
+  );
+  assert.equal(
+    same.sessionChanged,
+    false,
+    'an older caller omitting the selection does not erase saved effort',
+  );
+  const provider = applyProfilePatch(
+    changed.profile,
+    { executionTarget: { provider: 'claude', model: 'opus' } },
+    now,
+  );
+  assert.equal(
+    provider.profile.executionTarget.modelSelection,
+    undefined,
+    'old provider controls never bleed into a new target',
+  );
+});
+
+test('legacy providers, null models and custom model IDs remain unchanged on unrelated saves', () => {
+  for (const provider of ['codex', 'copilot', 'custom-cli'])
+    for (const model of [null, 'private-model']) {
+      const profile = createProfile({
+        id: 'old',
+        name: 'Bot',
+        provider,
+        model,
+        cwd: 'C:/work',
+        now,
+      });
+      const saved = applyProfilePatch(profile, { name: 'New name' }, now);
+      assert.deepEqual(saved.profile.executionTarget, { provider, model });
+      assert.equal(saved.sessionChanged, false);
+    }
+});
+
 test('createProfile applies the SPEC-001 FR-1 defaults', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
   assert.equal(profile.schemaVersion, 2);

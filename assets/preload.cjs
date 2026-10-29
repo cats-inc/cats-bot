@@ -14,6 +14,19 @@ const params = new URLSearchParams(globalThis.location.search);
 
 contextBridge.exposeInMainWorld('catsBot', {
   conversationId: params.get('conversation') || 'home',
+  language: {
+    get() {
+      return ipcRenderer.invoke('ui:language');
+    },
+    set(value) {
+      return ipcRenderer.invoke('ui:setLanguage', value);
+    },
+    onChange(listener) {
+      const wrapped = (_event, state) => listener(state);
+      ipcRenderer.on('ui:languageChanged', wrapped);
+      return () => ipcRenderer.removeListener('ui:languageChanged', wrapped);
+    },
+  },
   invoke(command, ...args) {
     return ipcRenderer.invoke('bot:invoke', command, args);
   },
@@ -121,6 +134,12 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
   },
   setup: {
+    check(provider) {
+      return ipcRenderer.invoke('setup:check', provider);
+    },
+    install(provider, step) {
+      return ipcRenderer.invoke('setup:install', provider, step);
+    },
     providers() {
       return ipcRenderer.invoke('setup:providers');
     },

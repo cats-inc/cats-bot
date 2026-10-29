@@ -1,3 +1,5 @@
+import { t, useI18n } from '../i18n.ts';
+import { conversationTitle } from '../localeStore.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from '../../core/types.ts';
@@ -41,6 +43,7 @@ const LAYER_TITLES: Record<NoteLayer, string> = {
 const api = window.catsBot;
 
 function Entry({ entry }: { entry: TranscriptEntry }) {
+  useI18n();
   const meta = entryMeta(entry);
   return (
     <div className={entryClass(entry.kind)}>
@@ -58,29 +61,43 @@ const TOOL_STATUS: Record<ToolItem['status'], { mark: string; label: string }> =
 
 /** SPEC-003 FR-4: a tool call and its result, collapsed to one line until opened. */
 function ToolCard({ item }: { item: ToolItem }) {
+  useI18n();
   const [open, setOpen] = useState(false);
   const status = TOOL_STATUS[item.status];
   return (
     <div className={`tool-card tool-${item.status}`}>
-      <button className="tool-head" aria-expanded={open} title={open ? 'Hide details' : 'Show input and result'} onClick={() => setOpen(!open)}>
-        <span className="tool-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
-        <span className="tool-name" title={item.name}>{item.name}</span>
+      <button
+        className="tool-head"
+        aria-expanded={open}
+        title={open ? t('Hide details') : t('Show input and result')}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="tool-caret" aria-hidden="true">
+          {open ? '▾' : '▸'}
+        </span>
+        <span className="tool-name" title={item.name}>
+          {item.name}
+        </span>
         <span className="tool-summary">{toolSummary(item)}</span>
-        <span className="tool-status" title={status.label}>{status.mark}</span>
+        <span className="tool-status" title={t(status.label)}>
+          {status.mark}
+        </span>
       </button>
       {open && (
         <div className="tool-body">
           {item.input && (
             <>
-              <div className="tool-label">Input</div>
+              <div className="tool-label">{t('Input')}</div>
               <pre className="tool-text">{item.input}</pre>
             </>
           )}
-          <div className="tool-label">Result</div>
+          <div className="tool-label">{t('Result')}</div>
           {item.result === null ? (
-            <div className="tool-empty">{item.status === 'running' ? 'Still running…' : 'No result was reported.'}</div>
+            <div className="tool-empty">
+              {item.status === 'running' ? t('Still running…') : t('No result was reported.')}
+            </div>
           ) : (
-            <pre className="tool-text">{item.result || '(empty)'}</pre>
+            <pre className="tool-text">{item.result || t('(empty)')}</pre>
           )}
         </div>
       )}
@@ -96,6 +113,7 @@ const DECISION_OUTCOMES: Record<Exclude<DecisionStatus, 'waiting'>, string> = {
 
 /** SPEC-003 FR-5: a question for the owner; buttons only while its work item waits. */
 function DecisionCard({ item }: { item: DecisionItem }) {
+  useI18n();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const decide = async (decision: ApprovalDecision) => {
@@ -114,16 +132,20 @@ function DecisionCard({ item }: { item: DecisionItem }) {
       <div className="decision-text">{item.entry.text}</div>
       {item.status === 'waiting' ? (
         <div className="decision-actions">
-          <button className="decision-approve" disabled={busy} onClick={() => void decide('approve')}>
-            Approve
+          <button
+            className="decision-approve"
+            disabled={busy}
+            onClick={() => void decide('approve')}
+          >
+            {t('Approve')}
           </button>
           <button className="decision-deny" disabled={busy} onClick={() => void decide('deny')}>
-            Deny
+            {t('Deny')}
           </button>
         </div>
       ) : (
         <div className="decision-outcome">
-          {DECISION_OUTCOMES[item.status]}
+          {t(DECISION_OUTCOMES[item.status])}
           {item.detail ? `: ${item.detail}` : ''}
         </div>
       )}
@@ -133,6 +155,7 @@ function DecisionCard({ item }: { item: DecisionItem }) {
 }
 
 export function NoteApp() {
+  const { locale } = useI18n();
   const requested = api.conversationId;
   // The note may be opened as `home`; the record's id replaces it once known.
   const conversation = useRef(requested);
@@ -173,10 +196,10 @@ export function NoteApp() {
     if (!record) return;
     conversation.current = record.id;
     const profile = await api.invoke('getProfile');
-    setTitle(record.role === 'home' ? profile.name : `${profile.name} · ${record.title}`);
+    setTitle(`${profile.name} · ${conversationTitle(record)}`);
     setUnread(record.unreadCount);
     setLayer((await api.window.state()).layer);
-  }, [requested]);
+  }, [requested, locale]);
 
   // A transcript read keeps the reply being streamed; it is not in the transcript until the turn ends.
   const reload = useCallback(async () => {
@@ -283,7 +306,10 @@ export function NoteApp() {
       await api.invoke('sendOwnerMessage', conversation.current, text);
     } catch (error) {
       setRunning(false);
-      setEntries((current) => [...current, localEntry('error', `Could not send: ${errorText(error)}`)]);
+      setEntries((current) => [
+        ...current,
+        localEntry('error', t('Could not send: {error}', { error: errorText(error) })),
+      ]);
     }
   };
 
@@ -299,21 +325,42 @@ export function NoteApp() {
   return (
     <>
       <header className="note-header" id="header">
-        <span className="note-title" id="title">{title}</span>
+        <span className="note-title" id="title">
+          {title}
+        </span>
         <span className="note-unread" id="unread" hidden={unread === 0}>
           {unread}
         </span>
         <span className="note-state" id="state">
-          {interactions.some(i => i.status === 'pending') || grantRequests.length > 0 ? 'waiting for you' : running ? 'thinking…' : runtimeNote}
+          {interactions.some((i) => i.status === 'pending') || grantRequests.length > 0
+            ? t('waiting for you')
+            : running
+              ? t('thinking…')
+              : t(runtimeNote)}
         </span>
         <span className="note-spacer" />
-        <button className="note-button" id="settings" title="Settings and notes" onClick={() => void api.shell.openSettings()}>
+        <button
+          className="note-button"
+          id="settings"
+          title={t('Settings and conversations')}
+          onClick={() => void api.shell.openSettings()}
+        >
           ⚙
         </button>
-        <button className="note-button" id="layer" title={`${LAYER_TITLES[layer]} (click to change)`} onClick={() => void api.window.layerMenu()}>
+        <button
+          className="note-button"
+          id="layer"
+          title={`${t(LAYER_TITLES[layer])} (${t('click to change')})`}
+          onClick={() => void api.window.layerMenu()}
+        >
           {LAYER_ICONS[layer]}
         </button>
-        <button className="note-button" id="hide" title="Hide (the bot keeps running)" onClick={() => void api.window.hide()}>
+        <button
+          className="note-button"
+          id="hide"
+          title={t('Hide (the bot keeps running)')}
+          onClick={() => void api.window.hide()}
+        >
           ✕
         </button>
       </header>
@@ -330,8 +377,16 @@ export function NoteApp() {
           </div>
         )}
         <div ref={interactionAnchor}>
-          {activeRequests.map(i => <InteractionCard key={`${i.workerGeneration}:${i.interactionId}`} interaction={i} refresh={refreshInteractions} />)}
-          {grantRequests.map(r => <DesktopGrantCard key={r.requestId} request={r} model={desktop} />)}
+          {activeRequests.map((i) => (
+            <InteractionCard
+              key={`${i.workerGeneration}:${i.interactionId}`}
+              interaction={i}
+              refresh={refreshInteractions}
+            />
+          ))}
+          {grantRequests.map((r) => (
+            <DesktopGrantCard key={r.requestId} request={r} model={desktop} />
+          ))}
         </div>
       </main>
       <footer className="note-composer">
@@ -339,17 +394,22 @@ export function NoteApp() {
           id="input"
           ref={inputRef}
           rows={2}
-          placeholder="Say something… (Enter to send, Shift+Enter for a new line)"
+          placeholder={t('Say something… (Enter to send, Shift+Enter for a new line)')}
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
         <div className="note-actions">
           <button className="note-send" id="send" disabled={running} onClick={() => void send()}>
-            Send
+            {t('Send')}
           </button>
-          <button className="note-cancel" id="cancel" hidden={!running} onClick={() => void api.invoke('cancelTurn', conversation.current)}>
-            Cancel
+          <button
+            className="note-cancel"
+            id="cancel"
+            hidden={!running}
+            onClick={() => void api.invoke('cancelTurn', conversation.current)}
+          >
+            {t('Cancel')}
           </button>
         </div>
       </footer>

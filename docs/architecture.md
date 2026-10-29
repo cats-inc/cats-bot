@@ -5,6 +5,13 @@
 
 ## Overview
 
+Desktop parity is specified by
+[ADR-006](decisions/006-share-runtime-catalogs-and-package-provider-setup-helpers.md):
+Runtime's public catalog projection/advanced HTTP catalog supplies model controls;
+provider-specific setup helpers are vendored with exact provenance. Shell-owned
+language preferences and native tray dialogs do not change core ownership. Product
+surfaces use Conversation and Direct message; older internal names remain compatible.
+
 One bot is one resident process tree: a Node **bot core** that owns the bot's
 profile, conversations, work journal and every timer; a private
 **cats-runtime** child it starts and supervises over loopback HTTP; and the
@@ -229,12 +236,12 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ## Technology Stack
 
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| Core | Node.js 24, TypeScript 5 (ESM, erasable syntax) | headless bot core and CLI |
-| Execution | `@cats-inc/cats-runtime` (exact pin), provider CLIs | sessions, resume, streaming |
-| Tests | `node:test`, a fake runtime, a scripted fixture CLI | unit, core and integration tests |
-| Shell (later) | Electron | tray and sticky notes |
+| Layer         | Technology                                          | Purpose                          |
+| ------------- | --------------------------------------------------- | -------------------------------- |
+| Core          | Node.js 24, TypeScript 5 (ESM, erasable syntax)     | headless bot core and CLI        |
+| Execution     | `@cats-inc/cats-runtime` (exact pin), provider CLIs | sessions, resume, streaming      |
+| Tests         | `node:test`, a fake runtime, a scripted fixture CLI | unit, core and integration tests |
+| Shell (later) | Electron                                            | tray and sticky notes            |
 
 ## Design Patterns
 
@@ -258,4 +265,4 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ---
 
-*Last updated: 2026-10-29*
+_Last updated: 2026-10-29_

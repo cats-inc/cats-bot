@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { readCatalogFactory, resolveCatalogPaths } from '@cats-inc/cats-runtime/catalogs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import {
@@ -10,6 +12,7 @@ import {
   findOnPath,
   listProviders,
   readPackagedModelCatalog,
+  readLocalModelCatalog,
 } from '../../src/core/providers/catalog.ts';
 import { renderProvidersConfig } from '../../src/core/runtime/providersConfig.ts';
 import { validateSetupInput } from '../../src/shell/electron/setupInput.ts';
@@ -91,6 +94,48 @@ test('the running runtime answers for the bot provider; other providers fall bac
   }
   const stopped = await core.listModels('claude');
   assert.equal(stopped.source, 'packaged', 'without a runtime the shipped catalog is used');
+});
+
+test('local provider selection shares Runtime override precedence, controls and revision without writing state', () => {
+  const runtimeRoot = join(dir, 'local-catalog');
+  const packageRoot = dirname(
+    createRequire(import.meta.url).resolve('@cats-inc/cats-runtime/package.json'),
+  );
+  const paths = resolveCatalogPaths({ packageRoot, runtimeRoot });
+  mkdirSync(dirname(paths.overridePath), { recursive: true });
+  const factory = readCatalogFactory(paths).document;
+  const scope = structuredClone(
+    factory.catalogs.find((scope) => scope.provider === 'codex' && scope.backend === 'cli')!,
+  );
+  scope.models[0]!.label = 'Owner catalog label';
+  const control = scope.models[0]!.controls!.find(
+    (control) => control.key === 'codex.reasoning_effort',
+  )!;
+  control.default = 'high';
+  const original = JSON.stringify({ schema_version: 2, catalogs: [scope] });
+  writeFileSync(paths.overridePath, original);
+  const local = readLocalModelCatalog('codex', runtimeRoot);
+  assert.equal(local.models[0]?.label, 'Owner catalog label');
+  assert.deepEqual(local.models[0]?.controls, scope.models[0]?.controls);
+  assert.equal(local.models[0]?.controlDefaults?.['codex.reasoning_effort'], 'high');
+  assert.ok(local.catalogRevision);
+  assert.deepEqual(
+    readLocalModelCatalog('claude', runtimeRoot).models,
+    readPackagedModelCatalog('claude').models,
+  );
+  assert.equal(readFileSync(paths.overridePath, 'utf8'), original);
+  assert.equal(
+    existsSync(join(runtimeRoot, 'data')),
+    false,
+    'read-only projection does not activate a snapshot',
+  );
+  writeFileSync(paths.overridePath, 'schema_version: invalid');
+  assert.throws(() => readLocalModelCatalog('codex', runtimeRoot));
+  assert.equal(
+    readFileSync(paths.overridePath, 'utf8'),
+    'schema_version: invalid',
+    'invalid owner data is not silently replaced',
+  );
 });
 
 test('notes can be renamed, never to an empty title', async () => {

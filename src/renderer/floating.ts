@@ -3,6 +3,7 @@
 // window ignores the mouse except over the cat and the bubble; dragging moves
 // the window, a click opens the home note and a right click opens the tray menu.
 import type { RuntimeState } from '../core/types.ts';
+import { translate, type Locale } from '../shared/language.ts';
 
 const api = window.catsBot;
 const $ = (id: string): HTMLElement => {
@@ -14,6 +15,15 @@ const body = document.body;
 const cat = $('cat');
 const badge = $('badge');
 const bubble = $('bubble');
+let locale: Locale = 'en';
+const changeLanguage = (next: { locale: Locale }) => {
+  locale = next.locale;
+  document.documentElement.lang = locale;
+  $('bubble-close').setAttribute('aria-label', translate(locale, 'Dismiss'));
+  render();
+};
+void api.language.get().then(changeLanguage);
+api.language.onChange(changeLanguage);
 
 const running = new Set<string>();
 let runtimeState: RuntimeState = 'starting';
@@ -31,7 +41,10 @@ function render(): void {
   badge.hidden = unread === 0;
   badge.textContent = unread > 99 ? '99+' : String(unread);
   const state = running.size > 0 ? 'thinking' : homeSleeping ? 'asleep' : runtimeState === 'ready' ? 'awake' : `runtime ${runtimeState}`;
-  cat.title = `${botName}: ${state}${unread ? `, ${unread} unread` : ''}\nClick to open, drag to move, right-click for the menu`;
+  cat.setAttribute(
+    'aria-label',
+    `${botName}: ${translate(locale, state)}${unread ? `, ${translate(locale, '{count} unread', { count: unread })}` : ''}`,
+  );
 }
 
 async function refresh(): Promise<void> {

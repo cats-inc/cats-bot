@@ -1,0 +1,177 @@
+{
+  "repository": "https://github.com/cats-inc/cats-platform",
+  "commit": "07a02f3a30b9e02f0e25e01c348af69a500b3ae6",
+  "files": [
+    {
+      "source": "scripts/windows/Install-Node.ps1",
+      "sha256": "f61cb84a488160224b0f3f463cc05eed50c0cccfc893745b6efb6ad57bf6e9f2",
+      "path": "windows/Install-Node.ps1"
+    },
+    {
+      "source": "scripts/windows/Setup-NodeGlobalPrefix.ps1",
+      "sha256": "5409588343d63a4064f0c3bf0575181b55acc041a8c1b2669a2ef293fb79424b",
+      "path": "windows/Setup-NodeGlobalPrefix.ps1"
+    },
+    {
+      "source": "scripts/windows/Install-Codex.ps1",
+      "sha256": "4e8fb703f2aa6a0a10898832756dc9d55f48c18f7e61a2c631e1a558378ff716",
+      "path": "windows/Install-Codex.ps1"
+    },
+    {
+      "source": "scripts/windows/Install-ClaudeCode.ps1",
+      "sha256": "394f6d9d1d9b83a30b409b747fd17577a685d98ac2e6b22f1a10a5a5f2680644",
+      "path": "windows/Install-ClaudeCode.ps1"
+    },
+    {
+      "source": "scripts/windows/Install-Antigravity.ps1",
+      "sha256": "7892748418407eca1c1974b49dcdda99d9e16c24c30da59ef53531c4561eb0b1",
+      "path": "windows/Install-Antigravity.ps1"
+    },
+    {
+      "source": "scripts/windows/Install-Grok.ps1",
+      "sha256": "5a74b65e852075e03ff1223469b6bff44f764f4703c7f00900cfc4be8c78fe92",
+      "path": "windows/Install-Grok.ps1"
+    },
+    {
+      "source": "scripts/windows/Install-MetaCli.ps1",
+      "sha256": "bc90e121b721e84ff0409f8eebd4941cca2ae76e7bd2ee2b6e00b05fe28b3c23",
+      "path": "windows/Install-MetaCli.ps1"
+    },
+    {
+      "source": "scripts/windows/_HiddenProcess.ps1",
+      "sha256": "80d749965d1571686f54499bbfdac787eb08a4f590c4cf5d746e51ba6b355428",
+      "path": "windows/_HiddenProcess.ps1"
+    },
+    {
+      "source": "scripts/windows/_NativeInstallerSupport.ps1",
+      "sha256": "fa74ec76ea7f807805b39881daaf4c597463464cec3d681c3a7fb734e76c8c6f",
+      "path": "windows/_NativeInstallerSupport.ps1"
+    },
+    {
+      "source": "scripts/windows/_PackagedUninstall.ps1",
+      "sha256": "25b0c23737e73b8df59c8890e34bf14a4c3359e301fbd31c29afe8a4571fdff6",
+      "path": "windows/_PackagedUninstall.ps1"
+    },
+    {
+      "source": "scripts/windows/_NpmCliInstaller.ps1",
+      "sha256": "57a60bbb1462c04f7861451ddb26e560cbcdd402406a984012b88655dfee62bb",
+      "path": "windows/_NpmCliInstaller.ps1"
+    },
+    {
+      "source": "scripts/windows/_VerifiedNpmUpdate.ps1",
+      "sha256": "d7c1ca354cda085c07036d7ac75937fcdbc567bcab550fc7a088f96728a83c99",
+      "path": "windows/_VerifiedNpmUpdate.ps1"
+    },
+    {
+      "source": "scripts/macos/install-node.sh",
+      "sha256": "a52ec312dd45383050276c05a9974c3a04918aa31cccd23c95218c0a1cc15a4e",
+      "path": "macos/install-node.sh"
+    },
+    {
+      "source": "scripts/macos/setup-node-global-prefix.sh",
+      "sha256": "123768cc063a96bfe9500490a6c5324a627883a7054aead0a318ce1cbf8b2a1c",
+      "path": "macos/setup-node-global-prefix.sh"
+    },
+    {
+      "source": "scripts/macos/install-codex.sh",
+      "sha256": "a95299e2fce6e82ba9f54b2bc1c8df7e018b2f8ae4154037f741f784c3194ec3",
+      "path": "macos/install-codex.sh"
+    },
+    {
+      "source": "scripts/macos/install-claude-code.sh",
+      "sha256": "4b4089de194011d0a2658a77520108027b5a965fc4dbaefc4cf3fcbd5b1c7449",
+      "path": "macos/install-claude-code.sh"
+    },
+    {
+      "source": "scripts/macos/install-antigravity.sh",
+      "sha256": "76d189dbedc6a31c952e3a483cab88759186bddcfbf6901a5851cc93e28f5c24",
+      "path": "macos/install-antigravity.sh"
+    },
+    {
+      "source": "scripts/macos/install-grok.sh",
+      "sha256": "8610cae2d6e76a057f29d4d969a15e10bcc439a762e931ef2ac5c05ecfc72c5c",
+      "path": "macos/install-grok.sh"
+    },
+    {
+      "source": "scripts/macos/install-meta-cli.sh",
+      "sha256": "b70f427baa2489dd7fa0cea6324bf7c0f6570cd5e990c34c0aed98b169fe6fa0",
+      "path": "macos/install-meta-cli.sh"
+    },
+    {
+      "source": "scripts/macos/node-cli-common.sh",
+      "sha256": "6b90aa7d6afda375ec9a9fefc76f6b6899f07cf314d634c929d483f100bbceba",
+      "path": "macos/node-cli-common.sh"
+    },
+    {
+      "source": "scripts/macos/provider-cli-common.sh",
+      "sha256": "3a8d3de1f574569e4e9b6e7aab32ae2616d9547a089eabe9330c3383a4f8f89e",
+      "path": "macos/provider-cli-common.sh"
+    },
+    {
+      "source": "scripts/macos/provider-version-common.sh",
+      "sha256": "0f4022b12eee0fa51f688cd1f162aab235cf17ebed36286c5ea203d953e49c42",
+      "path": "macos/provider-version-common.sh"
+    },
+    {
+      "source": "scripts/macos/verified-npm-update.sh",
+      "sha256": "acff681a651adc57b092d053d50784e10b8b6a536c8ed37ac639abef214eeae0",
+      "path": "macos/verified-npm-update.sh"
+    },
+    {
+      "source": "scripts/linux/install-node.sh",
+      "sha256": "5d75d86a260b77b7e369ded62696ed4af534af64da9e75cccc4438cc51594ce7",
+      "path": "linux/install-node.sh"
+    },
+    {
+      "source": "scripts/linux/setup-node-global-prefix.sh",
+      "sha256": "2da9692e03a49931f0391dca62c34716fd82587c7c832e995d84947dc410e429",
+      "path": "linux/setup-node-global-prefix.sh"
+    },
+    {
+      "source": "scripts/linux/install-codex.sh",
+      "sha256": "b035c79d00402e5d7f702fa003cdab93f618dab5e7a65ddd16d443488d271540",
+      "path": "linux/install-codex.sh"
+    },
+    {
+      "source": "scripts/linux/install-claude-code.sh",
+      "sha256": "22215b24a5dbbcb59ac1792ff592a1833ef04229be6f1d24a5db78d0a037bab0",
+      "path": "linux/install-claude-code.sh"
+    },
+    {
+      "source": "scripts/linux/install-antigravity.sh",
+      "sha256": "5e9c269ad6cf899cff77fabf760e05e6999748cc2c696e0c21209b8c3e27d60a",
+      "path": "linux/install-antigravity.sh"
+    },
+    {
+      "source": "scripts/linux/install-grok.sh",
+      "sha256": "35a32531b084d5d767614ffab4bb86887c0e072f8cb1282174ced2c59e665103",
+      "path": "linux/install-grok.sh"
+    },
+    {
+      "source": "scripts/linux/install-meta-cli.sh",
+      "sha256": "7451c96fe044abd5d99c400bcc30e0864c9ee18ff4648de30b42eb01dd56e270",
+      "path": "linux/install-meta-cli.sh"
+    },
+    {
+      "source": "scripts/linux/node-cli-common.sh",
+      "sha256": "6b90aa7d6afda375ec9a9fefc76f6b6899f07cf314d634c929d483f100bbceba",
+      "path": "linux/node-cli-common.sh"
+    },
+    {
+      "source": "scripts/linux/provider-cli-common.sh",
+      "sha256": "3a8d3de1f574569e4e9b6e7aab32ae2616d9547a089eabe9330c3383a4f8f89e",
+      "path": "linux/provider-cli-common.sh"
+    },
+    {
+      "source": "scripts/linux/provider-version-common.sh",
+      "sha256": "0f4022b12eee0fa51f688cd1f162aab235cf17ebed36286c5ea203d953e49c42",
+      "path": "linux/provider-version-common.sh"
+    },
+    {
+      "source": "scripts/linux/verified-npm-update.sh",
+      "sha256": "acff681a651adc57b092d053d50784e10b8b6a536c8ed37ac639abef214eeae0",
+      "path": "linux/verified-npm-update.sh"
+    }
+  ],
+  "license": "MIT"
+}

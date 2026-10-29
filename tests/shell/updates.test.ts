@@ -13,6 +13,12 @@ import { BotInstallation, InstallationRecoveryRequired } from '../../src/shell/e
 import { isUpdateSender, updateAction } from '../../src/shell/electron/update/ipc.ts';
 import { assertNoOtherUsers } from '../../src/shell/electron/update/otherUsers.ts';
 import { initialUpdateState, isNewerVersion, parseBotRelease, type BotRelease } from '../../src/shell/electron/update/release.ts';
+import {
+  TrayUpdateDialog,
+  updateDialog,
+  type UpdateDialog,
+} from '../../src/shell/electron/update/dialog.ts';
+import { showDesktopUpdateMessageBox } from '../../src/shell/electron/update/presenter.ts';
 
 const release: BotRelease = {
   schemaVersion: 1, repository: 'cats-inc/cats-bots', version: '0.2.0', tag: 'v0.2.0', channel: 'preview',
@@ -38,6 +44,166 @@ function fixture(overrides: Partial<BotUpdater> = {}, hooks: Partial<UpdateHooks
   });
   return { controller, events };
 }
+
+test('tray check coalesces clicks into one result dialog and Later never downloads or interrupts work', async () => {
+  const pending = deferred<string>();
+  let checks = 0;
+  const { controller, events } = fixture({
+    check: () => {
+      checks++;
+      return pending.promise;
+    },
+    download: async () => {
+      events.push('download');
+    },
+  });
+  const shown: UpdateDialog[] = [];
+  const flow = new TrayUpdateDialog({
+    controller,
+    locale: () => 'en',
+    stopping: () => false,
+    show: async (spec) => {
+      shown.push(spec);
+      return 1;
+    },
+  });
+  const first = flow.open(),
+    second = flow.open();
+  assert.equal(first, second);
+  pending.resolve('0.3.0');
+  await first;
+  assert.equal(checks, 1);
+  assert.equal(shown.length, 1);
+  assert.deepEqual(shown[0]?.buttons, ['Update and Restart', 'Later']);
+  assert.deepEqual(events, []);
+});
+
+test('tray update confirmation downloads, drains and installs, without opening Settings', async () => {
+  const { controller, events } = fixture({
+    download: async () => {
+      events.push('download');
+    },
+  });
+  const shown: UpdateDialog[] = [];
+  await new TrayUpdateDialog({
+    controller,
+    locale: () => 'zh-TW',
+    stopping: () => false,
+    show: async (spec) => {
+      shown.push(spec);
+      return 0;
+    },
+  }).open();
+  assert.deepEqual(events, ['download', 'acquire', 'drain', 'handoff', 'install']);
+  assert.deepEqual(shown[0]?.buttons, ['更新並重新啟動', '稍後']);
+  assert.equal(shown.length, 1);
+});
+
+test('tray failure is shown and a stopped bot cannot start a newly confirmed install', async () => {
+  const { controller, events } = fixture({
+    download: async () => {
+      throw new Error('download unavailable');
+    },
+  });
+  const shown: UpdateDialog[] = [];
+  await new TrayUpdateDialog({
+    controller,
+    locale: () => 'en',
+    stopping: () => false,
+    show: async (spec) => {
+      shown.push(spec);
+      return 0;
+    },
+  }).open();
+  assert.deepEqual(
+    shown.map((spec) => spec.title),
+    ['Update available', 'Update failed'],
+  );
+  assert.equal(shown[1]?.message, 'download unavailable');
+  assert.deepEqual(events, []);
+  let stopping = false;
+  const other = fixture();
+  await new TrayUpdateDialog({
+    controller: other.controller,
+    locale: () => 'en',
+    stopping: () => stopping,
+    show: async () => {
+      stopping = true;
+      return 0;
+    },
+  }).open();
+  assert.deepEqual(other.events, []);
+});
+
+test('dialog covers current, development, busy, downloaded and manual-update states', () => {
+  assert.equal(
+    updateDialog({ ...state(), phase: 'current' }, 'en').message,
+    'Cats Bot 0.2.0 is up to date.',
+  );
+  assert.equal(updateDialog({ ...state(), phase: 'downloaded' }, 'en').action, 'install');
+  assert.equal(
+    updateDialog({ ...state(), phase: 'available', canInstall: false }, 'en').action,
+    'release',
+  );
+  assert.equal(
+    updateDialog({ ...state(), phase: 'downloading', percent: 25.4 }, 'en').message,
+    'Downloading update… 25%',
+  );
+  assert.equal(
+    updateDialog(
+      initialUpdateState({ packaged: false, version: '0.2.0', release: null, portable: false }),
+      'en',
+    ).action,
+    'none',
+  );
+});
+
+test('Windows/Linux tray dialogs are parentless; macOS uses a native sheet owner and always destroys it', async () => {
+  const spec = updateDialog({ ...state(), phase: 'current' }, 'en');
+  for (const platform of ['win32', 'linux', 'darwin']) {
+    const events: string[] = [];
+    const owner = {
+      show() {
+        events.push('show');
+      },
+      focus() {
+        events.push('focus');
+      },
+      isDestroyed: () => false,
+      destroy() {
+        events.push('destroy');
+      },
+    };
+    assert.equal(
+      await showDesktopUpdateMessageBox({
+        platform,
+        dialogSpec: spec,
+        createOwner: (options) => {
+          assert.equal(options.skipTaskbar, true);
+          assert.equal(options.width, 1);
+          events.push('create');
+          return owner;
+        },
+        focusApp: () => {
+          events.push('app');
+        },
+        showMessageBox: async (options, actualOwner) => {
+          assert.equal(options.message, spec.message);
+          assert.equal(actualOwner, platform === 'darwin' ? owner : undefined);
+          events.push('dialog');
+          return { response: 0, checkboxChecked: false };
+        },
+      }),
+      0,
+    );
+    assert.deepEqual(
+      events,
+      platform === 'darwin'
+        ? ['create', 'show', 'dialog', 'app', 'focus', 'destroy']
+        : ['app', 'dialog'],
+    );
+  }
+});
 
 test('only published matching identities enable checks; portable and unsigned macOS remain manual', () => {
   assert.ok(parseBotRelease(release, '0.2.0', 'win32', 'x64'));
@@ -92,7 +258,10 @@ test('update IPC only accepts the owned Settings main frame and explicit actions
   assert.equal(isUpdateSender({ sender, senderFrame: mainFrame } as IpcMainInvokeEvent, id => id === 7), true);
   assert.equal(isUpdateSender({ sender, senderFrame: {} } as IpcMainInvokeEvent, id => id === 7), false);
   assert.equal(isUpdateSender({ sender, senderFrame: mainFrame } as IpcMainInvokeEvent, () => false), false);
-  await assert.rejects(updateAction(fixture().controller, 'https://example.com/install.exe', async () => true), /Unknown/u);
+  await assert.rejects(
+    updateAction(fixture().controller, 'https://example.com/install.exe', async () => true),
+    /Unknown/u,
+  );
 });
 
 test('updater disables automatic install/download and configures the plain-version preview feed', () => {
