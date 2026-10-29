@@ -1,4 +1,4 @@
-import type { TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
+import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
 
 /**
  * SPEC-001 FR-33, SPEC-003: what the note shows, apart from React. The note
@@ -183,6 +183,15 @@ export function toolSummary(item: ToolItem): string {
     }
   }
   return JSON.stringify(parsed) ?? '';
+}
+
+/**
+ * SPEC-004 B5: the native requests the note shows, those that can still be
+ * answered. A finished request's redacted receipt stays in the core
+ * (`cats-bot interactions`); as a card it only repeated "resolved".
+ */
+export function liveInteractions(interactions: readonly BotInteraction[]): BotInteraction[] {
+  return interactions.filter((i) => i.status === 'pending' || i.status === 'responding');
 }
 
 /** Keeps the note's copy of a work item current from `work.updated` events. */

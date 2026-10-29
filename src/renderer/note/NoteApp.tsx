@@ -13,6 +13,7 @@ import {
   entryMeta,
   entryText,
   errorText,
+  liveInteractions,
   localEntry,
   toolSummary,
   upsertWorkItem,
@@ -63,7 +64,7 @@ function ToolCard({ item }: { item: ToolItem }) {
     <div className={`tool-card tool-${item.status}`}>
       <button className="tool-head" aria-expanded={open} title={open ? 'Hide details' : 'Show input and result'} onClick={() => setOpen(!open)}>
         <span className="tool-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>
-        <span className="tool-name">{item.name}</span>
+        <span className="tool-name" title={item.name}>{item.name}</span>
         <span className="tool-summary">{toolSummary(item)}</span>
         <span className="tool-status" title={status.label}>{status.mark}</span>
       </button>
@@ -260,10 +261,9 @@ export function NoteApp() {
   }, [markSeenIfFocused, refreshHeader, reload, setRunning, refreshInteractions, refreshDesktop]);
 
   const items = useMemo(() => buildNoteItems(entries, workItems), [entries, workItems]);
-  const activeRequests = interactions.filter(i => i.status === 'pending' || i.status === 'responding');
+  const activeRequests = liveInteractions(interactions);
   const grantRequests = desktop.state?.conversation?.pendingRequests ?? [];
   const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
-  const recentInteractions = interactions.filter(i => i.status !== 'pending' && i.status !== 'responding').slice(-4);
 
   useLayoutEffect(() => {
     if (activeRequestIds) return;
@@ -329,7 +329,6 @@ export function NoteApp() {
             <Markdown text={pending.text} />
           </div>
         )}
-        {recentInteractions.map(i => <InteractionCard key={`${i.workerGeneration}:${i.interactionId}`} interaction={i} refresh={refreshInteractions} />)}
         <div ref={interactionAnchor}>
           {activeRequests.map(i => <InteractionCard key={`${i.workerGeneration}:${i.interactionId}`} interaction={i} refresh={refreshInteractions} />)}
           {grantRequests.map(r => <DesktopGrantCard key={r.requestId} request={r} model={desktop} />)}

@@ -235,8 +235,14 @@ textarea {
   width: 10px;
 }
 
+/* A CLI can report a whole command line as the name (Codex); it is cut, not widened. */
 .tool-name {
-  flex: none;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-weight: 600;
   color: var(--ink);
 }
