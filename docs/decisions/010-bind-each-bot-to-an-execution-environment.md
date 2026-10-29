@@ -4,7 +4,7 @@
 
 Accepted — 2026-10-29, owner decisions recorded from discussion. This version
 implements only the native profile, through
-[SPEC-008](../specs/SPEC-008-hub-and-bot-fleet.md) FR-24. WSL and docker profiles
+[SPEC-008](../specs/SPEC-008-hub-and-bots.md) FR-24. WSL and docker profiles
 need a separate spec once their Runtime prerequisite exists.
 
 ## Context
@@ -38,8 +38,9 @@ Three facts limit non-native bots:
   `environment: { kind: 'native' } | { kind: 'wsl', distro } |
   { kind: 'docker', container }`. The design and tests must allow any mix,
   including one distro or container per bot.
-- **Three fleet profiles in the product.** The registry's `environmentProfile`
-  constrains every binding, and the owner chooses one at first run:
+- **Three hub-wide profiles in the product.** The registry's
+  `environmentProfile` constrains every binding, and the owner chooses one at
+  first run:
   1. `native`: every bot runs its CLI on the host;
   2. `wsl:<distro>`: every bot uses one owner-chosen distro;
   3. `docker`: every bot gets its own container.
@@ -67,8 +68,8 @@ Three facts limit non-native bots:
 
 ### Positive
 
-- The data model and hub never need reshaping to add WSL or docker, or mixed
-  fleets.
+- The data model and hub never need reshaping to add WSL or docker, or a mix
+  of environments across bots.
 - The product cannot ship a bot that silently lacks its own tools.
 
 ### Negative
@@ -110,7 +111,7 @@ Three facts limit non-native bots:
 - [ADR-005](005-give-the-bot-owner-consented-desktop-control.md),
   [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md)
 - [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md),
-  [SPEC-008](../specs/SPEC-008-hub-and-bot-fleet.md)
+  [SPEC-008](../specs/SPEC-008-hub-and-bots.md)
 
 ---
 

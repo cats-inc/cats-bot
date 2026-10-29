@@ -21,7 +21,7 @@ shells first (ADR-004), and nothing can show all bots together.
 
 The owner wants multiple bots as a product feature, with every bot in its own
 process, and wants the architecture built that way even if the product caps the
-fleet at one. ADR-001 §2 already fixed how the core may leave Electron: as "a
+bots at one. ADR-001 §2 already fixed how the core may leave Electron: as "a
 change in the packaging layer, not in the core", through `BotHostApi`.
 
 On 2026-10-29 the processes of the installed 0.2.x Mochi on Windows (those
@@ -43,11 +43,11 @@ precise total.
    installation, behind one single-instance lock. It owns every presentation and
    host service: one tray, all windows (each bot's notes, floating Cat and
    settings, plus first run and bot management), native dialogs and
-   notifications, update check/download/install, the login item, the fleet
+   notifications, update check/download/install, the login item, the bot
    registry under `~/.catsbot/` (ADR-007), packaged provider setup helpers,
    display language, and the OS secret cipher. It holds no bot state and runs no
-   bot timers. A fleet lock under `~/.catsbot/` keeps a second installation from
-   managing the same fleet.
+   bot timers. A root lock under `~/.catsbot/` keeps a second installation from
+   managing the same bots.
 2. **Each bot is a headless core child.** The hub starts one core per bot: the
    packaged executable with `ELECTRON_RUN_AS_NODE`, running the headless host
    (`cats-bot run`) for one bot root. Today that host does not take the packaged
@@ -81,15 +81,15 @@ precise total.
    with backoff and shows its state. A bot held by another host, such as a
    developer's `cats-bot run`, is listed as externally hosted, without windows,
    and never started twice.
-5. **Fleet size.** The architecture supports N bots; the product cap is a hub
-   setting, three in this version (SPEC-008). Removing a bot takes two steps:
-   archive it, then delete it from the archive.
+5. **Number of bots.** The architecture supports N bots; the product cap is a
+   hub setting, three in this version (SPEC-008). Removing a bot takes two
+   steps: archive it, then delete it from the archive.
 
 ## Consequences
 
 ### Positive
 
-- One Chromium for the whole fleet; an extra bot costs its core, Runtime and CLI.
+- One Chromium for all bots; an extra bot costs its core, Runtime and CLI.
 - Restarting or crashing the UI no longer stops any bot.
 - Bot management, one tray, aggregate unread state and one update coordinator
   become possible, and the coordinator role (ADR-009) has a host to ask.
@@ -149,7 +149,7 @@ precise total.
 - [ADR-002](002-give-the-bot-a-desktop-presence-in-the-electron-shell.md),
   [ADR-004](004-publish-standard-previews-with-host-owned-updates.md),
   [ADR-006](006-share-runtime-catalogs-and-package-provider-setup-helpers.md)
-- [SPEC-008](../specs/SPEC-008-hub-and-bot-fleet.md),
+- [SPEC-008](../specs/SPEC-008-hub-and-bots.md),
   [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)
 
 ---

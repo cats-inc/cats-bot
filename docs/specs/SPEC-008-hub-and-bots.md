@@ -1,4 +1,4 @@
-# SPEC-008: Hub and Bot Fleet
+# SPEC-008: Hub and Bots
 
 ## Metadata
 
@@ -11,16 +11,20 @@
 ## Summary
 
 Implement [ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md):
-one Electron hub presents and manages a fleet of bots, each running as a headless
+one Electron hub presents and manages several bots, each running as a headless
 core child process with its own Runtime and CLI. This applies at any product
 cap; this version ships a cap of three bots.
+
+The bots under one hub have no collective name: shared things are "hub" files,
+settings and tools. In this repository "fleet" means desktop-work-fleet
+(ADR-001), so it is not used for bots.
 
 ## Goals
 
 - Every bot is an independent process; a UI failure never stops a bot.
 - One tray, one settings surface, one update coordinator and one login item for
-  the whole fleet.
-- Bot creation and management in the product UI, up to the fleet cap.
+  all bots.
+- Bot creation and management in the product UI, up to the bot cap.
 
 ## Non-Goals
 
@@ -35,11 +39,11 @@ cap; this version ships a cap of three bots.
 1. FR-1: One hub runs per OS account and installation, behind one Electron
    single-instance lock on the hub's user data (`%APPDATA%\Cats Bot` on
    Windows). A second launch hands its arguments to the running hub and exits.
-   The hub also takes a fleet lock in `<CATS_BOT_HOME>`, so two installations
-   pointed at one root never manage the same fleet: the later hub shows which
+   The hub also takes a root lock in `<CATS_BOT_HOME>`, so two installations
+   pointed at one root never manage the same bots: the later hub shows which
    installation holds the lock and exits. Each installation keeps a random
    installation id in its user data (FR-12).
-2. FR-2: The fleet registry is `<CATS_BOT_HOME>/fleet.json`, schema version 1:
+2. FR-2: The bot registry is `<CATS_BOT_HOME>/bots.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
    `environmentProfile` (ADR-010) and the coordinator holder (SPEC-009). Only
    the hub writes it, under a lock file, through temp file plus rename. Missing
@@ -83,7 +87,7 @@ cap; this version ships a cap of three bots.
      partway finishes at the next start (FR-3), so a partly removed bot never
      reappears as archived. The provider CLIs' own folders (`~/.codex`,
      `~/.claude`, …) are not touched.
-6. FR-6: The fleet cap is the hub setting `maxBots`, 3 in this version and not
+6. FR-6: The bot cap is the hub setting `maxBots`, 3 in this version and not
    offered in the UI. Archived bots do not count. Creating or restoring beyond
    it is refused in the UI and in the hub's own API. Tests cover at least two
    bots and the cap.
@@ -153,7 +157,7 @@ cap; this version ships a cap of three bots.
 
 16. FR-16: One tray icon. With one bot, the menu has today's items (SPEC-002).
     With more, each bot's conversation, heartbeat, floating Cat, request and Stop
-    items move into a submenu per bot. Fleet items are shared: Bots…, Settings…,
+    items move into a submenu per bot. Hub items are shared: Bots…, Settings…,
     Start at login, Check for Updates…, Quit. Pending owner requests and unread
     counts are aggregated on the icon.
 17. FR-17: Notes, floating Cats and per-bot settings are hub windows bound to one
@@ -162,12 +166,12 @@ cap; this version ships a cap of three bots.
     the AUMID `io.catsinc.catsbot.<botId>`. If renderers keep storage, it is
     partitioned per bot.
 18. FR-18: Per-bot view state (note bounds and layers, floating Cat position)
-    stays in each bot root's `shell-state.json`. Fleet preferences (display
+    stays in each bot root's `shell-state.json`. Hub preferences (display
     language, start at login) live in a hub state file under `<CATS_BOT_HOME>`.
-    Display language becomes fleet-level (updates ADR-006).
+    Display language becomes a hub setting (updates ADR-006).
 19. FR-19: Packaged provider setup helpers (ADR-006) run in the hub. CLIs
     installed for the account serve every native bot, and only one setup
-    operation runs at a time across the fleet.
+    operation runs at a time across all bots.
 
 ### Host services
 
@@ -191,11 +195,11 @@ cap; this version ships a cap of three bots.
     native, and anything else is refused (ADR-010).
 25. FR-25: The hub publishes its own control descriptor under `<CATS_BOT_HOME>`,
     with the same transport, token and account rules as FR-12. Owner CLI
-    commands that act on the fleet (the registry, the coordinator holder) go
+    commands that act on the hub (the registry, the coordinator holder) go
     through it while the hub runs. Without a running hub they refuse instead of
     writing the registry themselves.
 
-### Desktop control across the fleet
+### Desktop control across bots
 
 26. FR-26: At most one bot controls the desktop at a time. A core takes the
     desktop lease before a turn takes control (SPEC-006) and before a clipboard
@@ -228,7 +232,7 @@ cap; this version ships a cap of three bots.
 
 ```
 Cats Bot.exe (hub, Electron)            ~/.catsbot/
-  tray, windows, updates, setup         fleet.json, hub state
+  tray, windows, updates, setup         bots.json, hub state
         │ host channel (pipe/socket + token, per core)
         ├── core: bots/mochi   (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
         └── core: bots/<id>    (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
@@ -242,7 +246,7 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 
 ## Open Questions
 
-- [x] Fleet cap (2026-10-29): three bots in this version (FR-6).
+- [x] Bot cap (2026-10-29): three bots in this version (FR-6).
 - [x] Removing a bot (2026-10-29): archive first; only an archived bot can be
       deleted (FR-5).
 - [x] Externally hosted cores (2026-10-29): listed with their state, not
