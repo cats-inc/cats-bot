@@ -10,7 +10,7 @@ Depends on [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md).
 
 The owner wants a "chief of staff" bot, like the first assistant in Grok's bot,
 that can hand work to other bots and open or initialize new ones. The role must
-be transferable, and the fleet may also run without it. Today no channel exists
+be transferable, and the bots may also run without it. Today no channel exists
 between bots: each bot's session MCP tools (`schedule_*`, `ask_owner`) act only on
 itself, and the owner control pipe carries the owner's own authority.
 
@@ -20,13 +20,13 @@ owner answers a bot's questions.
 
 ## Decision
 
-- **A role, not a kind of bot.** The fleet registry names zero or one coordinator.
+- **A role, not a kind of bot.** The bot registry names zero or one coordinator.
   The first bot created at first run holds it by default. Any bot can hold it,
   and archiving the holder leaves the role vacant. A holder whose provider
   cannot load session MCP servers keeps the role without its tools, and the hub
   shows why.
 - **Coordination only.** The holder's core attaches an extra session MCP server
-  (`cats-fleet`) to its sessions only while the hub confirms that it holds the
+  (`cats-hub`) to its sessions only while the hub confirms that it holds the
   role. The decision is made before every send, as for `cats-desktop`. The hub
   brokers and authorizes every call over the host channel. Its tools can:
   - list bots and their states;
@@ -77,7 +77,7 @@ owner answers a bot's questions.
 
 ### Neutral
 
-- With one bot in the fleet, the role exists but has no other bot to act on.
+- With only one bot, the role exists but has no other bot to act on.
 
 ## Alternatives Considered
 
@@ -90,7 +90,7 @@ owner answers a bot's questions.
 ### Every bot can message every bot
 
 - **Pros**: symmetric and simple.
-- **Cons**: reply loops, authority spread across the fleet, quota burn.
+- **Cons**: reply loops, authority spread across all bots, quota burn.
 - **Why rejected**: one accountable holder makes limits and audit tractable.
 
 ### Coordinator acts with owner authority
@@ -102,7 +102,7 @@ owner answers a bot's questions.
 ## References
 
 - [SPEC-009](../specs/SPEC-009-coordinator-role.md),
-  [SPEC-008](../specs/SPEC-008-hub-and-bot-fleet.md)
+  [SPEC-008](../specs/SPEC-008-hub-and-bots.md)
 - [SPEC-004](../specs/SPEC-004-provider-interactions-and-tool-visibility.md),
   [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md)
 

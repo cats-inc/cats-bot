@@ -45,10 +45,10 @@ releases and requires no upgrade path for installed copies.
   would be a family-wide decision.
 - **Data root.** `~/.catsbot/` is the Cats Bot ecosystem root. Each bot lives in
   `~/.catsbot/bots/<id>/`, with its own Runtime directory at
-  `~/.catsbot/bots/<id>/runtime/`. Fleet-level files (registry, roles, update
+  `~/.catsbot/bots/<id>/runtime/`. Hub files (registry, roles, update
   coordination; ADR-008, ADR-009) live directly under `~/.catsbot/`, outside the
   bot-id namespace. `CATS_BOT_HOME` replaces `CATS_BOTS_HOME` and points at the
-  ecosystem root, so one variable moves fleet files and bots together.
+  ecosystem root, so one variable moves hub files and bots together.
 - **Boundary.** Cats Bot never creates, reads or writes anything under `~/.cats/`
   and never depends on Desktop data. Provider CLI sign-in and native sessions stay
   in the CLIs' own folders (`~/.codex`, `~/.claude`, …), as today.
@@ -67,7 +67,7 @@ releases and requires no upgrade path for installed copies.
   exclusions.
 - Repository, package, appId and product name agree; the Bot can later offer its
   own "Remove all user data" over `~/.catsbot` and its Electron user data.
-- Fleet files have a reserved place that can never collide with a bot id.
+- Hub files have a reserved place that can never collide with a bot id.
 
 ### Negative
 
@@ -102,9 +102,9 @@ releases and requires no upgrade path for installed copies.
 - **Pros**: `.cats-bots` matches the old repository name; a flat layout is one
   level shorter.
 - **Cons**: `.cats-bots` follows the repository, not the product; a flat layout
-  puts fleet files in the bot-id namespace.
+  puts hub files in the bot-id namespace.
 - **Why rejected**: `.catsbot` follows the product name like `.grokbot`, and
-  ADR-008/009 need fleet-level files.
+  ADR-008/009 need hub files.
 
 ### Keep the plural repository and package names
 

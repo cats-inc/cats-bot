@@ -10,7 +10,7 @@ owner asked for all of this to be completed. This ADR replaces the PLAN-001 Phas
 See [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) for the specification and
 [PLAN-002](../plans/PLAN-002-desktop-presence.md) for the implementation.
 Pending (2026-10-29): under [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md) the settings
-page, first run and floating Cat (§2–§4) are hosted by one hub per fleet once PLAN-009 lands.
+page, first run and floating Cat (§2–§4) are hosted by one hub for all bots once PLAN-009 lands.
 
 ## Context
 
