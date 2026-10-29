@@ -126,15 +126,21 @@ delete; tests also cover the cap.
 
 ### Phase 4: Host services
 
-- [ ] 4.1: Secret cipher served by the hub through the asynchronous path from 1.2;
-      truthful protection status (FR-20).
-- [ ] 4.2: Provider setup helpers run in the hub, one operation at a time (FR-19).
-- [ ] 4.3: Hub-owned updates replace the cross-shell exclusion for hub-hosted bots
-      (FR-22).
-- [ ] 4.4: Hub PID changes reach every running core's helper before the next
-      desktop-control call (FR-21).
-- [ ] 4.5: Account-wide desktop lease taken by every core, hub-started or not,
+- [x] 4.1: Secret cipher served by the hub through the asynchronous path from 1.2;
+      truthful protection status (FR-20). The hub serves `os-safe-storage` to
+      every core; Telegram's status reports how the stored token is protected.
+- [x] 4.2: Provider setup helpers run in the hub, one operation at a time (FR-19).
+      One `ProviderSetup` serves every bot, and a CLI it finds reaches every
+      core's PATH.
+- [x] 4.3: Hub-owned updates replace the cross-shell exclusion for hub-hosted bots
+      (FR-22). The drain stops every runner and checks every core and Runtime;
+      an install is refused while a bot runs in another program.
+- [x] 4.4: Hub PID changes reach every running core's helper before the next
+      desktop-control call (FR-21). Done with task 1.4: every attach or detach
+      restarts the helper with the hosts' PIDs and executables.
+- [x] 4.5: Account-wide desktop lease taken by every core, hub-started or not,
       before control and clipboard calls (FR-26).
+      `src/core/desktopControl/lease.ts`.
 
 **Deliverables**: update, setup and secrets work for several bots.
 
@@ -373,6 +379,21 @@ Each entry names where it is implemented.
   - The tray click opens the first bot's direct message, or the Bots page.
   - `cats-bot quit` for a bot stops only that bot while others run; the last
     running bot's quit ends the hub.
+- **D21, the desktop lease (4.5).**
+  - The lease is a named pipe (a socket file outside Windows) named from a hash
+    of the account's user name and home folder. Only one process can listen on
+    it, and the OS frees it when that process ends.
+  - A turn takes it before its first input or clipboard call and keeps it
+    until the turn ends, Stop, or the core stops. A refused call returns
+    `unavailable` with "Another bot is using the desktop right now."
+  - Another local account could hold the name and keep this account's bots
+    off the desktop. That is a denial of service only, within the account
+    boundary SPEC-008 already states.
+- **D22, hub-owned updates (4.3).**
+  - Any bot that runs in another program blocks the install and is named,
+    whatever executable runs it. This is stricter than "from this
+    installation", and needs no process inspection.
+  - After the update the hub starts the bots set to start automatically.
 
 ## Progress Log
 
@@ -388,6 +409,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
 | 2026-10-30 | Tasks 2.1 to 2.5 implemented. With the real Electron hub in an isolated home (Windows 11, fixture CLI): the first run wrote the registry, hub state, root lock and installation id; `cats-bot hub status` answered; a second launch handed over and exited; killing the hub left the core running and a new hub reattached; `cats-bot quit` ended both and released the hub's files. |
 | 2026-10-30 | Tasks 3.1 to 3.3 implemented. Unit tests cover the cap, archive, restore, delete through `trash/`, interrupted deletes, a junction inside a deleted bot, and restart limits. With the real Electron hub and two bots made by `cats-bot init`: both were taken in and ran; killing one core restarted only that bot; `cats-bot quit` stopped one bot alone and quitting the last one ended the hub. |
+| 2026-10-30 | Tasks 4.1 to 4.5 done: 4.1, 4.2 and 4.4 were in place from Phases 1 and 2; 4.3 refuses an install while a bot runs elsewhere; 4.5 adds the desktop lease, with a test of two processes. |
 
 ---
 

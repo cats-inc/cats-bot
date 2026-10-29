@@ -8,6 +8,7 @@ import {
   resolveDesktopControlHelper,
   type DesktopControlSpawn,
 } from './desktopControl/helper.ts';
+import { createDesktopLease, type DesktopLease } from './desktopControl/lease.ts';
 import { DesktopControlService } from './desktopControl/service.ts';
 import { DesktopControlSwitches } from './desktopControl/switches.ts';
 import { DESKTOP_CONTROL_SERVER_NAME } from './desktopControl/tools.ts';
@@ -111,6 +112,8 @@ export interface BotDesktopControlOptions {
   spawn?: DesktopControlSpawn;
   grantWaitMs?: number;
   requestTtlMs?: number;
+  /** SPEC-008 FR-26: tests give each core a lease of its own; production shares the account's. */
+  lease?: DesktopLease;
 }
 
 export interface BotCoreOptions {
@@ -454,6 +457,8 @@ export class BotCore implements BotHostApi {
     });
     return new DesktopControlService({
       helper,
+      // SPEC-008 FR-26: one bot at a time controls this account's desktop.
+      ...(helper ? { lease: options?.lease ?? createDesktopLease() } : {}),
       unavailableReason: resolution.unavailableReason,
       switches: this.desktopSwitches,
       profileEnabled: () => this.profile.desktopControl.enabled,

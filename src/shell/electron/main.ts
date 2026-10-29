@@ -600,6 +600,11 @@ async function main(): Promise<void> {
     {
       acquireInstall: (version) => {
         if (!installation) throw new Error('This installation cannot update itself.');
+        // SPEC-008 FR-22: the hub stops its own cores; one another program runs could lose its files.
+        const external = manager.registry.bots.filter((bot) => externalPid(bot.id) !== null).map((bot) => bot.id);
+        if (external.length > 0) {
+          throw new Error(`Stop ${external.join(', ')} first: running in another program, which the update would interrupt.`);
+        }
         assertNoOtherUsers(process.execPath);
         return installation.acquire(version);
       },

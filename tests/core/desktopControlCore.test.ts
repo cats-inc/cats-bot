@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { test, type TestContext } from 'node:test';
 
@@ -26,6 +27,13 @@ import {
   type McpToolResult,
 } from '../support/desktopControl.ts';
 import { makeTempHome } from '../support/harness.ts';
+import { createDesktopLease } from '../../src/core/desktopControl/lease.ts';
+
+let leases = 0;
+/** Each core here takes a lease of its own, never the account's (SPEC-008 FR-26). */
+const testLease = () => createDesktopLease(process.platform === 'win32'
+  ? `\\\\.\\pipe\\cats-bot-core-lease-${process.pid}-${(leases += 1)}`
+  : join(tmpdir(), `cats-bot-core-lease-${process.pid}-${(leases += 1)}.sock`));
 
 /**
  * SPEC-006 P2 and P5 in the Bot core, on a scripted in-process Runtime client and a fake
@@ -120,6 +128,7 @@ async function harness(t: TestContext, options: { platform?: NodeJS.Platform; he
       ...(options.helperPath !== undefined ? { helperPath: options.helperPath } : { helperPath: 'fake.exe' }),
       spawn: helper.spawn,
       grantWaitMs: options.grantWaitMs ?? 200,
+      lease: testLease(),
     },
   });
   const events: BotHostEvent[] = [];
@@ -324,7 +333,7 @@ test('B3: grants only through BotHostApi; cleared by stop, switching off and cor
   await h.core.stop();
   const reopened = BotCore.open({ root: h.root, runtimeClient: (h.core as unknown as { options: { runtimeClient: RuntimeClient } }).options.runtimeClient,
     tools: false, log: () => {}, handoffPollMs: 3_600_000, life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
-    desktopControl: { platform: 'win32', helperPath: 'fake.exe', spawn: h.helper.spawn } });
+    desktopControl: { platform: 'win32', helperPath: 'fake.exe', spawn: h.helper.spawn, lease: testLease() } });
   await reopened.start();
   try {
     const state = await reopened.desktopControlState('home');

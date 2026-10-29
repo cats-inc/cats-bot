@@ -10,6 +10,7 @@ import {
   summarizeHelperStderr,
 } from '../../src/core/desktopControl/helper.ts';
 import { evaluateDesktopControlPolicy } from '../../src/core/desktopControl/policy.ts';
+import { createDesktopLease, type DesktopLease } from '../../src/core/desktopControl/lease.ts';
 import { DesktopControlService, type DesktopControlChange, type DesktopControlTurn } from '../../src/core/desktopControl/service.ts';
 import { DesktopControlSwitches } from '../../src/core/desktopControl/switches.ts';
 import {
@@ -62,7 +63,7 @@ interface Fixture {
 }
 
 async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; helper?: null; grantWaitMs?: number;
-  requestTtlMs?: number; snapshot?: SessionCapabilitiesSnapshot | null } = {}): Promise<Fixture> {
+  requestTtlMs?: number; snapshot?: SessionCapabilitiesSnapshot | null; lease?: DesktopLease } = {}): Promise<Fixture> {
   const home = makeTempHome('cats-desktop-control-');
   const world: FakeWorld = { ...defaultWorld(), ...overrides.world };
   const helper = fakeHelper(world);
@@ -89,6 +90,7 @@ async function fixture(t: TestContext, overrides: { world?: Partial<FakeWorld>; 
     selfExecutables: ['C:\\Bot\\Cats Bot.exe'],
     grantWaitMs: overrides.grantWaitMs ?? 300,
     ...(overrides.requestTtlMs !== undefined ? { requestTtlMs: overrides.requestTtlMs } : {}),
+    ...(overrides.lease ? { lease: overrides.lease } : {}),
     now: () => clock.now,
   });
   t.after(async () => {
@@ -605,4 +607,62 @@ test('an unexpected helper exit reports exception types and frames, never their 
     + 'System.InvalidOperationException');
   assert.equal(summarizeHelperStderr('plain text the helper printed'), '');
   client.close();
+});
+
+test('a turn takes the desktop lease for control and the clipboard, and gives it back when it ends (SPEC-008 FR-26)', async (t) => {
+  let free = false;
+  const events: string[] = [];
+  const lease: DesktopLease = {
+    get held() { return events.at(-1) === 'acquired'; },
+    acquire: async () => {
+      events.push(free ? 'acquired' : 'refused');
+      return free;
+    },
+    release: () => { events.push('released'); },
+  };
+  const f = await fixture(t, { lease });
+  const descriptor = await f.send();
+  f.turn.current = owner();
+  const refused = await callDesktopTool(descriptor, 'clipboard_read');
+  assert.equal(errorCode(refused), 'unavailable');
+  assert.match(JSON.stringify(refused), /Another bot is using the desktop right now/u);
+  assert.equal(f.helper.calls.includes('clipboard_read'), false, 'nothing reaches the helper without the lease');
+  free = true;
+  assert.equal((await callDesktopTool(descriptor, 'clipboard_read')).isError, undefined);
+  f.service.turnEnded('conv-1', 'item-0');
+  assert.deepEqual(events, ['refused', 'acquired'], 'another work item\'s end keeps the lease');
+  f.service.turnEnded('conv-1', 'item-1');
+  assert.deepEqual(events, ['refused', 'acquired', 'released']);
+  f.turn.current = owner('session-1', 'item-2');
+  await callDesktopTool(descriptor, 'clipboard_write', { text: 'x' });
+  f.service.stop('conv-1');
+  assert.equal(events.at(-1), 'released', 'Stop gives the lease back too');
+});
+
+test('one process at a time holds the account\'s desktop lease, and its end frees it (SPEC-008 FR-26)', async () => {
+  const endpoint = process.platform === 'win32'
+    ? `\\\\.\\pipe\\cats-bot-lease-test-${process.pid}-${Date.now()}`
+    : join(makeTempHome('cats-bot-lease-').root, 'lease.sock');
+  const first = createDesktopLease(endpoint);
+  const second = createDesktopLease(endpoint);
+  assert.equal(await first.acquire(), true);
+  assert.equal(await first.acquire(), true, 'taking it again is a no-op');
+  assert.equal(await second.acquire(), false);
+  first.release();
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(await second.acquire(), true);
+  second.release();
+  // Another process holds it until it exits, however it ends.
+  const { spawn } = await import('node:child_process');
+  const child = spawn(process.execPath, ['-e', `
+    const { createServer } = require('node:net');
+    createServer().listen(${JSON.stringify(endpoint)}, () => console.log('held'));
+    setTimeout(() => {}, 60000);`], { stdio: ['ignore', 'pipe', 'inherit'] });
+  await new Promise<void>((resolve) => child.stdout!.once('data', () => resolve()));
+  assert.equal(await first.acquire(), false);
+  child.kill('SIGKILL');
+  await new Promise((resolve) => child.once('exit', resolve));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(await first.acquire(), true, 'the OS released it with the process');
+  first.release();
 });
