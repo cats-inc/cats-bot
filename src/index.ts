@@ -18,3 +18,8 @@ export {
 } from './core/store/paths.ts';
 export { readInstanceLock, writeHandoff } from './core/store/lock.ts';
 export { buildHandoffPack, HANDOFF_PACK_LIMIT } from './core/conversations/handoff.ts';
+export {
+  CHANNEL_PROTOCOL, channelDescriptorFile, HostChannelClient, HostChannelServer, readChannelDescriptor,
+  type ChannelDescriptor, type ChannelHostIdentity, type ChannelHostServices,
+} from './core/host-api/channel.ts';
+export { CHANNEL_COMMANDS, CORE_COMMANDS, runCoreCommand, type CoreCommandTarget } from './core/host-api/commands.ts';

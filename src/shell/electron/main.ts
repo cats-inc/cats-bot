@@ -190,7 +190,7 @@ async function main(): Promise<void> {
     }
   }
   // A token the CLI stored as a file is re-stored with the OS facility before Telegram reads it.
-  core.protectSecretsAtRest();
+  void core.protectSecretsAtRest().catch((error: unknown) => process.stderr.write(`secret re-store failed: ${errorMessage(error)}\n`));
 
   let quitting = false;
   const log = (line: string) => process.stderr.write(`${line}\n`);

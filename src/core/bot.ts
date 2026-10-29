@@ -13,6 +13,7 @@ import { DesktopControlSwitches } from './desktopControl/switches.ts';
 import { DESKTOP_CONTROL_SERVER_NAME } from './desktopControl/tools.ts';
 import { BotEventBus, type BotEventListener } from './host-api/events.ts';
 import { BotInteractions } from './host-api/providerInteractions.ts';
+import { HostChannelServer } from './host-api/channel.ts';
 import { HostControlServer } from './host-api/control.ts';
 import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
@@ -134,6 +135,10 @@ export interface BotCoreOptions {
   telegram?: { apiBaseUrl?: string; fetch?: typeof fetch; pollTimeoutSeconds?: number };
   /** SPEC-006: desktop control helper; without `tools`, the helper is off unless this is given. */
   desktopControl?: BotDesktopControlOptions;
+  /** SPEC-008 FR-12: the host channel; `manager` names the hub installation that started this core. */
+  channel?: { manager?: string | null; hostRequestTimeoutMs?: number };
+  /** SPEC-008 FR-20: the label of the cipher the presenting host serves over the channel. */
+  hostCipher?: string;
 }
 
 export type { BotStatus } from './types.ts';
@@ -199,6 +204,9 @@ export class BotCore implements BotHostApi {
   private readonly bus = new BotEventBus();
   private readonly interactions: BotInteractions;
   private readonly control: HostControlServer;
+  private readonly channel: HostChannelServer;
+  private readonly stoppedSignal: Promise<void>;
+  private resolveStopped: () => void = () => {};
   private readonly conversations: ConversationStore;
   private readonly queue = new WorkQueue();
   private readonly workItems = new Map<string, WorkItem>();
@@ -213,6 +221,7 @@ export class BotCore implements BotHostApi {
   private readonly life: LifeLoop;
   private readonly secrets: SecretStore;
   private telegram: TelegramTransport | null = null;
+  private telegramGeneration = 0;
   private supervisor: RuntimeSupervisor | null;
   private readonly views = new Set<string>();
   /** Views the owner is reading (focused); an open view in the background still counts replies as unread. */
@@ -254,6 +263,11 @@ export class BotCore implements BotHostApi {
       },
     );
     this.control = new HostControlServer(this.paths.root, this);
+    this.channel = new HostChannelServer(this.paths.root, this, {
+      manager: options.channel?.manager ?? null,
+      ...(options.channel?.hostRequestTimeoutMs ? { hostRequestTimeoutMs: options.channel.hostRequestTimeoutMs } : {}),
+    });
+    this.stoppedSignal = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
     this.conversations = new ConversationStore({
       paths: this.paths,
       now: this.now,
@@ -262,7 +276,10 @@ export class BotCore implements BotHostApi {
     // Read-only hosts (status, conversations, schedule list) see the records without starting anything.
     this.conversations.load();
     this.loadJournal();
-    this.secrets = options.secrets ?? new FileSecretStore(this.paths.root, { warn: (line) => this.log(`warn ${line}`) });
+    this.secrets = options.secrets ?? new FileSecretStore(this.paths.root, {
+      ...(options.hostCipher ? { asyncCipher: this.channel.cipher(options.hostCipher) } : {}),
+      warn: (line) => this.log(`warn ${line}`),
+    });
     this.supervisor = options.runtimeClient ? null : this.createSupervisor();
     this.toolServer = options.tools === false
       ? null
@@ -563,6 +580,7 @@ export class BotCore implements BotHostApi {
     if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
+    await this.channel.start();
 
     this.conversations.load();
     this.conversations.home();
@@ -604,6 +622,7 @@ export class BotCore implements BotHostApi {
       try { await this.stop(); }
       finally {
         await this.control.stop();
+        await this.channel.stop();
         this.releaseLock?.(); this.releaseLock = null;
       }
       throw error;
@@ -612,14 +631,25 @@ export class BotCore implements BotHostApi {
 
   // ---- Telegram (SPEC-001 FR-19, FR-26) ---------------------------------
 
+  /**
+   * Reading the token may wait for the host's cipher (SPEC-008 FR-20), so polling starts once it
+   * is read. A later start or a stop supersedes an attempt still reading.
+   */
   private startTelegram(): void {
     if (this.telegram || this.stopped || !this.started) return;
     if (!this.profile.telegram.enabled) return;
-    const token = this.secrets.get(SECRET_TELEGRAM_TOKEN);
-    if (!token) {
-      this.log('telegram enabled but no token is stored; polling not started');
-      return;
-    }
+    const generation = ++this.telegramGeneration;
+    void this.secrets.getAsync(SECRET_TELEGRAM_TOKEN).then((token) => {
+      if (generation !== this.telegramGeneration || this.telegram || this.stopped || !this.profile.telegram.enabled) return;
+      if (!token) {
+        this.log('telegram enabled but no token is stored; polling not started');
+        return;
+      }
+      this.beginTelegram(token);
+    }, (error: unknown) => this.log(`warn telegram token unavailable: ${error instanceof Error ? error.message : String(error)}`));
+  }
+
+  private beginTelegram(token: string): void {
     const transport = new TelegramTransport({
       token,
       botName: this.profile.name,
@@ -653,6 +683,7 @@ export class BotCore implements BotHostApi {
   }
 
   private async stopTelegram(): Promise<void> {
+    this.telegramGeneration += 1;
     const transport = this.telegram;
     this.telegram = null;
     if (transport) await transport.stop();
@@ -660,7 +691,7 @@ export class BotCore implements BotHostApi {
 
   /** Stores (or clears) the token in the secret store; polling follows the profile flag. */
   async setTelegramToken(token: string | null): Promise<void> {
-    if (token && token.trim()) this.secrets.set(SECRET_TELEGRAM_TOKEN, token.trim());
+    if (token && token.trim()) await this.secrets.setAsync(SECRET_TELEGRAM_TOKEN, token.trim());
     else this.secrets.delete(SECRET_TELEGRAM_TOKEN);
     this.log(`telegram token ${token ? 'stored' : 'cleared'} (${this.secrets.protection()} protection)`);
     await this.stopTelegram();
@@ -668,8 +699,8 @@ export class BotCore implements BotHostApi {
   }
 
   /** Re-stores secrets a host without a cipher (the CLI) wrote, when this host has one. */
-  protectSecretsAtRest(): number {
-    const upgraded = this.secrets.protectAtRest();
+  async protectSecretsAtRest(): Promise<number> {
+    const upgraded = await this.secrets.protectAtRestAsync();
     if (upgraded > 0) this.log(`re-stored ${upgraded} secret(s) with ${this.secrets.protection()} protection`);
     return upgraded;
   }
@@ -798,7 +829,7 @@ export class BotCore implements BotHostApi {
         // when this host has a cipher, re-stores it encrypted.
         if (typeof payload.enabled === 'boolean') await this.updateProfile({ telegram: { enabled: payload.enabled } });
         if (payload.reloadToken === true) {
-          this.protectSecretsAtRest();
+          await this.protectSecretsAtRest();
           await this.stopTelegram();
           this.startTelegram();
         }
@@ -839,9 +870,18 @@ export class BotCore implements BotHostApi {
           Promise.resolve().then(() => this.toolServer?.stop()),
           Promise.resolve().then(() => this.desktop.stopServer()),
           Promise.resolve().then(() => this.control.stop()),
+          Promise.resolve().then(() => this.channel.stop()),
         ]);
-      } finally { this.releaseLock?.(); this.releaseLock = null; }
+      } finally {
+        this.releaseLock?.(); this.releaseLock = null;
+        this.resolveStopped();
+      }
     }
+  }
+
+  /** Settles once `stop` has finished, however it was asked for (a signal, a handoff or the channel). */
+  whenStopped(): Promise<void> {
+    return this.stoppedSignal;
   }
 
   status(): BotStatus {

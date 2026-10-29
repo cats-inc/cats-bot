@@ -22,6 +22,17 @@ export interface SecretCipher {
   decrypt(cipher: Buffer): string;
 }
 
+/**
+ * SPEC-008 FR-20: a cipher the host serves over the host channel, for a core
+ * that runs in a process without the OS facility. Values never leave the
+ * account's local channel.
+ */
+export interface AsyncSecretCipher {
+  label: string;
+  encrypt(plain: string): Promise<Buffer>;
+  decrypt(cipher: Buffer): Promise<string>;
+}
+
 export type SecretProtection = 'os' | 'file';
 
 export interface SecretStore {
@@ -35,6 +46,10 @@ export interface SecretStore {
   protectionOf(name: string): SecretProtection | null;
   /** Re-stores plain entries with this host's cipher; returns how many it upgraded. */
   protectAtRest(): number;
+  /** The same three through a cipher that may be asynchronous (SPEC-008 FR-20). */
+  getAsync(name: string): Promise<string | null>;
+  setAsync(name: string, value: string): Promise<void>;
+  protectAtRestAsync(): Promise<number>;
 }
 
 interface SecretsFile {
@@ -51,16 +66,30 @@ export function secretsPath(root: string): string {
 export class FileSecretStore implements SecretStore {
   private readonly path: string;
   private readonly cipher: SecretCipher | undefined;
+  private readonly asyncCipher: AsyncSecretCipher | undefined;
   private readonly warn: (line: string) => void;
 
-  constructor(root: string, options: { cipher?: SecretCipher; warn?: (line: string) => void } = {}) {
+  constructor(root: string, options: { cipher?: SecretCipher; asyncCipher?: AsyncSecretCipher; warn?: (line: string) => void } = {}) {
     this.path = secretsPath(root);
     this.cipher = options.cipher;
+    this.asyncCipher = options.cipher ? undefined : options.asyncCipher;
     this.warn = options.warn ?? (() => {});
   }
 
   protection(): SecretProtection {
-    return this.cipher ? 'os' : 'file';
+    return this.cipher || this.asyncCipher ? 'os' : 'file';
+  }
+
+  /** The synchronous paths cannot wait for a host's cipher. */
+  private assertSync(): void {
+    if (this.asyncCipher) throw new Error('This secret store encrypts through its host; use the asynchronous methods.');
+  }
+
+  private codec(): AsyncSecretCipher | undefined {
+    const cipher = this.cipher;
+    return cipher
+      ? { label: cipher.label, encrypt: async (plain) => cipher.encrypt(plain), decrypt: async (data) => cipher.decrypt(data) }
+      : this.asyncCipher;
   }
 
   private read(): SecretsFile {
@@ -98,6 +127,7 @@ export class FileSecretStore implements SecretStore {
   }
 
   protectAtRest(): number {
+    this.assertSync();
     if (!this.cipher) return 0;
     const file = this.read();
     let upgraded = 0;
@@ -112,6 +142,7 @@ export class FileSecretStore implements SecretStore {
   }
 
   get(name: string): string | null {
+    this.assertSync();
     const entry = this.read().entries[name];
     if (!entry) return null;
     if (entry.cipher === 'none') return Buffer.from(entry.value, 'base64').toString('utf8');
@@ -128,10 +159,53 @@ export class FileSecretStore implements SecretStore {
   }
 
   set(name: string, value: string): void {
+    this.assertSync();
     const file = this.read();
     file.entries[name] = this.cipher
       ? { cipher: this.cipher.label, value: this.cipher.encrypt(value).toString('base64') }
       : { cipher: 'none', value: Buffer.from(value, 'utf8').toString('base64') };
+    this.write(file);
+  }
+
+  async protectAtRestAsync(): Promise<number> {
+    const codec = this.codec();
+    if (!codec) return 0;
+    const file = this.read();
+    let upgraded = 0;
+    for (const [name, entry] of Object.entries(file.entries)) {
+      if (entry.cipher !== 'none') continue;
+      const plain = Buffer.from(entry.value, 'base64').toString('utf8');
+      file.entries[name] = { cipher: codec.label, value: (await codec.encrypt(plain)).toString('base64') };
+      upgraded += 1;
+    }
+    if (upgraded > 0) this.write(file);
+    return upgraded;
+  }
+
+  async getAsync(name: string): Promise<string | null> {
+    const entry = this.read().entries[name];
+    if (!entry) return null;
+    if (entry.cipher === 'none') return Buffer.from(entry.value, 'base64').toString('utf8');
+    const codec = this.codec();
+    if (!codec || codec.label !== entry.cipher) {
+      this.warn(`secret ${name} was protected with ${entry.cipher}, which this host cannot open`);
+      return null;
+    }
+    try {
+      return await codec.decrypt(Buffer.from(entry.value, 'base64'));
+    } catch (error) {
+      this.warn(`secret ${name} could not be decrypted: ${error instanceof Error ? error.message : String(error)}`);
+      return null;
+    }
+  }
+
+  async setAsync(name: string, value: string): Promise<void> {
+    const codec = this.codec();
+    const stored = codec
+      ? { cipher: codec.label, value: (await codec.encrypt(value)).toString('base64') }
+      : { cipher: 'none', value: Buffer.from(value, 'utf8').toString('base64') };
+    const file = this.read();
+    file.entries[name] = stored;
     this.write(file);
   }
 
