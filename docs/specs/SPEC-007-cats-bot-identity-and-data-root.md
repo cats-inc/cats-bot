@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Implemented on 2026-10-30 (PLAN-008 Phases 1–3) except FR-8, which the 0.3.0 release completes |
+| **Status** | Implemented on 2026-10-30 (PLAN-008 Phases 1, 1b, 2 and 3) except FR-8, which the 0.3.0 release completes |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 
@@ -71,6 +71,17 @@ or releases.
    root. Then uninstall 0.2.x (its uninstall entry has a different GUID) and
    install 0.3.0; `~/.cats/bots` and `%APPDATA%\Cats Bot` from 0.2.x may be
    deleted by hand.
+9. FR-9: Like Cats Desktop's, the Windows uninstaller has a page with an
+   unchecked "Remove all user data" box. When it is checked, the uninstaller
+   deletes `%USERPROFILE%\.catsbot` (every bot, archived bot and hub file,
+   default workspaces included) and `%APPDATA%\Cats Bot` (Electron user data
+   and installation gates). A root moved with `CATS_BOT_HOME` and folders a bot
+   was pointed at are never touched. Every uninstall also deletes the Run
+   values that Start at login created, `io.catsinc.catsbot` and
+   `io.catsinc.catsbot.<botId>`. Installing over an existing copy, updates
+   included, runs the old uninstaller silently with `--updated`, so it removes
+   neither data nor login entries. The 0.2.x uninstaller has neither feature
+   (FR-8), and macOS and Linux packages have no uninstaller hook.
 
 ### Non-Functional Requirements
 

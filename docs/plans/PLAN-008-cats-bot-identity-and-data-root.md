@@ -72,6 +72,26 @@ repository, so the local folder rename cannot strand anyone's work.
 
 **Deliverables**: merged PR; the code no longer names the old identity.
 
+### Phase 1b: Uninstaller (owner request, 2026-10-30)
+
+- [x] 1b.1: `assets/installer/installer.nsh`: the "Remove all user data" page and
+      its gated removal of `~/.catsbot` and `%APPDATA%\Cats Bot` (SPEC-007
+      FR-9), after cats-platform's uninstaller.
+- [x] 1b.2: Every uninstall that is not an update removes the Run values named
+      `io.catsinc.catsbot` and `io.catsinc.catsbot.<botId>`.
+- [x] 1b.3: `tests/shell/installer.test.ts` ties the page, the gate, the two roots
+      and the login-entry names to the app's own names. A local `npm run
+      dist:win` compiled the uninstaller and installer, and a throwaway NSIS
+      build ran the login-entry macro against a test registry key: it removed
+      the four `io.catsinc.catsbot` values, case-insensitively, and kept `Cats`,
+      `io.catsinc.cats-bot.mochi`, `io.catsinc.catsbotx` and an unrelated value.
+- [ ] 1b.4: Interactive uninstall in a disposable Windows account or sandbox,
+      never on the owner's profile: unchecked keeps both roots, checked removes
+      them, and installing over a copy keeps Start at login. Run with PLAN-009
+      6.2, before 0.3.0.
+
+**Deliverables**: 0.3.0's uninstaller can leave nothing of Cats Bot behind.
+
 ### Phase 2: GitHub (owner-confirmed, irreversible)
 
 - [x] 2.1: Delete releases v0.2.0–v0.2.5 and their tags. The owner confirmed all
@@ -136,6 +156,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | `tests/shell/trayMenu.test.ts`, `tests/shell/windowsDesktopControl.test.ts`, `tests/integration/tools.test.ts`, `tests/integration/multinote.test.ts` | Modify | Same |
 | `tests/shell/releasePipeline.test.ts`, `tests/shell/updates.test.ts` | Modify | Contract, packaged identity check, updater feed and workflow name agree |
 | README, AGENTS.md and the docs in 1.6 | Modify | Current behavior |
+| `assets/installer/installer.nsh`, `tests/shell/installer.test.ts` (Phase 1b) | Modify, Create | Remove all user data; login entries |
 | ADR-001, ADR-004, ADR-007, SPEC-007, PLAN-008, `docs/README.md`, the spec and plan indexes | Modify | Status lines; releases to delete are v0.2.0–v0.2.5; 0.2.x upgrade steps |
 
 ## Technical Decisions
@@ -171,6 +192,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | Renaming the folder strands another agent's worktree | Medium | Phase 0.1; rename last |
 | Secrets lose repository access after rename | Medium | Phase 2.3 check before any release |
 | Owner's machine keeps a 0.2.x uninstall entry pointing at the new install | Medium | SPEC-007 FR-8 instructions; uninstall first |
+| The uninstaller removes data the owner wanted to keep | High | Unchecked by default; only `~/.catsbot` and `%APPDATA%\Cats Bot`; never during an update or reinstall; test 1b.3 and acceptance 1b.4 |
 | 0.2.x offers 0.3.0 through GitHub's rename redirect, or its login entry starts 0.3.0 against an empty root | Medium | SPEC-007 FR-8: no in-app update from 0.2.x, Start at login off before uninstalling |
 
 ## Progress Log
@@ -183,6 +205,7 @@ Phase 1 changed these files on 2026-10-30 (from `01b5d87`):
 | 2026-10-30 | Phase 1 implemented. `npm ci`, typecheck, 237 tests and the build passed on Windows. The isolated shell start (temporary `CATS_BOT_HOME` and `--user-data-dir`, fixture CLI) created only `bots/smoke/`, its Runtime exited cleanly on `cats-bot quit`, and `~/.catsbot`, `~/.cats/bots` and `%APPDATA%\Cats Bot` were unchanged. The owner confirmed deleting v0.2.0–v0.2.5. |
 | 2026-10-30 | Independent review: no code defects. Its fixes: one release identity source with a regression test, the 0.2.x login-entry and redirect steps in SPEC-007 FR-8, ADR-001/ADR-004 status lines. Bot ids are not validated (pre-existing; `..` resolves into the hub's namespace), left for the owner to schedule. |
 | 2026-10-30 | Phase 1 merged as #60. Phases 2–3 done: releases and tags v0.2.0–v0.2.5 deleted, the repository renamed to `cats-inc/cats-bot` (secrets, branch protection and workflows checked), cats-one #31 and cats-platform #352 merged, the local folder renamed and the workspace synced. The owner scheduled bot-id validation as PLAN-009 task 1.6 (SPEC-008 FR-27). |
+| 2026-10-30 | Phase 1b at the owner's request: the uninstaller offers Remove all user data like Desktop's and removes Cats Bot's login entries (SPEC-007 FR-9). Compiled locally and the login-entry macro checked against a test key; the interactive uninstall (1b.4) is still to run. |
 
 ---
 
