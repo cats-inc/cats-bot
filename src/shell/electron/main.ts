@@ -261,13 +261,24 @@ async function main(): Promise<void> {
     tray.update(await trayModel());
   };
 
-  const setOpenAtLogin = (enabled: boolean) => {
-    windows.setOpenAtLogin(enabled);
+  const applyLoginItem = (enabled: boolean) => {
     try {
       app.setLoginItemSettings({ openAtLogin: enabled, args: ['--id', botId] });
     } catch (error) {
       process.stderr.write(`login item failed: ${errorMessage(error)}\n`);
     }
+  };
+  // SPEC-007 FR-9: an uninstall that keeps the data deletes the login entry, and
+  // a reinstall may sit in another folder, so an installed Windows copy
+  // registers the owner's choice again when no entry starts it. An entry
+  // disabled in Task Manager still exists and stays disabled; a portable copy
+  // runs from a temporary folder and never registers itself.
+  if (process.platform === 'win32' && app.isPackaged && !process.env.PORTABLE_EXECUTABLE_FILE
+    && windows.shellState.openAtLogin && !app.getLoginItemSettings({ args: ['--id', botId] }).openAtLogin) applyLoginItem(true);
+
+  const setOpenAtLogin = (enabled: boolean) => {
+    windows.setOpenAtLogin(enabled);
+    applyLoginItem(enabled);
     void refreshTray();
   };
 
