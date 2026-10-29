@@ -72,6 +72,7 @@ function clampToScreen(bounds: { x: number; y: number; width: number; height: nu
 export class NoteWindows {
   private readonly options: NoteWindowsOptions;
   private readonly windows = new Map<string, BrowserWindow>();
+  private readonly loading = new Map<string, Promise<void>>();
   private state: ShellState;
   private saveTimer: NodeJS.Timeout | null = null;
   /** Desktop or wallpaper notes taken out of their layer while the owner uses them. */
@@ -168,6 +169,18 @@ export class NoteWindows {
     const layered = isAttachedLayer(view.layer) && Boolean(this.options.desktop);
     const existing = this.windows.get(conversationId);
     if (existing && !existing.isDestroyed()) {
+      // Startup may have selected this note before the owner opened/closed it.
+      // Restoring must not override a newer action or take focus from its owner.
+      if (options.restore) {
+        await this.loading.get(conversationId);
+        return existing;
+      }
+      view.open = true;
+      this.persist();
+      // A second launch can arrive before the first page has finished loading.
+      // Do not expose that page early, or show it after a subsequent close.
+      await this.loading.get(conversationId);
+      if (!this.mayShow(conversationId, existing)) return existing;
       if (layered) {
         // Attached, or detached since it was hidden while lifted: either way lifted until it loses focus,
         // so the periodic host check does not put it back under the owner's cursor.
@@ -177,8 +190,6 @@ export class NoteWindows {
         existing.show();
         existing.focus();
       }
-      view.open = true;
-      this.persist();
       await this.options.core.openView(conversationId);
       return existing;
     }
@@ -226,7 +237,8 @@ export class NoteWindows {
       if (!this.options.isQuitting() && view.open && isAttachedLayer(view.layer)) this.reopenLater(conversationId, REOPEN_TRIES);
     });
     window.webContents.on('focus', () => {
-      if (view.layer === 'desktop' && this.options.desktop?.isAttached(handleOf(window))) this.lift(conversationId, window);
+      if (this.mayShow(conversationId, window) && window.isVisible()
+        && view.layer === 'desktop' && this.options.desktop?.isAttached(handleOf(window))) this.lift(conversationId, window);
     });
     // A note that is open but not in front (on the desktop, the wallpaper or behind other windows) has not read
     // a reply: unread counts follow focus, not whether the window exists.
@@ -249,7 +261,15 @@ export class NoteWindows {
       this.rememberBounds(conversationId, window);
       this.persist();
     });
-    await window.loadURL(url.href);
+    view.open = true;
+    const loading = window.loadURL(url.href);
+    this.loading.set(conversationId, loading);
+    try {
+      await loading;
+    } finally {
+      if (this.loading.get(conversationId) === loading) this.loading.delete(conversationId);
+    }
+    if (!this.mayShow(conversationId, window)) return window;
     if (options.restore && view.x !== undefined && view.y !== undefined) window.setBounds(bounds);
     if (layered && options.restore) {
       window.showInactive();
@@ -267,6 +287,11 @@ export class NoteWindows {
     this.persist();
     await this.options.core.openView(conversationId);
     return window;
+  }
+
+  private mayShow(conversationId: string, window: BrowserWindow): boolean {
+    return !this.options.isQuitting() && !window.isDestroyed()
+      && this.windows.get(conversationId) === window && this.state.views[conversationId]?.open === true;
   }
 
   /** Puts a window where its note's layer says, unless the owner is using it right now. */

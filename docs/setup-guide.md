@@ -76,6 +76,8 @@ are saved for new sessions. Settings > App offers Follow system, English and
 Traditional Chinese; open conversation windows and the tray update immediately.
 Closing a conversation hides it. Avatar visibility/position and conversation
 visibility/position/layer survive restart, including an entirely hidden desktop.
+Closing a conversation during startup also keeps it hidden: a delayed restore or
+page load cannot reopen it. Open it explicitly from the tray or avatar when needed.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.
 
