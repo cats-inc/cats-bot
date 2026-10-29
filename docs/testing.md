@@ -139,8 +139,8 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   `cats-bot say`; quit with `cats-bot quit` and confirm the whole process tree
   is gone. The SPEC-001 measurement table was filled this way on 2026-10-27.
 - First run and settings (SPEC-002): start the shell with a fresh
-  `CATS_BOTS_HOME`, an unused `--id` and the fixture CLI
-  (`CATS_BOTS_PROVIDER_COMMAND=node`, `CATS_BOTS_PROVIDER_LAUNCH_ARGS=<fixture>`),
+  `CATS_BOT_HOME`, an unused `--id` and the fixture CLI
+  (`CATS_BOT_PROVIDER_COMMAND=node`, `CATS_BOT_PROVIDER_LAUNCH_ARGS=<fixture>`),
   fill the setup page through CDP, then drive `settings.html` the same way.
 - The floating bot (SPEC-002 FR-7) needs real input: move the mouse with
   injected events (`mouse_event` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE`
@@ -175,8 +175,9 @@ and the renderer (`tsconfig.renderer.json`).
 ## Rules
 
 - **State hygiene**: tests only write under a temporary directory they create;
-  `CATS_BOTS_HOME` and `CATS_RUNTIME_DIR` always point there. No test touches
-  the real `~/.cats`, and no test reads any provider credential file.
+  `CATS_BOT_HOME` and `CATS_RUNTIME_DIR` always point there. No test touches
+  the real `~/.catsbot` or `~/.cats`, and no test reads any provider
+  credential file.
 - **Erasable syntax only**: tests are `.ts` files run by Node's type stripping.
   Use `import type` for types and keep to the syntax `erasableSyntaxOnly`
   allows.

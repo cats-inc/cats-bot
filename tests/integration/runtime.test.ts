@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
+import type { RuntimeClient } from '../../src/core/runtime/client.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
@@ -17,7 +18,7 @@ let home: TempHome;
 let projectsDir: string;
 let fixtureLog: string;
 before(() => {
-  home = makeTempHome('cats-bots-runtime-');
+  home = makeTempHome('cats-bot-runtime-');
   projectsDir = join(home.botsHome, 'claude-projects');
   mkdirSync(projectsDir, { recursive: true });
   fixtureLog = join(home.botsHome, 'fixture.log');
@@ -69,7 +70,7 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
           LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
           XDG_CONFIG_HOME: join(home.botsHome, '.config'),
           XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
-          CATS_BOTS_FIXTURE_LOG: fixtureLog,
+          CATS_BOT_FIXTURE_LOG: fixtureLog,
         },
       },
     },
@@ -87,6 +88,9 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
     const providersYaml = readFileSync(join(root, 'runtime', 'config', 'providers.yaml'), 'utf8');
     assert.match(providersYaml, /claude:/u);
     assert.match(providersYaml, /command: /u);
+    // SPEC-007 FR-6: Runtime names Cats Bot as its manager.
+    const client = (core as unknown as { supervisor: { client: RuntimeClient | null } | null }).supervisor?.client;
+    assert.equal((await client!.health()).startup?.managedBy, 'cats-bot');
 
     // The same advanced catalog/selection contract as Desktop, all the way to CLI arguments.
     const catalog = await core.listModels('claude');

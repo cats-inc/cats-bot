@@ -15,7 +15,7 @@ import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 let home: TempHome;
 before(() => {
-  home = makeTempHome('cats-bots-profile-');
+  home = makeTempHome('cats-bot-profile-');
 });
 after(() => home.cleanup());
 

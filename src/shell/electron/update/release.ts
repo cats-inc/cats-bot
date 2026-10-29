@@ -1,6 +1,6 @@
 import type { BotUpdateState } from '../../../shared/shellUpdate.ts';
 
-export const UPDATE_REPOSITORY = 'cats-inc/cats-bots';
+export const UPDATE_REPOSITORY = 'cats-inc/cats-bot';
 export interface BotRelease {
   schemaVersion: 1;
   repository: typeof UPDATE_REPOSITORY;

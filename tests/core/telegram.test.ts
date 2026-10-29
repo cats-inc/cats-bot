@@ -124,7 +124,7 @@ async function until(predicate: () => boolean, timeoutMs = 10_000, label = 'cond
 let home: TempHome;
 let telegram: FakeTelegram;
 before(async () => {
-  home = makeTempHome('cats-bots-telegram-');
+  home = makeTempHome('cats-bot-telegram-');
   telegram = await startFakeTelegram('123:abc');
 });
 after(async () => {

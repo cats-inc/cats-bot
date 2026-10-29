@@ -1,4 +1,4 @@
-# Cats Bots
+# Cats Bot
 
 Standalone, always-alive desktop bots for the Cats ecosystem: one process per bot,
 wrapping an agent CLI through `cats-runtime`.
@@ -22,7 +22,7 @@ results in a native dialog. Onboarding checks and installs the selected provider
 the picker offers Codex, Claude, Antigravity, Grok and Muse with Runtime's exact
 model and effort choices. See [desktop parity](docs/plans/PLAN-007-desktop-experience-parity.md).
 
-Manual **Bots Standard Preview** publication and host-owned **Check for Updates**
+Manual **Cats Bot Standard Preview** publication and host-owned **Check for Updates**
 support Windows x64/arm64, macOS universal and Linux x64/arm64 packages. See the
 [release and update guide](docs/deployment.md) for signing, candidate builds,
 manual-update limitations and the separately authorized first release.
@@ -115,13 +115,13 @@ copies are preserved; resolve each proposed change intentionally.
 **Windows**
 
 ```powershell
-.\scripts\windows\Update-Project.ps1 -TargetPath "C:/Path/To/cats-bots"
+.\scripts\windows\Update-Project.ps1 -TargetPath "C:/Path/To/cats-bot"
 ```
 
 **Linux / macOS**
 
 ```bash
-bash scripts/linux/update-project.sh --target-path /path/to/cats-bots
+bash scripts/linux/update-project.sh --target-path /path/to/cats-bot
 ```
 
 ## License

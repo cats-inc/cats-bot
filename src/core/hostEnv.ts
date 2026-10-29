@@ -12,9 +12,9 @@ export interface ProviderOverrides {
 }
 
 export function readProviderOverrides(env: NodeJS.ProcessEnv = process.env): ProviderOverrides {
-  const command = env.CATS_BOTS_PROVIDER_COMMAND?.trim();
-  const launchArgs = env.CATS_BOTS_PROVIDER_LAUNCH_ARGS?.trim();
-  const projectsDir = env.CATS_BOTS_PROVIDER_PROJECTS_DIR?.trim();
+  const command = env.CATS_BOT_PROVIDER_COMMAND?.trim();
+  const launchArgs = env.CATS_BOT_PROVIDER_LAUNCH_ARGS?.trim();
+  const projectsDir = env.CATS_BOT_PROVIDER_PROJECTS_DIR?.trim();
   return {
     ...(command ? { providerCommand: command } : {}),
     ...(launchArgs ? { providerLaunchArgs: launchArgs.split('\n').map((arg) => arg.trim()).filter(Boolean) } : {}),

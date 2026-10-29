@@ -36,7 +36,7 @@ test('headless CLI answers outside the occupied gate, keeps notes isolated and p
     const done = waitForEvent(core, e => e.type === 'turn.completed' && e.workItem.id === item.id);
     const exit = await new Promise<{ code: number | null; out: string; error: string }>((resolveResult, reject) => {
       const child = spawn(process.execPath, [resolve('src/cli/main.ts'), 'respond', 'home', i.interactionId, '--id', 'testbot'], {
-        env: { ...process.env, CATS_BOTS_HOME: home.botsHome }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
+        env: { ...process.env, CATS_BOT_HOME: home.root }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true,
       });
       let out = ''; let error = '';
       child.stdout.on('data', c => { out += c; }); child.stderr.on('data', c => { error += c; });

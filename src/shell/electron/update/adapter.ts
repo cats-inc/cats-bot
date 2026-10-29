@@ -13,7 +13,7 @@ export function configureUpdater(updater: AppUpdater): void {
   updater.autoRunAppAfterInstall = true;
   updater.allowPrerelease = true;
   updater.channel = null as unknown as string;
-  updater.setFeedURL({ provider: 'github', owner: 'cats-inc', repo: 'cats-bots' });
+  updater.setFeedURL({ provider: 'github', owner: 'cats-inc', repo: 'cats-bot' });
   updater.allowDowngrade = false;
 }
 

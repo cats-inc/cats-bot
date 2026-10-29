@@ -93,7 +93,7 @@ async function main(): Promise<void> {
   // gets its own: two bots are two instances, a second launch of the same bot
   // is not (ADR-001 §8).
   app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot', 'bots', botId));
-  if (process.platform === 'win32') app.setAppUserModelId(`io.catsinc.cats-bot.${botId}`);
+  if (process.platform === 'win32') app.setAppUserModelId(`io.catsinc.catsbot.${botId}`);
 
   if (!app.requestSingleInstanceLock({ botId })) {
     app.quit();

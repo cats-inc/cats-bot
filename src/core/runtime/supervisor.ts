@@ -178,7 +178,7 @@ export class RuntimeSupervisor {
         '--startup-mode',
         'app-managed',
         '--managed-by',
-        'cats-bots',
+        'cats-bot',
         '--ready-output',
         'json',
         '--host',

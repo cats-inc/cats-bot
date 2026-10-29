@@ -13,6 +13,6 @@ export {
   type BotStatus,
   type InitializeBotInput,
 } from './core/bot.ts';
-export { botPathsFor, resolveBotRoot, resolveBotsHome, type BotPaths } from './core/store/paths.ts';
+export { botPathsFor, resolveBotRoot, resolveBotsHome, resolveCatsBotHome, type BotPaths } from './core/store/paths.ts';
 export { readInstanceLock, writeHandoff } from './core/store/lock.ts';
 export { buildHandoffPack, HANDOFF_PACK_LIMIT } from './core/conversations/handoff.ts';

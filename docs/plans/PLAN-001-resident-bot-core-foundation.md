@@ -194,8 +194,8 @@ Since 2026-10-28 this has been taken over by
   consistent after restarting the core; each test cleans up its own child processes.
 - **Manual Testing**: a real CLI on Windows runs A1–A4; phase three uses `desktop-ui-automation` for tray and
   note acceptance; each scenario of the measurement table leaves its numbers and how they were captured.
-- **State hygiene**: all tests use only temp directories; never touch `~/.cats`; tests do not read any
-  credential file.
+- **State hygiene**: all tests use only temp directories; never touch `~/.catsbot` or `~/.cats`; tests do
+  not read any credential file.
 
 ## Risks & Mitigations
 

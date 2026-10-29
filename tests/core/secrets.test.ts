@@ -11,7 +11,7 @@ import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts'
 
 let home: TempHome;
 before(() => {
-  home = makeTempHome('cats-bots-secrets-');
+  home = makeTempHome('cats-bot-secrets-');
 });
 after(() => home.cleanup());
 
@@ -71,7 +71,7 @@ test('a host with a cipher re-stores plain entries encrypted and reports what is
 
 test('telegramStatus reports the stored token protection, and a reloadToken handoff encrypts a token the CLI wrote', async () => {
   const id = 'sealed';
-  const root = resolveBotRoot(id, { CATS_BOTS_HOME: home.botsHome });
+  const root = resolveBotRoot(id, { CATS_BOT_HOME: home.root });
   const { core } = openTestBot({
     botsHome: home.botsHome,
     id,

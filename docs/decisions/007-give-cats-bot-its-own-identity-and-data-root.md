@@ -2,9 +2,10 @@
 
 ## Status
 
-Accepted — 2026-10-29, owner decisions recorded from discussion; implementation
-pending in [PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md). Once
-implemented this replaces the default data root of ADR-001 §6 and SPEC-001 FR-2.
+Accepted — 2026-10-29, owner decisions recorded from discussion. PLAN-008 Phase 1
+implemented the names and the data root on 2026-10-30, replacing the default data
+root of ADR-001 §6 and SPEC-001 FR-2; the GitHub and workspace steps follow in
+[PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md).
 
 ## Context
 
@@ -54,10 +55,10 @@ releases and requires no upgrade path for installed copies.
   in the CLIs' own folders (`~/.codex`, `~/.claude`, …), as today.
 - **No compatibility layer.** No migration from `~/.cats/bots`, no reading of
   `CATS_BOTS_HOME`, no reliance on GitHub's rename redirect, and existing
-  releases v0.2.0–v0.2.4 and their tags are deleted (an owner-confirmed step in
-  PLAN-008). The next release is 0.3.0, published together with the hub (ADR-008)
-  so the owner reinstalls once. The version stays monotonic and the release
-  workflow's 0.2.0 floor still holds.
+  releases v0.2.0–v0.2.5 and their tags are deleted (owner-confirmed in PLAN-008
+  on 2026-10-30). The next release is 0.3.0, published together with the hub
+  (ADR-008) so the owner reinstalls once. The version stays monotonic and the
+  release workflow's 0.2.0 floor still holds.
 
 ## Consequences
 

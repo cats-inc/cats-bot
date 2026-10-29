@@ -18,7 +18,7 @@ import { fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sen
 let home: TempHome;
 let projectsDir: string;
 before(() => {
-  home = makeTempHome('cats-bots-tools-');
+  home = makeTempHome('cats-bot-tools-');
   projectsDir = join(home.botsHome, 'claude-projects');
   mkdirSync(projectsDir, { recursive: true });
 });

@@ -84,8 +84,8 @@ Commands:
                                          bind the bot to a Telegram bot token (long polling)
   open [conversation|home]               ask the running shell to show a conversation window
 
-Every command except init and run takes --id <id>. Bots live under CATS_BOTS_HOME
-(default ~/.cats/bots); CATS_BOT_ID or --id selects one when more than one exists.
+Every command except init and run takes --id <id>. Bots live under CATS_BOT_HOME/bots
+(default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
 `;
 
 function listBotIds(botsHome: string): string[] {
@@ -195,7 +195,7 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
     ...(flagString(parsed.flags, 'cwd') ? { cwd: flagString(parsed.flags, 'cwd') } : {}),
     ...(flagString(parsed.flags, 'instructions') ? { instructions: flagString(parsed.flags, 'instructions') } : {}),
     ...(permissionMode ? { permissionMode } : {}),
-  }, env);
+  });
   process.stdout.write(`Initialized bot ${profile.id} (${profile.name}) at ${root}\n`);
   process.stdout.write(`Provider: ${profile.executionTarget.provider}${profile.executionTarget.model ? ` / ${profile.executionTarget.model}` : ''}\n`);
   return 0;

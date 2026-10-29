@@ -17,7 +17,7 @@ let home: TempHome;
 let projectsDir: string;
 let fixtureLog: string;
 before(() => {
-  home = makeTempHome('cats-bots-multinote-');
+  home = makeTempHome('cats-bot-multinote-');
   projectsDir = join(home.botsHome, 'claude-projects');
   mkdirSync(projectsDir, { recursive: true });
   fixtureLog = join(home.botsHome, 'fixture.log');
@@ -53,7 +53,7 @@ test('notes do not share context, and a retarget replaces sessions instead of re
           LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
           XDG_CONFIG_HOME: join(home.botsHome, '.config'),
           XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
-          CATS_BOTS_FIXTURE_LOG: fixtureLog,
+          CATS_BOT_FIXTURE_LOG: fixtureLog,
         },
       },
     },

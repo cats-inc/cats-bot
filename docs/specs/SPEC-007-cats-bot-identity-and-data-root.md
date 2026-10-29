@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Phase 1 implemented (2026-10-30); GitHub and workspace steps in PLAN-008 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 
@@ -39,7 +39,7 @@ or releases.
    executable and asset prefix stay "Cats Bot" / `Cats Bot.exe` / `Cats-Bot-`.
 2. FR-2: Windows AUMIDs derive from the appId: `io.catsinc.catsbot` for the hub
    and `io.catsinc.catsbot.<botId>` where a surface is attributed to one bot
-   (SPEC-008 defines which surfaces). Today's `io.catsinc.cats-bot.<botId>` is
+   (SPEC-008 defines which surfaces). The 0.2.x `io.catsinc.cats-bot.<botId>` is
    not kept.
 3. FR-3: The ecosystem root defaults to `~/.catsbot/`. Each bot root is
    `<root>/bots/<botId>/` with the SPEC-001 FR-2 layout unchanged inside it,
