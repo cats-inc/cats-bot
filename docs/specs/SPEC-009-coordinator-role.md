@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Implemented on 2026-10-30 (PLAN-009 Phase 5), with the decision-card form of FR-5 deferred (PLAN-009 D25) |
 | **Owner** | Product owner |
 | **Reviewer** | Independent security review before implementation |
 

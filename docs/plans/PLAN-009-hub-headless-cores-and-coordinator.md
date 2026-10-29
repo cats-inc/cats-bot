@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Implemented on 2026-10-30 except part of 6.2 and the release (6.4, the owner's); choices D1 to D28 wait for the owner |
 | **Owner** | Product owner |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Independent agent; security review for Phase 5 |
