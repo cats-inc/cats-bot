@@ -40,8 +40,8 @@ test('only the checked box removes data: the three roots the app and its updater
   const expected = [`$PROFILE\\${basename(resolveCatsBotHome({}))}`, `$APPDATA\\${pkg.build.productName}`, `$LOCALAPPDATA\\${updaterCache}`];
   assert.deepEqual(roots(gate), expected);
   assert.deepEqual(roots(uninstall), expected, 'nothing is removed outside the gate');
-  // The shell's Electron user data and the installation gate both live in the second root.
-  assert.match(main, new RegExp(`join\\(app\\.getPath\\('appData'\\), '${pkg.build.productName}', 'bots'`, 'u'));
+  // The hub's Electron user data and the installation gate both live in the second root.
+  assert.match(main, new RegExp(`join\\(app\\.getPath\\('appData'\\), '${pkg.build.productName}'\\)`, 'u'));
   assert.match(read('src/shell/electron/update/installation.ts'), new RegExp(`join\\(appData, '${pkg.build.productName}', 'installations'`, 'u'));
   for (const root of expected) assert.ok(gate.includes(`!insertmacro noteDataRootLeft "${root}"`), `reports ${root} if it remains`);
   assert.match(gate, /MessageBox MB_OK\|MB_ICONEXCLAMATION "[^"]*\$RemoveUserDataLeft[^"]*" \/SD IDOK/u);
@@ -70,11 +70,14 @@ test('a real per-user uninstall removes only this installation\'s login entries'
   // A value that is not deleted, the unnamed default one included, is stepped over.
   assert.match(entries, /\$\{If\} \$\{Errors\}\s+\$\{ExitDo\}\s+\$\{EndIf\}\s+StrCpy \$R5 ""/u);
   assert.match(entries, /\$\{If\} \$R5 == ""\s+IntOp \$R0 \$R0 \+ 1/u);
-  // Electron names the Run value after the AUMID, which the shell derives from the appId.
-  assert.match(main, new RegExp(`setAppUserModelId\\(\`${pkg.build.appId.replaceAll('.', '\\.')}\\.\\$\\{botId\\}\`\\)`, 'u'));
-  assert.match(main, /app\.setLoginItemSettings\(\{ openAtLogin: enabled, args: \['--id', botId\] \}\)/u);
+  // Electron names the Run value after the AUMID, which the hub takes from the appId
+  // (SPEC-008 FR-23: one login item, for the hub). A bot's windows add their id to it.
+  assert.match(main, new RegExp(`const APP_ID = '${pkg.build.appId.replaceAll('.', '\\.')}';`, 'u'));
+  assert.match(main, /app\.setAppUserModelId\(APP_ID\)/u);
+  assert.match(read('src/shell/electron/windowIdentity.ts'), /appId: `\$\{options\.appId\}\.\$\{options\.botId\}`/u);
+  assert.match(main, /app\.setLoginItemSettings\(\{ openAtLogin: enabled, args: \[\] \}\)/u);
   // An uninstall that kept the data deleted the entry, so an installed Windows
   // copy restores the owner's choice, but only when no entry starts it: one
   // disabled in Task Manager stays disabled, and a portable copy never registers.
-  assert.match(main, /if \(process\.platform === 'win32' && app\.isPackaged && !process\.env\.PORTABLE_EXECUTABLE_FILE\s+&& windows\.shellState\.openAtLogin && !app\.getLoginItemSettings\(\{ args: \['--id', botId\] \}\)\.openAtLogin\) applyLoginItem\(true\);/u);
+  assert.match(main, /if \(process\.platform === 'win32' && app\.isPackaged && !process\.env\.PORTABLE_EXECUTABLE_FILE\s+&& hubState\.openAtLogin && !app\.getLoginItemSettings\(\{ args: \[\] \}\)\.openAtLogin\) applyLoginItem\(true\);/u);
 });

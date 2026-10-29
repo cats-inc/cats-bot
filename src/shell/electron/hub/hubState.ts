@@ -1,0 +1,61 @@
+import { randomUUID } from 'node:crypto';
+import { hostname } from 'node:os';
+import { join } from 'node:path';
+
+import { readJsonFile, writeJsonAtomic } from '../../../core/store/atomicFile.ts';
+import { acquireLockFile } from '../../../core/store/lock.ts';
+import { hubPathsFor } from '../../../core/store/paths.ts';
+import { isLanguagePreference, type LanguagePreference } from '../../../shared/language.ts';
+
+/**
+ * SPEC-008 FR-1, FR-18 and FR-23: what the hub keeps for itself. Its
+ * preferences (display language, start at login) are shared by every bot and
+ * live in `<CATS_BOT_HOME>/hub-state.json`; its installation id lives in its
+ * Electron user data; its root lock keeps a second installation away from the
+ * same bots.
+ */
+
+export interface HubState {
+  schemaVersion: 1;
+  language: LanguagePreference;
+  openAtLogin: boolean;
+}
+
+export function readHubState(home: string): HubState | null {
+  const read = readJsonFile<Partial<HubState>>(hubPathsFor(home).state);
+  if (!read.ok || typeof read.value !== 'object' || read.value === null) return null;
+  return {
+    schemaVersion: 1,
+    language: isLanguagePreference(read.value.language) ? read.value.language : 'system',
+    openAtLogin: read.value.openAtLogin === true,
+  };
+}
+
+export function writeHubState(home: string, state: HubState): void {
+  writeJsonAtomic(hubPathsFor(home).state, state);
+}
+
+/** FR-12: a random id for this installation, kept in its user data. */
+export function readOrCreateInstallationId(userData: string): string {
+  const file = join(userData, 'installation.json');
+  const read = readJsonFile<{ id?: unknown }>(file);
+  if (read.ok && typeof read.value?.id === 'string' && /^[0-9a-f-]{36}$/u.test(read.value.id)) return read.value.id;
+  const id = randomUUID();
+  writeJsonAtomic(file, { schemaVersion: 1, id });
+  return id;
+}
+
+export interface HubLockOwner {
+  pid: number;
+  host: string;
+  installationId: string;
+  executable: string;
+  startedAt: string;
+}
+
+/** FR-1: one hub per Cats Bot root; a later hub learns which installation holds it. */
+export function acquireHubLock(home: string, installationId: string, executable: string, pid = process.pid) {
+  return acquireLockFile<HubLockOwner>(hubPathsFor(home).lock, {
+    pid, host: hostname(), installationId, executable, startedAt: new Date().toISOString(),
+  });
+}

@@ -78,7 +78,12 @@ export class HostControlServer {
     try {
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
-        server.listen(this.descriptor.socket, () => { server.off('error', reject); resolve(); });
+        server.listen(this.descriptor.socket, () => {
+          server.off('error', reject);
+          // A failed accept (for example no file descriptors left) leaves the server listening.
+          server.on('error', () => undefined);
+          resolve();
+        });
       });
       restrictSocket(this.descriptor.socket);
       writeDescriptor(descriptorFile(this.root), this.descriptor);

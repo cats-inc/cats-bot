@@ -87,16 +87,21 @@ restarting the shell reattaches. First working-set measurement.
 
 ### Phase 2: The hub
 
-- [ ] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot`, installation id and
+- [x] 2.1: Hub single-instance lock on `%APPDATA%\Cats Bot`, installation id and
       root lock (FR-1); bot registry with lock and atomic writes (FR-2,
       FR-3); hub state file for language and start at login (FR-18, FR-23).
-- [ ] 2.2: First run creates the registry, the native environment profile and the
+      `src/shell/electron/hub/registry.ts` and `hubState.ts`; the reconcile
+      reports unregistered, missing and invalid entries and deletes nothing.
+- [x] 2.2: First run creates the registry, the native environment profile and the
       first bot, then assigns it as coordinator holder (FR-4, FR-24).
-- [ ] 2.3: Windows bound to a bot id with per-window AUMIDs and bot-scoped IPC
+- [x] 2.3: Windows bound to a bot id with per-window AUMIDs and bot-scoped IPC
       (FR-17); one tray that matches today's menu for one bot (FR-16).
-- [ ] 2.4: `environment: { kind: 'native' }` in the bot profile; refuse any
+      `src/shell/electron/botPresenter.ts` holds one bot's windows; every IPC
+      message is answered for the bot whose window sent it.
+- [x] 2.4: `environment: { kind: 'native' }` in the bot profile; refuse any
       other kind.
-- [ ] 2.5: The hub's own control endpoint for owner CLI hub commands (FR-25).
+- [x] 2.5: The hub's own control endpoint for owner CLI hub commands (FR-25).
+      `src/core/host-api/hubControl.ts`; `cats-bot hub status`.
 
 **Deliverables**: the product runs as hub plus one core, with no visible
 regression.
@@ -297,6 +302,41 @@ Each entry names where it is implemented.
   the channel is up, while the Runtime still starts. Such a turn used to wait
   for its 30-second retry; it now runs as soon as the Runtime is ready, for
   every host including the CLI.
+- **D11, bots made before the hub (2.2).** A hub that finds no registry but bot
+  directories registers them instead of running first-run setup, up to the
+  cap. A bot named with `--id` comes first, then the others by id, and the
+  first is the coordinator holder. Further directories stay unregistered.
+  This keeps `cats-bot init` and development shells working.
+- **D12, the first run (2.2).**
+  - The environment step has nothing to choose while native is the only
+    profile, so the page does not show it and the registry records native.
+  - The first bot's id is `--id`, or derived from its name as `cats-bot init`
+    derives it (`deriveBotId` moved to `src/core/store/paths.ts`).
+  - `--provider` still creates the first bot without the page.
+- **D13, hub preferences (2.1).**
+  - `hub-state.json` holds the display language and start at login.
+  - A hub's first start takes them from the `shell-state.json` of the bot it
+    presents, so a development setup keeps its choice.
+  - The registry also stores `maxBots` (3), the hub setting of FR-6.
+- **D14, hub windows and tray (2.3).**
+  - Each bot's windows use `io.catsinc.catsbot.<botId>`. In a packaged build
+    a pinned window relaunches the hub with `--id <botId>`.
+  - The hub itself uses `io.catsinc.catsbot` and one login item without
+    arguments, which the uninstaller already removes.
+  - The renderers keep no storage, so they share one session.
+  - Until task 3.2 the tray shows the first running bot.
+  - `cats-bot quit` for a bot ends the hub while it presents one bot, as it
+    ended the shell; with more bots only that bot's windows close.
+  - A core that ends unasked still offers to restart the whole hub until
+    Phase 3 supervises cores.
+- **D15, the manager of a core (2.1).** The hub names its installation id as
+  manager, replacing Phase 1's id derived from the executable. A core that a
+  Phase 1 development shell started is therefore not taken over; stop it once.
+- **D16, the hub's user data (2.1).** The hub's Electron user data is
+  `%APPDATA%\Cats Bot` instead of `…\Cats Bot\bots\<id>`. Secrets that a
+  development build stored with the old user data's OS key cannot be opened
+  and need to be entered again, such as a Telegram token. Nothing was
+  released with the old layout.
 
 ## Progress Log
 
@@ -308,8 +348,9 @@ Each entry names where it is implemented.
 | 2026-10-30 | Owner scheduled bot id validation as task 1.6 (SPEC-008 FR-27). The PLAN-008 review found that `--id ..` resolves into the hub's part of the root. |
 | 2026-10-30 | Owner asked for the whole plan unattended, decisions logged above. Task 1.6 implemented: 246 tests, typecheck and build passed on Windows. |
 | 2026-10-30 | Tasks 1.1 and 1.2 implemented: the host channel and `cats-bot run` as a channel-hosted core. An integration test runs `cats-bot run` with the packed Runtime and the fixture CLI, converses through the channel and stops it there. |
-| 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
 | 2026-10-30 | Tasks 1.3 to 1.5 implemented. With the real Electron shell in an isolated home (Windows 11, fixture CLI): the shell started its core as a separate process; killing the shell left the core running; a new shell reattached to the same core; `cats-bot quit` ended both. First working set: shell 461 MB over five Electron processes, core 64 MB, Runtime 80 MB, fixture CLI 59 MB. |
+| 2026-10-30 | Independent review of 1.1 and 1.2 (after #64 merged; nothing used those paths yet): fixed a secret re-store that could restore a cleared token, `attach` applying events before the caller had the snapshot, a late answer closing the connection, a token reload failing without a host, and an FR-13 test that did not test its filter. Hardened refused connections, cipher answers, the welcome PID check, server errors and a stop during start. |
+| 2026-10-30 | Tasks 2.1 to 2.5 implemented. With the real Electron hub in an isolated home (Windows 11, fixture CLI): the first run wrote the registry, hub state, root lock and installation id; `cats-bot hub status` answered; a second launch handed over and exited; killing the hub left the core running and a new hub reattached; `cats-bot quit` ended both and released the hub's files. |
 
 ---
 

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { hostname } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import type { HandoffMessage } from '../types.ts';
 import { readJsonFile, writeJsonAtomic } from './atomicFile.ts';
@@ -34,31 +34,51 @@ function processAlive(pid: number): boolean {
 }
 
 export function acquireInstanceLock(paths: BotPaths, pid: number = process.pid): LockResult {
-  mkdirSync(paths.root, { recursive: true });
+  return acquireLockFile<InstanceLock>(paths.lock, { pid, host: hostname(), startedAt: new Date().toISOString() });
+}
+
+/**
+ * A lock file that names the process holding it on this host, created
+ * exclusively. A file whose process is gone, or that cannot be read, is
+ * replaced; `release` removes the file only while it still names this
+ * process. The instance lock (SPEC-001 FR-3) and the hub's root lock
+ * (SPEC-008 FR-1) are such files.
+ */
+export function acquireLockFile<T extends { pid: number; host: string }>(
+  file: string,
+  record: T,
+): { held: true; release: () => void } | { held: false; owner: T } {
+  mkdirSync(dirname(file), { recursive: true });
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    const lock: InstanceLock = { pid, host: hostname(), startedAt: new Date().toISOString() };
     try {
-      writeFileSync(paths.lock, `${JSON.stringify(lock, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
       return {
         held: true,
         release: () => {
-          const current = readJsonFile<InstanceLock>(paths.lock);
-          if (current.ok && current.value.pid === pid) {
-            rmSync(paths.lock, { force: true });
+          const current = readJsonFile<T>(file);
+          if (current.ok && current.value.pid === record.pid) {
+            rmSync(file, { force: true });
           }
         },
       };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
-    const existing = readJsonFile<InstanceLock>(paths.lock);
+    const existing = readJsonFile<T>(file);
     if (existing.ok && existing.value.host === hostname() && processAlive(existing.value.pid)) {
       return { held: false, owner: existing.value };
     }
     // Stale or unreadable: the owner is gone, so the lock is ours to replace.
-    rmSync(paths.lock, { force: true });
+    rmSync(file, { force: true });
   }
-  throw new Error(`Could not acquire the instance lock at ${paths.lock}`);
+  throw new Error(`Could not acquire the lock at ${file}`);
+}
+
+/** The process holding a lock file on this host, or null when it is free or stale. */
+export function readLockFile<T extends { pid: number; host: string }>(file: string): T | null {
+  const existing = readJsonFile<T>(file);
+  if (!existing.ok) return null;
+  return existing.value.host === hostname() && processAlive(existing.value.pid) ? existing.value : null;
 }
 
 export function readInstanceLock(paths: BotPaths): InstanceLock | null {

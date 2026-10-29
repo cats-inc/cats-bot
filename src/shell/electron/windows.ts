@@ -5,6 +5,7 @@ import { BrowserWindow, screen } from 'electron';
 
 import type { RemoteBotCore } from '../../core/host-api/remote.ts';
 import type { BotHostEvent } from '../../core/types.ts';
+import { applyWindowIdentity, type WindowIdentity } from './windowIdentity.ts';
 import type { LanguageState } from '../../shared/language.ts';
 import {
   DEFAULT_NOTE_SIZE,
@@ -42,6 +43,8 @@ export interface NoteWindowsOptions {
   /** Windows only; without it notes offer the normal and top layers. */
   desktop?: DesktopHost | null;
   log?(line: string): void;
+  /** SPEC-008 FR-17: the AUMID of this bot's notes. */
+  identity?: WindowIdentity;
 }
 
 const ATTACHED: readonly NoteLayer[] = ['desktop', 'wallpaper'];
@@ -107,11 +110,6 @@ export class NoteWindows {
 
   get shellState(): ShellState {
     return this.state;
-  }
-
-  setOpenAtLogin(value: boolean): void {
-    this.state.openAtLogin = value;
-    this.persist();
   }
 
   /** Saves the shell state soon; the floating bot shares the file. */
@@ -216,6 +214,7 @@ export class NoteWindows {
         spellcheck: false,
       },
     });
+    applyWindowIdentity(window, this.options.identity);
     guardNavigation(window.webContents);
     this.windows.set(conversationId, window);
     const url = pathToFileURL(join(this.options.rendererDir, 'note.html'));

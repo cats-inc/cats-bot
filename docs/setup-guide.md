@@ -86,18 +86,25 @@ arguments, IDs, persisted roles and owner-assigned titles remain compatible.
 
 ```bash
 npm run build
-npm run shell -- --provider claude --name Mochi   # first launch initializes the bot
-npm run shell -- --id mochi                        # later launches
+npm run shell -- --provider claude --name Mochi   # first run: creates the first bot
+npm run shell                                      # later launches
+npm run shell -- --id mochi                        # later launches, opening that bot's note
 ```
 
-The shell runs the same core as a process of its own (`cats-bot run`, started
-with the shell's executable as Node) and talks to it over the host channel. It
-shows a tray icon (open direct message, conversations, new conversation, pause
+The shell is the hub (SPEC-008): one Electron process for every bot, with one
+tray icon (open direct message, conversations, new conversation, pause
 heartbeat, start at login, quit) and one frameless window per conversation.
-Closing a conversation hides its window; the bot keeps running until Quit. A
-shell that closes or crashes leaves the core running, and the next shell
-reattaches to it. The core writes its log lines to `<bot root>/logs/core.log`.
-The same `CATS_BOT_PROVIDER_*` variables apply.
+Each bot runs as a core process of its own (`cats-bot run`, started with the
+hub's executable as Node) that the hub reaches over its host channel. Closing a
+conversation hides its window; the bots keep running until Quit. A hub that
+closes or crashes leaves its cores running, and the next hub reattaches to
+them. A core writes its log lines to `<bot root>/logs/core.log`. The same
+`CATS_BOT_PROVIDER_*` variables apply.
+
+The hub keeps its registry (`bots.json`), preferences (`hub-state.json`) and
+locks beside `bots/` in the Cats Bot root. Its first run creates the first bot;
+bots that `cats-bot init` made before then are taken in, up to three. While the
+hub runs, `cats-bot hub status` lists its bots.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
 

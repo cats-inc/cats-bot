@@ -1,7 +1,6 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import { closeSync, mkdirSync, openSync, renameSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 import { HostChannelClient, readChannelOwner, type ChannelHostIdentity, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { remoteBotCore, type RemoteBotCore } from '../../core/host-api/remote.ts';
@@ -25,12 +24,6 @@ export class CoreHostedElsewhereError extends Error {
     this.name = 'CoreHostedElsewhereError';
     this.pid = pid;
   }
-}
-
-/** The manager a shell names for its cores: its executable, so another copy never takes them over. */
-export function shellManagerId(executable: string, platform: NodeJS.Platform = process.platform): string {
-  const identity = platform === 'win32' ? resolve(executable).toLowerCase() : resolve(executable);
-  return `shell-${createHash('sha256').update(identity).digest('hex').slice(0, 32)}`;
 }
 
 export interface CoreLaunch {

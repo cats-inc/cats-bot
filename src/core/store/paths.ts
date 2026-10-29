@@ -58,6 +58,44 @@ export function assertValidBotId(id: string): string {
   return id;
 }
 
+/**
+ * SPEC-008 FR-27: `cats-bot init` and the hub's first run name a bot after
+ * it: lowercase words joined by hyphens, at most 64 characters, with `-bot`
+ * after a Windows device name.
+ */
+export function deriveBotId(name: string): string {
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').slice(0, 64).replace(/^-+|-+$/gu, '') || 'bot';
+  return isValidBotId(id) ? id : `${id.slice(0, 60)}-bot`;
+}
+
+/** SPEC-008 FR-1 to FR-3, FR-18 and FR-25: the hub's part of the Cats Bot root, beside `bots/`. */
+export interface HubPaths {
+  home: string;
+  bots: string;
+  archive: string;
+  trash: string;
+  registry: string;
+  registryLock: string;
+  lock: string;
+  state: string;
+  control: string;
+}
+
+export function hubPathsFor(home: string): HubPaths {
+  const root = resolve(home);
+  return {
+    home: root,
+    bots: join(root, 'bots'),
+    archive: join(root, 'archive'),
+    trash: join(root, 'trash'),
+    registry: join(root, 'bots.json'),
+    registryLock: join(root, 'bots.json.lock'),
+    lock: join(root, 'hub.lock.json'),
+    state: join(root, 'hub-state.json'),
+    control: join(root, 'hub-control.json'),
+  };
+}
+
 export function botRootIn(botsHome: string, botId: string): string {
   return join(resolve(botsHome), assertValidBotId(botId));
 }

@@ -4,6 +4,7 @@ import type { BotHostEvent } from '../../core/types.ts';
 import { bubbleText, FLOATING_SIZE, placeFloating } from './floatingPlacement.ts';
 import { guardNavigation } from './navigation.ts';
 import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
+import { applyWindowIdentity } from './windowIdentity.ts';
 import type { FloatingBotState } from './viewState.ts';
 
 /**
@@ -106,6 +107,7 @@ export class FloatingBot {
       },
     });
     this.window = window;
+    applyWindowIdentity(window, this.options.identity);
     guardNavigation(window.webContents);
     // Above ordinary topmost windows, like a desktop pet.
     window.setAlwaysOnTop(true, 'screen-saver');

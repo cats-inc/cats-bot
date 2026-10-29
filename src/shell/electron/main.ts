@@ -15,43 +15,51 @@ import {
 
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import type { ChannelHostServices } from '../../core/host-api/channel.ts';
+import { HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
-import { InvalidBotIdError, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../../core/store/paths.ts';
-import type { BotHostEvent, BotProfile } from '../../core/types.ts';
-import { attachOrStartCore, CoreHostedElsewhereError, shellManagerId, type HostedCore } from './coreHost.ts';
-import { FloatingBot } from './floatingBot.ts';
+import { botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
+import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
+import { BotPresenter, type PresenterHost } from './botPresenter.ts';
+import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
+import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
+import {
+  activeBots, addBot, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, reconcileRegistry, writeRegistry,
+  type BotRegistry,
+} from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
-import { SettingsWindow } from './settingsWindow.ts';
+import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { BotTray } from './tray.ts';
-import { buildTrayMenuTemplate, type TrayDesktopControl, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
-import { NOTE_LAYER_LABELS, NOTE_LAYERS, type NoteLayer } from './viewState.ts';
-import { loadDesktopHost } from './win32Desktop.ts';
-import { NoteWindows } from './windows.ts';
+import { buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
 import { configureUpdater, createUpdaterAdapter, installDebianUpdate } from './update/adapter.ts';
 import { BotUpdateController } from './update/controller.ts';
+import { TrayUpdateDialog } from './update/dialog.ts';
 import { BotInstallation, InstallationRecoveryRequired, processIsAlive } from './update/installation.ts';
 import { isUpdateSender, updateAction } from './update/ipc.ts';
 import { assertNoOtherUsers } from './update/otherUsers.ts';
-import { initialUpdateState, parseBotRelease, type BotRelease } from './update/release.ts';
-import { TrayUpdateDialog } from './update/dialog.ts';
 import { showDesktopUpdateMessageBox } from './update/presenter.ts';
-import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
-import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
+import { initialUpdateState, parseBotRelease, type BotRelease } from './update/release.ts';
+import { NOTE_LAYER_LABELS, NOTE_LAYERS, readShellState, type NoteLayer } from './viewState.ts';
+import { loadDesktopHost } from './win32Desktop.ts';
+import { botWindowIdentity } from './windowIdentity.ts';
 
 /**
- * PLAN-001 Phase 3 (ADR-001 §2, §8): the first presentation host. The tray,
- * the sticky-note windows, the settings window and the floating bot are
- * clients of `BotHostApi`. All windows closed means the bot keeps running
- * until Quit. A bot that was never set up opens the first-run page (SPEC-002
- * FR-1). PLAN-009 1.3: the core runs as a process of its own, started with
- * this executable as Node, and the shell reaches it through the host channel;
- * a shell that closes or crashes leaves it running, and the next shell of this
- * installation reattaches.
+ * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phase 2 (SPEC-008): the
+ * hub. One Electron process per account and installation presents every bot
+ * that runs, each as a core process of its own reached through its host
+ * channel (ADR-008). The tray, the sticky notes, the settings windows and the
+ * floating Cats are clients of `BotHostApi`; every bot's windows are bound to
+ * it (FR-17). All windows closed means the bots keep running until Quit. A
+ * hub without a bot registry opens the first-run page (SPEC-002 FR-1,
+ * SPEC-008 FR-4). A hub that closes or crashes leaves its cores running, and
+ * the next hub of this installation reattaches to them.
  */
 
 const require = createRequire(import.meta.url);
+
+/** The package's appId; Electron names the login item after it (SPEC-007 FR-9). */
+const APP_ID = 'io.catsinc.catsbot';
 
 function parseArgs(argv: string[]): { id?: string; provider?: string; name?: string; model?: string } {
   const result: { id?: string; provider?: string; name?: string; model?: string } = {};
@@ -88,45 +96,58 @@ function errorMessage(error: unknown): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(1));
-  const installation = app.isPackaged ? new BotInstallation(app.getPath('appData'), process.execPath, app.getVersion()) : null;
-  const botId = args.id ?? readBotIdFromEnv() ?? installation?.pendingBotId() ?? 'mochi';
-  // SPEC-008 FR-27: refuse before the id reaches any path, Electron's user data included.
-  if (!isValidBotId(botId)) {
-    dialog.showErrorBox('Cats Bot', new InvalidBotIdError(botId).message);
+  // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
+  // invalid id before it reaches any path.
+  const requested = args.id ?? readBotIdFromEnv();
+  if (requested !== undefined && !isValidBotId(requested)) {
+    dialog.showErrorBox('Cats Bot', new InvalidBotIdError(requested).message);
     app.exit(2);
     return;
   }
-  const botsHome = resolveBotsHome();
-  const root = resolveBotRoot(botId);
+  const installation = app.isPackaged ? new BotInstallation(app.getPath('appData'), process.execPath, app.getVersion()) : null;
   app.setName('Cats Bot');
-  // Electron keys its single-instance lock by the userData path, so each bot
-  // gets its own: two bots are two instances, a second launch of the same bot
-  // is not (ADR-001 §8).
-  app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot', 'bots', botId));
-  if (process.platform === 'win32') app.setAppUserModelId(`io.catsinc.catsbot.${botId}`);
+  // SPEC-008 FR-1: one hub per account and installation, behind one Electron
+  // single-instance lock on its user data. A second launch hands its
+  // arguments to the running hub and exits.
+  app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot'));
+  if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
-  if (!app.requestSingleInstanceLock({ botId })) {
+  if (!app.requestSingleInstanceLock({ id: requested ?? null })) {
     app.quit();
     return;
   }
 
   await app.whenReady();
   try {
-    installation?.register(botId);
+    // The hub relaunches after an update without naming a bot.
+    installation?.register('');
   } catch (error) {
     if (error instanceof InstallationRecoveryRequired && dialog.showMessageBoxSync({ type: 'warning', title: 'Cats Bot update',
       message: error.message, buttons: ['Keep closed', 'Installer finished — reopen'], defaultId: 0, cancelId: 0 }) === 1) {
       installation!.acknowledgeFinishedInstaller();
-      installation!.register(botId);
+      installation!.register('');
     } else {
       if (!(error instanceof InstallationRecoveryRequired)) dialog.showErrorBox('Cats Bot update', errorMessage(error));
       app.quit(); return;
     }
   }
   app.on('quit', () => { try { installation?.unregister(); } catch (error) { process.stderr.write(`${errorMessage(error)}\n`); } });
-  // ADR-001 §2: all notes closed is not quitting; the bot keeps running from the tray.
+  // ADR-001 §2: all notes closed is not quitting; the bots keep running from the tray.
   // Registered before first-run setup, whose window closes before the first note opens.
   app.on('window-all-closed', () => undefined);
+
+  const log = (line: string) => process.stderr.write(`${line}\n`);
+  const home = resolveCatsBotHome();
+  const hubPaths = hubPathsFor(home);
+  const installationId = readOrCreateInstallationId(app.getPath('userData'));
+  // FR-1: two installations pointed at one root never manage the same bots.
+  const hubLock = acquireHubLock(home, installationId, process.execPath);
+  if (!hubLock.held) {
+    dialog.showErrorBox('Cats Bot', `Another Cats Bot (${hubLock.owner.executable}, pid ${hubLock.owner.pid}) manages the bots in ${home}.\n\nQuit it first.`);
+    app.quit();
+    return;
+  }
+  app.on('quit', () => hubLock.release());
 
   const appPath = app.getAppPath();
   const assetsDir = join(appPath, 'assets');
@@ -134,15 +155,37 @@ async function main(): Promise<void> {
   const rendererDir = join(appPath, 'dist', 'renderer');
   const preloadPath = join(assetsDir, 'preload.cjs');
   const iconPath = join(assetsDir, 'icon.png');
-  const log = (line: string) => process.stderr.write(`${line}\n`);
-  let hosted: HostedCore | null = null;
-  // A CLI that setup found or installed reaches the core's PATH as well as the shell's.
+
+  // FR-18: display language and start at login belong to the hub. A hub's
+  // first start takes them from the bot that a development shell presented.
+  let hubState: HubState = readHubState(home) ?? (() => {
+    const first = requested ?? listBotDirectories(hubPaths.bots).ids[0];
+    const shellState = first ? readShellState(botRootIn(hubPaths.bots, first)) : null;
+    return { schemaVersion: 1, language: shellState?.language ?? 'system', openAtLogin: shellState?.openAtLogin === true };
+  })();
+  const saveHubState = (next: HubState) => {
+    hubState = next;
+    try {
+      writeHubState(home, hubState);
+    } catch (error) {
+      log(`hub state not saved: ${errorMessage(error)}`);
+    }
+  };
+  if (!readHubState(home)) saveHubState(hubState);
+  const locale = () => resolveLocale(hubState.language, app.getLocale());
+  const t = (message: string) => translate(locale(), message);
+  const languageState = () => ({ preference: hubState.language, locale: locale() });
+
+  const presenters = new Map<string, BotPresenter>();
+  // FR-19: one setup helper at a time for every bot; a CLI it found reaches every core's PATH.
   const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup'), (directory) => {
-    void hosted?.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+    for (const presenter of presenters.values()) {
+      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+    }
   }));
 
-  // SPEC-001 NFR security and SPEC-008 FR-20: the core keeps secrets encrypted with the
-  // OS facility, which the shell serves it over the channel when it has one.
+  // SPEC-001 NFR security and SPEC-008 FR-20: the cores keep secrets encrypted with the
+  // OS facility, which the hub serves them over the channel when it has one.
   const services: ChannelHostServices = safeStorage.isEncryptionAvailable()
     ? {
       cipher: {
@@ -152,196 +195,251 @@ async function main(): Promise<void> {
       },
     }
     : {};
-  let profile: BotProfile | null;
+
+  // FR-4: the first run creates the first bot with the provider-first flow.
+  const createFirstBot = async (): Promise<string | null> => {
+    if (args.provider) {
+      const id = requested ?? deriveBotId(args.name ?? 'mochi');
+      initializeBot(hubPaths.bots, { id, name: args.name ?? id, provider: args.provider, model: args.model ?? null });
+      return id;
+    }
+    let created: string | null = null;
+    const done = await runFirstRunSetup({
+      language: { read: () => hubState.language, write: (value) => saveHubState({ ...hubState, language: value }) },
+      systemLocale: app.getLocale(),
+      providers: providerSetup,
+      preloadPath,
+      rendererDir,
+      iconPath,
+      create: async (input) => {
+        const id = requested ?? deriveBotId(input.name);
+        initializeBot(hubPaths.bots, {
+          id,
+          name: input.name,
+          provider: input.provider,
+          model: input.model,
+          ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+          ...(input.instructions ? { instructions: input.instructions } : {}),
+        });
+        created = id;
+      },
+    });
+    return done ? created : null;
+  };
+  // FR-2 to FR-4: the registry, created on the first run. Bots set up before
+  // there was a hub (`cats-bot init`, a development shell) are taken in, up to
+  // the cap; the first is the coordinator holder.
+  const createRegistry = async (): Promise<BotRegistry | null> => {
+    const existing = listBotDirectories(hubPaths.bots).ids;
+    let ids: string[];
+    if (existing.length > 0) {
+      ids = [...(requested && existing.includes(requested) ? [requested] : []), ...existing.filter((id) => id !== requested)]
+        .slice(0, DEFAULT_MAX_BOTS);
+    } else {
+      const id = await createFirstBot();
+      if (!id) return null;
+      ids = [id];
+    }
+    let next = emptyRegistry();
+    for (const id of ids) next = addBot(next, id);
+    next = { ...next, coordinator: { holder: ids[0]! } };
+    writeRegistry(home, next);
+    return next;
+  };
+  let registry: BotRegistry;
   try {
-    profile = readBotProfile(root);
+    const read = readRegistry(home);
+    if (read.state === 'corrupt') {
+      dialog.showErrorBox('Cats Bot', `The bot registry ${hubPaths.registry} could not be read and was kept as it is.\n\n${read.error}`);
+      app.quit();
+      return;
+    }
+    if (read.state === 'missing') {
+      const created = await createRegistry();
+      if (!created) {
+        app.quit();
+        return;
+      }
+      registry = created;
+    } else {
+      const reconciled = reconcileRegistry(home, read.registry);
+      registry = reconciled.registry;
+      if (reconciled.changed) writeRegistry(home, registry);
+      for (const id of reconciled.unregistered) log(`bot ${id} has a directory but no registry entry`);
+      for (const id of reconciled.missing) log(`bot ${id} is registered but its directory is missing`);
+      for (const name of reconciled.skipped) log(`skipped ${name}: not a valid bot id`);
+    }
   } catch (error) {
     dialog.showErrorBox('Cats Bot', errorMessage(error));
     app.quit();
     return;
   }
-  if (!profile) {
-    if (args.provider) {
-      initializeBot(botsHome, { id: botId, name: args.name ?? botId, provider: args.provider, model: args.model ?? null });
-    } else {
-      const done = await runFirstRunSetup({
-        botRoot: root,
-        systemLocale: app.getLocale(),
-        providers: providerSetup,
-        preloadPath,
-        rendererDir,
-        iconPath,
-        create: async (input) => {
-          initializeBot(botsHome, {
-            id: botId,
-            name: input.name,
-            provider: input.provider,
-            model: input.model,
-            ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
-            ...(input.instructions ? { instructions: input.instructions } : {}),
-          });
-        },
-      });
-      if (!done) {
-        app.quit();
-        return;
-      }
-    }
-    profile = readBotProfile(root)!;
-  }
-
-  const manager = shellManagerId(process.execPath);
-  try {
-    // A new core inherits the shell's PATH, so the provider CLI is found first.
-    if (!readProviderOverrides().providerCommand) {
-      await providerSetup
-        .prepareEnvironment(profile.executionTarget.provider)
-        .catch((error) => log(`Provider environment: ${errorMessage(error)}`));
-    }
-    const runtimeEntry = resolvePackagedRuntimeEntry();
-    hosted = await attachOrStartCore(root, {
-      execPath: process.execPath,
-      runAsNode: true,
-      entry: join(appPath, 'dist', 'cli', 'main.js'),
-      catsBotHome: resolveCatsBotHome(),
-      botId,
-      manager,
-      ...(services.cipher ? { hostCipher: services.cipher.label } : {}),
-      ...(runtimeEntry ? { runtimeEntry } : {}),
-      // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
-      ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
-    }, { host: { pid: process.pid, executable: process.execPath, installationId: manager }, services });
-  } catch (error) {
-    dialog.showErrorBox('Cats Bot', error instanceof CoreHostedElsewhereError
-      ? `${error.message}\n\nStop the other instance (for example cats-bot run) first.`
-      : errorMessage(error));
-    app.quit();
-    return;
-  }
-  const hostedCore = hosted;
-  const core = hostedCore.core;
-  // A token the CLI stored as a file is re-stored with the OS facility.
-  void core.protectSecretsAtRest().catch((error: unknown) => log(`secret re-store failed: ${errorMessage(error)}`));
 
   let quitting = false;
-  const windows = new NoteWindows({
-    core,
-    botRoot: root,
-    preloadPath,
-    rendererDir,
-    iconPath,
-    isQuitting: () => quitting,
-    desktop: loadDesktopHost(log),
-    log,
-  });
-  const settings = new SettingsWindow({ preloadPath, rendererDir, iconPath });
-  const t = (message: string) =>
-    translate(resolveLocale(windows.shellState.language ?? 'system', app.getLocale()), message);
-  const openSettings = (tab?: string) => {
-    void settings.open(tab).catch((error: unknown) => {
-      process.stderr.write(`open settings failed: ${errorMessage(error)}\n`);
-    });
-  };
-
-  const floating = new FloatingBot({
-    preloadPath,
-    rendererDir,
-    iconPath,
-    state: () => windows.shellState.floatingBot,
-    persist: () => windows.persist(),
-  });
-  const setFloatingVisible = (visible: boolean) => {
-    if (visible) {
-      void floating.show().catch((error: unknown) => {
-        process.stderr.write(`floating bot failed: ${errorMessage(error)}\n`);
-      });
-    } else {
-      floating.hide();
-    }
-    void refreshTray();
-  };
-
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
-  // SPEC-006 BDC-10: whether desktop control is on, which note has a grant request waiting, and what is held.
-  const trayDesktopControl = async (): Promise<TrayDesktopControl> => {
-    const state = await core.desktopControlState();
-    let waitingConversationId: string | null = null;
-    if (state.pendingRequests > 0) {
-      for (const conversationId of state.conversations) {
-        const one = await core.desktopControlState(conversationId).catch(() => null);
-        if (one?.conversation?.pendingRequests.length) {
-          waitingConversationId = conversationId;
-          break;
-        }
-      }
-    }
-    return { enabled: state.enabled, pendingRequests: state.pendingRequests, waitingConversationId, holding: state.holding };
-  };
-  const trayModel = async (): Promise<TrayMenuModel> => {
-    const [current, conversations, desktopControl, status, workItems] = await Promise.all([
-      core.getProfile(), core.listConversations(), trayDesktopControl(), core.status(), core.listWorkItems(),
-    ]);
-    return {
-      botName: current.name,
-      locale: resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
-      status,
-      conversations,
-      heartbeatEnabled: current.heartbeat.enabled,
-      openAtLogin: windows.shellState.openAtLogin,
-      openAtLoginAvailable,
-      awaitingOwner: workItems.filter((item) => item.state === 'awaiting_owner').length,
-      floatingVisible: windows.shellState.floatingBot.visible,
-      desktopControl,
-    };
-  };
+  const primary = (): BotPresenter | undefined => presenters.values().next().value;
+  let tray: BotTray | null = null;
+  const trayModel = async (presenter: BotPresenter): Promise<TrayMenuModel> => ({
+    ...(await presenter.trayModel()),
+    locale: locale(),
+    openAtLogin: hubState.openAtLogin,
+    openAtLoginAvailable,
+  });
   const refreshTray = async () => {
-    if (!tray || quitting) return;
+    const presenter = primary();
+    if (!tray || !presenter || quitting) return;
     try {
-      tray.update(await trayModel());
+      tray.update(await trayModel(presenter));
     } catch (error) {
-      // The core may be stopping; the next event refreshes the tray again.
+      // A core may be stopping; the next event refreshes the tray again.
       if (!quitting) log(`tray refresh failed: ${errorMessage(error)}`);
     }
   };
 
-  const applyLoginItem = (enabled: boolean) => {
-    try {
-      app.setLoginItemSettings({ openAtLogin: enabled, args: ['--id', botId] });
-    } catch (error) {
-      process.stderr.write(`login item failed: ${errorMessage(error)}\n`);
-    }
-  };
-  // SPEC-007 FR-9: an uninstall that keeps the data deletes the login entry, and
-  // a reinstall may sit in another folder, so an installed Windows copy
-  // registers the owner's choice again when no entry starts it. An entry
-  // disabled in Task Manager still exists and stays disabled; a portable copy
-  // runs from a temporary folder and never registers itself.
-  if (process.platform === 'win32' && app.isPackaged && !process.env.PORTABLE_EXECUTABLE_FILE
-    && windows.shellState.openAtLogin && !app.getLoginItemSettings({ args: ['--id', botId] }).openAtLogin) applyLoginItem(true);
-
-  const setOpenAtLogin = (enabled: boolean) => {
-    windows.setOpenAtLogin(enabled);
-    applyLoginItem(enabled);
-    void refreshTray();
-  };
-
   const closeAll = () => {
-    windows.destroyAll();
-    settings.destroy();
-    floating.destroy();
+    for (const presenter of presenters.values()) presenter.close();
     tray?.dispose();
+    void hubControl.stop();
     app.quit();
   };
   const quit = () => {
     if (quitting) return;
     quitting = true;
-    floating.remember();
-    windows.flush();
+    for (const presenter of presenters.values()) presenter.remember();
     void providerSetup
       .whenIdle()
-      .then(() => hostedCore.stop())
+      .then(() => Promise.allSettled([...presenters.values()].map((presenter) => presenter.stop())))
       .catch((error: unknown) => log(`core stop failed: ${errorMessage(error)}`))
       .finally(closeAll);
+  };
+  // Until Phase 3 supervises cores, a core that ends unasked restarts with the hub.
+  const coreLost = (presenter: BotPresenter) => {
+    if (quitting) return;
+    quitting = true;
+    log(`The Bot core of ${presenter.botId} stopped unexpectedly; see ${presenter.hosted.logFile}`);
+    void dialog.showMessageBox({
+      type: 'error',
+      title: 'Cats Bot',
+      message: t('The Bot core stopped unexpectedly.'),
+      detail: presenter.hosted.logFile,
+      buttons: [t('Restart Cats Bot'), t('Quit')],
+      defaultId: 0,
+      cancelId: 1,
+    }).then(async ({ response }) => {
+      await Promise.allSettled([...presenters.values()].filter((other) => other !== presenter).map((other) => other.stop()));
+      if (response === 0) app.relaunch({ args: process.argv.slice(1) });
+    }).finally(closeAll);
+  };
+  const presenterHost: PresenterHost = {
+    preloadPath,
+    rendererDir,
+    iconPath,
+    desktop: loadDesktopHost(log),
+    log,
+    isQuitting: () => quitting,
+    locale,
+    refreshTray: () => { void refreshTray(); },
+    // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
+    quitRequested: (presenter) => {
+      if (presenters.size <= 1) {
+        quit();
+        return;
+      }
+      presenters.delete(presenter.botId);
+      presenter.close();
+      void presenter.hosted.stop().finally(() => { void refreshTray(); });
+    },
+    coreLost,
+  };
+
+  const startBot = async (botId: string): Promise<BotPresenter> => {
+    const root = botRootIn(hubPaths.bots, botId);
+    const profile = readBotProfile(root);
+    if (!profile) throw new Error(`Bot ${botId} has no profile at ${root}.`);
+    const runtimeEntry = resolvePackagedRuntimeEntry();
+    const hosted = await attachOrStartCore(root, {
+      execPath: process.execPath,
+      runAsNode: true,
+      entry: join(appPath, 'dist', 'cli', 'main.js'),
+      catsBotHome: home,
+      botId,
+      // FR-12: the hub's installation is the manager of the cores it starts.
+      manager: installationId,
+      ...(services.cipher ? { hostCipher: services.cipher.label } : {}),
+      ...(runtimeEntry ? { runtimeEntry } : {}),
+      // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
+      ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
+    }, { host: { pid: process.pid, executable: process.execPath, installationId }, services });
+    const identity = botWindowIdentity({ appId: APP_ID, botId, botName: profile.name, executable: process.execPath, packaged: app.isPackaged });
+    const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity);
+    presenters.set(botId, presenter);
+    return presenter;
+  };
+
+  const starting = activeBots(registry, home).filter((bot) => bot.startAutomatically);
+  // A new core inherits the hub's PATH, so each provider CLI is found first.
+  if (!readProviderOverrides().providerCommand) {
+    const providers = new Set(starting.map((bot) => readBotProfile(botRootIn(hubPaths.bots, bot.id))?.executionTarget.provider)
+      .filter((provider): provider is string => typeof provider === 'string'));
+    for (const provider of providers) {
+      await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+    }
+  }
+  const failures: string[] = [];
+  for (const bot of starting) {
+    try {
+      await startBot(bot.id);
+    } catch (error) {
+      failures.push(error instanceof CoreHostedElsewhereError
+        ? `${bot.id}: ${error.message}\n\nStop the other instance (for example cats-bot run) first.`
+        : `${bot.id}: ${errorMessage(error)}`);
+    }
+  }
+  if (presenters.size === 0) {
+    dialog.showErrorBox('Cats Bot', failures[0] ?? `No bot in ${home} is set to start.`);
+    app.quit();
+    return;
+  }
+  if (failures.length > 0) void dialog.showMessageBox({ type: 'warning', title: 'Cats Bot', message: failures.join('\n\n') });
+
+  const hubControl = new HubControlServer(home, installationId, {
+    // FR-25: the owner CLI's view of the hub.
+    status: () => ({
+      pid: process.pid,
+      installationId,
+      executable: process.execPath,
+      home,
+      coordinator: registry.coordinator.holder,
+      bots: registry.bots.map((bot) => ({
+        id: bot.id,
+        state: presenters.has(bot.id) ? 'running' : bot.archivedAt ? 'archived' : 'stopped',
+        pid: presenters.get(bot.id)?.hosted.pid ?? null,
+        startAutomatically: bot.startAutomatically,
+      })),
+    }),
+  });
+  await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
+
+  const applyLoginItem = (enabled: boolean) => {
+    try {
+      app.setLoginItemSettings({ openAtLogin: enabled, args: [] });
+    } catch (error) {
+      log(`login item failed: ${errorMessage(error)}`);
+    }
+  };
+  // SPEC-007 FR-9 and SPEC-008 FR-23: one login item starts the hub. An
+  // uninstall that keeps the data deletes it, and a reinstall may sit in
+  // another folder, so an installed Windows copy registers the owner's choice
+  // again when no entry starts it. An entry disabled in Task Manager still
+  // exists and stays disabled; a portable copy runs from a temporary folder
+  // and never registers itself.
+  if (process.platform === 'win32' && app.isPackaged && !process.env.PORTABLE_EXECUTABLE_FILE
+    && hubState.openAtLogin && !app.getLoginItemSettings({ args: [] }).openAtLogin) applyLoginItem(true);
+
+  const setOpenAtLogin = (enabled: boolean) => {
+    saveHubState({ ...hubState, openAtLogin: enabled });
+    applyLoginItem(enabled);
+    void refreshTray();
   };
 
   let release: BotRelease | null = null;
@@ -365,7 +463,7 @@ async function main(): Promise<void> {
             ? {
                 installDeb: (file: string) =>
                   installDebianUpdate(file, () => {
-                    app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+                    app.relaunch({ args: process.argv.slice(1) });
                     app.quit();
                   }),
               }
@@ -380,30 +478,32 @@ async function main(): Promise<void> {
       },
       drain: async () => {
         quitting = true;
-        floating.remember();
-        windows.flush();
+        for (const presenter of presenters.values()) presenter.remember();
         await providerSetup.whenIdle();
-        const runtimePid = (await core.status().catch(() => null))?.runtime.pid ?? null;
-        await hostedCore.stop();
-        if (processIsAlive(hostedCore.pid) || (runtimePid && processIsAlive(runtimePid))) throw new Error('The Bot Runtime has not stopped; installation was cancelled.');
+        const processes = await Promise.all([...presenters.values()].map(async (presenter) =>
+          [presenter.hosted.pid, (await presenter.core.status().catch(() => null))?.runtime.pid ?? null] as const));
+        await Promise.all([...presenters.values()].map((presenter) => presenter.stop()));
+        if (processes.some(([corePid, runtimePid]) => processIsAlive(corePid) || (runtimePid && processIsAlive(runtimePid)))) {
+          throw new Error('A Bot Runtime has not stopped; installation was cancelled.');
+        }
         assertNoOtherUsers(process.execPath);
       },
       recover: async (uncertain, error) => {
         dialog.showErrorBox('Cats Bot update', `${error.message}\n\n${uncertain
         ? 'Check the installer before reopening Cats Bot.' : 'Cats Bot will restart the current installation.'}`);
-        if (!uncertain) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
+        if (!uncertain) app.relaunch({ args: process.argv.slice(1) });
         app.quit();
       },
       openRelease: (url) => shell.openExternal(url),
       changed: (state) => {
-        settings.browserWindow?.webContents.send('shell:update', state);
+        for (const presenter of presenters.values()) presenter.settings.browserWindow?.webContents.send('shell:update', state);
       },
     },
   );
 
   const trayUpdates = new TrayUpdateDialog({
     controller: updates,
-    locale: () => resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
+    locale,
     stopping: () => quitting,
     show: (dialogSpec) =>
       showDesktopUpdateMessageBox({
@@ -415,62 +515,60 @@ async function main(): Promise<void> {
           owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
       }),
   });
-  const trayActions: TrayMenuActions = {
+  // FR-16: with one bot the tray menu is today's; its items act on that bot.
+  const trayActionsFor = (target: () => BotPresenter | undefined): TrayMenuActions => ({
     onOpenConversation: (conversationId) => {
-      void windows
+      void target()?.windows
         .open(conversationId)
         .then(refreshTray)
-        .catch((error: unknown) => {
-          process.stderr.write(`open conversation failed: ${errorMessage(error)}\n`);
-        });
+        .catch((error: unknown) => log(`open conversation failed: ${errorMessage(error)}`));
     },
     onNewNote: () => {
-      void core.createConversation().then((record) => windows.open(record.id)).then(refreshTray);
+      const presenter = target();
+      void presenter?.core.createConversation().then((record) => presenter.windows.open(record.id)).then(refreshTray);
     },
-    onOpenSettings: openSettings,
+    onOpenSettings: (tab) => target()?.openSettings(tab),
     onCheckForUpdates: () => {
       void trayUpdates.open().catch((error) => log(errorMessage(error)));
     },
     onToggleHeartbeat: (enabled) => {
-      void core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
+      void target()?.core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
     onToggleOpenAtLogin: (enabled) => setOpenAtLogin(enabled),
-    onToggleFloating: (visible) => setFloatingVisible(visible),
+    onToggleFloating: (visible) => target()?.setFloatingVisible(visible),
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
-      void core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {
-        process.stderr.write(`stop desktop control failed: ${errorMessage(error)}\n`);
+      void target()?.core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {
+        log(`stop desktop control failed: ${errorMessage(error)}`);
       });
     },
     onQuit: quit,
-  };
-  const tray: BotTray | null = new BotTray({ assetsDir, ...trayActions });
+  });
+  tray = new BotTray({ assetsDir, ...trayActionsFor(primary) });
 
-  const fromNote = (event: Electron.IpcMainInvokeEvent) => windows.windowFor(event.sender.id) !== null;
-  const fromSettings = (event: Electron.IpcMainInvokeEvent) => settings.owns(event.sender.id);
-  const fromFloating = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => floating.owns(event.sender.id);
+  // FR-17: every message from a renderer is answered for the bot whose window sent it.
+  const senderOf = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => {
+    for (const presenter of presenters.values()) {
+      const role = presenter.roleOf(event.sender.id);
+      if (role) return { presenter, role };
+    }
+    return null;
+  };
+  const fromSettings = (event: Electron.IpcMainInvokeEvent) => {
+    const from = senderOf(event);
+    return from?.role === 'settings' ? from.presenter : null;
+  };
   const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
     event.senderFrame === event.sender.mainFrame;
-  const languageState = () => ({
-    preference: windows.shellState.language ?? 'system',
-    locale: resolveLocale(windows.shellState.language ?? 'system', app.getLocale()),
-  });
   ipcMain.handle('ui:language', (event) => {
-    if (
-      !ownedMainFrame(event) ||
-      (!fromNote(event) && !fromSettings(event) && !fromFloating(event))
-    )
-      throw new Error('Unknown window');
+    if (!ownedMainFrame(event) || !senderOf(event)) throw new Error('Unknown window');
     return languageState();
   });
   ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
     if (!ownedMainFrame(event) || !fromSettings(event) || !isLanguagePreference(value))
       throw new Error('Invalid display language');
-    windows.shellState.language = value;
-    windows.flush();
-    windows.sendLanguage(languageState());
-    settings.browserWindow?.webContents.send('ui:languageChanged', languageState());
-    floating.browserWindow?.webContents.send('ui:languageChanged', languageState());
+    saveHubState({ ...hubState, language: value });
+    for (const presenter of presenters.values()) presenter.sendLanguage(languageState());
     void refreshTray();
     return languageState();
   });
@@ -487,12 +585,13 @@ async function main(): Promise<void> {
     return providerSetup.install(provider, step);
   });
 
-  ipcMain.handle('shell:updateState', event => {
-    if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
+  const isSettingsWindow = (id: number) => [...presenters.values()].some((presenter) => presenter.settings.owns(id));
+  ipcMain.handle('shell:updateState', (event) => {
+    if (!isUpdateSender(event, isSettingsWindow)) throw new Error('Updates are available only from Settings.');
     return updates.snapshot();
   });
   ipcMain.handle('shell:updateAction', (event, action: unknown) => {
-    if (!isUpdateSender(event, id => settings.owns(id))) throw new Error('Updates are available only from Settings.');
+    if (!isUpdateSender(event, isSettingsWindow)) throw new Error('Updates are available only from Settings.');
     return updateAction(
       updates,
       action,
@@ -518,18 +617,24 @@ async function main(): Promise<void> {
     if (typeof command !== 'string' || !HOST_COMMANDS.includes(command as never)) {
       throw new Error(`Unknown host command ${String(command)}`);
     }
-    if (!fromNote(event) && !fromSettings(event) && !fromFloating(event)) {
+    const from = senderOf(event);
+    if (!from) {
       // A note that is being torn down may still flush a markSeen; nothing to do.
       if (quitting) return null;
       throw new Error('Command from an unknown window');
     }
+    const { presenter } = from;
     const list = Array.isArray(args) ? args : [];
     // Provider requests and desktop control belong to one note (SPEC-004, SPEC-006 BDC-07).
-    const sender = { note: windows.windowFor(event.sender.id)?.conversationId ?? null, settings: fromSettings(event), floating: fromFloating(event) };
+    const sender = {
+      note: presenter.windows.windowFor(event.sender.id)?.conversationId ?? null,
+      settings: from.role === 'settings',
+      floating: from.role === 'floating',
+    };
     if (!senderMayInvoke(command, list, sender))
       throw new Error('This request belongs to another conversation.');
-    const result = await runHostCommand(core, command, list, url => shell.openExternal(url));
-    if (command === 'deleteConversation' && typeof list[0] === 'string') windows.forget(list[0]);
+    const result = await runHostCommand(presenter.core, command, list, (url) => shell.openExternal(url));
+    if (command === 'deleteConversation' && typeof list[0] === 'string') presenter.windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
       || command === 'renameConversation' || command === 'createConversation') {
       void refreshTray();
@@ -537,87 +642,101 @@ async function main(): Promise<void> {
     return result;
   });
   ipcMain.handle('window:hide', (event) => {
-    const owner = windows.windowFor(event.sender.id);
-    if (owner) windows.hide(owner.conversationId);
+    const presenter = senderOf(event)?.presenter;
+    const owner = presenter?.windows.windowFor(event.sender.id);
+    if (presenter && owner) presenter.windows.hide(owner.conversationId);
     void refreshTray();
     return null;
   });
   // SPEC-002 FR-8: a note's layer, chosen from its own header or from the settings page.
   const isLayer = (value: unknown): value is NoteLayer => typeof value === 'string' && NOTE_LAYERS.includes(value as NoteLayer);
   ipcMain.handle('window:state', (event) => {
-    const owner = windows.windowFor(event.sender.id);
+    const presenter = senderOf(event)?.presenter;
+    const owner = presenter?.windows.windowFor(event.sender.id);
     return {
-      layer: owner ? windows.layerOf(owner.conversationId) : 'normal',
-      layers: windows.availableLayers(),
+      layer: presenter && owner ? presenter.windows.layerOf(owner.conversationId) : 'normal',
+      layers: presenter?.windows.availableLayers() ?? ['normal'],
       botName: app.getName(),
     };
   });
   ipcMain.handle('window:layerMenu', (event) => {
-    const owner = windows.windowFor(event.sender.id);
-    if (!owner) return null;
-    const current = windows.layerOf(owner.conversationId);
-    const template: MenuItemConstructorOptions[] = windows.availableLayers().map((layer) => ({
+    const presenter = senderOf(event)?.presenter;
+    const owner = presenter?.windows.windowFor(event.sender.id);
+    if (!presenter || !owner) return null;
+    const current = presenter.windows.layerOf(owner.conversationId);
+    const template: MenuItemConstructorOptions[] = presenter.windows.availableLayers().map((layer) => ({
       label: t(NOTE_LAYER_LABELS[layer]),
       type: 'radio',
       checked: layer === current,
       click: () => {
-        windows.setLayer(owner.conversationId, layer);
+        presenter.windows.setLayer(owner.conversationId, layer);
       },
     }));
     Menu.buildFromTemplate(template).popup({ window: owner.window });
     return null;
   });
   ipcMain.handle('shell:noteLayers', (event) => {
-    if (!fromSettings(event)) return null;
-    return { layers: windows.availableLayers(), labels: NOTE_LAYER_LABELS, views: windows.layers() };
+    const presenter = fromSettings(event);
+    if (!presenter) return null;
+    return { layers: presenter.windows.availableLayers(), labels: NOTE_LAYER_LABELS, views: presenter.windows.layers() };
   });
   ipcMain.handle('shell:setNoteLayer', async (event, conversationId: unknown, layer: unknown) => {
-    if (!fromSettings(event) || typeof conversationId !== 'string' || !isLayer(layer)) return null;
-    windows.setLayer(conversationId, layer);
+    const presenter = fromSettings(event);
+    if (!presenter || typeof conversationId !== 'string' || !isLayer(layer)) return null;
+    presenter.windows.setLayer(conversationId, layer);
     return layer;
   });
   ipcMain.handle('window:open', async (event, conversationId: unknown) => {
-    if ((!fromNote(event) && !fromSettings(event) && !fromFloating(event)) || typeof conversationId !== 'string') return null;
-    await windows.open(conversationId);
+    const presenter = senderOf(event)?.presenter;
+    if (!presenter || typeof conversationId !== 'string') return null;
+    await presenter.windows.open(conversationId);
     void refreshTray();
     return null;
   });
   // SPEC-002 FR-4: shell preferences and helpers the settings page uses.
   ipcMain.handle('shell:state', (event) => {
-    if (!fromSettings(event)) return null;
+    const presenter = fromSettings(event);
+    if (!presenter) return null;
     return {
-      botId,
-      openAtLogin: windows.shellState.openAtLogin,
+      botId: presenter.botId,
+      openAtLogin: hubState.openAtLogin,
       openAtLoginAvailable,
-      floatingVisible: windows.shellState.floatingBot.visible,
+      floatingVisible: presenter.windows.shellState.floatingBot.visible,
       version: app.getVersion(),
     };
   });
   ipcMain.handle('shell:setFloatingVisible', (event, visible: unknown) => {
-    if (!fromSettings(event) || typeof visible !== 'boolean') return null;
-    setFloatingVisible(visible);
+    const presenter = fromSettings(event);
+    if (!presenter || typeof visible !== 'boolean') return null;
+    presenter.setFloatingVisible(visible);
     return visible;
   });
   // SPEC-002 FR-7: the floating bot's own channel.
+  const fromFloating = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) => {
+    const from = senderOf(event);
+    return from?.role === 'floating' ? from.presenter : null;
+  };
   ipcMain.on('floating:interactive', (event, interactive: unknown) => {
-    if (fromFloating(event)) floating.setInteractive(interactive === true);
+    fromFloating(event)?.floating.setInteractive(interactive === true);
   });
   ipcMain.on('floating:moveTo', (event, x: unknown, y: unknown) => {
-    if (fromFloating(event) && typeof x === 'number' && typeof y === 'number') floating.moveTo(x, y);
+    if (typeof x === 'number' && typeof y === 'number') fromFloating(event)?.floating.moveTo(x, y);
   });
   ipcMain.on('floating:dragEnd', (event) => {
-    if (fromFloating(event)) floating.remember();
+    fromFloating(event)?.floating.remember();
   });
   ipcMain.handle('floating:activate', async (event) => {
-    if (!fromFloating(event)) return null;
-    await windows.open('home');
+    const presenter = fromFloating(event);
+    if (!presenter) return null;
+    await presenter.windows.open('home');
     void refreshTray();
     return null;
   });
   ipcMain.handle('floating:menu', async (event) => {
-    const owner = floating.browserWindow;
-    if (!fromFloating(event) || !owner) return null;
-    const template = buildTrayMenuTemplate(await trayModel(), trayActions) as MenuItemConstructorOptions[];
+    const presenter = fromFloating(event);
+    const owner = presenter?.floating.browserWindow;
+    if (!presenter || !owner) return null;
+    const template = buildTrayMenuTemplate(await trayModel(presenter), trayActionsFor(() => presenter)) as MenuItemConstructorOptions[];
     Menu.buildFromTemplate(template).popup({ window: owner });
     return null;
   });
@@ -627,8 +746,8 @@ async function main(): Promise<void> {
     return enabled;
   });
   ipcMain.handle('shell:chooseFolder', async (event, current: unknown) => {
-    const owner = settings.browserWindow;
-    if (!fromSettings(event) || !owner) return null;
+    const owner = fromSettings(event)?.settings.browserWindow;
+    if (!owner) return null;
     const result = await dialog.showOpenDialog(owner, {
       title: t('Workspace folder'),
       properties: ['openDirectory', 'createDirectory'],
@@ -637,90 +756,31 @@ async function main(): Promise<void> {
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
   ipcMain.handle('shell:openDataFolder', async (event) => {
-    if (!fromSettings(event)) return null;
-    await shell.openPath(root);
+    const presenter = fromSettings(event);
+    if (!presenter) return null;
+    await shell.openPath(presenter.root);
     return null;
   });
   ipcMain.handle('shell:openSettings', (event, tab: unknown) => {
-    if (!fromNote(event) && !fromSettings(event)) return null;
-    openSettings(typeof tab === 'string' ? tab : undefined);
+    const from = senderOf(event);
+    if (!from || from.role === 'floating') return null;
+    from.presenter.openSettings(typeof tab === 'string' ? tab : undefined);
     return null;
   });
 
-  core.subscribe((event: BotHostEvent) => {
-    windows.broadcast(event);
-    settings.broadcast(event);
-    floating.broadcast(event);
-    if (event.type === 'provider.interactions') {
-      if (event.notify && !windows.isFocused(event.conversationId)) {
-        void showBubble(event.conversationId, t('The provider is waiting for your response.'));
-      }
-      void refreshTray();
-    }
-    if (event.type === 'desktop.control') {
-      // BDC-12: like the Telegram notice, the bubble names no app, path or request.
-      if (event.notify && event.conversationId && !windows.isFocused(event.conversationId)) {
-        void showBubble(event.conversationId, t('A desktop control request is waiting for you.'));
-      }
-      void refreshTray();
-    }
-    if (event.type === 'turn.completed' && event.workItem.state === 'completed' && event.workItem.result?.text
-      && !windows.isFocused(event.conversationId)) {
-      void showBubble(event.conversationId, event.workItem.result.text);
-    }
-    if (event.type === 'host.handoff' && event.message.kind === 'open') {
-      void windows.open(event.message.conversationId ?? 'home');
-    }
-    if (event.type === 'host.handoff' && event.message.kind === 'quit') {
-      quit();
-    }
-    if (event.type === 'conversation.updated' || event.type === 'runtime.status' || event.type === 'work.awaitingOwner'
-      || event.type === 'turn.completed') {
-      void refreshTray();
-    }
-  });
-
-  const showBubble = async (conversationId: string, text: string) => {
-    const [profile, conversations] = await Promise.all([core.getProfile(), core.listConversations()]);
-    const record = conversations.find((item) => item.id === conversationId);
-    const from = !record || record.role === 'home' ? profile.name : `${profile.name} · ${record.title}`;
-    floating.bubble({ conversationId, from, text });
-  };
-
-  app.on('second-instance', () => {
-    void windows.open('home');
+  app.on('second-instance', (_event, _argv, _cwd, data) => {
+    const id = (data as { id?: unknown } | null)?.id;
+    const presenter = (typeof id === 'string' ? presenters.get(id) : undefined) ?? primary();
+    void presenter?.windows.open('home');
   });
   app.on('before-quit', (event) => {
     if (quitting) return;
     event.preventDefault();
     quit();
   });
-  // Until Phase 3 supervises cores, a core that ends unasked restarts with the shell.
-  hostedCore.client.onClose(() => {
-    if (quitting) return;
-    quitting = true;
-    log(`The Bot core stopped unexpectedly; see ${hostedCore.logFile}`);
-    void dialog.showMessageBox({
-      type: 'error',
-      title: 'Cats Bot',
-      message: t('The Bot core stopped unexpectedly.'),
-      detail: hostedCore.logFile,
-      buttons: [t('Restart Cats Bot'), t('Quit')],
-      defaultId: 0,
-      cancelId: 1,
-    }).then(({ response }) => {
-      if (response === 0) app.relaunch({ args: [...process.argv.slice(1), '--id', botId] });
-    }).finally(closeAll);
-  });
 
+  for (const presenter of presenters.values()) await presenter.start();
   await refreshTray();
-  if (windows.shellState.floatingBot.visible) setFloatingVisible(true);
-  const reopen = windows.previouslyOpen();
-  for (const conversationId of reopen) {
-    await windows.open(conversationId, { restore: true }).catch((error: unknown) => {
-      process.stderr.write(`reopen conversation failed: ${errorMessage(error)}\n`);
-    });
-  }
 }
 
 main().catch((error: unknown) => {

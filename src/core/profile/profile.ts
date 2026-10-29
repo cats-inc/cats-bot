@@ -6,6 +6,7 @@ import { parseModelSelection } from '../providers/selection.ts';
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
 import type { BotPaths } from '../store/paths.ts';
 import type {
+  BotEnvironment,
   BotPermissions,
   BotProfile,
   BotProfilePatch,
@@ -56,6 +57,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
     name: input.name,
     instructions: input.instructions ?? '',
+    environment: { kind: 'native' },
     executionTarget: {
       provider: input.provider,
       model: input.model ?? null,
@@ -178,6 +180,16 @@ function normalizeHeartbeat(value: unknown, fallback: HeartbeatPolicy): Heartbea
  * SPEC-001 FR-4: every missing or invalid field takes its default; the file on
  * disk is never rewritten by a read.
  */
+/**
+ * SPEC-008 FR-24: a profile without an environment runs natively. Any other
+ * kind is refused rather than run natively instead (ADR-010).
+ */
+export function normalizeEnvironment(value: unknown): BotEnvironment {
+  if (value === undefined || (isRecord(value) && value.kind === 'native')) return { kind: 'native' };
+  const kind = isRecord(value) && typeof value.kind === 'string' ? value.kind : typeof value;
+  throw new Error(`Unsupported execution environment ${JSON.stringify(kind)}; this version runs bots natively only.`);
+}
+
 export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile {
   if (!isRecord(raw)) return { ...fallback };
   const configRevision = positiveNumberOr(raw.configRevision, fallback.configRevision);
@@ -186,6 +198,7 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     id: stringOr(raw.id, fallback.id),
     name: stringOr(raw.name, fallback.name),
     instructions: stringOr(raw.instructions, fallback.instructions),
+    environment: normalizeEnvironment(raw.environment),
     executionTarget: normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget),
     configRevision: Math.max(1, Math.floor(configRevision)),
     permissions: normalizePermissions(raw.permissions, fallback.permissions),
