@@ -46,7 +46,8 @@ precise total.
    notifications, update check/download/install, the login item, the fleet
    registry under `~/.catsbot/` (ADR-007), packaged provider setup helpers,
    display language, and the OS secret cipher. It holds no bot state and runs no
-   bot timers.
+   bot timers. A fleet lock under `~/.catsbot/` keeps a second installation from
+   managing the same fleet.
 2. **Each bot is a headless core child.** The hub starts one core per bot: the
    packaged executable with `ELECTRON_RUN_AS_NODE`, running the headless host
    (`cats-bot run`) for one bot root. Today that host does not take the packaged
@@ -55,11 +56,14 @@ precise total.
    today: profile, conversations, work queue, journal, all timers, its own
    Runtime child, tool servers, the desktop-control helper and the Telegram
    transport. SPEC-001 FR-3's instance lock still allows one core per bot root,
-   whichever host started it.
+   whichever host started it. Only one bot controls the desktop at a time:
+   every core, however it was started, takes an account-wide desktop lease
+   before it takes control or uses the clipboard (SPEC-008 FR-26).
 3. **One authenticated host channel per core.** The hub reaches a core through a
    local pipe/socket that extends the PLAN-004 owner control (descriptor in the
-   bot root, per-start token, current account only). It is versioned and works in
-   both directions:
+   bot root, per-start token, current account only). The descriptor also names
+   the hub installation that manages the core, if any. It is versioned and works
+   in both directions:
    - from hub to core, the whole `BotHostApi`;
    - from core to hub, the event stream and the host services only the hub can
      provide (secret cipher, hub PID, coordinator brokering for ADR-009).
@@ -70,9 +74,10 @@ precise total.
    owner-sourced work item.
 4. **Lifecycle.** At start the hub attaches to cores that are already running and
    starts bots marked to start automatically. Closing windows changes nothing
-   (ADR-001's hidden-window guarantee). Quit stops every core the hub started:
-   graceful stop first, then the process tree. If the hub crashes, cores keep
-   running and a restarted hub reattaches. If a core crashes, the hub restarts it
+   (ADR-001's hidden-window guarantee). Quit stops every core the hub manages,
+   including cores it reattached after its own restart: graceful stop first,
+   then the process tree. If the hub crashes, cores keep running and a
+   restarted hub reattaches. If a core crashes, the hub restarts it
    with backoff and shows its state. A bot held by another host, such as a
    developer's `cats-bot run`, is listed as externally hosted, without windows,
    and never started twice.
@@ -106,6 +111,10 @@ precise total.
   operate its own approval UI (SPEC-006 BDC-08).
 - Windows taskbar grouping per bot needs per-window AUMIDs instead of one AUMID
   per process.
+- Channel and control tokens authenticate the OS account, not the owner. A
+  native provider CLI that can read a descriptor can use it, as it can today's
+  owner control, so the hub's limits are API limits rather than a security
+  boundary (SPEC-008 Security).
 
 ### Neutral
 

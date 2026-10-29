@@ -93,7 +93,7 @@ repository, so the local folder rename cannot strand anyone's work.
 
 **Deliverables**: the workspace builds and syncs with the new member name.
 
-### Phase 4: First 0.3.0 release (after PLAN-009 Phase 6, per SPEC-007 FR-8)
+### Phase 4: First 0.3.0 release (after PLAN-009 6.1–6.3, per SPEC-007 FR-8)
 
 - [ ] 4.1: Release notes per SPEC-007 FR-8; owner reinstalls on the
       development machine and removes `~/.cats/bots` by hand.
@@ -147,6 +147,7 @@ Phase 1 occurrences found on 2026-10-29 (`2d17069`):
 |------|--------|
 | 2026-10-29 | Plan created from the owner's decisions; nothing implemented. |
 | 2026-10-29 | Owner answered SPEC-007's open questions: `CATS_BOT_HOME` is `~/.catsbot`; 0.3.0 ships with the hub. |
+| 2026-10-29 | Review fix: Phase 4 follows PLAN-009 tasks 6.1–6.3, so the two plans no longer wait on each other. |
 
 ---
 
