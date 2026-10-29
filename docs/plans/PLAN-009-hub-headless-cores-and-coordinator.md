@@ -431,6 +431,12 @@ Each entry names where it is implemented.
   - Another local account could hold the name and keep this account's bots
     off the desktop. That is a denial of service only, within the account
     boundary SPEC-008 already states.
+- **D22, hub-owned updates (4.3).**
+  - Any bot that runs in another program blocks the install and is named,
+    whatever executable runs it. This is stricter than "from this
+    installation", and needs no process inspection.
+  - The bots that ran when the update began start again after it, besides
+    those set to start automatically.
 - **D23, one user data per account, not per installation (review of 2.1).**
   - Every copy of Cats Bot (installed, portable, `npm run shell` without
     `--user-data-dir`) shares `%APPDATA%\Cats Bot`. Its installation id and
@@ -473,12 +479,6 @@ Each entry names where it is implemented.
     keeps each delivery's text so it can be sent again. The audit
     (`logs/hub-audit.jsonl`) and the bots' journals record calls without text.
   - A target that fails or is archived answers the holder with the reason.
-- **D22, hub-owned updates (4.3).**
-  - Any bot that runs in another program blocks the install and is named,
-    whatever executable runs it. This is stricter than "from this
-    installation", and needs no process inspection.
-  - The bots that ran when the update began start again after it, besides
-    those set to start automatically.
 
 ## Progress Log
 
