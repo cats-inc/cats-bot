@@ -32,7 +32,7 @@ import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
 import {
   addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, withHolder, writeRegistry, type BotRegistry,
-  type CoordinatorLimits,
+  type CoordinatorLimits, type RegistryBot,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
@@ -205,8 +205,13 @@ async function main(): Promise<void> {
   const runners = new Map<string, CoreRunner<BotPresenter>>();
   // A bot whose windows open while its runner still starts it; they talk to the hub already.
   const opening = new Map<string, BotPresenter>();
+  /**
+   * The registry's bots, once it is read. First-run setup runs before that, and
+   * its provider checks already report CLI folders while no bot is presented.
+   */
+  let registryBots = (): RegistryBot[] => [];
   /** The bots presented now, in the registry's order. */
-  const presented = (): BotPresenter[] => manager.registry.bots
+  const presented = (): BotPresenter[] => registryBots()
     .map((bot) => runners.get(bot.id)?.handle ?? opening.get(bot.id))
     .filter((presenter): presenter is BotPresenter => presenter !== null && presenter !== undefined);
   const primary = (): BotPresenter | undefined => presented()[0];
@@ -326,6 +331,7 @@ async function main(): Promise<void> {
     stop: async (id) => { await runners.get(id)?.stop(); },
     hostedElsewhere: (id) => externalPid(id) !== null,
   });
+  registryBots = () => manager.registry.bots;
   try {
     const report = manager.recover();
     for (const id of report.unregistered) log(`bot ${id} has a directory but no registry entry`);
