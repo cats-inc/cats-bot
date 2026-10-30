@@ -35,6 +35,7 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
   const created: string[] = [];
   const bots = new Map<string, Bot>();
   const names: Record<string, string> = { [`${prefix}-alpha`]: 'Alpha', [`${prefix}-beta`]: 'Beta' };
+  const clock = { now: Date.now() };
   let coordinator: Coordinator;
   const coordinatorHome = join(home.root, prefix);
   const make = () => new Coordinator({
@@ -43,19 +44,21 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
     limits: () => limits,
     bots: () => Object.entries(names).map(([id, name]) => ({ id, name, state: bots.has(id) ? 'running' : 'stopped' })),
     core: (id) => bots.get(id)?.remote ?? null,
+    atBotCap: () => false,
     createBot: async ({ name }) => {
       created.push(name);
       return 'new-bot';
     },
+    startBlocked: () => null,
     startBot: async () => undefined,
     stopBot: async () => undefined,
-    stoppedByOwner: () => true,
     setHolder: async (id) => { holder.id = id; },
     confirm: async (_holder, question) => {
       asked.push(question);
       return answers.shift() ?? false;
     },
     log: () => undefined,
+    now: () => new Date(clock.now),
   });
   coordinator = make();
   for (const [id, name] of Object.entries(names)) {
@@ -75,7 +78,7 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
     }
   };
   return {
-    holder, answers, asked, created, bots, names, stop,
+    holder, answers, asked, created, bots, names, stop, clock,
     get coordinator() { return coordinator; },
     reload() { coordinator = make(); return coordinator; },
     alpha: `${prefix}-alpha`, beta: `${prefix}-beta`, coordinatorHome,
@@ -135,8 +138,11 @@ test('a message reaches the other bot once, and its answer returns to the coordi
     const work = await handed;
     assert.equal(work.kind, 'event', 'background work, not an owner turn (FR-7)');
     assert.equal(work.chain?.from, f.alpha);
-    const betaTranscript = beta.core.transcript('home') as TranscriptEntry[];
+    // FR-6: it runs in the conversation beta keeps for alpha's messages, apart from the owner's.
+    assert.equal(work.conversationId, `bot-${f.alpha}`);
+    const betaTranscript = beta.core.transcript(`bot-${f.alpha}`) as TranscriptEntry[];
     assert.ok(betaTranscript.some((entry) => entry.origin === 'bot' && entry.from === 'Alpha' && entry.text === 'Please count to three.'));
+    assert.equal((beta.core.transcript('home') as TranscriptEntry[]).length, 0, 'the owner\'s direct message holds none of it');
 
     const replied = completedIn(alpha.core, (item) => item.chain?.kind === 'reply');
     await f.coordinator.turnCompleted(f.beta, work);
@@ -163,20 +169,20 @@ test('a message reaches the other bot once, and its answer returns to the coordi
   }
 });
 
-test('hops per chain and messages per hour are limited, and only the holder continues its chains (FR-8)', async () => {
-  const f = await setUp('limits', { hopsPerChain: 4, messagesPerHour: 4 });
+test('each message and each reply is a hop, messages per hour are limited, and only the holder continues its chains (FR-8)', async () => {
+  const f = await setUp('limits', { hopsPerChain: 4, messagesPerHour: 3 });
   try {
     const message = (args: Record<string, unknown>): Promise<ToolAnswer> =>
       f.coordinator.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'hello', ...args }));
     const first = await message({});
+    assert.equal(first.structuredContent?.hop, 1);
     const chain = first.structuredContent?.chain as string;
-    const second = await message({ chain });
-    assert.equal(second.structuredContent?.hop, 2, 'the hop after the chain\'s last');
+    // The first message's reply is hop 2, also while it is still on its way.
     assert.equal((await message({ chain })).structuredContent?.hop, 3, 'hop 3 leaves room for its reply');
-    assert.match((await message({ chain })).text, /limit of 4 hops/u, 'hop 4 would have no room for its reply');
+    assert.match((await message({ chain })).text, /limit of 4 hops/u, 'a third message and its reply would make six');
     assert.match((await message({ chain: 'chain-unknown' })).text, /unknown/u);
     assert.equal((await message({})).isError, undefined);
-    assert.match((await message({})).text, /4 messages in the last hour/u);
+    assert.match((await message({})).text, /3 messages in the last hour/u);
     assert.match((await f.coordinator.handle(f.alpha, call('hub_message_bot', { bot: f.alpha, text: 'me' }))).text, /other bots/u);
   } finally {
     await f.stop();
@@ -190,6 +196,9 @@ test('creating a bot, starting a stopped one and passing the role wait for the o
     const declined = await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', persona: 'tidy', provider: 'claude' }));
     assert.match(declined.text, /declined/u);
     assert.deepEqual(f.created, []);
+    // A declined request is not asked again at once.
+    assert.match((await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).text, /a moment ago/u);
+    f.clock.now += 61_000;
     f.answers.push(true);
     assert.equal((await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).isError, undefined);
     assert.deepEqual(f.created, ['Gamma']);

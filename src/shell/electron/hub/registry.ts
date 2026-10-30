@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { readJsonFile, writeJsonAtomic } from '../../../core/store/atomicFile.ts';
 import { acquireLockFile } from '../../../core/store/lock.ts';
 import { hubPathsFor, isValidBotId } from '../../../core/store/paths.ts';
+import { MAX_CHAIN_HOPS } from '../../../core/tools/hubTools.ts';
 
 /**
  * SPEC-008 FR-2 and FR-3: the bot registry, `<CATS_BOT_HOME>/bots.json`.
@@ -52,6 +53,15 @@ export interface CoordinatorLimits {
 }
 
 export const DEFAULT_LIMITS: CoordinatorLimits = { hopsPerChain: 4, messagesPerHour: 10 };
+
+/**
+ * The values the owner can choose. A chain needs two hops for one message and
+ * its reply, and no delivery carries a hop above the core's bound.
+ */
+export const LIMIT_RANGES: Readonly<Record<keyof CoordinatorLimits, readonly [number, number]>> = {
+  hopsPerChain: [2, MAX_CHAIN_HOPS],
+  messagesPerHour: [1, 1000],
+};
 
 /** SPEC-009 FR-1 and FR-2: who holds the role now, recorded with when and how. */
 export function withHolder(registry: BotRegistry, holder: string | null, how: CoordinatorAssignment, now: Date = new Date()): BotRegistry {
@@ -108,7 +118,8 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
     ? coordinator.how as CoordinatorAssignment : null;
   const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
   const limits = isRecord(raw.limits) ? raw.limits : {};
-  const limit = (value: unknown, fallback: number) => (Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 1000 ? value as number : fallback);
+  const limit = (value: unknown, fallback: number, [min, max]: readonly [number, number]) =>
+    (Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max ? value as number : fallback);
   return {
     schemaVersion: 1,
     bots: sortBots(bots),
@@ -120,8 +131,8 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
     },
     maxBots,
     limits: {
-      hopsPerChain: limit(limits.hopsPerChain, DEFAULT_LIMITS.hopsPerChain),
-      messagesPerHour: limit(limits.messagesPerHour, DEFAULT_LIMITS.messagesPerHour),
+      hopsPerChain: limit(limits.hopsPerChain, DEFAULT_LIMITS.hopsPerChain, LIMIT_RANGES.hopsPerChain),
+      messagesPerHour: limit(limits.messagesPerHour, DEFAULT_LIMITS.messagesPerHour, LIMIT_RANGES.messagesPerHour),
     },
   };
 }

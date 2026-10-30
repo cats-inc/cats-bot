@@ -160,7 +160,10 @@ delete; tests also cover the cap.
       by default, adjustable in Settings), replies and audit (FR-5, FR-7 to
       FR-9); work items with source `bot`, admitted at once; delivery ids, the
       delivery log, deduplication and resend (FR-12).
-- [ ] 5.4: Independent security review.
+- [x] 5.4: Independent security review. Its findings were fixed before merge
+      and are tested in `tests/shell/coordinatorSafety.test.ts` and
+      `tests/core/botMessages.test.ts`; D26 and D28 to D30 record the changes
+      and what stays open for the owner.
 
 **Deliverables**: a holder hands work to another bot, and every boundary in
 SPEC-009 FR-6 is enforced and tested.
@@ -188,8 +191,9 @@ SPEC-009 FR-6 is enforced and tested.
       restarting alone, two bots, per-bot quit, the coordinator role, and the
       lease held by another process (a test). Still open: an update with two
       bots (needs a published release to update from), the native helper check
-      with the hub's PID (needs the built helper), and the macOS and Linux
-      package smoke tests.
+      with the hub's PID (needs the built helper), the macOS and Linux
+      package smoke tests, and on macOS the owner's confirmation as a sheet on
+      the Bots page (D30).
 - [x] 6.3: Make the superseded text real: ADR-001, ADR-002, ADR-004 and ADR-006
       statuses; SPEC-001 FR-3 notes, SPEC-002 FR-1/FR-4/FR-7, SPEC-006 BDC-04,
       BDC-08 and the desktop lease; `docs/architecture.md`, `docs/services.md`,
@@ -455,16 +459,22 @@ Each entry names where it is implemented.
     PID now belongs to another program names the file to delete.
 - **D25, owner confirmations (5.3).** SPEC-009 FR-5 shows a request as a
   decision in the holder's note and in the tray. This version asks in a native
-  dialog the hub shows, which no page or bot can answer. The dialog names the
-  holder and the request, and expires as declined after 10 minutes, when the
-  hub stops, or when the holder's channel is lost. A decision card in the note
-  can replace it later. A provider CLI whose own tool-call timeout is shorter
-  than the owner's answer reports a failure first; what the owner then allows
-  still happens.
-- **D26, which bot needs consent to start (5.3).** The owner confirms
-  `hub_start_bot` for any stopped bot except one that failed. The hub cannot
-  tell after its own restart whether the owner stopped a bot or never started
-  it.
+  dialog the hub shows, which no page or bot's API can answer. The dialog names
+  the holder and the request, and expires as declined after 10 minutes, when
+  the hub stops, when the holder's channel is lost or when the role moves
+  (D30). A decision card in the note can replace it later. A provider CLI whose
+  own tool-call timeout is shorter than the owner's answer reports a failure
+  first; what the owner then allows still happens.
+  - A native CLI that can drive the desktop could press the dialog's button;
+    that is outside FR-6's boundary, like any other access the CLI has under
+    the owner's account.
+- **D26, which bot needs consent to start (5.3, review of Phase 5).** The owner
+  confirms `hub_start_bot` for every stopped bot; the hub cannot tell after its
+  own restart whether the owner stopped a bot or never started it. A bot that
+  failed is not the holder's to start: its runner restarts it within the
+  SPEC-008 FR-9 budget, and once the hub gives up only the owner starts it, so
+  the holder cannot buy a crashing bot a new budget. The hub refuses such a
+  start, and one beyond the bot cap, before asking the owner.
 - **D27, providers without the tools (5.2).** The holder gets no `cats-hub`
   tools on the providers that FR-11 names for the pinned Runtime: Antigravity,
   Grok and Muse. Its note title and Settings → Bots say so. A capability probe
@@ -472,13 +482,62 @@ Each entry names where it is implemented.
 - **D28, chains and deliveries (5.3).**
   - A chain is the holder's: only the bot that started a chain can continue it.
   - A message is accepted only when it and its reply fit the hop limit, so a
-    reply is never refused.
+    reply is never refused. Each message and each reply is a hop, also a reply
+    still on its way, so a chain under a limit of 4 carries at most 4
+    deliveries however the holder fans out. The owner chooses 2 to 100 hops,
+    the most a core admits.
   - A reply returns to the holder's conversation that sent the message, as
-    background work. A message arrives in the target's direct message.
-  - The delivery log (`coordinator/deliveries.jsonl` under the Cats Bot root)
-    keeps each delivery's text so it can be sent again. The audit
-    (`logs/hub-audit.jsonl`) and the bots' journals record calls without text.
-  - A target that fails or is archived answers the holder with the reason.
+    background work. A message arrives in the conversation the target keeps
+    for the holder (D29).
+  - The delivery log (`coordinator/deliveries.jsonl` under the Cats Bot root,
+    readable by the account only) keeps a delivery's text while it may be sent
+    again. At each hub start it is rewritten with each delivery's last state;
+    settled deliveries keep no text and leave after 30 days. A last line a
+    crash cut short is skipped without losing the next record. The audit
+    (`logs/hub-audit.jsonl`) and the bots' journals record calls with ids only.
+  - A reply is recorded under an id of its message's before the message counts
+    as answered, so a hub that stops in between sends it once after its start.
+  - Deliveries go out one at a time per target, so a target that does not
+    answer holds up only its own.
+  - A target that is archived, or that the hub gave up restarting, answers the
+    holder with the reason. Replies on their way to an archived bot are
+    dropped, so a new bot that later gets its id receives none.
+  - A turn on another bot's message that a crash interrupted ends failed, and
+    the holder hears "interrupted". It is not the owner's to rerun. If the
+    target's recovery later finds that it did answer, that answer stays in the
+    target's conversation; the holder can ask again.
+- **D29, a conversation per sender (review of Phase 5).** A coordinator's
+  message is not delivered in the target's direct message, as SPEC-009 FR-4
+  first said, but in a conversation the target keeps for that sender
+  (`bot-<sender id>`, "Messages from <name>"). The direct message's session
+  holds what the owner wrote, so a message there could have the target repeat
+  it to the holder, which FR-6 forbids. The conversation is a note the owner
+  can open; it is not mirrored to Telegram. Messages from another bot do not
+  count as the owner writing, so they neither move the heartbeat nor read as
+  the owner's in a later handoff.
+- **D30, confirmations the holder cannot game (review of Phase 5).**
+  - An answer counts only while the bot that asked still holds the role, so a
+    former holder's request does nothing, and a request expires when the role
+    moves.
+  - Each holder has one request before the owner at a time. One the owner
+    declined, or that expired, is not asked again for a minute.
+  - The dialog's headline is the hub's. What the holder wrote, the new bot's
+    name and an excerpt of its persona, appears below as labeled single lines:
+    a name with line breaks is refused, and the persona shows its first 300
+    characters.
+  - An answer given after the request expired counts as a decline. On macOS,
+    where a message box without a window blocks the hub and ignores its
+    signal, the request shows as a sheet on the Bots page; this path is not yet
+    tested on macOS (6.2).
+  - Open for the owner: `hub_set_heartbeat` resumes a heartbeat without
+    consent, also one the owner paused. FR-4 and FR-5 allow it; a resumed
+    heartbeat spends turns on the owner's account.
+  - Open for the owner: all of a holder's conversations share one `cats-hub`
+    token, and the conversation is named in the URL. A CLI that reads its own
+    MCP settings could route a reply to another of the holder's conversations.
+    A token per conversation, as `cats-desktop` has, would close it.
+  - Open for the owner: FR-4 says "a provider from those installed"; the hub
+    checks only that the provider is one Cats Bot knows.
 
 ## Progress Log
 
@@ -499,6 +558,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 5.1 to 5.3 implemented. Tests with two cores on the fake runtime, reached through their channels: a message reached the other bot once and its answer returned to the holder's conversation, also after the hub started again; refusals for a non-holder, unknown tools, other chains, hop and hourly limits; consent for create and transfer. With the real Electron hub and two bots, `cats-bot hub coordinator` moved and cleared the role and each core heard it. |
 | 2026-10-30 | Tasks 6.1 and 6.3 done: the measurement table above; ADR-001, ADR-002, ADR-004, ADR-006 and ADR-008 statuses, SPEC-001 FR-3, SPEC-002 FR-1, FR-4 and FR-7, SPEC-006's hub changes, and `architecture.md`, `services.md`, `setup-guide.md` and `testing.md` describe the hub. Task 6.2 is partly done; 6.4 waits for the owner. |
 | 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
+| 2026-10-30 | Independent security review of Phase 5 (task 5.4): fixed another bot's text handed on as the owner's, a former holder's request still carried out, unbounded and holder-worded dialogs, the restart budget reset by `hub_start_bot`, interrupted messages rerun as the owner's, hops counted by depth, a torn log line, one target holding up all deliveries, a core answering for another's deliveries, a reply lost between two writes, raw arguments in logs, an uncompacted log, and replies kept for an archived bot. Messages now arrive in a conversation per sender (D29); D25, D26, D28 and D30 record the rest and what stays open. 330 tests pass. |
 
 ---
 

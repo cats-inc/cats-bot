@@ -145,7 +145,7 @@ export function BotsTab() {
           <div className="row">
             <label>
               <span>{t('Hops per chain')}</span>
-              <input type="number" min={2} max={1000} defaultValue={listing.limits.hopsPerChain} key={`hops-${listing.limits.hopsPerChain}`}
+              <input type="number" min={2} max={100} defaultValue={listing.limits.hopsPerChain} key={`hops-${listing.limits.hopsPerChain}`}
                 onBlur={(event) => void setLimit('hopsPerChain', Number(event.target.value))} />
             </label>
             <label>

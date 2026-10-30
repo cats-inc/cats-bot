@@ -70,6 +70,27 @@ export class CoreRunner<T> {
     return this.launch();
   }
 
+  /**
+   * A start the owner did not ask for (SPEC-009 `hub_start_bot`): earlier
+   * failures still count, and a bot that waits to be restarted, or that the
+   * runner gave up on, is left for the owner.
+   */
+  startAgain(): Promise<T | null> {
+    if (this.handleValue) return Promise.resolve(this.handleValue);
+    const refusal = this.startAgainRefusal();
+    if (refusal) return Promise.reject(new Error(refusal));
+    this.wanted = true;
+    return this.launch();
+  }
+
+  /** Why `startAgain` would be refused now, or null. */
+  startAgainRefusal(): string | null {
+    if (this.handleValue) return null;
+    if (this.gaveUp) return 'It kept failing, so only the owner can start it again.';
+    if (this.timer) return 'It failed a moment ago and starts again by itself shortly.';
+    return null;
+  }
+
   /** The owner's stop, or Quit: no restart follows. */
   async stop(): Promise<void> {
     this.wanted = false;

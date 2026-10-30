@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
-import { removeTree } from '../../../core/store/removeTree.ts';
 import { dirname, join } from 'node:path';
 
 import { initializeBot, readBotProfile, type InitializeBotInput } from '../../../core/profile/initialize.ts';
 import { readJsonFile } from '../../../core/store/atomicFile.ts';
 import { acquireInstanceLock } from '../../../core/store/lock.ts';
 import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId } from '../../../core/store/paths.ts';
-import { addBot, reconcileRegistry, withHolder, writeRegistry, type BotRegistry, type RegistryBot } from './registry.ts';
+import { removeTree } from '../../../core/store/removeTree.ts';
+import { addBot, LIMIT_RANGES, reconcileRegistry, withHolder, writeRegistry, type BotRegistry, type RegistryBot } from './registry.ts';
 
 /**
  * SPEC-008 FR-3, FR-5 and FR-6: what Settings → Bots does to the registry and
@@ -130,8 +130,14 @@ export class BotManager {
   /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
   setLimits(limits: { hopsPerChain: number; messagesPerHour: number }): Promise<void> {
     return this.serial(() => {
-      for (const value of [limits.hopsPerChain, limits.messagesPerHour]) {
-        if (!Number.isSafeInteger(value) || value < 1 || value > 1000) throw new BotManagementError('A limit is a whole number from 1 to 1000.');
+      for (const key of ['hopsPerChain', 'messagesPerHour'] as const) {
+        const [min, max] = LIMIT_RANGES[key];
+        const value = limits[key];
+        if (!Number.isSafeInteger(value) || value < min || value > max) {
+          throw new BotManagementError(key === 'hopsPerChain'
+            ? `Hops per chain is a whole number from ${min} to ${max}.`
+            : `Messages per hour is a whole number from ${min} to ${max}.`);
+        }
       }
       this.save({ ...this.current, limits: { hopsPerChain: limits.hopsPerChain, messagesPerHour: limits.messagesPerHour } });
     });

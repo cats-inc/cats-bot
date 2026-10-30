@@ -386,15 +386,19 @@ async function main(): Promise<void> {
     };
   };
   // SPEC-009: the role, its confirmations and the bots it may reach.
-  const stoppedByOwner = new Set<string>();
   const pendingConfirmations = new Map<AbortController, string>();
-  /** FR-5: the owner's answer to a request of the holder; it expires after ten minutes. */
+  /**
+   * FR-5: the owner's answer to a request of the holder. It expires after ten
+   * minutes, when the holder's channel closes, when the role moves and when
+   * the hub stops; an answer given after that counts as declined.
+   */
   const askOwner = async (holder: string, question: string, detail: string): Promise<boolean> => {
     const controller = new AbortController();
     pendingConfirmations.set(controller, holder);
-    const timer = setTimeout(() => controller.abort(), 10 * 60_000);
+    const deadline = Date.now() + 10 * 60_000;
+    const timer = setTimeout(() => controller.abort(), deadline - Date.now());
     try {
-      const { response } = await dialog.showMessageBox({
+      const options: Electron.MessageBoxOptions = {
         type: 'question',
         title: 'Cats Bot',
         message: question,
@@ -403,8 +407,16 @@ async function main(): Promise<void> {
         defaultId: 0,
         cancelId: 0,
         signal: controller.signal,
-      });
-      return response === 1 && !controller.signal.aborted;
+      };
+      // On macOS a message box without a window blocks the hub and ignores its signal,
+      // so the request shows as a sheet on the Bots page there.
+      let parent: BrowserWindow | null = null;
+      if (process.platform === 'darwin') {
+        await botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+        parent = botsWindow.browserWindow;
+      }
+      const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      return response === 1 && !controller.signal.aborted && Date.now() < deadline;
     } catch {
       return false;
     } finally {
@@ -415,6 +427,8 @@ async function main(): Promise<void> {
   /** FR-3: every running core hears whether it holds the role. */
   const announceHolder = () => {
     const holder = manager.registry.coordinator.holder;
+    // FR-5: a request of a bot that no longer holds the role expires.
+    for (const [controller, asker] of pendingConfirmations) if (asker !== holder) controller.abort();
     for (const presenter of presented()) {
       void presenter.core.setCoordinator(presenter.botId === holder).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
     }
@@ -426,24 +440,26 @@ async function main(): Promise<void> {
     limits: () => manager.registry.limits,
     bots: () => listBots().bots.filter((bot) => bot.state !== 'archived').map(({ id, name, state }) => ({ id, name, state })),
     core: (id) => runners.get(id)?.handle?.core ?? null,
+    atBotCap: () => manager.activeCount() >= manager.registry.maxBots,
     createBot: async ({ name, persona, provider }) => {
       const id = await manager.create({ name, provider, model: null, ...(persona ? { instructions: persona } : {}) });
       botsChanged();
       await runnerFor(id).start();
       return id;
     },
+    // D26: a bot that failed is restarted by its runner within its budget, and after that only by the owner.
+    startBlocked: (id) => (externalPid(id) !== null ? 'It runs in another program.' : runners.get(id)?.startAgainRefusal() ?? null),
     startBot: async (id) => {
       if (manager.entry(id)?.archivedAt !== null) throw new Error(`Bot ${id} is not active.`);
-      stoppedByOwner.delete(id);
-      await runnerFor(id).start();
+      const runner = runnerFor(id);
+      if (!await runner.startAgain()) {
+        throw new Error(runner.state === 'external' ? 'It runs in another program.' : `It did not start: ${runner.error ?? 'unknown error'}`);
+      }
     },
     stopBot: async (id) => {
       await runners.get(id)?.stop();
       botsChanged();
     },
-    // FR-5: a bot the owner stopped, or that the owner did not set to start, waits for the owner;
-    // one that failed may be started again.
-    stoppedByOwner: (id) => stoppedByOwner.has(id) || runners.get(id)?.state !== 'failed',
     setHolder: async (id) => {
       await manager.setHolder(id, 'confirmed-proposal');
       announceHolder();
@@ -536,7 +552,6 @@ async function main(): Promise<void> {
     quitRequested: (presenter) => {
       // A second quit for a bot that is already stopping changes nothing.
       if (!presented().includes(presenter)) return;
-      stoppedByOwner.add(presenter.botId);
       if (presented().length <= 1) {
         quit();
         return;
@@ -638,6 +653,8 @@ async function main(): Promise<void> {
         // D18: the owner hears once when a bot is no longer restarted.
         gaveUp: () => {
           if (quitting) return;
+          // SPEC-009 FR-12: what waits for a bot that can no longer run returns to its sender as failed.
+          void coordinator.targetGone(id, 'it kept failing and is not restarted').catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
@@ -956,11 +973,9 @@ async function main(): Promise<void> {
       switch (action) {
         case 'start':
           if (manager.entry(id)?.archivedAt !== null) throw new BotManagementError(`Bot ${id} is not active.`);
-          stoppedByOwner.delete(id);
           await runnerFor(id).start();
           break;
         case 'stop':
-          stoppedByOwner.add(id);
           await runners.get(id)?.stop();
           break;
         case 'makeCoordinator':

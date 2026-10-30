@@ -4,7 +4,9 @@ import { join } from 'node:path';
 
 import type { RemoteBotCore } from '../../../core/host-api/remote.ts';
 import { CLI_PROVIDERS } from '../../../core/providers/catalog.ts';
+import { writeFileAtomic } from '../../../core/store/atomicFile.ts';
 import { isValidBotId } from '../../../core/store/paths.ts';
+import { isHubRecordId, oneLine } from '../../../core/tools/hubTools.ts';
 import type { BotDeliveryState, WorkItem, WorkItemState } from '../../../core/types.ts';
 import type { CoordinatorLimits } from './registry.ts';
 
@@ -39,13 +41,16 @@ export interface CoordinatorDeps {
   bots(): CoordinatorBot[];
   /** The running core of a bot this hub manages, or null (SPEC-008 FR-10). */
   core(id: string): RemoteBotCore | null;
+  /** Whether the bot cap leaves no room for a new bot (SPEC-008 FR-4). */
+  atBotCap(): boolean;
   createBot(input: { name: string; persona: string; provider: string }): Promise<string>;
+  /** Why the holder cannot start this bot now, or null: one that failed is the runner's or the owner's to start. */
+  startBlocked(id: string): string | null;
+  /** Starts a bot the owner allowed to start; it rejects with the reason when the bot did not start. */
   startBot(id: string): Promise<void>;
   stopBot(id: string): Promise<void>;
-  /** Whether the owner stopped this bot (FR-5). */
-  stoppedByOwner(id: string): boolean;
   setHolder(id: string | null): Promise<void>;
-  /** FR-5: the owner's answer; false when declined, expired or the hub stopped. */
+  /** FR-5: the owner's answer; false when declined, expired, the role moved or the hub stopped. */
   confirm(holder: string, question: string, detail: string): Promise<boolean>;
   log(line: string): void;
   now?(): Date;
@@ -61,6 +66,7 @@ interface DeliveryRecord {
   to: string;
   /** For a message, the holder's conversation its reply returns to; for a reply, that conversation. */
   conversationId: string;
+  /** Kept while the delivery may be sent again; a settled one keeps none (compaction). */
   text: string;
   state: 'accepted' | 'sent' | 'answered' | 'failed';
   at: string;
@@ -69,14 +75,27 @@ interface DeliveryRecord {
 }
 
 const MAX_TEXT = 64 * 1024;
-const TERMINAL: readonly WorkItemState[] = ['completed', 'failed', 'cancelled', 'interrupted'];
+/** Names in dialogs, records and prompts: one line, short. */
+const NAME_LENGTH = 40;
+const RECORD_NAME_LENGTH = 80;
+const PERSONA_PREVIEW = 300;
+const LINE_BREAKING = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]/u;
+/** FR-5: a declined or expired request is not asked again for this long. */
+export const CONSENT_COOLDOWN_MS = 60_000;
+/** FR-12: settled deliveries stay in the log this long, for the hourly limit and the chains they belong to. */
+const RETENTION_MS = 30 * 24 * 3_600_000;
+const SETTLED: readonly WorkItemState[] = ['completed', 'failed', 'cancelled', 'interrupted'];
 
 export class Coordinator {
   private readonly deps: CoordinatorDeps;
   private readonly deliveries = new Map<string, DeliveryRecord>();
   private readonly logFile: string;
   private readonly auditFile: string;
-  private sending: Promise<unknown> = Promise.resolve();
+  /** Deliveries are sent one at a time per target, so a target that hangs holds up only its own. */
+  private readonly queues = new Map<string, Promise<unknown>>();
+  /** FR-5: the holders with a request before the owner, and when the owner last declined one. */
+  private readonly asking = new Set<string>();
+  private readonly declinedAt = new Map<string, number>();
 
   constructor(deps: CoordinatorDeps) {
     this.deps = deps;
@@ -92,8 +111,11 @@ export class Coordinator {
 
   private load(): void {
     if (!existsSync(this.logFile)) return;
-    for (const line of readFileSync(this.logFile, 'utf8').split('\n')) {
+    const content = readFileSync(this.logFile, 'utf8');
+    let lines = 0;
+    for (const line of content.split('\n')) {
       if (!line.trim()) continue;
+      lines += 1;
       try {
         const record = JSON.parse(line) as DeliveryRecord;
         if (typeof record.id === 'string') this.deliveries.set(record.id, record);
@@ -101,6 +123,42 @@ export class Coordinator {
         this.deps.log('coordinator: an unreadable delivery log line was skipped');
       }
     }
+    // A last line a crash cut short stays on its own, so the next record is not lost with it.
+    if (content.length > 0 && !content.endsWith('\n')) appendFileSync(this.logFile, '\n', 'utf8');
+    const cutoff = this.now().getTime() - RETENTION_MS;
+    const settledToTrim = (record: DeliveryRecord) => !this.open(record) && (record.text !== '' || !(Date.parse(record.at) >= cutoff));
+    if (lines > this.deliveries.size || [...this.deliveries.values()].some(settledToTrim)) {
+      try {
+        this.compact();
+      } catch (error) {
+        this.deps.log(`coordinator: the delivery log was not compacted: ${error instanceof Error ? error.message : 'error'}`);
+      }
+    }
+  }
+
+  /** Whether the hub still sends this delivery, or waits for its answer. */
+  private open(record: DeliveryRecord): boolean {
+    return record.state === 'accepted' || (record.kind === 'message' && record.state === 'sent');
+  }
+
+  /**
+   * FR-12: the log keeps each delivery's last state. Settled deliveries lose
+   * their text, which the bots' transcripts hold, and leave after 30 days.
+   */
+  private compact(): void {
+    const cutoff = this.now().getTime() - RETENTION_MS;
+    const kept: DeliveryRecord[] = [];
+    for (const record of this.deliveries.values()) {
+      const open = this.open(record);
+      if (!open && !(Date.parse(record.at) >= cutoff)) {
+        this.deliveries.delete(record.id);
+        continue;
+      }
+      const compacted = open || !record.text ? record : { ...record, text: '' };
+      this.deliveries.set(record.id, compacted);
+      kept.push(compacted);
+    }
+    writeFileAtomic(this.logFile, kept.map((record) => `${JSON.stringify(record)}\n`).join(''), { mode: 0o600 });
   }
 
   /** FR-12: each change of a delivery is appended before anything depends on it. */
@@ -110,31 +168,33 @@ export class Coordinator {
     this.deliveries.set(record.id, record);
   }
 
-  /** FR-9: the hub's record of every call, without message text. */
+  /** FR-9: the hub's record of every call, with ids and outcomes only. */
   private audit(entry: { tool: string; holder: string; target?: string; chain?: string; outcome: string }): void {
     try {
       mkdirSync(join(this.auditFile, '..'), { recursive: true });
-      appendFileSync(this.auditFile, `${JSON.stringify({ at: this.now().toISOString(), ...entry })}\n`, 'utf8');
+      appendFileSync(this.auditFile, `${JSON.stringify({ at: this.now().toISOString(), ...entry })}\n`, { encoding: 'utf8', mode: 0o600 });
     } catch { /* The audit never stops a call. */ }
     this.deps.log(`coordinator ${entry.tool} by ${entry.holder}${entry.target ? ` for ${entry.target}` : ''}: ${entry.outcome}`);
   }
 
-  private name(id: string): string {
-    return this.deps.bots().find((bot) => bot.id === id)?.name ?? id;
+  /** A bot's name as the owner sees it in a dialog or a record: one line, short. */
+  private name(id: string, length = NAME_LENGTH): string {
+    return oneLine(this.deps.bots().find((bot) => bot.id === id)?.name ?? id, length) || id;
   }
 
   /** A `cats-hub` call from the bot whose channel carried it. */
   async handle(caller: string, raw: unknown): Promise<ToolAnswer> {
     const call = parseCall(raw);
     if (!call) return refuse('The hub could not read the call.');
-    const target = typeof call.args.bot === 'string' ? call.args.bot : undefined;
+    // Only ids reach the audit and the log; the model's other arguments are not kept (FR-9).
+    const target = typeof call.args.bot === 'string' && isValidBotId(call.args.bot) ? call.args.bot : undefined;
     const finish = (answer: ToolAnswer): ToolAnswer => {
       const chain = answer.structuredContent?.chain ?? call.args.chain;
       this.audit({
         tool: call.tool, holder: caller,
         ...(target ? { target } : {}),
-        ...(typeof chain === 'string' ? { chain } : {}),
-        outcome: answer.isError ? `refused: ${answer.text}` : 'done',
+        ...(isHubRecordId(chain) ? { chain } : {}),
+        outcome: answer.isError ? `refused: ${oneLine(answer.text, 200)}` : 'done',
       });
       return answer;
     };
@@ -165,6 +225,34 @@ export class Coordinator {
     }
   }
 
+  /**
+   * FR-5: the owner's answer to one request of the holder; null when the
+   * owner allowed it and the caller still holds the role, otherwise why not.
+   * Each holder has one request before the owner at a time, and one the owner
+   * declined is not asked again at once.
+   */
+  private async ownerAllows(caller: string, question: string, detail: string): Promise<ToolAnswer | null> {
+    if (this.asking.has(caller)) return refuse('The owner has not answered your last request yet. Wait for that answer first.');
+    const declined = this.declinedAt.get(caller);
+    if (declined !== undefined && this.now().getTime() - declined < CONSENT_COOLDOWN_MS) {
+      return refuse('The owner declined a request a moment ago. Wait a minute before asking again.');
+    }
+    this.asking.add(caller);
+    let allowed: boolean;
+    try {
+      allowed = await this.deps.confirm(caller, question, detail);
+    } finally {
+      this.asking.delete(caller);
+    }
+    if (!allowed) {
+      this.declinedAt.set(caller, this.now().getTime());
+      return refuse('The owner declined, or did not answer in time.');
+    }
+    // FR-3: an answer counts only while the bot that asked still holds the role.
+    if (this.deps.holder() !== caller) return refuse('This bot no longer holds the coordinator role; nothing was done.');
+    return null;
+  }
+
   /** Another bot of this hub, not the caller. */
   private other(caller: string, args: Record<string, unknown>): string {
     const id = args.bot;
@@ -185,18 +273,20 @@ export class Coordinator {
     if (!core) return refuse(`${this.name(target)} is not running under this hub; start it first.`);
     const limits = this.deps.limits();
     let chainId: string;
-    let hop: number;
+    let messages: number;
     if (typeof args.chain === 'string' && args.chain) {
       const chain = [...this.deliveries.values()].filter((record) => record.chainId === args.chain);
       // FR-8: only the holder starts chains, and continues its own.
       if (chain.length === 0 || chain.find((record) => record.hop === 1)?.from !== caller) return refuse('That chain is unknown.');
       chainId = args.chain;
-      hop = Math.max(...chain.map((record) => record.hop)) + 1;
+      messages = chain.filter((record) => record.kind === 'message').length;
     } else {
       chainId = `chain-${randomUUID().slice(0, 12)}`;
-      hop = 1;
+      messages = 0;
     }
-    // FR-8: room for this message and its reply.
+    // FR-8: each delivery is a hop, and every message brings one reply, also one still on its way;
+    // a message is taken only with room for its reply.
+    const hop = messages * 2 + 1;
     if (hop + 1 > limits.hopsPerChain) {
       return refuse(`This chain reached its limit of ${limits.hopsPerChain} hops. Start a new one, or ask the owner to raise the limit.`);
     }
@@ -208,7 +298,7 @@ export class Coordinator {
     }
     const record: DeliveryRecord = {
       id: `delivery-${randomUUID().slice(0, 12)}`, kind: 'message', chainId, hop,
-      from: caller, fromName: this.name(caller), to: target, conversationId, text, state: 'accepted', at: this.now().toISOString(),
+      from: caller, fromName: this.name(caller, RECORD_NAME_LENGTH), to: target, conversationId, text, state: 'accepted', at: this.now().toISOString(),
     };
     this.save(record);
     const delivered = await this.send(record);
@@ -222,7 +312,8 @@ export class Coordinator {
 
   /** Sends a recorded delivery; one that the target has admitted is marked sent (FR-12). */
   private send(record: DeliveryRecord): Promise<boolean> {
-    const task = this.sending.then(async () => {
+    const previous = this.queues.get(record.to) ?? Promise.resolve();
+    const task = previous.then(async () => {
       const current = this.deliveries.get(record.id);
       if (!current || current.state !== 'accepted') return current?.state === 'sent';
       const core = this.deps.core(current.to);
@@ -236,28 +327,44 @@ export class Coordinator {
         this.save({ ...current, state: 'sent', workItemId: item.id });
         return true;
       } catch (error) {
-        this.deps.log(`coordinator: delivery ${current.id} to ${current.to} waits: ${error instanceof Error ? error.message : 'error'}`);
+        this.deps.log(`coordinator: delivery ${current.id} to ${current.to} waits: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
         return false;
       }
     });
-    this.sending = task.catch(() => undefined);
+    const settled = task.catch(() => undefined);
+    this.queues.set(record.to, settled);
+    void settled.then(() => {
+      if (this.queues.get(record.to) === settled) this.queues.delete(record.to);
+    });
     return task;
   }
 
   /** FR-8: a message's answer, or why there is none, returns to the bot that sent it. */
   private async answer(message: DeliveryRecord, state: WorkItemState, reply: string | null, error: string | null): Promise<void> {
     if (message.kind !== 'message' || (message.state !== 'sent' && message.state !== 'accepted')) return;
-    const text = state === 'completed'
-      ? (reply?.trim() || '(no answer)')
-      : `${this.name(message.to)} did not answer: its work on your message ended ${state}${error ? ` (${error})` : ''}.`;
-    this.save({ ...message, state: state === 'completed' ? 'answered' : 'failed' });
-    const reply_: DeliveryRecord = {
-      id: `delivery-${randomUUID().slice(0, 12)}`, kind: 'reply', chainId: message.chainId, hop: message.hop + 1,
-      from: message.to, fromName: this.name(message.to), to: message.from, conversationId: message.conversationId,
-      text: text.slice(0, MAX_TEXT), state: 'accepted', at: this.now().toISOString(),
-    };
-    this.save(reply_);
-    await this.send(reply_);
+    const settled = state === 'completed' ? 'answered' : 'failed';
+    // A sender archived since has nothing waiting for the reply, and its id may be given to a new bot.
+    if (!this.deps.bots().some((bot) => bot.id === message.from)) {
+      this.save({ ...message, state: settled, reason: 'its sender is no longer active' });
+      return;
+    }
+    // FR-12: the reply is recorded, under an id of its message's, before the message counts as answered,
+    // so a hub that stops in between finds the message open again and the reply already there.
+    const replyId = `reply-${message.id}`;
+    let replyRecord = this.deliveries.get(replyId);
+    if (!replyRecord) {
+      const text = state === 'completed'
+        ? (reply?.trim() || '(no answer)')
+        : `${this.name(message.to)} did not answer: its work on your message ended ${state}${error ? ` (${oneLine(error, 300)})` : ''}.`;
+      replyRecord = {
+        id: replyId, kind: 'reply', chainId: message.chainId, hop: message.hop + 1,
+        from: message.to, fromName: this.name(message.to, RECORD_NAME_LENGTH), to: message.from, conversationId: message.conversationId,
+        text: text.slice(0, MAX_TEXT), state: 'accepted', at: this.now().toISOString(),
+      };
+      this.save(replyRecord);
+    }
+    this.save({ ...message, state: settled });
+    await this.send(replyRecord);
   }
 
   /** A bot finished a work item: a message it was handed is answered. */
@@ -285,20 +392,29 @@ export class Coordinator {
     try {
       states = await core.botDeliveries(open.map((record) => record.id));
     } catch (error) {
-      this.deps.log(`coordinator: replies of ${botId} not read: ${error instanceof Error ? error.message : 'error'}`);
+      this.deps.log(`coordinator: replies of ${botId} not read: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
       return;
     }
     for (const state of states) {
       const message = this.deliveries.get(state.deliveryId);
-      if (message && TERMINAL.includes(state.state)) await this.answer(message, state.state, state.reply, state.error);
+      // A core answers only for what was sent to it.
+      if (message?.kind === 'message' && message.to === botId && SETTLED.includes(state.state)) {
+        await this.answer(message, state.state, state.reply, state.error);
+      }
     }
   }
 
-  /** FR-12: a target that was archived or can no longer run fails what still waits for it. */
+  /**
+   * FR-12: a bot that was archived or can no longer run. What still waits for
+   * it fails back to its sender, and replies on their way to it are dropped,
+   * so a new bot that later gets the same id receives none of them.
+   */
   async targetGone(botId: string, reason: string): Promise<void> {
     for (const record of [...this.deliveries.values()]) {
       if (record.kind === 'message' && record.to === botId && (record.state === 'accepted' || record.state === 'sent')) {
         await this.answer(record, 'failed', null, reason);
+      } else if (record.kind === 'reply' && record.to === botId && record.state === 'accepted') {
+        this.save({ ...record, state: 'failed', reason });
       }
     }
   }
@@ -307,27 +423,34 @@ export class Coordinator {
     const name = typeof args.name === 'string' ? args.name.trim() : '';
     const persona = typeof args.persona === 'string' ? args.persona.trim() : '';
     const provider = typeof args.provider === 'string' ? args.provider : '';
-    if (!name || name.length > 80) return refuse('The new bot needs a name of at most 80 characters.');
+    if (!name || name.length > 80 || LINE_BREAKING.test(name)) {
+      return refuse('The new bot needs a name of one line, at most 80 characters.');
+    }
     if (persona.length > 4_000) return refuse('The persona is too long.');
     if (!CLI_PROVIDERS.some((entry) => entry.id === provider)) {
       return refuse(`Choose one of these providers: ${CLI_PROVIDERS.map((entry) => entry.id).join(', ')}.`);
     }
-    // FR-5: the owner decides.
-    if (!await this.deps.confirm(caller, `${this.name(caller)} asks to create a bot named "${name}" on ${provider}.`, persona)) {
-      return refuse('The owner declined, or did not answer in time.');
-    }
+    if (this.deps.atBotCap()) return refuse('The owner\'s bots are at the bot cap; the owner can archive one first.');
+    // FR-5: the owner decides. What the holder wrote stays in the detail, marked as the holder's.
+    const holder = this.name(caller);
+    const refusal = await this.ownerAllows(caller, `${holder} asks to create a new bot.`, [
+      `Name: ${oneLine(name, 80)}`,
+      `Provider: ${provider}`,
+      ...(persona ? [`Persona, as ${holder} wrote it: ${oneLine(persona, PERSONA_PREVIEW)}`] : []),
+    ].join('\n'));
+    if (refusal) return refusal;
     const id = await this.deps.createBot({ name, persona, provider });
-    return ok(`Created ${name} (${id}). It runs with desktop control and Telegram off.`, { bot: id });
+    return ok(`Created ${oneLine(name, 80)} (${id}). It runs with desktop control and Telegram off.`, { bot: id });
   }
 
   private async start(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {
     const target = this.other(caller, args);
     if (this.deps.core(target)) return ok(`${this.name(target)} is already running.`);
-    // FR-5: a bot the owner stopped starts only with the owner's consent.
-    if (this.deps.stoppedByOwner(target)
-      && !await this.deps.confirm(caller, `${this.name(caller)} asks to start ${this.name(target)}, which you stopped.`, '')) {
-      return refuse('The owner declined, or did not answer in time.');
-    }
+    const blocked = this.deps.startBlocked(target);
+    if (blocked) return refuse(`${this.name(target)} cannot be started now. ${blocked}`);
+    // FR-5 and D26: a stopped bot starts only with the owner's consent.
+    const refusal = await this.ownerAllows(caller, `${this.name(caller)} asks to start ${this.name(target)}.`, '');
+    if (refusal) return refusal;
     await this.deps.startBot(target);
     return ok(`Started ${this.name(target)}.`);
   }
@@ -353,7 +476,8 @@ export class Coordinator {
     const question = proposed
       ? `${this.name(caller)} proposes that ${this.name(proposed)} take over the coordinator role.`
       : `${this.name(caller)} proposes that no bot hold the coordinator role.`;
-    if (!await this.deps.confirm(caller, question, '')) return refuse('The owner declined, or did not answer in time.');
+    const refusal = await this.ownerAllows(caller, question, '');
+    if (refusal) return refusal;
     await this.deps.setHolder(proposed);
     return ok(proposed ? `${this.name(proposed)} now holds the coordinator role.` : 'No bot holds the coordinator role now.');
   }
@@ -370,7 +494,7 @@ function refuse(text: string): ToolAnswer {
 function parseCall(raw: unknown): { tool: string; args: Record<string, unknown>; conversationId: string } | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const value = raw as Record<string, unknown>;
-  if (typeof value.tool !== 'string' || value.tool.length > 64) return null;
+  if (typeof value.tool !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/u.test(value.tool)) return null;
   if (typeof value.conversationId !== 'string' || !value.conversationId || value.conversationId.length > 200) return null;
   const args = value.args && typeof value.args === 'object' && !Array.isArray(value.args) ? value.args as Record<string, unknown> : {};
   return { tool: value.tool, args, conversationId: value.conversationId };
