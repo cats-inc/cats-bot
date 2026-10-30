@@ -203,7 +203,7 @@ export interface CatsBotBridge {
     menu(): Promise<null>;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
   };
-  /** Settings windows and the hub's Bots page only. */
+  /** Cats Bot Settings only (D17); a bot's settings window is refused. */
   hub: {
     bots(): Promise<BotListing>;
     action(action: BotAction, id: string, value?: boolean): Promise<BotListing>;

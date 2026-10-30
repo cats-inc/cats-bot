@@ -254,8 +254,8 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 Cats Bot.exe (hub, Electron)            ~/.catsbot/
   tray, windows, updates, setup         bots.json, hub state
         │ host channel (pipe/socket + token, per core)
-        ├── core: bots/mochi   (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
-        └── core: bots/<id>    (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
+        ├── core: bots/mochi-catsbot (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
+        └── core: bots/<id>          (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
 ```
 
 ## Dependencies

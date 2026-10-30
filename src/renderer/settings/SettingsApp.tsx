@@ -14,7 +14,8 @@ import { ToastContext } from './toast.ts';
  * The settings window (SPEC-002 FR-4): one per bot, opened from the tray, the
  * note's ⚙ or the floating cat's menu, on the tab given by `?tab=` or later
  * by the shell. Like the note it keeps no durable state. With `?scope=hub` it
- * is the hub's Bots page (SPEC-008 FR-5), which reaches no bot.
+ * is Cats Bot Settings, the hub's General and Bots tabs (SPEC-008 FR-5,
+ * PLAN-010), which reaches no bot's core.
  */
 
 const api = window.catsBot;

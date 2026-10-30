@@ -65,7 +65,7 @@ export const zhTW: Record<string, string> = {
   'Could not send: {error}': '無法傳送：{error}',
   'runtime failed': 'Runtime 啟動失敗',
   'Install Cats Bot update': '安裝 Cats Bot 更新',
-  'Stop this bot and install the downloaded update?': '停止這隻機器人並安裝已下載的更新？',
+  'Stop every bot and install the downloaded update?': '停止所有機器人並安裝已下載的更新？',
   'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.':
     '目前的工作會中斷。請先結束其他 Cats Bot 執行個體。在共用電腦上，所有使用者都應保持 Cats Bot 關閉，直到安裝完成。',
   'stored, {protection}': '已儲存，{protection}',
@@ -405,7 +405,7 @@ export const zhTW: Record<string, string> = {
   'A new version is available.': '有新版本可以使用。',
   'Downloading update…': '正在下載更新…',
   'The update is ready to install.': '更新已可安裝。',
-  'Stopping the bot and opening the installer…': '正在停止機器人並開啟安裝程式…',
+  'Stopping the bots and opening the installer…': '正在停止所有機器人並開啟安裝程式…',
   'The update could not be completed.': '無法完成更新。',
   'Updates are unavailable for this build.': '這個版本無法使用更新功能。',
   'The response was not confirmed. Refresh this request before retrying.':

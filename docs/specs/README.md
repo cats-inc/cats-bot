@@ -64,7 +64,7 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | [SPEC-005](./SPEC-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented | [PLAN-005](../plans/PLAN-005-standard-preview-releases-and-updates.md) |
 | [SPEC-007](./SPEC-007-cats-bot-identity-and-data-root.md) | Cats Bot Identity and Data Root | Implemented except FR-8 | [PLAN-008](../plans/PLAN-008-cats-bot-identity-and-data-root.md) |
 | [SPEC-008](./SPEC-008-hub-and-bots.md) | Hub and Bots | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
-| [SPEC-009](./SPEC-009-boss-cat-role.md) | Coordinator Role | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
+| [SPEC-009](./SPEC-009-boss-cat-role.md) | Boss Cat Role | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
 <!-- Add new specs above this line -->
 
 ## For AI Agents

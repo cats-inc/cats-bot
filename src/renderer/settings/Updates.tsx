@@ -24,7 +24,7 @@ export function Updates() {
   const messages = {
     idle: 'Check for a newer version of Cats Bot.', checking: 'Checking for updates…', current: 'You are up to date.',
     available: 'A new version is available.', downloading: 'Downloading update…', downloaded: 'The update is ready to install.',
-    installing: 'Stopping the bot and opening the installer…', error: 'The update could not be completed.', unavailable: 'Updates are unavailable for this build.',
+    installing: 'Stopping the bots and opening the installer…', error: 'The update could not be completed.', unavailable: 'Updates are unavailable for this build.',
   };
   return (
     <section className="update-panel" aria-label={t('App updates')}>

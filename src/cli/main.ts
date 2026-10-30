@@ -87,7 +87,7 @@ Commands:
                                          bind the bot to a Telegram bot token (long polling)
   open [conversation|home]               ask the running hub to show a conversation window
   hub status [--json]                    the running hub's bots, through its control endpoint
-  hub boss-cat <id> | --clear        make a bot the Boss Cat, or clear the role (through the hub)
+  hub boss-cat <id> | --clear            make a bot the Boss Cat, or clear the role (through the hub)
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -173,6 +173,16 @@ interface Target {
 }
 
 /** SPEC-008 FR-5: an archived bot's id stays reserved; Settings restores it, nothing creates it again. */
+/** FR-27 and D2: a derived id is numbered past every bot of that name, archived ones included. */
+function freeDerivedId(name: string, env: NodeJS.ProcessEnv): string {
+  const paths = hubPathsFor(resolveCatsBotHome(env));
+  for (let copy = 1; copy < 1000; copy += 1) {
+    const id = deriveBotId(name, copy);
+    if (!existsSync(join(paths.bots, id)) && !existsSync(join(paths.archive, id))) return id;
+  }
+  throw new Error(`No free bot id is left for ${name}.`);
+}
+
 function assertNotArchived(id: string, env: NodeJS.ProcessEnv): void {
   if (isValidBotId(id) && existsSync(join(hubPathsFor(resolveCatsBotHome(env)).archive, id))) {
     throw new Error(`Bot ${id} is archived. Restore it in Settings → Bots before using it.`);
@@ -198,7 +208,8 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
     process.stderr.write('init needs --name and --provider\n');
     return 2;
   }
-  const id = flagString(parsed.flags, 'id') ?? deriveBotId(name);
+  const given = flagString(parsed.flags, 'id');
+  const id = given ?? freeDerivedId(name, env);
   assertNotArchived(id, env);
   const permissionMode = flagString(parsed.flags, 'permission-mode') as PermissionMode | undefined;
   const { profile, root } = initializeBot(resolveBotsHome(env), {

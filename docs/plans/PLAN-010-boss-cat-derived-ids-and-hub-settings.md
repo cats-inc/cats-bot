@@ -65,7 +65,9 @@ GitHub Copilot workaround that Runtime has since removed.
       and PLAN-009 get a terminology note and keep their history. The guides
       follow; published release notes stay as they are.
 - [x] 1.3: `deriveBotId` appends `-catsbot` to every derived id, keeping the name
-      part to 56 characters; a taken id gets `-2`, `-3` and so on after it.
+      part to 56 characters; a taken id gets `-2`, `-3` and so on after it, in
+      `cats-bot init` as on the Bots page. A `--provider` first run without
+      `--name` names the bot Mochi.
 
 **Deliverables**: no "coordinator" role remains in Cats Bot's code, data, CLI,
 interface or living documents; new bots get `-catsbot` ids.
@@ -112,7 +114,7 @@ reaches only its own bot.
 | `src/shell/electron/hub/coordinator.ts` | Rename | `bossCatBroker.ts` |
 | `src/shell/electron/hub/registry.ts`, `botManager.ts`, `main.ts` | Modify | `bossCat` field, role wiring, hub Settings |
 | `src/core/tools/hubTools.ts`, `src/core/bot.ts` | Modify | Instructions and delivered-message text |
-| `src/cli/main.ts`, `src/core/host-api/hubControl.ts` | Modify | `hub boss-cat` |
+| `src/cli/main.ts` | Modify | `hub boss-cat`; `init` numbers a derived id |
 | `src/core/store/paths.ts` | Modify | `-catsbot` derived ids |
 | `src/renderer/settings/*`, `src/shared/language.ts` | Modify | Hub Settings, labels |
 | `src/shell/electron/trayMenu.ts` | Modify | "Settings…" in every shape |
@@ -131,6 +133,7 @@ reaches only its own bot.
 | 2026-10-30 | Plan created from the owner's review of PLAN-009 D1 to D30. |
 | 2026-10-30 | Phase 1 done: the role is Boss Cat in code, data (`bossCat`), CLI (`hub boss-cat`), interface (主控貓) and the living docs; derived ids end in `-catsbot`. 334 tests pass. |
 | 2026-10-30 | Phase 2 done: Cats Bot Settings (General and Bots) opens from the tray's Settings… in every shape and by itself when no bot runs; a bot's settings keep its own tabs (the former App tab is Details) and its tray item is "Bot settings…". Bot management, start at login and updates refuse any other window. Verified with the real Electron hub in an isolated home over CDP. |
+| 2026-10-30 | Independent review of #71: `cats-bot init` now numbers a derived id as the Bots page does, a `--provider` first run without `--name` keeps the name Mochi, only Cats Bot Settings receives bot and update broadcasts, the macOS Boss Cat sheet opens on Bots, the update prompt says every bot stops, and stale docs and comments were corrected. A protocol bump for the renamed host command was not made: a 0.3 core reattached after a hub crash is restarted, which the pre-launch policy allows. |
 
 ---
 

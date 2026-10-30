@@ -9,7 +9,7 @@ import { useToast } from './toast.ts';
 import { Updates } from './Updates.tsx';
 import { LanguageField } from '../LanguageField.tsx';
 
-/** SPEC-002 FR-4, FR-6: the Life, Telegram and App tabs. */
+/** SPEC-002 FR-4, FR-6: a bot's Life, Telegram and Details tabs, and Cats Bot Settings' General tab (PLAN-010). */
 
 const api = window.catsBot;
 

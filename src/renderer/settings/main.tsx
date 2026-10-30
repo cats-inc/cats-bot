@@ -5,7 +5,7 @@ import { SetupPage } from './SetupPage.tsx';
 import { initializeLanguage } from '../i18n.ts';
 
 // SPEC-002 FR-1, FR-4: the same page is the first-run setup (?mode=setup), a new bot's setup
-// (?mode=setup&purpose=create), a bot's settings window and the hub's Bots page (?scope=hub).
+// (?mode=setup&purpose=create), a bot's settings window and Cats Bot Settings (?scope=hub).
 const params = new URLSearchParams(location.search);
 const root = document.getElementById('root');
 if (!root) throw new Error('settings.html has no #root');

@@ -242,8 +242,9 @@ async function main(): Promise<void> {
   // FR-4: the first run creates the first bot with the provider-first flow.
   const createFirstBot = async (): Promise<string | null> => {
     if (args.provider) {
-      const id = requested ?? deriveBotId(args.name ?? 'mochi');
-      initializeBot(hubPaths.bots, { id, name: args.name ?? id, provider: args.provider, model: args.model ?? null });
+      const name = args.name ?? 'Mochi';
+      const id = requested ?? deriveBotId(name);
+      initializeBot(hubPaths.bots, { id, name, provider: args.provider, model: args.model ?? null });
       return id;
     }
     let created: string | null = null;
@@ -344,12 +345,8 @@ async function main(): Promise<void> {
   let quitting = false;
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
   const pages = { preloadPath, rendererDir, iconPath };
-  // FR-5: Settings → Bots, also reachable when no bot runs.
+  // FR-5 and D20: Cats Bot Settings, with its General and Bots tabs, also reachable when no bot runs.
   const hubSettings = new SettingsWindow(pages, { scope: 'hub' });
-  const settingsWindows = (): Array<BrowserWindow> => [
-    ...presented().map((presenter) => presenter.settings.browserWindow),
-    hubSettings.browserWindow,
-  ].filter((window): window is BrowserWindow => window !== null);
   let tray: BotTray | null = null;
 
   const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: BossCatLimits } => {
@@ -415,10 +412,10 @@ async function main(): Promise<void> {
         signal: controller.signal,
       };
       // On macOS a message box without a window blocks the hub and ignores its signal,
-      // so the request shows as a sheet on the Bots page there.
+      // so the request shows as a sheet on the Bots tab of Cats Bot Settings there.
       let parent: BrowserWindow | null = null;
       if (process.platform === 'darwin') {
-        await hubSettings.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+        await hubSettings.open('bots').catch((error: unknown) => log(`open settings failed: ${errorMessage(error)}`));
         parent = hubSettings.browserWindow;
         // Without a window to hold the sheet the request is declined rather than blocking the hub.
         if (!parent) return false;
@@ -478,7 +475,7 @@ async function main(): Promise<void> {
   });
   const botsChanged = () => {
     void refreshTray();
-    for (const window of settingsWindows()) window.webContents.send('hub:botsChanged');
+    hubSettings.browserWindow?.webContents.send('hub:botsChanged');
   };
 
   const trayModel = async (presenter: BotPresenter): Promise<TrayMenuModel> => ({
@@ -788,7 +785,7 @@ async function main(): Promise<void> {
       },
       openRelease: (url) => shell.openExternal(url),
       changed: (state) => {
-        for (const window of settingsWindows()) window.webContents.send('shell:update', state);
+        hubSettings.browserWindow?.webContents.send('shell:update', state);
       },
     },
   );
@@ -1057,7 +1054,7 @@ async function main(): Promise<void> {
           await dialog.showMessageBox({
             type: 'question',
             title: t('Install Cats Bot update'),
-            message: t('Stop this bot and install the downloaded update?'),
+            message: t('Stop every bot and install the downloaded update?'),
             detail: t(
               'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.',
             ),

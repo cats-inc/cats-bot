@@ -86,9 +86,9 @@ arguments, IDs, persisted roles and owner-assigned titles remain compatible.
 
 ```bash
 npm run build
-npm run shell -- --provider claude --name Mochi   # first run: creates the first bot
+npm run shell -- --provider claude --name Mochi   # first run: creates the first bot, mochi-catsbot
 npm run shell                                      # later launches
-npm run shell -- --id mochi                        # later launches, opening that bot's note
+npm run shell -- --id mochi-catsbot                # later launches, opening that bot's note
 ```
 
 The shell is the hub (SPEC-008): one Electron process for every bot, with one
