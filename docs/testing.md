@@ -179,6 +179,22 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   `CATS_BOT_HOME`, an unused `--id` and the fixture CLI
   (`CATS_BOT_PROVIDER_COMMAND=node`, `CATS_BOT_PROVIDER_LAUNCH_ARGS=<fixture>`),
   fill the setup page through CDP, then drive `settings.html` the same way.
+  With that override every provider counts as installed, so `hub_create_bot`
+  creates the bot at once instead of opening the New bot window
+  (SPEC-009 FR-4).
+- Clean machine (PLAN-010 Phase 3). Run this only when the owner asks; it is
+  not part of CI.
+  - Windows Sandbox signs in as an administrator with UAC off. The user-scoped
+    helpers refuse that unless `-AllowAdmin` is passed.
+  - For the app's real path, use a Hyper-V VM built from the Windows 11
+    Enterprise evaluation ISO, with UAC on and `ConsentPromptBehaviorAdmin=0`
+    standing in for the owner's Yes.
+    - Run the helpers through `Invoke-SetupHelper.ps1` as the signed-in user at
+      medium integrity: a scheduled task with `RunLevel Limited`.
+    - Drive the unpacked app over CDP with its own Electron as Node.
+  - A runner started before Node is installed has no `npm` on its PATH. A
+    helper reports Codex's `codex.ps1`; run the `codex.cmd` beside it, or
+    `cmd.exe` opens the `.ps1` in Notepad.
 - The floating bot (SPEC-002 FR-7) needs real input: move the mouse with
   injected events (`mouse_event` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE`
   or `SendInput`), not `SetCursorPos`, which bypasses the low-level hook

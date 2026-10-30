@@ -1,5 +1,5 @@
 import { t, useI18n } from '../i18n.ts';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ModelCatalog, ProviderInfo } from '../../core/types.ts';
 import catUrl from '../cat.svg';
@@ -33,10 +33,26 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const canStart = ready && setup?.provider === provider && setup.canFinish && !installing;
 
   useEffect(() => {
-    void api.setup.providers().then((list) => {
+    // SPEC-009 FR-4: a Boss Cat's request whose provider is not set up opens this page filled in.
+    const prefill = purpose === 'create' ? api.setup.prefill() : Promise.resolve(null);
+    void Promise.all([api.setup.providers(), prefill]).then(([list, request]) => {
       setProviders(list);
-      setProvider(preferredProvider(list));
+      if (request) {
+        setName(request.name);
+        setInstructions(request.persona);
+      }
+      setProvider(
+        request && list.some((item) => item.id === request.provider)
+          ? request.provider
+          : preferredProvider(list),
+      );
     });
+  }, [purpose]);
+
+  // A CLI the helper just found is on PATH now, so the provider's hint follows it.
+  const onSetupState = useCallback((state: ProviderSetupState | null) => {
+    setSetup(state);
+    if (state) void api.setup.providers().then(setProviders);
   }, []);
 
   useEffect(() => {
@@ -96,7 +112,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
               {hint.text}
             </small>
           </label>
-          <ProviderInstallation provider={provider} onState={setSetup} onBusy={setInstalling} />
+          <ProviderInstallation provider={provider} onState={onSetupState} onBusy={setInstalling} />
           <label className="field">
             <span>{t('Name')}</span>
             <input

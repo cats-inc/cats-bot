@@ -1,7 +1,8 @@
 import { t, useI18n } from '../i18n.ts';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { BotProfile, ModelCatalog, ProviderInfo } from '../../core/types.ts';
+import type { ProviderSetupState } from '../../shared/providerSetup.ts';
 import { errorText } from '../errors.ts';
 import { ModelField, useModelMenu } from './ModelField.tsx';
 import { botForm, botPatch, providerChoices, providerHint, providerLabel, saveNotice, type BotForm } from './settingsLogic.ts';
@@ -47,6 +48,10 @@ export function BotTab({
 
   useEffect(() => {
     void api.invoke('listProviders').then(setProviders);
+  }, []);
+  // A CLI the helper just found is on PATH now, so the provider's hint follows it.
+  const onSetupState = useCallback((state: ProviderSetupState | null) => {
+    if (state) void api.invoke('listProviders').then(setProviders);
   }, []);
 
   const update = (patch: Partial<BotForm>) => setForm((current) => ({ ...current, ...patch }));
@@ -124,7 +129,7 @@ export function BotTab({
           </p>
         )}
         {providers.some((item) => item.id === form.provider) && (
-          <ProviderInstallation provider={form.provider} onBusy={setInstalling} />
+          <ProviderInstallation provider={form.provider} onState={onSetupState} onBusy={setInstalling} />
         )}
         {form.provider === 'claude' && (
           <label className="check">

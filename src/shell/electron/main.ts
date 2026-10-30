@@ -440,6 +440,13 @@ async function main(): Promise<void> {
     }
     botsChanged();
   };
+  // FR-5: a new bot is created with the provider-first page.
+  let createWindow: BrowserWindow | null = null;
+  // Opens the New bot window for a Boss Cat's request; set once that window's handlers exist below.
+  let askOwnerToSetUp = (_request: { name: string; persona: string; provider: string }): 'opened' | 'busy' => 'busy';
+  // SPEC-009 FR-4: whether the hub's PATH has the provider; a fixture CLI override stands for every one.
+  const providerOnPath = (provider: string) =>
+    Boolean(readProviderOverrides().providerCommand) || listProviders().some((entry) => entry.id === provider && entry.installed);
   const bossCat = new BossCatBroker({
     home,
     holder: () => manager.registry.bossCat.holder,
@@ -447,11 +454,18 @@ async function main(): Promise<void> {
     bots: () => listBots().bots.filter((bot) => bot.state !== 'archived').map(({ id, name, state }) => ({ id, name, state })),
     core: (id) => runners.get(id)?.handle?.core ?? null,
     atBotCap: () => manager.activeCount() >= manager.registry.maxBots,
+    setupNeeded: (provider) => {
+      if (providerOnPath(provider)) return 'none';
+      return createWindow && !createWindow.isDestroyed() ? 'busy' : 'window';
+    },
     createBot: async ({ name, persona, provider }) => {
+      if (quitting) throw new Error('Cats Bot is stopping.');
+      // SPEC-009 FR-4: a provider this computer does not have yet is set up by the owner first.
+      if (!providerOnPath(provider)) return { setup: askOwnerToSetUp({ name, persona, provider }) };
       const id = await manager.create({ name, provider, model: null, ...(persona ? { instructions: persona } : {}) });
       botsChanged();
       await runnerFor(id).start();
-      return id;
+      return { id };
     },
     // D26: a bot that failed is restarted by its runner within its budget, and after that only by the owner.
     startBlocked: (id) => (externalPid(id) !== null ? 'It runs in another program.' : runners.get(id)?.startAgainRefusal() ?? null),
@@ -860,8 +874,6 @@ async function main(): Promise<void> {
     return from?.role === 'settings' ? from.presenter : null;
   };
   const fromHubSettings = (event: Electron.IpcMainInvokeEvent) => hubSettings.owns(event.sender.id);
-  // FR-5: a new bot is created with the provider-first page.
-  let createWindow: BrowserWindow | null = null;
   const fromCreate = (event: Electron.IpcMainInvokeEvent) =>
     createWindow !== null && !createWindow.isDestroyed() && event.sender.id === createWindow.webContents.id;
   const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
@@ -924,6 +936,14 @@ async function main(): Promise<void> {
     }
     return null;
   });
+  // SPEC-009 FR-4: a Boss Cat's request the New bot window starts from, read once by that window.
+  let createPrefill: { name: string; persona: string; provider: string } | null = null;
+  ipcMain.handle('setup:prefill', (event) => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) return null;
+    const request = createPrefill;
+    createPrefill = null;
+    return request;
+  });
   const openCreateWindow = () => {
     if (createWindow && !createWindow.isDestroyed()) {
       createWindow.show();
@@ -936,9 +956,19 @@ async function main(): Promise<void> {
       if (providerSetup.busy || finishing) event.preventDefault();
     });
     window.on('closed', () => {
-      if (createWindow === window) createWindow = null;
+      if (createWindow === window) {
+        createWindow = null;
+        createPrefill = null;
+      }
     });
     void window.loadURL(pageUrl(rendererDir, 'settings.html', { mode: 'setup', purpose: 'create' })).then(() => window.show());
+  };
+  askOwnerToSetUp = (request) => {
+    // An open New bot window holds the owner's own work; it is not replaced.
+    if (createWindow && !createWindow.isDestroyed()) return 'busy';
+    createPrefill = request;
+    openCreateWindow();
+    return 'opened';
   };
 
   // FR-5: Settings → Bots. Archive and delete each ask the owner here, in the hub.

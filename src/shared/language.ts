@@ -309,6 +309,18 @@ export const zhTW: Record<string, string> = {
   'Check again': '重新檢查',
   'Installed. Complete the provider sign-in in a terminal, then check again.':
     '已安裝。請在終端機完成 provider 登入，再重新檢查。',
+  // The packaged helpers' sign-in steps, as they word them (assets/setup).
+  'Run claude to complete the browser sign-in flow, or configure ANTHROPIC_API_KEY before first use.':
+    '第一次使用前，在終端機執行 claude 完成瀏覽器登入，或設定 ANTHROPIC_API_KEY。',
+  'Run `claude` to complete the browser sign-in flow, or configure ANTHROPIC_API_KEY before first use.':
+    '第一次使用前，在終端機執行 `claude` 完成瀏覽器登入，或設定 ANTHROPIC_API_KEY。',
+  'Run `agy` after install and complete the Google sign-in flow before first use.':
+    '第一次使用前，在終端機執行 `agy` 完成 Google 登入。',
+  'Run `grok login` or set XAI_API_KEY before first use.':
+    '第一次使用前，在終端機執行 `grok login`，或設定 XAI_API_KEY。',
+  'Run `muse login` once to sign in to a Meta account; the credential is stored in ~/.config/muse/auth.json.':
+    '在終端機執行一次 `muse login` 登入 Meta 帳號；登入資訊會存在 ~/.config/muse/auth.json。',
+  'Administrator elevation was cancelled or failed.': '系統管理員授權已取消或失敗。',
   ready: '已就緒',
   not_installed: '尚未安裝',
   changes_required: '需要設定',

@@ -22,6 +22,7 @@ export interface HelperResult {
   manualSteps?: string[];
   warnings?: string[];
   restartRequired?: boolean;
+  interruptions?: Array<{ kind?: string }>;
 }
 export type SetupHelperRunner = (helper: string, apply: boolean) => Promise<HelperResult>;
 
@@ -190,15 +191,27 @@ export class ProviderSetup {
       const applied = await this.runHelper(step === 'provider' ? provider : (step as string), true);
       const checked = await this.inspect(provider);
       const target = checked.steps.find((item) => item.id === step)!;
-      target.warnings = [...new Set([...target.warnings, ...(applied.warnings ?? [])])];
-      target.manualSteps = [...new Set([...target.manualSteps, ...(applied.manualSteps ?? [])])];
-      if (
-        applied.restartRequired ||
-        ['restart_required', 'relaunch_required', 'elevation_required', 'failed'].includes(
-          applied.status,
-        )
-      ) {
-        target.status = applied.status;
+      // A failure or a refused elevation always stands. A restart or relaunch the helper
+      // asks for stands only while the fresh probe cannot confirm the step: the runner
+      // already hands a found CLI's folder to Runtime and every core.
+      const done = stepDone(target);
+      // Install-Node reports a declined UAC prompt as `changes_required` with an elevation interruption.
+      const status =
+        applied.status !== 'ready' &&
+        applied.interruptions?.some((item) => item.kind === 'elevation_required')
+          ? 'elevation_required'
+          : applied.status;
+      const interrupted =
+        ['elevation_required', 'failed'].includes(status) ||
+        (!done &&
+          (applied.restartRequired === true ||
+            ['restart_required', 'relaunch_required'].includes(status)));
+      target.manualSteps = distinctLines([...target.manualSteps, ...(applied.manualSteps ?? [])]);
+      // An installer's diagnostics explain a step that is not done; a finished step drops them.
+      if (interrupted || !done)
+        target.warnings = distinctLines([...target.warnings, ...(applied.warnings ?? [])]);
+      if (interrupted) {
+        target.status = status;
         target.restartRequired = applied.restartRequired === true;
         checked.canFinish = false;
       }
@@ -241,15 +254,26 @@ export class ProviderSetup {
         restartRequired: result.restartRequired === true,
       });
     }
-    return {
-      provider,
-      steps,
-      canFinish: steps.every(
-        (step) =>
-          !step.restartRequired &&
-          (step.status === 'ready' ||
-            (step.id === 'provider' && step.installed && step.status === 'auth_required')),
-      ),
-    };
+    return { provider, steps, canFinish: steps.every(stepDone) };
   }
+}
+
+/** Ready, or a provider that is installed and waits only for the owner's sign-in. */
+function stepDone(step: SetupStep): boolean {
+  return (
+    !step.restartRequired &&
+    (step.status === 'ready' ||
+      (step.id === 'provider' && step.installed && step.status === 'auth_required'))
+  );
+}
+
+/** A check and an install word the same help line with or without code quotes; it shows once. */
+function distinctLines(lines: string[]): string[] {
+  const seen = new Set<string>();
+  return lines.filter((line) => {
+    const key = line.replace(/`/gu, '').trim();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }

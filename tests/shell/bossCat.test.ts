@@ -45,9 +45,10 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
     bots: () => Object.entries(names).map(([id, name]) => ({ id, name, state: bots.has(id) ? 'running' : 'stopped' })),
     core: (id) => bots.get(id)?.remote ?? null,
     atBotCap: () => false,
+    setupNeeded: () => 'none',
     createBot: async ({ name }) => {
       created.push(name);
-      return 'new-bot';
+      return { id: 'new-bot' };
     },
     startBlocked: () => null,
     startBot: async () => undefined,
@@ -241,7 +242,8 @@ test('a message waiting in the conversation the owner deletes is answered as can
       bots: () => [{ id: 'alpha', name: 'Alpha', state: 'running' }, { id: 'deleted-beta', name: 'Beta', state: 'running' }],
       core: (id) => (id === 'alpha' ? alpha : beta),
       atBotCap: () => false,
-      createBot: async () => 'x',
+      setupNeeded: () => 'none',
+      createBot: async () => ({ id: 'x' }),
       startBlocked: () => null,
       startBot: async () => undefined,
       stopBot: async () => undefined,
@@ -265,4 +267,50 @@ test('a message waiting in the conversation the owner deletes is answered as can
   } finally {
     await core.stop();
   }
+});
+
+test('a provider this computer lacks goes to the owner\'s New bot window first (FR-4)', async () => {
+  const needs: Array<'none' | 'window' | 'busy'> = ['window', 'busy', 'window'];
+  const outcomes: Array<{ id: string } | { setup: 'opened' | 'busy' }> = [{ setup: 'opened' }, { setup: 'busy' }];
+  const requests: string[] = [];
+  const details: string[] = [];
+  const bossCat = new BossCatBroker({
+    home: join(home.root, 'setup-first'),
+    holder: () => 'alpha',
+    limits: () => ({ hopsPerChain: 4, messagesPerHour: 10 }),
+    bots: () => [{ id: 'alpha', name: 'Alpha', state: 'running' }],
+    core: () => null,
+    atBotCap: () => false,
+    setupNeeded: () => needs.shift()!,
+    createBot: async ({ name, provider }) => {
+      requests.push(`${name}:${provider}`);
+      return outcomes.shift()!;
+    },
+    startBlocked: () => null,
+    startBot: async () => undefined,
+    stopBot: async () => undefined,
+    setHolder: async () => undefined,
+    confirm: async (_holder, _question, detail) => {
+      details.push(detail);
+      return true;
+    },
+    log: () => undefined,
+  });
+  const opened = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Gamma', provider: 'grok' }));
+  assert.equal(opened.isError, undefined);
+  assert.match(opened.text, /grok is not set up on this computer yet\. The owner now has the New bot window, filled in for Gamma/u);
+  assert.match(details[0]!, /This computer does not have grok yet; the New bot window opens to set it up\./u);
+  // An open New bot window refuses before the owner is asked.
+  const busy = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Delta', provider: 'grok' }));
+  assert.equal(busy.isError, true);
+  assert.match(busy.text, /already has a New bot window open/u);
+  assert.equal(details.length, 1);
+  // A window the owner opened while the dialog was up still wins.
+  const late = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Epsilon', provider: 'grok' }));
+  assert.equal(late.isError, true);
+  assert.deepEqual(requests, ['Gamma:grok', 'Epsilon:grok']);
+  // The New bot window takes 40 characters, so a longer name never reaches the owner.
+  const long = await bossCat.handle('alpha', call('hub_create_bot', { name: 'N'.repeat(41), provider: 'grok' }));
+  assert.match(long.text, /at most 40 characters/u);
+  assert.equal(details.length, 2);
 });

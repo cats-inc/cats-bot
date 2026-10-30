@@ -43,7 +43,16 @@ export interface BossCatDeps {
   core(id: string): RemoteBotCore | null;
   /** Whether the bot cap leaves no room for a new bot (SPEC-008 FR-4). */
   atBotCap(): boolean;
-  createBot(input: { name: string; persona: string; provider: string }): Promise<string>;
+  /**
+   * Whether creating a bot with this provider needs the owner's setup first (`window`), cannot
+   * ask now because the owner has a New bot window open (`busy`), or neither (`none`).
+   */
+  setupNeeded(provider: string): 'none' | 'window' | 'busy';
+  /**
+   * Creates and starts the bot, or, when this computer does not have its provider yet,
+   * opens the owner's New bot window filled in with the request (`busy`: one is open already).
+   */
+  createBot(input: { name: string; persona: string; provider: string }): Promise<{ id: string } | { setup: 'opened' | 'busy' }>;
   /** Why the holder cannot start this bot now, or null: one that failed is the runner's or the owner's to start. */
   startBlocked(id: string): string | null;
   /** Starts a bot the owner allowed to start; it rejects with the reason when the bot did not start. */
@@ -79,6 +88,7 @@ const MAX_TEXT = 64 * 1024;
 const NAME_LENGTH = 40;
 const RECORD_NAME_LENGTH = 80;
 const PERSONA_PREVIEW = 300;
+const BUSY_WINDOW = 'The owner already has a New bot window open. Ask again after it closes.';
 /** FR-5: a declined or expired request is not asked again for this long. */
 export const CONSENT_COOLDOWN_MS = 60_000;
 /** FR-12: settled deliveries stay in the log this long, for the hourly limit and the chains they belong to. */
@@ -199,7 +209,9 @@ export class BossCatBroker {
         tool: call.tool, holder: caller,
         ...(target ? { target } : {}),
         ...(isHubRecordId(chain) ? { chain } : {}),
-        outcome: answer.isError ? `refused: ${oneLine(answer.text, 200)}` : 'done',
+        outcome: answer.isError
+          ? `refused: ${oneLine(answer.text, 200)}`
+          : answer.structuredContent?.setup === 'owner' ? 'sent to the owner\'s setup' : 'done',
       });
       return answer;
     };
@@ -434,24 +446,35 @@ export class BossCatBroker {
     const name = typeof args.name === 'string' ? args.name.trim() : '';
     const persona = typeof args.persona === 'string' ? args.persona.trim() : '';
     const provider = typeof args.provider === 'string' ? args.provider : '';
-    if (!name || name.length > 80 || !isPlainLine(name)) {
-      return refuse('The new bot needs a name of one line, at most 80 characters, whose every character shows.');
+    // The New bot window and the Bot tab take 40 characters, as the first run does.
+    if (!name || name.length > NAME_LENGTH || !isPlainLine(name)) {
+      return refuse('The new bot needs a name of one line, at most 40 characters, whose every character shows.');
     }
     if (persona.length > 4_000) return refuse('The persona is too long.');
     if (!CLI_PROVIDERS.some((entry) => entry.id === provider)) {
       return refuse(`Choose one of these providers: ${CLI_PROVIDERS.map((entry) => entry.id).join(', ')}.`);
     }
     if (this.deps.atBotCap()) return refuse('The owner\'s bots are at the bot cap; the owner can archive one first.');
+    // FR-4: a New bot window the owner has open is not replaced, so the owner is not asked for nothing.
+    const setup = this.deps.setupNeeded(provider);
+    if (setup === 'busy') return refuse(BUSY_WINDOW);
     // FR-5: the owner decides. What the holder wrote stays in the detail, quoted and marked as the holder's.
     const holder = this.label(caller);
     const refusal = await this.ownerAllows(caller, `${holder} asks to create a new bot.`, [
-      `Name: ${oneLine(name, 80)}`,
+      `Name: ${oneLine(name, NAME_LENGTH)}`,
       `Provider: ${provider}`,
+      ...(setup === 'window' ? [`This computer does not have ${provider} yet; the New bot window opens to set it up.`] : []),
       ...(persona ? [`Persona, as ${holder} wrote it: "${oneLine(persona, PERSONA_PREVIEW)}"`] : []),
     ].join('\n'));
     if (refusal) return refusal;
-    const id = await this.deps.createBot({ name, persona, provider });
-    return ok(`Created ${oneLine(name, 80)} (${id}). It runs with desktop control and Telegram off.`, { bot: id });
+    // The hub decides again: PATH or the owner's windows can change while the dialog is open.
+    const created = await this.deps.createBot({ name, persona, provider });
+    if ('setup' in created) {
+      return created.setup === 'opened'
+        ? ok(`${provider} is not set up on this computer yet. The owner now has the New bot window, filled in for ${oneLine(name, NAME_LENGTH)}; the bot is created when the owner finishes its setup there.`, { setup: 'owner' })
+        : refuse(BUSY_WINDOW);
+    }
+    return ok(`Created ${oneLine(name, NAME_LENGTH)} (${created.id}). It runs with desktop control and Telegram off.`, { bot: created.id });
   }
 
   private async start(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {

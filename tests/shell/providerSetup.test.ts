@@ -114,20 +114,66 @@ test('installation is explicit, restricted to the checked provider, and followed
   const state = await setup.install('claude', 'provider');
   assert.deepEqual(calls, ['claude:false', 'claude:true', 'claude:false']);
   assert.equal(state.canFinish, true);
-  assert.deepEqual(state.steps[0]?.warnings, ['Installer warning']);
+  // A finished step drops the installer's diagnostics (a winget fallback note, say).
+  assert.deepEqual(state.steps[0]?.warnings, []);
 });
 
-test('installer errors and restart requirements cannot be hidden by a later ready probe', async () => {
-  for (const status of ['failed', 'elevation_required', 'restart_required', 'relaunch_required']) {
+test('installer errors cannot be hidden by a later ready probe', async () => {
+  for (const status of ['failed', 'elevation_required']) {
     const setup = new ProviderSetup(async (_helper, apply) =>
-      apply ? { status, manualSteps: ['Complete setup'] } : ready(),
+      apply ? { status, manualSteps: ['Complete setup'], warnings: ['Why'] } : ready(),
     );
     await setup.check('claude');
     const state = await setup.install('claude', 'provider');
     assert.equal(state.canFinish, false, status);
     assert.equal(state.steps[0]?.status, status);
     assert.deepEqual(state.steps[0]?.manualSteps, ['Complete setup']);
+    assert.deepEqual(state.steps[0]?.warnings, ['Why']);
   }
+});
+
+// Measured on a clean Windows 11 VM: every native installer and the npm folder ask for a
+// relaunch or restart that the fresh probe already shows is not needed (PLAN-010 Phase 3).
+test('a restart or relaunch stands only while the fresh probe cannot confirm the step', async () => {
+  for (const applied of [
+    { status: 'restart_required', restartRequired: true },
+    { status: 'relaunch_required' },
+    { status: 'ready', restartRequired: true },
+  ] as HelperResult[]) {
+    const confirmed = new ProviderSetup(async (_helper, apply) => (apply ? applied : ready()));
+    await confirmed.check('claude');
+    const shown = await confirmed.install('claude', 'provider');
+    assert.equal(shown.canFinish, true, applied.status);
+    assert.equal(shown.steps[0]?.status, 'ready');
+
+    const unseen = new ProviderSetup(async (_helper, apply) =>
+      apply ? applied : { status: 'not_installed' },
+    );
+    await unseen.check('claude');
+    const waiting = await unseen.install('claude', 'provider');
+    assert.equal(waiting.canFinish, false, applied.status);
+    assert.equal(waiting.steps[0]?.status, applied.status);
+  }
+  const signIn = new ProviderSetup(async (_helper, apply) =>
+    apply
+      ? { status: 'relaunch_required', installed: true }
+      : { status: 'auth_required', installed: true },
+  );
+  await signIn.check('claude');
+  const installed = await signIn.install('claude', 'provider');
+  assert.equal(installed.steps[0]?.status, 'auth_required');
+  assert.equal(installed.canFinish, true);
+});
+
+test('the same help line from the check and the install shows once', async () => {
+  const setup = new ProviderSetup(async (_helper, apply) =>
+    apply
+      ? { status: 'relaunch_required', installed: true, manualSteps: ['Run `claude` to sign in.'] }
+      : { status: 'auth_required', installed: true, manualSteps: ['Run claude to sign in.'] },
+  );
+  await setup.check('claude');
+  const state = await setup.install('claude', 'provider');
+  assert.deepEqual(state.steps[0]?.manualSteps, ['Run claude to sign in.']);
 });
 
 test('authentication is reported separately from installation; unknown results are not ready', async () => {
@@ -213,4 +259,44 @@ test('every vendored installer and sourced dependency matches its pinned Platfor
     pkg.build.files.includes('assets/**/*'),
     'installer closure is included in every package',
   );
+});
+
+// The clean VM's Codex chain: the npm folder asks for a restart its fresh probe does not need.
+test('Codex goes on after the npm folder without a restart or Check again', async () => {
+  let npmReady = false;
+  let codexInstalled = false;
+  const setup = new ProviderSetup(async (helper, apply) => {
+    if (helper === 'node') return ready();
+    if (helper === 'npm') {
+      if (apply) {
+        npmReady = true;
+        return { status: 'restart_required', restartRequired: true };
+      }
+      return npmReady ? { status: 'ready' } : { status: 'not_installed' };
+    }
+    if (apply) {
+      codexInstalled = true;
+      return { status: 'ready', installed: true };
+    }
+    return codexInstalled ? ready() : { status: 'not_installed' };
+  });
+  await setup.check('codex');
+  const afterNpm = await setup.install('codex', 'npm');
+  assert.equal(afterNpm.steps[1]?.status, 'ready');
+  assert.equal(afterNpm.steps[2]?.status, 'not_installed');
+  assert.equal((await setup.install('codex', 'provider')).canFinish, true);
+});
+
+test('a declined UAC prompt shows as elevation_required, not as a step to set up', async () => {
+  const declined = 'Administrator elevation was cancelled or failed.';
+  const setup = new ProviderSetup(async (_helper, apply) =>
+    apply
+      ? { status: 'changes_required', warnings: [declined], interruptions: [{ kind: 'elevation_required' }] }
+      : { status: 'changes_required' },
+  );
+  await setup.check('codex');
+  const state = await setup.install('codex', 'node');
+  assert.equal(state.steps[0]?.status, 'elevation_required');
+  assert.deepEqual(state.steps[0]?.warnings, [declined]);
+  assert.equal(state.canFinish, false);
 });

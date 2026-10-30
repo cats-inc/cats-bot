@@ -46,7 +46,8 @@ const DEFINITIONS: ToolDefinition[] = [
   {
     name: 'hub_create_bot',
     description: 'Ask the owner to create a new bot. The owner confirms first; the bot starts with desktop control and '
-      + 'Telegram off. The bot cap applies.',
+      + 'Telegram off. If this computer does not have its provider yet, the owner sets it up in the New bot window '
+      + 'and the bot is created there. The bot cap applies.',
     inputSchema: {
       type: 'object',
       properties: {
