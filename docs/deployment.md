@@ -99,8 +99,8 @@ passes without it.
 
 ## Check for Updates
 
-Use the tray/floating cat menu **Check for Updates…**, or Settings → App →
-**Check for Updates**. Checks only query the public cats-inc/cats-bot feed.
+Use the tray/floating cat menu **Check for Updates…**, or Cats Bot Settings →
+General → **Check for Updates**. Checks only query the public cats-inc/cats-bot feed.
 The tray menu presents the result in a native dialog, without opening Settings;
 Update and Restart explicitly authorizes download and installation. Settings keeps
 separate Download update / Restart and install actions with a native confirmation.

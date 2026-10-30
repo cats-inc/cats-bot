@@ -8,10 +8,10 @@ import { writeFileAtomic } from '../../../core/store/atomicFile.ts';
 import { isValidBotId } from '../../../core/store/paths.ts';
 import { isHubRecordId, isPlainLine, oneLine } from '../../../core/tools/hubTools.ts';
 import type { BotDeliveryState, WorkItem, WorkItemState } from '../../../core/types.ts';
-import type { CoordinatorLimits } from './registry.ts';
+import type { BossCatLimits } from './registry.ts';
 
 /**
- * SPEC-009: the hub's side of the coordinator role. Every `cats-hub` call
+ * SPEC-009: the hub's side of the Boss Cat role. Every `cats-hub` call
  * arrives here from the channel of the bot that made it; the hub checks that
  * this bot holds the role now (FR-3), offers only the tools of FR-4 (FR-6),
  * asks the owner where FR-5 says so, keeps the limits of FR-8, and records
@@ -27,18 +27,18 @@ export interface ToolAnswer {
   structuredContent?: Record<string, unknown>;
 }
 
-export interface CoordinatorBot {
+export interface BossCatBot {
   id: string;
   name: string;
   state: string;
 }
 
-export interface CoordinatorDeps {
+export interface BossCatDeps {
   home: string;
   holder(): string | null;
-  limits(): CoordinatorLimits;
+  limits(): BossCatLimits;
   /** The bots that are not archived. */
-  bots(): CoordinatorBot[];
+  bots(): BossCatBot[];
   /** The running core of a bot this hub manages, or null (SPEC-008 FR-10). */
   core(id: string): RemoteBotCore | null;
   /** Whether the bot cap leaves no room for a new bot (SPEC-008 FR-4). */
@@ -85,8 +85,8 @@ export const CONSENT_COOLDOWN_MS = 60_000;
 const RETENTION_MS = 30 * 24 * 3_600_000;
 const SETTLED: readonly WorkItemState[] = ['completed', 'failed', 'cancelled', 'interrupted'];
 
-export class Coordinator {
-  private readonly deps: CoordinatorDeps;
+export class BossCatBroker {
+  private readonly deps: BossCatDeps;
   private readonly deliveries = new Map<string, DeliveryRecord>();
   private readonly logFile: string;
   private readonly auditFile: string;
@@ -96,9 +96,9 @@ export class Coordinator {
   private readonly asking = new Set<string>();
   private readonly declinedAt = new Map<string, number>();
 
-  constructor(deps: CoordinatorDeps) {
+  constructor(deps: BossCatDeps) {
     this.deps = deps;
-    const dir = join(deps.home, 'coordinator');
+    const dir = join(deps.home, 'boss-cat');
     this.logFile = join(dir, 'deliveries.jsonl');
     this.auditFile = join(deps.home, 'logs', 'hub-audit.jsonl');
     this.load();
@@ -119,7 +119,7 @@ export class Coordinator {
         const record = JSON.parse(line) as DeliveryRecord;
         if (typeof record.id === 'string') this.deliveries.set(record.id, record);
       } catch {
-        this.deps.log('coordinator: an unreadable delivery log line was skipped');
+        this.deps.log('Boss Cat: an unreadable delivery log line was skipped');
       }
     }
     // A last line a crash cut short stays on its own, so the next record is not lost with it.
@@ -130,7 +130,7 @@ export class Coordinator {
       try {
         this.compact();
       } catch (error) {
-        this.deps.log(`coordinator: the delivery log was not compacted: ${error instanceof Error ? error.message : 'error'}`);
+        this.deps.log(`Boss Cat: the delivery log was not compacted: ${error instanceof Error ? error.message : 'error'}`);
       }
     }
   }
@@ -173,7 +173,7 @@ export class Coordinator {
       mkdirSync(join(this.auditFile, '..'), { recursive: true });
       appendFileSync(this.auditFile, `${JSON.stringify({ at: this.now().toISOString(), ...entry })}\n`, { encoding: 'utf8', mode: 0o600 });
     } catch { /* The audit never stops a call. */ }
-    this.deps.log(`coordinator ${entry.tool} by ${entry.holder}${entry.target ? ` for ${entry.target}` : ''}: ${entry.outcome}`);
+    this.deps.log(`Boss Cat ${entry.tool} by ${entry.holder}${entry.target ? ` for ${entry.target}` : ''}: ${entry.outcome}`);
   }
 
   /** A bot's name as the owner sees it in a dialog or a record: one line, short. */
@@ -204,7 +204,7 @@ export class Coordinator {
       return answer;
     };
     // FR-3: the holder now, whatever the session still carries.
-    if (this.deps.holder() !== caller) return finish(refuse('This bot does not hold the coordinator role.'));
+    if (this.deps.holder() !== caller) return finish(refuse('This bot does not hold the Boss Cat role.'));
     try {
       switch (call.tool) {
         case 'hub_list_bots':
@@ -254,7 +254,7 @@ export class Coordinator {
       return refuse('The owner declined, or did not answer in time.');
     }
     // FR-3: an answer counts only while the bot that asked still holds the role.
-    if (this.deps.holder() !== caller) return refuse('This bot no longer holds the coordinator role; nothing was done.');
+    if (this.deps.holder() !== caller) return refuse('This bot no longer holds the Boss Cat role; nothing was done.');
     return null;
   }
 
@@ -262,7 +262,7 @@ export class Coordinator {
   private other(caller: string, args: Record<string, unknown>): string {
     const id = args.bot;
     if (typeof id !== 'string' || !isValidBotId(id)) throw new Error('Name another bot by the id hub_list_bots returns.');
-    if (id === caller) throw new Error('These tools act on other bots, not on the coordinator itself.');
+    if (id === caller) throw new Error('These tools act on other bots, not on the Boss Cat itself.');
     if (!this.deps.bots().some((bot) => bot.id === id)) {
       throw new Error(this.deps.bots().length <= 1 ? 'There is no other bot.' : `There is no bot ${id}.`);
     }
@@ -299,7 +299,7 @@ export class Coordinator {
     const recent = [...this.deliveries.values()]
       .filter((record) => record.kind === 'message' && record.from === caller && Date.parse(record.at) > hourAgo).length;
     if (recent >= limits.messagesPerHour) {
-      return refuse(`The coordinator sent ${recent} messages in the last hour, its limit. Try again later, or ask the owner to raise the limit.`);
+      return refuse(`The Boss Cat sent ${recent} messages in the last hour, its limit. Try again later, or ask the owner to raise the limit.`);
     }
     const record: DeliveryRecord = {
       id: `delivery-${randomUUID().slice(0, 12)}`, kind: 'message', chainId, hop,
@@ -332,7 +332,7 @@ export class Coordinator {
         this.save({ ...current, state: 'sent', workItemId: item.id });
         return true;
       } catch (error) {
-        this.deps.log(`coordinator: delivery ${current.id} to ${current.to} waits: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
+        this.deps.log(`Boss Cat: delivery ${current.id} to ${current.to} waits: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
         return false;
       }
     });
@@ -397,7 +397,7 @@ export class Coordinator {
     try {
       states = await core.botDeliveries(open.map((record) => record.id));
     } catch (error) {
-      this.deps.log(`coordinator: replies of ${botId} not read: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
+      this.deps.log(`Boss Cat: replies of ${botId} not read: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
       return;
     }
     for (const state of states) {
@@ -485,12 +485,12 @@ export class Coordinator {
   private async transfer(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {
     const proposed = args.bot === null ? null : this.other(caller, args);
     const question = proposed
-      ? `${this.label(caller)} proposes that ${this.label(proposed)} take over the coordinator role.`
-      : `${this.label(caller)} proposes that no bot hold the coordinator role.`;
+      ? `${this.label(caller)} proposes that ${this.label(proposed)} take over the Boss Cat role.`
+      : `${this.label(caller)} proposes that no bot hold the Boss Cat role.`;
     const refusal = await this.ownerAllows(caller, question, '');
     if (refusal) return refusal;
     await this.deps.setHolder(proposed);
-    return ok(proposed ? `${this.name(proposed)} now holds the coordinator role.` : 'No bot holds the coordinator role now.');
+    return ok(proposed ? `${this.name(proposed)} now holds the Boss Cat role.` : 'No bot holds the Boss Cat role now.');
   }
 }
 

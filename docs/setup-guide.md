@@ -72,7 +72,7 @@ Node/npm and a usable npm installation folder; native providers skip those steps
 Installation and sign-in are reported separately. No other provider is installed.
 
 The model and effort lists use Runtime's catalog, matching Desktop. Model controls
-are saved for new sessions. Settings > App offers Follow system, English and
+are saved for new sessions. Cats Bot Settings > General offers Follow system, English and
 Traditional Chinese; open conversation windows and the tray update immediately.
 Closing a conversation hides it. Avatar visibility/position and conversation
 visibility/position/layer survive restart, including an entirely hidden desktop.
@@ -86,9 +86,9 @@ arguments, IDs, persisted roles and owner-assigned titles remain compatible.
 
 ```bash
 npm run build
-npm run shell -- --provider claude --name Mochi   # first run: creates the first bot
+npm run shell -- --provider claude --name Mochi   # first run: creates the first bot, mochi-catsbot
 npm run shell                                      # later launches
-npm run shell -- --id mochi                        # later launches, opening that bot's note
+npm run shell -- --id mochi-catsbot                # later launches, opening that bot's note
 ```
 
 The shell is the hub (SPEC-008): one Electron process for every bot, with one

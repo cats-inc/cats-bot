@@ -6,7 +6,7 @@ import catUrl from '../cat.svg';
 import { BotTab } from './BotTab.tsx';
 import { BotsTab } from './BotsTab.tsx';
 import { NotesTab } from './NotesTab.tsx';
-import { AppTab, LifeTab, TelegramTab } from './OtherTabs.tsx';
+import { AppTab, GeneralTab, LifeTab, TelegramTab } from './OtherTabs.tsx';
 import { brandState } from './settingsLogic.ts';
 import { ToastContext } from './toast.ts';
 
@@ -14,29 +14,33 @@ import { ToastContext } from './toast.ts';
  * The settings window (SPEC-002 FR-4): one per bot, opened from the tray, the
  * note's ⚙ or the floating cat's menu, on the tab given by `?tab=` or later
  * by the shell. Like the note it keeps no durable state. With `?scope=hub` it
- * is the hub's Bots page (SPEC-008 FR-5), which reaches no bot.
+ * is Cats Bot Settings, the hub's General and Bots tabs (SPEC-008 FR-5,
+ * PLAN-010), which reaches no bot's core.
  */
 
 const api = window.catsBot;
-const TABS = ['bot', 'notes', 'life', 'telegram', 'app', 'bots'] as const;
-type Tab = (typeof TABS)[number];
+// A bot's settings reach only that bot; Cats Bot Settings holds the app and the bots (D17, D20).
+const BOT_TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
+const HUB_TABS = ['general', 'bots'] as const;
+type Tab = (typeof BOT_TABS)[number] | (typeof HUB_TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   bot: 'Bot',
   notes: 'Conversations',
   life: 'Life',
   telegram: 'Telegram',
-  app: 'App',
+  app: 'Details',
+  general: 'General',
   bots: 'Bots',
 };
 
-function isTab(value: string | null): value is Tab {
-  return value !== null && (TABS as readonly string[]).includes(value);
+function isTabOf(tabs: readonly Tab[], value: string | null): value is Tab {
+  return value !== null && (tabs as readonly string[]).includes(value);
 }
 
 export function SettingsApp({ initialTab, scope }: { initialTab: string | null; scope: 'bot' | 'hub' }) {
   const { locale } = useI18n();
-  const tabs: readonly Tab[] = scope === 'hub' ? ['bots'] : TABS;
-  const [tab, setTab] = useState<Tab>(scope === 'hub' ? 'bots' : isTab(initialTab) ? initialTab : 'bot');
+  const tabs: readonly Tab[] = scope === 'hub' ? HUB_TABS : BOT_TABS;
+  const [tab, setTab] = useState<Tab>(isTabOf(tabs, initialTab) ? initialTab : tabs[0]!);
   const [profile, setProfile] = useState<BotProfile | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
@@ -56,8 +60,10 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
 
   useEffect(() => {
     if (scope === 'hub') {
-      document.title = `Cats Bot ${t('Bots')}`;
-      return undefined;
+      document.title = `Cats Bot ${t('Settings')}`;
+      return api.onNavigate((next) => {
+        if (isTabOf(HUB_TABS, next)) setTab(next);
+      });
     }
     void api.invoke('getProfile').then(setProfile);
     void refreshStatus();
@@ -65,7 +71,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
       if (event.type === 'runtime.status') void refreshStatus();
     });
     const offNavigate = api.onNavigate((next) => {
-      if (isTab(next)) setTab(next);
+      if (isTabOf(BOT_TABS, next)) setTab(next);
     });
     return () => {
       offEvent();
@@ -86,7 +92,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
             <img src={catUrl} alt="" width="40" height="40" />
             <div>
               <strong id="brand-name">{status?.name ?? t('Cats Bot')}</strong>
-              <small id="brand-state">{scope === 'hub' ? t('Bots') : status ? brandState(profile, status) : '…'}</small>
+              <small id="brand-state">{scope === 'hub' ? t('Settings') : status ? brandState(profile, status) : '…'}</small>
             </div>
           </div>
           {tabs.map((name) => (
@@ -107,6 +113,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
           {tab === 'life' && <LifeTab onSaved={saved} />}
           {tab === 'telegram' && <TelegramTab />}
           {tab === 'app' && <AppTab />}
+          {tab === 'general' && <GeneralTab />}
           {tab === 'bots' && <BotsTab />}
         </main>
       </div>

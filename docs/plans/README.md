@@ -62,7 +62,8 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 | [PLAN-005](./PLAN-005-standard-preview-releases-and-updates.md) | Standard Preview Releases and Updates | Implemented; CI gate in PR #32  | [SPEC-005](../specs/SPEC-005-standard-preview-releases-and-updates.md)   |
 | [PLAN-007](./PLAN-007-desktop-experience-parity.md)             | Desktop Experience Parity             | Implemented; validation in plan | [SPEC-002](../specs/SPEC-002-desktop-presence-settings-and-first-run.md) |
 | [PLAN-008](./PLAN-008-cats-bot-identity-and-data-root.md)       | Cats Bot Identity and Data Root       | Phases 1–3 done                 | [SPEC-007](../specs/SPEC-007-cats-bot-identity-and-data-root.md)         |
-| [PLAN-009](./PLAN-009-hub-headless-cores-and-coordinator.md)    | Hub, Headless Cores and Coordinator   | Draft                           | [SPEC-008](../specs/SPEC-008-hub-and-bots.md), [SPEC-009](../specs/SPEC-009-coordinator-role.md) |
+| [PLAN-009](./PLAN-009-hub-headless-cores-and-coordinator.md)    | Hub, Headless Cores and Coordinator   | Implemented; reviewed in PLAN-010 | [SPEC-008](../specs/SPEC-008-hub-and-bots.md), [SPEC-009](../specs/SPEC-009-boss-cat-role.md) |
+| [PLAN-010](./PLAN-010-boss-cat-derived-ids-and-hub-settings.md) | Boss Cat, Derived Ids and Hub Settings | In progress | [SPEC-008](../specs/SPEC-008-hub-and-bots.md), [SPEC-009](../specs/SPEC-009-boss-cat-role.md) |
 
 <!-- Add new plans above this line -->
 

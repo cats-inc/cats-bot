@@ -173,7 +173,7 @@ export interface NotificationState {
 }
 
 /**
- * SPEC-009 FR-8 and FR-12: a message the coordinator sent another bot through
+ * SPEC-009 FR-8 and FR-12: a message the Boss Cat sent another bot through
  * the hub, or that bot's reply. Each delivery is one hop of its chain.
  */
 export interface BotChain {
@@ -201,7 +201,7 @@ export interface WorkItem {
   coalesceKey?: string;
   /** Where an inbound message came from (for example `telegram:<chat>:<message>`), to accept it once. */
   sourceRef?: string;
-  /** SPEC-009 FR-8 and FR-12: a coordinator delivery this work item carries. */
+  /** SPEC-009 FR-8 and FR-12: a Boss Cat delivery this work item carries. */
   chain?: BotChain;
   result?: WorkItemResult;
   notification?: NotificationState;
@@ -271,8 +271,8 @@ export type JournalEntry =
   | { type: 'runtime'; at: string; event: 'started' | 'ready' | 'exited' | 'restart_scheduled'; detail?: string }
   | { type: 'heartbeat'; at: string; kind: HeartbeatKind; result: HeartbeatResult }
   | { type: 'config'; at: string; configRevision: number; executionTarget: ExecutionTarget }
-  /** SPEC-009 FR-9: a coordinator tool call this bot made, without its text. */
-  | { type: 'coordinator'; at: string; tool: string; target?: string; chain?: string; outcome: string };
+  /** SPEC-009 FR-9: a Boss Cat tool call this bot made, without its text. */
+  | { type: 'bossCat'; at: string; tool: string; target?: string; chain?: string; outcome: string };
 
 /** SPEC-009 FR-12: what the hub hands a bot for one delivery. */
 export interface BotDelivery {
@@ -394,8 +394,8 @@ export interface BotStatus {
   pendingInteractions: number;
   /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
   awaitingOwner: number;
-  /** SPEC-009 FR-10 and FR-11: whether the hub reports this bot as coordinator, and whether its provider gives it the tools. */
-  coordinator: { holder: boolean; tools: boolean };
+  /** SPEC-009 FR-10 and FR-11: whether the hub reports this bot as the Boss Cat, and whether its provider gives it the tools. */
+  bossCat: { holder: boolean; tools: boolean };
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null; };

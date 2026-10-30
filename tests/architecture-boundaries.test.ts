@@ -121,7 +121,7 @@ test('the shell reaches the core only through the channel client and core types 
   const coreRoot = join(srcRoot, 'core');
   // Besides the channel client and the command table, only helpers that start no core:
   // paths and the lock reader, the profile reader, provider catalogs, the packaged
-  // helper path, the view-state file writer, the hub's control endpoint and the coordinator
+  // helper path, the view-state file writer, the hub's control endpoint and the Boss Cat
   // tools' definitions. Types may come
   // from anywhere in the core.
   const allowed = [

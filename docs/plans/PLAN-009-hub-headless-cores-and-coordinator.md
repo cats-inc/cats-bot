@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Implemented on 2026-10-30 except part of 6.2 and the release (6.4, the owner's); choices D1 to D28 wait for the owner |
+| **Status** | Implemented on 2026-10-30 except part of 6.2 and the release (6.4, the owner's); the owner reviewed D1 to D30 on 2026-10-30; the changes are carried out in [PLAN-010](PLAN-010-boss-cat-derived-ids-and-hub-settings.md) |
 | **Owner** | Product owner |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Independent agent; security review for Phase 5 |
@@ -12,7 +12,7 @@
 ## Related Spec
 
 [SPEC-008: Hub and Bots](../specs/SPEC-008-hub-and-bots.md) and
-[SPEC-009: Coordinator Role](../specs/SPEC-009-coordinator-role.md), decided in
+[SPEC-009: Coordinator Role](../specs/SPEC-009-boss-cat-role.md), decided in
 [ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md),
 [ADR-009](../decisions/009-give-one-bot-a-bounded-coordinator-role.md) and
 [ADR-010](../decisions/010-bind-each-bot-to-an-execution-environment.md).
@@ -572,6 +572,8 @@ Each entry names where it is implemented.
 | 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
 | 2026-10-30 | Independent security review of Phase 5 (task 5.4): fixed another bot's text handed on as the owner's, a former holder's request still carried out, unbounded and holder-worded dialogs, the restart budget reset by `hub_start_bot`, interrupted messages rerun as the owner's, hops counted by depth, a torn log line, one target holding up all deliveries, a core answering for another's deliveries, a reply lost between two writes, raw arguments in logs, an uncompacted log, and replies kept for an archived bot. Messages now arrive in a conversation per sender (D29); D25, D26, D28 and D30 record the rest and what stays open. 330 tests pass. |
 | 2026-10-30 | Independent review of those fixes: fixed a message dropped silently when the owner deletes its conversation, replies lost for a bot the hub gave up on, an archived sender's own messages answered to a new bot with its id, look-alike names and characters that do not show in the owner's dialog, a reply falling back to the holder's direct message, and the macOS dialog without a window. 334 tests pass. |
+
+| 2026-10-30 | The owner reviewed D1 to D30. Confirmed with changes: derived ids end in `-catsbot` (D2); only the hub's Bots page manages bots (D17); the hub gets its own Settings window (D20); D30's open item 3 becomes clean-machine setup. The coordinator role is renamed Boss Cat. [PLAN-010](PLAN-010-boss-cat-derived-ids-and-hub-settings.md) carries these out; this plan keeps its original wording. |
 
 ---
 

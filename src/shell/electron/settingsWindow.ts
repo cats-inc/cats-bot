@@ -58,7 +58,7 @@ export class SettingsWindow {
   private readonly query: Record<string, string>;
   private window: BrowserWindow | null = null;
 
-  /** `query` selects the page's scope: SPEC-008 FR-5's Bots page opens with `scope=hub`. */
+  /** `query` selects the page's scope: Cats Bot Settings (SPEC-008 FR-5, PLAN-010) opens with `scope=hub`. */
   constructor(options: PageWindowOptions, query: Record<string, string> = {}) {
     this.options = options;
     this.query = query;

@@ -8,17 +8,17 @@ import { HostChannelClient } from '../../src/core/host-api/channel.ts';
 import { remoteBotCore, type RemoteBotCore } from '../../src/core/host-api/remote.ts';
 import { HUB_SERVER_NAME } from '../../src/core/tools/hubTools.ts';
 import type { BotDelivery, BotHostEvent, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
-import { Coordinator, type ToolAnswer } from '../../src/shell/electron/hub/coordinator.ts';
+import { BossCatBroker, type ToolAnswer } from '../../src/shell/electron/hub/bossCatBroker.ts';
 import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts';
 
 /**
- * PLAN-009 Phase 5 (SPEC-009): the hub's coordinator with two real cores on the fake
+ * PLAN-009 Phase 5 (SPEC-009): the hub's Boss Cat broker with two real cores on the fake
  * runtime, reached only through their host channels as the hub reaches them.
  */
 
 let home: TempHome;
 before(() => {
-  home = makeTempHome('cats-bot-coordinator-');
+  home = makeTempHome('cats-bot-boss-cat-');
 });
 after(() => home.cleanup());
 
@@ -36,10 +36,10 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
   const bots = new Map<string, Bot>();
   const names: Record<string, string> = { [`${prefix}-alpha`]: 'Alpha', [`${prefix}-beta`]: 'Beta' };
   const clock = { now: Date.now() };
-  let coordinator: Coordinator;
-  const coordinatorHome = join(home.root, prefix);
-  const make = () => new Coordinator({
-    home: coordinatorHome,
+  let bossCat: BossCatBroker;
+  const bossCatHome = join(home.root, prefix);
+  const make = () => new BossCatBroker({
+    home: bossCatHome,
     holder: () => holder.id,
     limits: () => limits,
     bots: () => Object.entries(names).map(([id, name]) => ({ id, name, state: bots.has(id) ? 'running' : 'stopped' })),
@@ -60,14 +60,14 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
     log: () => undefined,
     now: () => new Date(clock.now),
   });
-  coordinator = make();
+  bossCat = make();
   for (const [id, name] of Object.entries(names)) {
     const { core } = openTestBot({ botsHome: home.botsHome, id, profile: { name } });
     await core.start();
     // The channel names the calling bot; the hub never trusts the core's claim.
     const client = await HostChannelClient.connect(core.paths.root, {
       host: { pid: process.pid, executable: process.execPath, installationId: 'test' },
-      services: { hub: (call) => coordinator.handle(id, call) },
+      services: { hub: (call) => bossCat.handle(id, call) },
     });
     bots.set(id, { core, client, remote: remoteBotCore(client) });
   }
@@ -79,9 +79,9 @@ async function setUp(prefix: string, limits = { hopsPerChain: 4, messagesPerHour
   };
   return {
     holder, answers, asked, created, bots, names, stop, clock,
-    get coordinator() { return coordinator; },
-    reload() { coordinator = make(); return coordinator; },
-    alpha: `${prefix}-alpha`, beta: `${prefix}-beta`, coordinatorHome,
+    get bossCat() { return bossCat; },
+    reload() { bossCat = make(); return bossCat; },
+    alpha: `${prefix}-alpha`, beta: `${prefix}-beta`, bossCatHome,
   };
 }
 
@@ -101,37 +101,37 @@ const call = (tool: string, args: Record<string, unknown>, conversationId = 'hom
 test('only the holder is answered, only the listed tools exist, and the role offers cats-hub (SPEC-009 FR-3, FR-6)', async () => {
   const f = await setUp('auth');
   try {
-    const refused = await f.coordinator.handle(f.beta, call('hub_list_bots', {}));
+    const refused = await f.bossCat.handle(f.beta, call('hub_list_bots', {}));
     assert.equal(refused.isError, true);
-    assert.match(refused.text, /does not hold the coordinator role/u);
-    const listed = await f.coordinator.handle(f.alpha, call('hub_list_bots', {}));
+    assert.match(refused.text, /does not hold the Boss Cat role/u);
+    const listed = await f.bossCat.handle(f.alpha, call('hub_list_bots', {}));
     assert.equal(listed.isError, undefined);
     assert.deepEqual((listed.structuredContent?.bots as Array<{ id: string }>).map((bot) => bot.id), [f.alpha, f.beta]);
     for (const tool of ['hub_delete_bot', 'hub_respond_interaction', 'hub_set_policy', 'hub_assign_role']) {
-      assert.match((await f.coordinator.handle(f.alpha, call(tool, { bot: f.beta }))).text, /no such tool/u, tool);
+      assert.match((await f.bossCat.handle(f.alpha, call(tool, { bot: f.beta }))).text, /no such tool/u, tool);
     }
     // FR-3: the core offers cats-hub only while the hub says it holds the role.
     const alpha = f.bots.get(f.alpha)!.core as unknown as { mcpServersFor(id: string, session: string | null): Array<{ name: string }> };
     assert.equal(alpha.mcpServersFor('home', null).some((server) => server.name === HUB_SERVER_NAME), false);
-    await f.bots.get(f.alpha)!.remote.setCoordinator(true);
+    await f.bots.get(f.alpha)!.remote.setBossCat(true);
     assert.equal(alpha.mcpServersFor('home', null).some((server) => server.name === HUB_SERVER_NAME), true);
     // A call from a session that kept the descriptor after a transfer is still refused by the hub.
     f.holder.id = f.beta;
-    assert.match((await f.coordinator.handle(f.alpha, call('hub_list_bots', {}))).text, /does not hold/u);
-    const audit = readFileSync(join(f.coordinatorHome, 'logs', 'hub-audit.jsonl'), 'utf8');
+    assert.match((await f.bossCat.handle(f.alpha, call('hub_list_bots', {}))).text, /does not hold/u);
+    const audit = readFileSync(join(f.bossCatHome, 'logs', 'hub-audit.jsonl'), 'utf8');
     assert.match(audit, /"tool":"hub_list_bots"/u);
   } finally {
     await f.stop();
   }
 });
 
-test('a message reaches the other bot once, and its answer returns to the coordinator\'s conversation (FR-4, FR-7, FR-8, FR-12)', async () => {
+test('a message reaches the other bot once, and its answer returns to the Boss Cat\'s conversation (FR-4, FR-7, FR-8, FR-12)', async () => {
   const f = await setUp('chain');
   try {
     const beta = f.bots.get(f.beta)!;
     const alpha = f.bots.get(f.alpha)!;
     const handed = completedIn(beta.core, (item) => item.source === 'bot');
-    const sent = await f.coordinator.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'Please count to three.' }));
+    const sent = await f.bossCat.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'Please count to three.' }));
     assert.equal(sent.isError, undefined, sent.text);
     const chain = sent.structuredContent?.chain as string;
     assert.equal(sent.structuredContent?.hop, 1);
@@ -145,7 +145,7 @@ test('a message reaches the other bot once, and its answer returns to the coordi
     assert.equal((beta.core.transcript('home') as TranscriptEntry[]).length, 0, 'the owner\'s direct message holds none of it');
 
     const replied = completedIn(alpha.core, (item) => item.chain?.kind === 'reply');
-    await f.coordinator.turnCompleted(f.beta, work);
+    await f.bossCat.turnCompleted(f.beta, work);
     const reply = await replied;
     assert.equal(reply.chain?.hop, 2);
     assert.equal(reply.chain?.id, chain);
@@ -173,7 +173,7 @@ test('each message and each reply is a hop, messages per hour are limited, and o
   const f = await setUp('limits', { hopsPerChain: 4, messagesPerHour: 3 });
   try {
     const message = (args: Record<string, unknown>): Promise<ToolAnswer> =>
-      f.coordinator.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'hello', ...args }));
+      f.bossCat.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'hello', ...args }));
     const first = await message({});
     assert.equal(first.structuredContent?.hop, 1);
     const chain = first.structuredContent?.chain as string;
@@ -183,7 +183,7 @@ test('each message and each reply is a hop, messages per hour are limited, and o
     assert.match((await message({ chain: 'chain-unknown' })).text, /unknown/u);
     assert.equal((await message({})).isError, undefined);
     assert.match((await message({})).text, /3 messages in the last hour/u);
-    assert.match((await f.coordinator.handle(f.alpha, call('hub_message_bot', { bot: f.alpha, text: 'me' }))).text, /other bots/u);
+    assert.match((await f.bossCat.handle(f.alpha, call('hub_message_bot', { bot: f.alpha, text: 'me' }))).text, /other bots/u);
   } finally {
     await f.stop();
   }
@@ -193,23 +193,23 @@ test('creating a bot, starting a stopped one and passing the role wait for the o
   const f = await setUp('consent');
   try {
     f.answers.push(false);
-    const declined = await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', persona: 'tidy', provider: 'claude' }));
+    const declined = await f.bossCat.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', persona: 'tidy', provider: 'claude' }));
     assert.match(declined.text, /declined/u);
     assert.deepEqual(f.created, []);
     // A declined request is not asked again at once.
-    assert.match((await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).text, /a moment ago/u);
+    assert.match((await f.bossCat.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).text, /a moment ago/u);
     f.clock.now += 61_000;
     f.answers.push(true);
-    assert.equal((await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).isError, undefined);
+    assert.equal((await f.bossCat.handle(f.alpha, call('hub_create_bot', { name: 'Gamma', provider: 'claude' }))).isError, undefined);
     assert.deepEqual(f.created, ['Gamma']);
-    assert.match((await f.coordinator.handle(f.alpha, call('hub_create_bot', { name: 'Delta', provider: 'not-a-cli' }))).text, /Choose one/u);
+    assert.match((await f.bossCat.handle(f.alpha, call('hub_create_bot', { name: 'Delta', provider: 'not-a-cli' }))).text, /Choose one/u);
     f.answers.push(true);
-    assert.equal((await f.coordinator.handle(f.alpha, call('hub_propose_transfer', { bot: f.beta }))).isError, undefined);
+    assert.equal((await f.bossCat.handle(f.alpha, call('hub_propose_transfer', { bot: f.beta }))).isError, undefined);
     assert.equal(f.holder.id, f.beta);
     assert.equal(f.asked.length, 3, 'every one of them asked the owner');
     // The former holder is refused at once.
-    assert.match((await f.coordinator.handle(f.alpha, call('hub_list_bots', {}))).text, /does not hold/u);
-    assert.ok(existsSync(join(f.coordinatorHome, 'logs', 'hub-audit.jsonl')));
+    assert.match((await f.bossCat.handle(f.alpha, call('hub_list_bots', {}))).text, /does not hold/u);
+    assert.ok(existsSync(join(f.bossCatHome, 'logs', 'hub-audit.jsonl')));
   } finally {
     await f.stop();
   }
@@ -234,7 +234,7 @@ test('a message waiting in the conversation the owner deletes is answered as can
       admitBotMessage: async (delivery: BotDelivery) => core.admitBotMessage(delivery),
       botDeliveries: async (ids: string[]) => core.botDeliveries(ids),
     } as unknown as RemoteBotCore;
-    const coordinator = new Coordinator({
+    const bossCat = new BossCatBroker({
       home: join(home.root, 'deleted'),
       holder: () => 'alpha',
       limits: () => ({ hopsPerChain: 4, messagesPerHour: 10 }),
@@ -249,16 +249,16 @@ test('a message waiting in the conversation the owner deletes is answered as can
       confirm: async () => false,
       log: () => undefined,
     });
-    // As the hub does: a finished turn answers the coordinator.
+    // As the hub does: a finished turn answers the Boss Cat.
     const answered = new Promise<void>((resolve) => core.subscribe((event) => {
       if (event.type !== 'turn.completed') return;
-      void coordinator.turnCompleted('deleted-beta', event.workItem).then(() => {
+      void bossCat.turnCompleted('deleted-beta', event.workItem).then(() => {
         if (admitted.length > 0) resolve();
       });
     }));
     // The owner keeps Beta busy, so Alpha's message waits in its queue.
     await core.sendOwnerMessage('home', 'slow:1500');
-    assert.match((await coordinator.handle('alpha', call('hub_message_bot', { bot: 'deleted-beta', text: 'Summarize the notes.' }))).text, /Delivered to Beta/u);
+    assert.match((await bossCat.handle('alpha', call('hub_message_bot', { bot: 'deleted-beta', text: 'Summarize the notes.' }))).text, /Delivered to Beta/u);
     await core.deleteConversation('bot-alpha');
     await answered;
     assert.match(admitted[0]!.text, /ended cancelled \(conversation deleted\)/u);

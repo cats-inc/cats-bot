@@ -58,14 +58,21 @@ export function assertValidBotId(id: string): string {
   return id;
 }
 
+/** What every id derived from a bot's name ends in, so it never collides with a Windows device name. */
+export const DERIVED_ID_SUFFIX = '-catsbot';
+
 /**
- * SPEC-008 FR-27: `cats-bot init` and the hub's first run name a bot after
- * it: lowercase words joined by hyphens, at most 64 characters, with `-bot`
- * after a Windows device name.
+ * SPEC-008 FR-27: `cats-bot init`, the hub's first run and a new bot name a
+ * bot after it: its lowercase words joined by hyphens, then `-catsbot`, and
+ * `-2`, `-3` and so on for a later bot of the same name. The name part is
+ * shortened so the id stays within 64 characters; a name with no usable
+ * characters gives `catsbot`.
  */
-export function deriveBotId(name: string): string {
-  const id = name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').slice(0, 64).replace(/^-+|-+$/gu, '') || 'bot';
-  return isValidBotId(id) ? id : `${id.slice(0, 60)}-bot`;
+export function deriveBotId(name: string, copy = 1): string {
+  const tail = `${DERIVED_ID_SUFFIX}${copy > 1 ? `-${copy}` : ''}`;
+  const words = name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').replace(/^-+|-+$/gu, '');
+  const head = words.slice(0, 64 - tail.length).replace(/-+$/u, '');
+  return head ? `${head}${tail}` : tail.slice(1);
 }
 
 /** SPEC-008 FR-1 to FR-3, FR-18 and FR-25: the hub's part of the Cats Bot root, beside `bots/`. */

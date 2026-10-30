@@ -35,15 +35,18 @@ test('every path from an id is checked first, so nothing reaches the hub\'s part
   assert.deepEqual(readdirSync(home.botsHome), []);
 });
 
-test('init derives a valid id from the bot name', () => {
-  assert.equal(deriveBotId('Mochi'), 'mochi');
-  assert.equal(deriveBotId('Desk Cat!'), 'desk-cat');
-  assert.equal(deriveBotId('Con'), 'con-bot');
-  assert.equal(deriveBotId('小貓'), 'bot');
-  assert.equal(deriveBotId(`${'a'.repeat(63)} tail`), 'a'.repeat(63));
-  assert.equal(deriveBotId('b'.repeat(100)), 'b'.repeat(64));
+test('a derived id is the name with -catsbot, numbered for a later bot of the same name (D2)', () => {
+  assert.equal(deriveBotId('Mochi'), 'mochi-catsbot');
+  assert.equal(deriveBotId('Mochi', 2), 'mochi-catsbot-2');
+  assert.equal(deriveBotId('Desk Cat!'), 'desk-cat-catsbot');
+  assert.equal(deriveBotId('Con'), 'con-catsbot');
+  assert.equal(deriveBotId('小貓'), 'catsbot');
+  assert.equal(deriveBotId('小貓', 3), 'catsbot-3');
+  assert.equal(deriveBotId('b'.repeat(100)), `${'b'.repeat(56)}-catsbot`);
+  assert.equal(deriveBotId('b'.repeat(100), 12), `${'b'.repeat(53)}-catsbot-12`);
+  assert.equal(deriveBotId(`${'a'.repeat(55)} tail`), `${'a'.repeat(55)}-catsbot`, 'no hyphen is left before the suffix');
   for (const name of ['Mochi', 'Con', 'nul', '小貓', 'a'.repeat(100), '---x---', `${'a'.repeat(63)} tail`]) {
-    assert.ok(isValidBotId(deriveBotId(name)), name);
+    for (const copy of [1, 2, 999]) assert.ok(isValidBotId(deriveBotId(name, copy)), `${name} ${copy}`);
   }
 });
 

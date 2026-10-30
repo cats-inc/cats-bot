@@ -27,7 +27,7 @@ or releases.
 
 - Migrating, importing or detecting 0.2.x data, environment variables or
   installations.
-- The hub, registry and coordinator contents themselves (SPEC-008, SPEC-009);
+- The hub, registry and Boss Cat contents themselves (SPEC-008, SPEC-009);
   this spec only reserves their location.
 - Changing Desktop's identifiers or the `io.catsinc` prefix.
 

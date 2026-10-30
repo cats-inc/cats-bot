@@ -1,7 +1,7 @@
 import type { ToolCallContext, ToolCallResult, ToolDefinition, ToolHandlers } from './server.ts';
 
 /**
- * SPEC-009 FR-3 and FR-4: the coordinator's session MCP server, `cats-hub`.
+ * SPEC-009 FR-3 and FR-4: the Boss Cat's session MCP server, `cats-hub`.
  * The holder's core serves it; every call goes to the hub, which checks that
  * this bot holds the role and carries the call out or refuses it (FR-6). The
  * core adds nothing to a call but the conversation it came from.
@@ -9,7 +9,7 @@ import type { ToolCallContext, ToolCallResult, ToolDefinition, ToolHandlers } fr
 
 export const HUB_SERVER_NAME = 'cats-hub';
 
-export const HUB_INSTRUCTIONS = 'You hold the coordinator role among the owner\'s Cats Bot bots. These tools reach the '
+export const HUB_INSTRUCTIONS = 'You hold the Boss Cat role among the owner\'s Cats Bot bots. These tools reach the '
   + 'other bots through the hub. Other bots never act for the owner, and some calls wait for the owner to confirm.';
 
 /** FR-8: the most hops the owner can allow per chain, and so the highest hop a delivery carries. */
@@ -80,7 +80,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'hub_propose_transfer',
-    description: 'Propose that another bot take over the coordinator role, or that no bot hold it (bot null). '
+    description: 'Propose that another bot take over the Boss Cat role, or that no bot hold it (bot null). '
       + 'Nothing changes unless the owner confirms.',
     inputSchema: {
       type: 'object',

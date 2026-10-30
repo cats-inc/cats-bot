@@ -95,7 +95,7 @@ const status: BotStatus = {
   queue: { queued: 0, running: null },
   pendingInteractions: 0,
   awaitingOwner: 0,
-  coordinator: { holder: false, tools: false },
+  bossCat: { holder: false, tools: false },
   conversations: 2,
   schedules: 0,
   heartbeat: { enabled: true, nextAt: null },
@@ -120,6 +120,7 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
     onOpenConversation: (id) => clicks.push(`open:${id}`),
     onNewNote: () => clicks.push('new'),
     onOpenSettings: (tab) => clicks.push(`settings:${tab ?? 'bot'}`),
+    onOpenHubSettings: () => clicks.push('hub-settings'),
     onCheckForUpdates: () => clicks.push('updates'),
     onToggleHeartbeat: (enabled) => clicks.push(`heartbeat:${enabled}`),
     onToggleOpenAtLogin: (enabled) => clicks.push(`login:${enabled}`),
@@ -139,6 +140,8 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
     'Pause heartbeat',
     'Show floating cat',
     'Start at login',
+    'Bot settings…',
+    'separator',
     'Settings…',
     'Check for Updates…',
     'separator',
@@ -154,10 +157,11 @@ test('the tray menu lists home, notes, settings, heartbeat, login and quit with 
   template[8]!.click!();
   template[9]!.click!();
   template[10]!.click!();
-  template[11]!.click!();
+  template[12]!.click!();
   template[13]!.click!();
+  template[15]!.click!();
   assert.equal(template[8]?.checked, true);
-  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'floating:false', 'login:true', 'settings:bot', 'updates', 'quit']);
+  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'floating:false', 'login:true', 'settings:bot', 'hub-settings', 'updates', 'quit']);
   assert.equal(buildTrayTooltip({ botName: 'Mochi', status, conversations: [conversation('home', 'home', 0)], heartbeatEnabled: true, openAtLogin: false, openAtLoginAvailable: false, awaitingOwner: 0, floatingVisible: true, desktopControl: DESKTOP_OFF }), 'Mochi (runtime ready)');
   const paused = buildTrayMenuTemplate({ botName: 'Mochi', status: { ...status, runtime: { state: 'failed', pid: null } }, conversations: [], heartbeatEnabled: false, openAtLogin: true, openAtLoginAvailable: false, awaitingOwner: 0, floatingVisible: false, desktopControl: DESKTOP_OFF }, {
     onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {}, onToggleOpenAtLogin: () => {}, onToggleFloating: () => {}, onStopDesktopControl: () => {}, onQuit: () => {},
@@ -338,7 +342,7 @@ test('the hub tray: one bot keeps today\'s menu, more bots get a submenu each an
     desktopControl: DESKTOP_OFF,
   });
   const hub = {
-    onOpenBots: () => clicks.push('hub:bots'),
+    onOpenSettings: () => clicks.push('hub:settings'),
     onCheckForUpdates: () => clicks.push('hub:updates'),
     onToggleOpenAtLogin: (enabled: boolean) => clicks.push(`hub:login:${enabled}`),
     onQuit: () => clicks.push('hub:quit'),
@@ -358,18 +362,18 @@ test('the hub tray: one bot keeps today\'s menu, more bots get a submenu each an
   };
   const template = buildHubTrayMenuTemplate(two, hub);
   assert.deepEqual(template.map((item) => item.label ?? item.type),
-    ['Mochi (3)', 'Nori', 'separator', 'Bots…', 'Start at login', 'Check for Updates…', 'separator', 'Quit']);
+    ['Mochi (3)', 'Nori', 'separator', 'Settings…', 'Start at login', 'Check for Updates…', 'separator', 'Quit']);
   const mochi = template[0]!.submenu!;
   assert.equal(mochi.some((item) => item.label === 'Quit' || item.label === 'Start at login' || item.label === 'Check for Updates…'), false,
     'a bot\'s submenu has no hub items');
   mochi.find((item) => item.label?.startsWith('Open direct message'))!.click!();
-  template[1]!.submenu!.find((item) => item.label === 'Settings…')!.click!();
-  template.find((item) => item.label === 'Bots…')!.click!();
+  template[1]!.submenu!.find((item) => item.label === 'Bot settings…')!.click!();
+  template.find((item) => item.label === 'Settings…')!.click!();
   template.find((item) => item.label === 'Start at login')!.click!();
   template.find((item) => item.label === 'Quit')!.click!();
-  assert.deepEqual(clicks, ['mochi:open:home', 'nori:settings', 'hub:bots', 'hub:login:false', 'hub:quit']);
+  assert.deepEqual(clicks, ['mochi:open:home', 'nori:settings', 'hub:settings', 'hub:login:false', 'hub:quit']);
   assert.equal(buildHubTrayTooltip(two), 'Cats Bot (2 bots) - 2 unread - 1 waiting for you');
 
   const none = buildHubTrayMenuTemplate({ bots: [], openAtLogin: false, openAtLoginAvailable: false, locale: 'zh-TW' }, hub);
-  assert.deepEqual(none.map((item) => item.label ?? item.type), ['沒有正在執行的機器人', 'separator', '機器人…', '檢查更新…', 'separator', '結束']);
+  assert.deepEqual(none.map((item) => item.label ?? item.type), ['沒有正在執行的機器人', 'separator', '設定…', '檢查更新…', 'separator', '結束']);
 });

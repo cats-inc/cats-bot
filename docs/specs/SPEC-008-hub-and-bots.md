@@ -22,7 +22,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 ## Goals
 
 - Every bot is an independent process; a UI failure never stops a bot.
-- One tray, one settings surface, one update coordinator and one login item for
+- One tray, one settings surface, one updater and one login item for
   all bots.
 - Bot creation and management in the product UI, up to the bot cap.
 
@@ -30,7 +30,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 - Sharing a Runtime between bots (ADR-001 Alternative 7).
 - WSL or docker execution (ADR-010: native only in this version).
-- The coordinator role's tools (SPEC-009); this spec stores only its holder.
+- The Boss Cat role's tools (SPEC-009); this spec stores only its holder.
 
 ## Requirements
 
@@ -45,7 +45,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
    installation id in its user data (FR-12).
 2. FR-2: The bot registry is `<CATS_BOT_HOME>/bots.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
-   `environmentProfile` (ADR-010) and the coordinator holder (SPEC-009). Only
+   `environmentProfile` (ADR-010) and the Boss Cat (SPEC-009). Only
    the hub writes it, under a lock file, through temp file plus rename. Missing
    fields get defaults; a corrupt file is reported and never overwritten
    (SPEC-001 FR-4 rules).
@@ -60,8 +60,10 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 4. FR-4: First run starts when no registry exists. The owner picks the
    environment profile (only native in this version), then creates the first bot
    with SPEC-002 FR-1's provider-first flow. The registry is then written, with
-   the first bot as coordinator holder.
-5. FR-5: Bot management in Settings lists every bot that is not archived, with
+   the first bot as the Boss Cat.
+5. FR-5: Bot management, the Bots tab of Cats Bot Settings (the hub's own
+   settings window, beside its General tab: display language, start at login,
+   version, updates and the data folder; PLAN-010), lists every bot that is not archived, with
    its state (starting, running, stopped, failed, externally hosted), and offers
    create, start, stop, start automatically and order. Archived bots are listed
    separately. Removing a bot takes two separate steps, each with its own
@@ -75,7 +77,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
      or automatic start. It does not count toward the cap, and its id stays
      reserved: `cats-bot run` refuses an id that has a directory under
      `archive/` instead of creating a new bot root for it. Archiving the
-     coordinator holder clears the role (SPEC-009). If the lock or the rename
+     Boss Cat clears the role (SPEC-009). If the lock or the rename
      fails, the bot stays registered and stopped and the error is shown. An
      externally hosted bot (FR-11) cannot be archived while it runs.
    - **Restore** an archived bot, subject to the cap: the same steps back to
@@ -135,7 +137,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     - from hub to core, every `BotHostApi` call as request/response;
     - from core to hub, its event stream with sequence numbers, and requests for
       host services: the secret cipher (FR-20), the current hub identity
-      (FR-21), and coordinator brokering (SPEC-009).
+      (FR-21), and Boss Cat brokering (SPEC-009).
 
     Requests are authenticated and size-bounded, and their bodies are never
     logged. A protocol version mismatch is refused and shown, not worked around.
@@ -148,7 +150,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 14. FR-14: The channel adds no new way to create an owner-sourced work item. A
     message typed in a hub note is an owner message exactly as it is today, and
     SPEC-006's local-owner-turn rule gives the same result as now. The only new
-    work-item source is `bot`, for coordinator work (SPEC-009).
+    work-item source is `bot`, for Boss Cat work (SPEC-009).
 15. FR-15: When the hub reattaches after its own restart, it verifies each
     descriptor's PID and token, then attaches as in FR-13 and rebuilds view
     state from the snapshots. Events are not persisted for replay.
@@ -157,12 +159,14 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 16. FR-16: One tray icon. With one bot, the menu has today's items (SPEC-002).
     With more, each bot's conversation, heartbeat, floating Cat, request and Stop
-    items move into a submenu per bot. Hub items are shared: Bots…, Settings…,
-    Start at login, Check for Updates…, Quit. Pending owner requests and unread
+    items move into a submenu per bot. Hub items are shared in both shapes:
+    Settings… (Cats Bot Settings), Start at login, Check for Updates…, Quit; a
+    bot's own settings are "Bot settings…" (PLAN-010). Pending owner requests and unread
     counts are aggregated on the icon.
 17. FR-17: Notes, floating Cats and per-bot settings are hub windows bound to one
     bot id. A window receives only its own bot's events and can only reach its
-    own bot's channel. Titles carry the bot name. On Windows each window uses
+    own bot's channel; bot management is reached only from Cats Bot Settings
+    (PLAN-010). Titles carry the bot name. On Windows each window uses
     the AUMID `io.catsinc.catsbot.<botId>`. If renderers keep storage, it is
     partitioned per bot.
 18. FR-18: Per-bot view state (note bounds and layers, floating Cat position)
@@ -195,7 +199,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     native, and anything else is refused (ADR-010).
 25. FR-25: The hub publishes its own control descriptor under `<CATS_BOT_HOME>`,
     with the same transport, token and account rules as FR-12. Owner CLI
-    commands that act on the hub (the registry, the coordinator holder) go
+    commands that act on the hub (the registry, the Boss Cat) go
     through it while the hub runs. Without a running hub they refuse instead of
     writing the registry themselves.
 
@@ -221,8 +225,10 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     the core and the shell; Settings → Bots create (FR-5); and the registry and
     directory reconcile (FR-3), which reports and skips a directory whose name
     is not a valid id. An invalid id is refused with a message that states the
-    rule. `cats-bot init` derives an id of this form from the bot's name,
-    truncated to 64 characters, with `-bot` appended to a device name.
+    rule. `cats-bot init`, first run and a new bot derive an id of this form
+    from the bot's name: its words, then `-catsbot`, and `-2`, `-3` and so on
+    for a later bot of the same name, within 64 characters (PLAN-010). An id
+    given with `--id` is taken as given.
     No id can then name a path outside its own bot root, such as the hub's part
     of `<CATS_BOT_HOME>` (SPEC-007 FR-3).
 
@@ -248,8 +254,8 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 Cats Bot.exe (hub, Electron)            ~/.catsbot/
   tray, windows, updates, setup         bots.json, hub state
         │ host channel (pipe/socket + token, per core)
-        ├── core: bots/mochi   (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
-        └── core: bots/<id>    (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
+        ├── core: bots/mochi-catsbot (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
+        └── core: bots/<id>          (ELECTRON_RUN_AS_NODE) ── Runtime ── CLI
 ```
 
 ## Dependencies
@@ -279,7 +285,7 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 - [SPEC-001](SPEC-001-resident-bot-core-and-global-execution.md),
   [SPEC-002](SPEC-002-desktop-presence-settings-and-first-run.md),
   [SPEC-006](SPEC-006-desktop-control-session-mcp.md),
-  [SPEC-009](SPEC-009-coordinator-role.md)
+  [SPEC-009](SPEC-009-boss-cat-role.md)
 
 ---
 

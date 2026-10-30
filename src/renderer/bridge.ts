@@ -107,11 +107,14 @@ export interface NoteLayersView {
 }
 
 export interface ShellStateView {
-  botId: string;
+  /** Null in Cats Bot Settings, which belongs to no bot (D20). */
+  botId: string | null;
   openAtLogin: boolean;
   openAtLoginAvailable: boolean;
   floatingVisible: boolean;
   version: string;
+  /** The bot's folder, or the Cats Bot root in Cats Bot Settings. */
+  root: string;
 }
 
 export interface FloatingBubbleMessage {
@@ -129,9 +132,9 @@ export interface BotRow {
   error: string | null;
   pid: number | null;
   startAutomatically: boolean;
-  coordinator: boolean;
-  /** SPEC-009 FR-11: for the holder, whether its provider gives it the coordinator tools. */
-  coordinatorTools: boolean | null;
+  bossCat: boolean;
+  /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
+  bossCatTools: boolean | null;
 }
 
 export interface BotListing {
@@ -140,12 +143,12 @@ export interface BotListing {
   unregistered: string[];
   maxBots: number;
   active: number;
-  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  /** SPEC-009 FR-8: the owner's limits on Boss Cat messages. */
   limits: { hopsPerChain: number; messagesPerHour: number };
 }
 
 export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete'
-  | 'makeCoordinator' | 'clearCoordinator';
+  | 'makeBossCat' | 'clearBossCat';
 
 export interface SetupInput {
   name: string;
@@ -200,7 +203,7 @@ export interface CatsBotBridge {
     menu(): Promise<null>;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
   };
-  /** Settings windows and the hub's Bots page only. */
+  /** Cats Bot Settings only (D17); a bot's settings window is refused. */
   hub: {
     bots(): Promise<BotListing>;
     action(action: BotAction, id: string, value?: boolean): Promise<BotListing>;

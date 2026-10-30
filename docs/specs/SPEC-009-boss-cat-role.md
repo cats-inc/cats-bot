@@ -1,4 +1,4 @@
-# SPEC-009: Coordinator Role
+# SPEC-009: Boss Cat Role
 
 ## Metadata
 
@@ -7,11 +7,12 @@
 | **Status** | Implemented on 2026-10-30 (PLAN-009 Phase 5), with the decision-card form of FR-5 deferred (PLAN-009 D25); security review findings addressed the same day (PLAN-009 D29, D30) |
 | **Owner** | Product owner |
 | **Reviewer** | Independent security review before implementation |
+| **Terminology** | Called the coordinator role until 2026-10-30. Renamed Boss Cat (主控貓) because cats-platform's Coordinator is a conversation's routing participant, while its Boss Cat is the admin cat that acts beyond a conversation, as this role does ([PLAN-010](../plans/PLAN-010-boss-cat-derived-ids-and-hub-settings.md)). Unlike Platform, one bot holds the role at a time. |
 
 ## Summary
 
 Implement [ADR-009](../decisions/009-give-one-bot-a-bounded-coordinator-role.md):
-one transferable role lets a bot coordinate the other bots through hub-brokered
+one transferable role, the Boss Cat, lets a bot direct the other bots through hub-brokered
 tools that never carry the owner's authority. These are limits on the tools and
 the hub's API, not a sandbox around the holder's provider CLI (FR-6).
 
@@ -31,7 +32,7 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
 
 ### Functional Requirements
 
-1. FR-1: `bots.json` (SPEC-008 FR-2) stores `coordinator`: the holder's bot id
+1. FR-1: `bots.json` (SPEC-008 FR-2) stores `bossCat`: the holder's bot id
    or null, when it was assigned, and how (`first-run`, `owner`, or
    `confirmed-proposal`).
 2. FR-2: First run assigns the first bot, whatever its provider (FR-11).
@@ -99,7 +100,7 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    why. The owner can change both limits in Settings → Bots. A delivery the hub
    sends again (FR-12) is not a new hop and does not count toward the hourly
    limit.
-9. FR-9: Every coordinator call (tool, target, chain, outcome) goes to the hub
+9. FR-9: Every Boss Cat call (tool, target, chain, outcome) goes to the hub
    log and to the journals of the holder and the target. Delivered text appears
    in the target's transcript, attributed to the holder bot, and a later
    session's handoff names it as another bot's, never as the owner's. The

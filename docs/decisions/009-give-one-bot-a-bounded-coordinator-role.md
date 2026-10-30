@@ -6,6 +6,12 @@ Accepted — 2026-10-29, owner decisions recorded from discussion; implementatio
 pending in [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md).
 Depends on [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md).
 
+Terminology, 2026-10-30: the role is now called **Boss Cat** (主控貓). In
+cats-platform a Coordinator is a conversation's routing participant, while a
+Boss Cat is the admin cat that acts beyond a conversation, which is what this
+role does ([PLAN-010](../plans/PLAN-010-boss-cat-derived-ids-and-hub-settings.md)).
+The decision below keeps its original wording.
+
 ## Context
 
 The owner wants a "chief of staff" bot, like the first assistant in Grok's bot,
@@ -101,7 +107,7 @@ owner answers a bot's questions.
 
 ## References
 
-- [SPEC-009](../specs/SPEC-009-coordinator-role.md),
+- [SPEC-009](../specs/SPEC-009-boss-cat-role.md),
   [SPEC-008](../specs/SPEC-008-hub-and-bots.md)
 - [SPEC-004](../specs/SPEC-004-provider-interactions-and-tool-visibility.md),
   [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md)

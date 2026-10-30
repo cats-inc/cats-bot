@@ -48,18 +48,18 @@ const saved = (root: string) => {
 
 test('creating bots stops at the cap, and archived bots do not count (FR-6)', async () => {
   const { root, manager } = setUp(['mochi']);
-  assert.equal(await manager.create({ name: 'Nori', provider: 'claude' }), 'nori');
-  assert.equal(await manager.create({ name: 'Nori', provider: 'codex' }), 'nori-2', 'a taken id gets a number');
+  assert.equal(await manager.create({ name: 'Nori', provider: 'claude' }), 'nori-catsbot');
+  assert.equal(await manager.create({ name: 'Nori', provider: 'codex' }), 'nori-catsbot-2', 'a taken id gets a number');
   await assert.rejects(manager.create({ name: 'Four', provider: 'claude' }), (error: Error) =>
     error instanceof BotManagementError && /at most 3 bots/u.test(error.message));
-  assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['mochi', 'nori', 'nori-2']);
-  await manager.archive('nori-2');
-  assert.equal(await manager.create({ name: 'Four', provider: 'claude' }), 'four');
-  await assert.rejects(manager.restore('nori-2'), /at most 3 bots/u, 'restoring is held to the cap too');
+  assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['mochi', 'nori-catsbot', 'nori-catsbot-2']);
+  await manager.archive('nori-catsbot-2');
+  assert.equal(await manager.create({ name: 'Four', provider: 'claude' }), 'four-catsbot');
+  await assert.rejects(manager.restore('nori-catsbot-2'), /at most 3 bots/u, 'restoring is held to the cap too');
   await assert.rejects(manager.create({ id: '../escape', name: 'x', provider: 'claude' }), /not a valid bot id/u);
 });
 
-test('archive stops the bot, moves it under its lock and clears the coordinator role (FR-5)', async () => {
+test('archive stops the bot, moves it under its lock and clears the Boss Cat role (FR-5)', async () => {
   const { root, manager, stopped } = setUp(['mochi', 'nori']);
   const paths = hubPathsFor(root);
   await manager.archive('mochi');
@@ -69,7 +69,7 @@ test('archive stops the bot, moves it under its lock and clears the coordinator 
   assert.equal(existsSync(botPathsFor(join(paths.archive, 'mochi')).lock), false, 'the lock that moved with it is released');
   const registry = saved(root);
   assert.notEqual(registry.bots.find((bot) => bot.id === 'mochi')?.archivedAt, null);
-  assert.equal(registry.coordinator.holder, null, 'archiving the holder clears the role');
+  assert.equal(registry.bossCat.holder, null, 'archiving the holder clears the role');
 
   await manager.restore('mochi');
   assert.equal(existsSync(join(paths.bots, 'mochi', 'profile.json')), true);
@@ -205,17 +205,24 @@ test('a stop is never followed by a restart, and an externally hosted core is on
   assert.match(external.error ?? '', /pid 42/u);
 });
 
-test('an archived id is reserved: cats-bot run and init refuse it (FR-5)', async () => {
-  const { root, manager } = setUp(['mochi', 'old']);
-  await manager.archive('old');
+test('an archived id is reserved: run and init refuse it, and a derived id is numbered past it (FR-5, FR-27)', async () => {
+  const { root, manager } = setUp(['mochi', 'old-catsbot']);
+  await manager.archive('old-catsbot');
   const env: NodeJS.ProcessEnv = { ...process.env, CATS_BOT_HOME: root };
   delete env.CATS_BOT_ID;
-  for (const args of [['run', '--id', 'old'], ['init', '--name', 'Old', '--provider', 'claude', '--id', 'old'], ['init', '--name', 'Old', '--provider', 'claude']]) {
-    const result = spawnSync(process.execPath, ['src/cli/main.ts', ...args], { env, encoding: 'utf8', timeout: 30_000, windowsHide: true });
+  const cli = (args: string[]) => spawnSync(process.execPath, ['src/cli/main.ts', ...args], { env, encoding: 'utf8', timeout: 30_000, windowsHide: true });
+  for (const args of [['run', '--id', 'old-catsbot'], ['init', '--name', 'Old', '--provider', 'claude', '--id', 'old-catsbot']]) {
+    const result = cli(args);
     assert.equal(result.status, 1, args.join(' '));
-    assert.match(result.stderr, /Bot old is archived/u);
+    assert.match(result.stderr, /Bot old-catsbot is archived/u);
   }
-  assert.equal(existsSync(join(hubPathsFor(root).bots, 'old')), false, 'no new bot root was created');
+  assert.equal(existsSync(join(hubPathsFor(root).bots, 'old-catsbot')), false, 'no new bot root was created');
+  // A derived id skips the archived one, and the next one, as the Bots page does (D2).
+  for (const expected of ['old-catsbot-2', 'old-catsbot-3']) {
+    const made = cli(['init', '--name', 'Old', '--provider', 'claude']);
+    assert.equal(made.status, 0, made.stderr);
+    assert.ok(made.stdout.includes(`Initialized bot ${expected} (Old)`), made.stdout);
+  }
 });
 
 test('removing a bot never empties what a link inside it points to, under node and under Electron\'s node (review of #66)', async () => {

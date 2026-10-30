@@ -40,6 +40,8 @@ export interface TrayMenuActions {
   onNewNote(): void;
   /** SPEC-002 FR-4: opens the settings window, on a given tab when one is named. */
   onOpenSettings(tab?: string): void;
+  /** D20: Cats Bot Settings, offered in the single-bot menu. */
+  onOpenHubSettings?(): void;
   onCheckForUpdates?(): void;
   onToggleHeartbeat(enabled: boolean): void;
   onToggleOpenAtLogin(enabled: boolean): void;
@@ -99,7 +101,8 @@ export interface HubTrayModel {
 }
 
 export interface HubTrayActions {
-  onOpenBots(): void;
+  /** D20: Cats Bot Settings, with the Bots tab. */
+  onOpenSettings(): void;
   onCheckForUpdates?(): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onQuit(): void;
@@ -111,8 +114,8 @@ function attention(model: TrayMenuModel): number {
 
 /**
  * FR-16: with one bot the menu is today's. With more, each bot's items move
- * into a submenu named after it, and the hub's items are shared: Bots…,
- * Start at login, Check for Updates…, Quit.
+ * into a submenu named after it. Either way the hub's items are shared:
+ * Settings… (Cats Bot Settings, D20), Start at login, Check for Updates…, Quit.
  */
 export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayActions): TrayMenuItem[] {
   if (model.bots.length === 1) return buildTrayMenuTemplate(model.bots[0]!.model, model.bots[0]!.actions);
@@ -126,7 +129,7 @@ export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayAc
         submenu: buildTrayMenuTemplate(bot, botActions, { hubItems: false }),
       };
     });
-  template.push({ type: 'separator' }, { label: t('Bots…'), click: () => actions.onOpenBots() });
+  template.push({ type: 'separator' }, { label: t('Settings…'), click: () => actions.onOpenSettings() });
   if (model.openAtLoginAvailable) {
     template.push({
       label: t('Start at login'),
@@ -246,9 +249,11 @@ export function buildTrayMenuTemplate(
       click: () => actions.onToggleOpenAtLogin(!model.openAtLogin),
     });
   }
-  template.push({ label: 'Settings…', click: () => actions.onOpenSettings() });
+  template.push({ label: 'Bot settings…', click: () => actions.onOpenSettings() });
   if (hubItems) {
     template.push(
+      { type: 'separator' },
+      { label: 'Settings…', click: () => actions.onOpenHubSettings?.() },
       { label: 'Check for Updates…', click: () => actions.onCheckForUpdates?.() },
       { type: 'separator' },
       { label: 'Quit', click: () => actions.onQuit() },

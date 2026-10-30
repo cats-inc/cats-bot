@@ -32,40 +32,40 @@ export interface BotRegistry {
   bots: RegistryBot[];
   /** ADR-010: only native in this version. */
   environmentProfile: { kind: 'native' };
-  /** SPEC-009 FR-1: the bot holding the coordinator role, when it was assigned and how. */
-  coordinator: CoordinatorRole;
+  /** SPEC-009 FR-1: the bot holding the Boss Cat role, when it was assigned and how. */
+  bossCat: BossCatRole;
   maxBots: number;
-  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
-  limits: CoordinatorLimits;
+  /** SPEC-009 FR-8: the owner's limits on Boss Cat messages. */
+  limits: BossCatLimits;
 }
 
-export type CoordinatorAssignment = 'first-run' | 'owner' | 'confirmed-proposal';
+export type BossCatAssignment = 'first-run' | 'owner' | 'confirmed-proposal';
 
-export interface CoordinatorRole {
+export interface BossCatRole {
   holder: string | null;
   assignedAt: string | null;
-  how: CoordinatorAssignment | null;
+  how: BossCatAssignment | null;
 }
 
-export interface CoordinatorLimits {
+export interface BossCatLimits {
   hopsPerChain: number;
   messagesPerHour: number;
 }
 
-export const DEFAULT_LIMITS: CoordinatorLimits = { hopsPerChain: 4, messagesPerHour: 10 };
+export const DEFAULT_LIMITS: BossCatLimits = { hopsPerChain: 4, messagesPerHour: 10 };
 
 /**
  * The values the owner can choose. A chain needs two hops for one message and
  * its reply, and no delivery carries a hop above the core's bound.
  */
-export const LIMIT_RANGES: Readonly<Record<keyof CoordinatorLimits, readonly [number, number]>> = {
+export const LIMIT_RANGES: Readonly<Record<keyof BossCatLimits, readonly [number, number]>> = {
   hopsPerChain: [2, MAX_CHAIN_HOPS],
   messagesPerHour: [1, 1000],
 };
 
 /** SPEC-009 FR-1 and FR-2: who holds the role now, recorded with when and how. */
-export function withHolder(registry: BotRegistry, holder: string | null, how: CoordinatorAssignment, now: Date = new Date()): BotRegistry {
-  return { ...registry, coordinator: holder ? { holder, assignedAt: now.toISOString(), how } : { holder: null, assignedAt: null, how: null } };
+export function withHolder(registry: BotRegistry, holder: string | null, how: BossCatAssignment, now: Date = new Date()): BotRegistry {
+  return { ...registry, bossCat: holder ? { holder, assignedAt: now.toISOString(), how } : { holder: null, assignedAt: null, how: null } };
 }
 
 export type RegistryRead =
@@ -82,7 +82,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function emptyRegistry(): BotRegistry {
   return {
     schemaVersion: 1, bots: [], environmentProfile: { kind: 'native' },
-    coordinator: { holder: null, assignedAt: null, how: null }, maxBots: DEFAULT_MAX_BOTS, limits: { ...DEFAULT_LIMITS },
+    bossCat: { holder: null, assignedAt: null, how: null }, maxBots: DEFAULT_MAX_BOTS, limits: { ...DEFAULT_LIMITS },
   };
 }
 
@@ -112,10 +112,10 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
       archivedAt: typeof entry.archivedAt === 'string' ? entry.archivedAt : null,
     });
   }
-  const coordinator = isRecord(raw.coordinator) ? raw.coordinator : {};
-  const holder = typeof coordinator.holder === 'string' && seen.has(coordinator.holder) ? coordinator.holder : null;
-  const how = holder && ['first-run', 'owner', 'confirmed-proposal'].includes(coordinator.how as string)
-    ? coordinator.how as CoordinatorAssignment : null;
+  const bossCat = isRecord(raw.bossCat) ? raw.bossCat : {};
+  const holder = typeof bossCat.holder === 'string' && seen.has(bossCat.holder) ? bossCat.holder : null;
+  const how = holder && ['first-run', 'owner', 'confirmed-proposal'].includes(bossCat.how as string)
+    ? bossCat.how as BossCatAssignment : null;
   const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
   const limits = isRecord(raw.limits) ? raw.limits : {};
   // A whole number out of range is brought within it, so it keeps the direction the owner chose.
@@ -125,9 +125,9 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
     schemaVersion: 1,
     bots: sortBots(bots),
     environmentProfile: { kind: 'native' },
-    coordinator: {
+    bossCat: {
       holder,
-      assignedAt: holder && typeof coordinator.assignedAt === 'string' ? coordinator.assignedAt : null,
+      assignedAt: holder && typeof bossCat.assignedAt === 'string' ? bossCat.assignedAt : null,
       how,
     },
     maxBots,

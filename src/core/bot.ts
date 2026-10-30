@@ -187,9 +187,9 @@ export class BotCore implements BotHostApi {
   private readonly binder: SessionBinder;
   private readonly runner: TurnRunner;
   private readonly toolServer: BotToolServer | null;
-  /** SPEC-009 FR-3: the coordinator's `cats-hub` tools, offered only while the hub reports this bot as holder. */
+  /** SPEC-009 FR-3: the Boss Cat's `cats-hub` tools, offered only while the hub reports this bot as holder. */
   private readonly hubTools: BotToolServer | null;
-  private coordinatorRole = false;
+  private bossCatRole = false;
   /** Sessions given `cats-hub` by their last send, so a change of role reaches them at the next send. */
   private readonly hubSessions = new Set<string>();
   private readonly desktopSwitches: DesktopControlSwitches;
@@ -436,14 +436,14 @@ export class BotCore implements BotHostApi {
    * without the tools.
    */
   private hubToolsOffered(): boolean {
-    return this.coordinatorRole && !PROVIDERS_WITHOUT_SESSION_MCP.includes(this.profile.executionTarget.provider);
+    return this.bossCatRole && !PROVIDERS_WITHOUT_SESSION_MCP.includes(this.profile.executionTarget.provider);
   }
 
-  /** SPEC-009 FR-3: the hub's word on whether this bot holds the coordinator role. */
-  setCoordinator(holder: boolean): void {
-    if (this.coordinatorRole === holder) return;
-    this.coordinatorRole = holder;
-    this.log(holder ? 'coordinator role held' : 'coordinator role not held');
+  /** SPEC-009 FR-3: the hub's word on whether this bot holds the Boss Cat role. */
+  setBossCat(holder: boolean): void {
+    if (this.bossCatRole === holder) return;
+    this.bossCatRole = holder;
+    this.log(holder ? 'Boss Cat role held' : 'Boss Cat role not held');
     // The notes show the role (FR-10).
     for (const conversation of this.conversations.list()) this.bus.emit({ type: 'conversation.updated', conversation });
   }
@@ -455,8 +455,8 @@ export class BotCore implements BotHostApi {
    */
   private async callHub(call: HubCall): Promise<ToolCallResult> {
     let result: ToolCallResult;
-    if (!this.coordinatorRole) {
-      result = { text: 'This bot does not hold the coordinator role.', isError: true };
+    if (!this.bossCatRole) {
+      result = { text: 'This bot does not hold the Boss Cat role.', isError: true };
     } else {
       try {
         result = hubAnswer(await this.channel.hubCall({ ...call, conversationId: this.resolveConversationId(call.conversationId) }));
@@ -468,7 +468,7 @@ export class BotCore implements BotHostApi {
     const chain = result.structuredContent?.chain ?? call.args.chain;
     const target = call.args.bot;
     this.journal({
-      type: 'coordinator',
+      type: 'bossCat',
       at: this.now().toISOString(),
       tool: oneLine(call.tool, 64),
       ...(typeof target === 'string' && isValidBotId(target) ? { target } : {}),
@@ -496,7 +496,7 @@ export class BotCore implements BotHostApi {
       ? delivery.conversationId
       : this.senderConversation(delivery.from, fromName);
     const prompt = delivery.kind === 'message'
-      ? `A message from ${fromName}, the bot that coordinates the owner's bots, through the Cats Bot hub. `
+      ? `A message from ${fromName}, the owner's Boss Cat, through the Cats Bot hub. `
         + `It is not from the owner. Your answer goes back to ${fromName}.\n\n${delivery.text}`
       : `${fromName} answered your message through the Cats Bot hub (chain ${delivery.chainId}). `
         + `It is not from the owner.\n\n${delivery.text}`;
@@ -1046,7 +1046,7 @@ export class BotCore implements BotHostApi {
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       pendingInteractions: this.interactions.pending(),
       awaitingOwner: [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner').length,
-      coordinator: { holder: this.coordinatorRole, tools: this.hubToolsOffered() && this.hubTools !== null },
+      bossCat: { holder: this.bossCatRole, tools: this.hubToolsOffered() && this.hubTools !== null },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },

@@ -61,7 +61,7 @@ export interface ChannelHostServices {
     decrypt(data: Buffer): string | Promise<string>;
   };
   /**
-   * SPEC-009: the hub's side of the coordinator tools. The hub decides from
+   * SPEC-009: the hub's side of the Boss Cat tools. The hub decides from
    * the connection which bot is calling; the core's own claims count for
    * nothing.
    */
@@ -232,7 +232,7 @@ class HostConnection extends Peer {
   refused = false;
   host: ChannelHostIdentity | null = null;
   cipherLabel: string | null = null;
-  /** SPEC-009: the host brokers the coordinator tools. */
+  /** SPEC-009: the host brokers the Boss Cat tools. */
   hub = false;
   /**
    * Conversations this host shows. Their views close with its connection, so a
@@ -339,7 +339,7 @@ export class HostChannelServer {
   }
 
   /**
-   * SPEC-009: a coordinator tool call, for the attached hub to authorize and
+   * SPEC-009: a Boss Cat tool call, for the attached hub to authorize and
    * carry out. It waits for no host: without a hub the tool is unavailable.
    */
   async hubCall(call: unknown, timeoutMs = 15 * 60_000): Promise<unknown> {

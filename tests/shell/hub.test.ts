@@ -41,17 +41,17 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
   if (read.state !== 'ok') return;
   assert.deepEqual(read.registry.bots.map((bot) => [bot.id, bot.order, bot.startAutomatically, bot.archivedAt]),
     [['mochi', 0, true, null], ['nori', 1, true, null]]);
-  assert.equal(read.registry.coordinator.holder, 'mochi');
+  assert.equal(read.registry.bossCat.holder, 'mochi');
   assert.deepEqual(read.registry.environmentProfile, { kind: 'native' });
   assert.equal(read.registry.maxBots, 3);
 
   // Missing fields get defaults; a holder that names no bot is cleared.
-  writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], coordinator: { holder: 'ghost' } }));
+  writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], bossCat: { holder: 'ghost' } }));
   const defaults = readRegistry(root);
   assert.equal(defaults.state, 'ok');
   if (defaults.state === 'ok') {
     assert.deepEqual(defaults.registry.bots[0], { id: 'mochi', order: 0, startAutomatically: true, createdAt: new Date(0).toISOString(), archivedAt: null });
-    assert.equal(defaults.registry.coordinator.holder, null);
+    assert.equal(defaults.registry.bossCat.holder, null);
   }
 
   for (const corrupt of ['{not json', JSON.stringify({ schemaVersion: 2 }), JSON.stringify({ schemaVersion: 1, bots: [{ id: '../x' }] }),
@@ -145,6 +145,43 @@ test('owner CLI hub commands go through the hub, and refuse without one (FR-25)'
     await server.stop();
   }
   await assert.rejects(callHubControl(root, { operation: 'status' }), HubNotRunningError, 'a stopped hub removes its descriptor');
+});
+
+test('cats-bot hub boss-cat asks the hub to set or clear the Boss Cat (SPEC-009 FR-2)', async () => {
+  const { spawn } = await import('node:child_process');
+  const root = freshHome();
+  const asked: unknown[] = [];
+  const server = new HubControlServer(root, 'install-a', {
+    setBossCat: (body) => {
+      asked.push(body.bot);
+      if (body.bot === 'ghost') throw new HubControlRefusal('Bot ghost is not active.');
+      return { pid: 1, bossCat: body.bot, bots: [{ id: 'nori-catsbot', state: 'running', pid: 7, startAutomatically: true }] };
+    },
+  });
+  await server.start();
+  const env: NodeJS.ProcessEnv = { ...process.env, CATS_BOT_HOME: root };
+  delete env.CATS_BOT_ID;
+  // The CLI runs as a child, so the endpoint in this process can answer it.
+  const cli = (...args: string[]) => new Promise<{ status: number | null; out: string }>((resolveRun) => {
+    const child = spawn(process.execPath, ['src/cli/main.ts', 'hub', 'boss-cat', ...args], { env, windowsHide: true });
+    let out = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { out += chunk; });
+    child.on('exit', (status) => resolveRun({ status, out }));
+  });
+  try {
+    const set = await cli('nori-catsbot');
+    assert.equal(set.status, 0, set.out);
+    assert.match(set.out, /nori-catsbot.*Boss Cat/u);
+    assert.equal((await cli('--clear')).status, 0);
+    const refused = await cli('ghost');
+    assert.equal(refused.status, 1);
+    assert.match(refused.out, /Bot ghost is not active/u);
+    assert.equal((await cli()).status, 2, 'a bot id or --clear is needed');
+    assert.deepEqual(asked, ['nori-catsbot', null, 'ghost']);
+  } finally {
+    await server.stop();
+  }
 });
 
 test('a bot profile records the native environment, and any other kind is refused (FR-24)', () => {

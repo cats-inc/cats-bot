@@ -15,7 +15,8 @@
 
 An installed Cats Bot can be configured and used the first time it is opened: the first-run page
 chooses a name, an agent CLI and a model; the settings window can change the provider, model,
-personality, permissions, life rhythm, Telegram and start at login, and manages all notes; a floating
+personality, permissions, life rhythm and Telegram, and manages all notes; Cats Bot Settings holds
+the display language, start at login and updates; a floating
 Cat shows the bot's state on top; each note can be placed on the normal, topmost, desktop or wallpaper
 layer. The core's behavior is still defined by SPEC-001; this document defines only the shell and the
 `BotHostApi` commands it adds.
@@ -48,9 +49,11 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    runtime package in every other case; it can always be left empty (provider default) or given
    another model id. The generated `providers.yaml` uses the provider's default command and no longer
    uses the provider name as the command.
-4. FR-4: There is one settings window per bot, opened from the tray ("Settings…", "Manage notes…") and
-   from the ⚙ in a note's title bar; the tabs are Bot, Notes, Life, Telegram, App and, under the hub,
-   Bots (SPEC-008 FR-5). Display language and start at login there are the hub's (SPEC-008 FR-18).
+4. FR-4: There is one settings window per bot, opened from the tray ("Bot settings…", "Manage
+   notes…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
+   (the floating Cat, the bot's facts and folder), and it reaches only its own bot. Cats Bot Settings,
+   the hub's own window (tray "Settings…"), has General (display language, start at login, version and
+   updates, the data folder) and Bots (SPEC-008 FR-5, FR-18; PLAN-010).
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
