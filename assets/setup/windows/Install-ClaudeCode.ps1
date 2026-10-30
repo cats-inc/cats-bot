@@ -121,6 +121,21 @@ function Refresh-UserPath {
     [System.Environment]::GetEnvironmentVariable('Path', 'Machine')
 }
 
+# The official installer leaves %USERPROFILE%\.local\bin off the user PATH, so a
+# new terminal cannot run `claude` for the sign-in step.
+function Add-ClaudeToUserPath {
+  $installDir = Split-Path -Parent (Resolve-ClaudeExecutablePath)
+  $userPath = [System.Environment]::GetEnvironmentVariable('Path', 'User')
+  $entries = @(([string]$userPath) -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') } | Where-Object { $_ })
+  if ($entries -contains $installDir.TrimEnd('\')) { return }
+  if ([string]::IsNullOrWhiteSpace($userPath)) {
+    [System.Environment]::SetEnvironmentVariable('Path', $installDir, 'User')
+  } else {
+    [System.Environment]::SetEnvironmentVariable('Path', "$installDir;$userPath", 'User')
+  }
+  Refresh-UserPath
+}
+
 function Get-ClaudeNpmCandidateRoots {
   $candidates = [System.Collections.Generic.List[string]]::new()
   try {
@@ -545,6 +560,10 @@ if ($shouldInstall) {
   } else {
     $appliedChanges.Add('install_claude_code_native')
   }
+}
+# Also repairs an earlier install that left the folder off the user PATH.
+if ($detected.installed -and -not $SkipInstaller -and (Test-Path -LiteralPath (Resolve-ClaudeExecutablePath))) {
+  Add-ClaudeToUserPath
 }
 
 $manualSteps.Add('Run `claude` to complete the browser sign-in flow, or configure ANTHROPIC_API_KEY before first use.')

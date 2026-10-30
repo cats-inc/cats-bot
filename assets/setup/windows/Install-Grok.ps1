@@ -138,7 +138,7 @@ function Invoke-GrokInstaller {
   )
   $stdoutPath = "$tempScript.stdout"
   $stderrPath = "$tempScript.stderr"
-  $bootstrap = @'
+  $bootstrap = $CatsTls12Prologue + [Environment]::NewLine + @'
 & {
   $previousErrorActionPreference = $ErrorActionPreference
   try {

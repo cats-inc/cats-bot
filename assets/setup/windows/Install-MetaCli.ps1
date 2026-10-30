@@ -226,7 +226,7 @@ function Invoke-MuseInstaller {
   # The official install.ps1 opens with Set-StrictMode -Version Latest and calls
   # exit 1 on failure, so it runs in its own process rather than taking this
   # script down with it.
-  $bootstrap = @'
+  $bootstrap = $CatsTls12Prologue + [Environment]::NewLine + @'
 & {
   $previousErrorActionPreference = $ErrorActionPreference
   try {

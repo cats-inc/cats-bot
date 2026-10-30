@@ -48,18 +48,24 @@ function Test-CatsNativeUpgrade {
   return [pscustomobject]@{ shouldInstall = -not $currentRelease; latestVersion = $LatestVersion; known = $known }
 }
 
+function Add-CatsScriptPrologue {
+  # A vendor script may open with param() or using statements, which must stay first.
+  param([Parameter(Mandatory)][string]$ScriptText, [Parameter(Mandatory)][string]$Prologue)
+  $ast = [System.Management.Automation.Language.Parser]::ParseInput($ScriptText, [ref]$null, [ref]$null)
+  $offsets = @(0)
+  if ($ast.ParamBlock) { $offsets += $ast.ParamBlock.Extent.EndOffset }
+  foreach ($usingStatement in $ast.UsingStatements) { $offsets += $usingStatement.Extent.EndOffset }
+  $offset = ($offsets | Measure-Object -Maximum).Maximum
+  return $ScriptText.Insert($offset, "`n$Prologue`n")
+}
+
 function Invoke-CatsRemoteInstaller {
   param([Parameter(Mandatory)][string]$ScriptText, [switch]$RetrySharingViolation)
   $temporary = Join-Path ([System.IO.Path]::GetTempPath()) ('cats-native-' + [guid]::NewGuid().ToString('N') + '.ps1')
   try {
     if ([string]::IsNullOrWhiteSpace($ScriptText)) { throw 'Vendor returned an empty installer.' }
-    $ast = [System.Management.Automation.Language.Parser]::ParseInput($ScriptText, [ref]$null, [ref]$null)
-    $offsets = @(0)
-    if ($ast.ParamBlock) { $offsets += $ast.ParamBlock.Extent.EndOffset }
-    foreach ($usingStatement in $ast.UsingStatements) { $offsets += $usingStatement.Extent.EndOffset }
-    $offset = ($offsets | Measure-Object -Maximum).Maximum
     $prologue = '$env:PSModulePath = (@([System.Environment]::GetEnvironmentVariable(''PSModulePath'',''User''), [System.Environment]::GetEnvironmentVariable(''PSModulePath'',''Machine''), (Join-Path $PSHOME ''Modules'')) | Where-Object { $_ }) -join '';'''
-    $body = $ScriptText.Insert($offset, "`n$prologue`n")
+    $body = Add-CatsScriptPrologue -ScriptText $ScriptText -Prologue "$CatsTls12Prologue`n$prologue"
     if ($RetrySharingViolation) {
       $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($body))
       $body = @'

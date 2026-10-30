@@ -137,8 +137,9 @@ reaches only its own bot.
     - macOS: Homebrew's git, so Homebrew is a step before it.
     - Linux: the system package manager.
     - `Setup-Git` sets the commit identity.
-- [ ] 3.3: In cats-platform, `Install-ClaudeCode.ps1` puts the folder on the
-      user PATH; it was verified in the VM. Pin it here once merged.
+- [x] 3.3: cats-platform #355 (`cce4ff6e`) puts Claude Code's folder on the user
+      PATH and adds TLS 1.2 (3.7). The six helpers it changed are pinned here
+      at that commit.
 - [x] 3.4: Setup page and Bot tab (SPEC-008 FR-19):
   - After an install the fresh check decides the step. A restart or relaunch
     stands only while that check cannot confirm the step; a failure or
@@ -158,13 +159,19 @@ reaches only its own bot.
       (SPEC-009 FR-4). The consent dialog says the window will open. An open
       window refuses the request before the owner is asked. Names are
       limited to 40 characters, as the window takes.
-- [ ] 3.6: Rerun the VM's app test with these changes, including reinstalling
-      a removed Codex from a bot's settings. In the first run the test's own
-      PATH lacked npm, so that step did not happen.
-- [ ] 3.7: Open for the owner: TLS 1.2 for early Windows 10.
-  - No helper or vendor bootstrap asks for it today, and vendor installers run
-    in a child `powershell.exe`.
-  - Windows 11 used the system default, which works.
+- [x] 3.6: The VM's app test, rerun with these changes, passed:
+  - Codex on first run, with no Check again and no restart;
+  - Codex reinstalled from a bot's settings after npm removed it;
+  - Claude Code from settings, straight to 需要登入 with the hint updated;
+  - a relaunch.
+- [x] 3.7: TLS 1.2 for early Windows 10 (owner, 2026-10-31), in cats-platform
+      #355.
+  - Every helper adds TLS 1.2 to a legacy TLS 1.0 default and leaves the
+    system default alone. Vendor installers run the same line first in their
+    child `powershell.exe`.
+  - Unit tests force the legacy default. The VM's registry attempt to force it
+    did not take effect, so there the run showed only that every install
+    still works with these scripts.
 
 **Deliverables**: a clean machine can set up any of the five providers.
 
@@ -219,6 +226,7 @@ reaches only its own bot.
 | 2026-10-30 | Independent review of #71: `cats-bot init` now numbers a derived id as the Bots page does, a `--provider` first run without `--name` keeps the name Mochi, only Cats Bot Settings receives bot and update broadcasts, the macOS Boss Cat sheet opens on Bots, the update prompt says every bot stops, and stale docs and comments were corrected. A protocol bump for the renamed host command was not made: a 0.3 core reattached after a hub crash is restarted, which the pre-launch policy allows. |
 | 2026-10-31 | Phase 3 inventory, in Windows Sandbox and once in a Hyper-V VM with UAC on: the five providers install and start with the pinned helpers, and nothing needs porting. The setup page's install states, PATH hint and help lines, and Boss Cat creation for a provider not set up are fixed. Still to do: re-pin the Platform fix for Claude Code's PATH (3.3) and rerun the VM app test with the changes (3.6). |
 | 2026-10-31 | Independent review of Phase 3. Fixed: Boss Cat names allowed 80 characters where the New bot window takes 40; the owner was asked before a busy window refused; a declined UAC prompt for Node showed as a step to set up; the audit recorded the window as done; SPEC-008 FR-19 wording. Added tests for the Codex chain after the npm folder's restart request, a declined UAC prompt, and the Boss Cat's busy window and name limit. 340 tests pass. |
+| 2026-10-31 | The owner confirmed D31 to D34 and chose TLS 1.2. cats-platform #355 (`cce4ff6e`) carries Claude Code's user PATH and TLS 1.2, and its six changed helpers are pinned here. The VM's app test, rerun with the changes, passed, and a third VM run installed every native provider and Node.js with the TLS scripts. Phase 3 is done; the VM stays for now at the owner's request. |
 
 ---
 
