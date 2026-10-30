@@ -198,6 +198,10 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   - Check sign-in commands in PowerShell too. A clean Windows has the
     Restricted execution policy, which blocks `codex.ps1` and `npm.ps1` there
     but not in `cmd.exe`.
+  - The PowerShell scripts step reads and sets only the user's own policy. A
+    Group Policy that enforces Restricted (MachinePolicy or UserPolicy) still
+    blocks the shims while the step reports ready; sign in from `cmd.exe`
+    there.
 - The floating bot (SPEC-002 FR-7) needs real input: move the mouse with
   injected events (`mouse_event` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE`
   or `SendInput`), not `SetCursorPos`, which bypasses the low-level hook
