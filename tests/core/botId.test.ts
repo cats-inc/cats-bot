@@ -4,9 +4,8 @@ import { existsSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { deriveBotId } from '../../src/cli/main.ts';
 import { initializeBot } from '../../src/core/bot.ts';
-import { InvalidBotIdError, isValidBotId, resolveBotRoot } from '../../src/core/store/paths.ts';
+import { deriveBotId, InvalidBotIdError, isValidBotId, resolveBotRoot } from '../../src/core/store/paths.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 let home: TempHome;

@@ -444,7 +444,7 @@ export class HostChannelServer {
     if (method === 'quit') {
       // Answer first: quitting stops this server.
       connection.send({ t: 'res', id, ok: true, v: null, seq });
-      setImmediate(() => { void this.target.quit(); });
+      setImmediate(() => { void Promise.resolve().then(() => this.target.quit()).catch(() => undefined); });
       return;
     }
     try {
@@ -600,7 +600,15 @@ export class HostChannelClient {
     return () => { this.gapListeners.delete(listener); };
   }
 
+  /** Called once when the channel closes; at once (asynchronously) if it already has. */
   onClose(listener: () => void): () => void {
+    if (this.closed) {
+      let cancelled = false;
+      queueMicrotask(() => {
+        if (!cancelled) listener();
+      });
+      return () => { cancelled = true; };
+    }
     this.closeListeners.add(listener);
     return () => { this.closeListeners.delete(listener); };
   }

@@ -5,6 +5,7 @@ import { BrowserWindow } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
 import { guardNavigation } from './navigation.ts';
+import { applyWindowIdentity, type WindowIdentity } from './windowIdentity.ts';
 
 /**
  * SPEC-002 FR-4: one settings window per bot, with tabs for the bot's
@@ -17,6 +18,8 @@ export interface PageWindowOptions {
   /** The built pages (`dist/renderer`, ADR-003). */
   rendererDir: string;
   iconPath: string;
+  /** SPEC-008 FR-17: the bot a window belongs to; hub windows have none. */
+  identity?: WindowIdentity;
 }
 
 export function pageUrl(rendererDir: string, page: string, query: Record<string, string> = {}): string {
@@ -45,16 +48,20 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
     },
   });
   window.removeMenu();
+  applyWindowIdentity(window, options.identity);
   guardNavigation(window.webContents);
   return window;
 }
 
 export class SettingsWindow {
   private readonly options: PageWindowOptions;
+  private readonly query: Record<string, string>;
   private window: BrowserWindow | null = null;
 
-  constructor(options: PageWindowOptions) {
+  /** `query` selects the page's scope: SPEC-008 FR-5's Bots page opens with `scope=hub`. */
+  constructor(options: PageWindowOptions, query: Record<string, string> = {}) {
     this.options = options;
+    this.query = query;
   }
 
   async open(tab?: string): Promise<void> {
@@ -71,7 +78,7 @@ export class SettingsWindow {
     window.on('closed', () => {
       if (this.window === window) this.window = null;
     });
-    await window.loadURL(pageUrl(this.options.rendererDir, 'settings.html', tab ? { tab } : {}));
+    await window.loadURL(pageUrl(this.options.rendererDir, 'settings.html', { ...this.query, ...(tab ? { tab } : {}) }));
     window.show();
   }
 

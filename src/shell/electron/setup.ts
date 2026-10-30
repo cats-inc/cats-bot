@@ -1,23 +1,22 @@
 import { ipcMain } from 'electron';
 
-import { join } from 'node:path';
-import { listProviders, readLocalModelCatalog } from '../../core/providers/catalog.ts';
+import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import type { ProviderSetup } from './providerSetup.ts';
-import { isLanguagePreference, resolveLocale } from '../../shared/language.ts';
-import { readShellState, writeShellState } from './viewState.ts';
+import { isLanguagePreference, resolveLocale, type LanguagePreference } from '../../shared/language.ts';
 import { createPageWindow, pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { validateSetupInput, type SetupInput } from './setupInput.ts';
 
 /**
- * SPEC-002 FR-1: a packaged bot that has never been set up opens this page
- * instead of an error. No core exists yet, so the page gets the provider
- * list and the shipped model catalog from the setup channel, and `create`
- * initializes the bot and opens its core. Closing the page cancels.
+ * SPEC-002 FR-1 and SPEC-008 FR-4: the hub's first run opens this page
+ * instead of an error. No bot exists yet, so the page gets the provider list
+ * and the shipped model catalog from the setup channel, and `create`
+ * initializes the first bot. Closing the page cancels. The display language
+ * chosen here is the hub's (FR-18).
  */
 
 export interface FirstRunOptions extends PageWindowOptions {
   create(input: SetupInput): Promise<void>;
-  botRoot: string;
+  language: { read(): LanguagePreference; write(value: LanguagePreference): void };
   systemLocale: string;
   providers: ProviderSetup;
 }
@@ -32,10 +31,9 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     });
     const fromSetup = (event: Electron.IpcMainInvokeEvent) =>
       event.sender.id === window.webContents.id && event.senderFrame === event.sender.mainFrame;
-    const state = readShellState(options.botRoot);
     const language = () => ({
-      preference: state.language ?? 'system',
-      locale: resolveLocale(state.language ?? 'system', options.systemLocale),
+      preference: options.language.read(),
+      locale: resolveLocale(options.language.read(), options.systemLocale),
     });
     const cleanup = () => {
       ipcMain.removeHandler('setup:providers');
@@ -47,7 +45,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     ipcMain.handle('setup:providers', (event) => (fromSetup(event) ? listProviders() : []));
     ipcMain.handle('setup:models', (event, provider: unknown) => {
       if (!fromSetup(event) || typeof provider !== 'string') return { provider: '', defaultModel: null, models: [], source: 'none' };
-      return readLocalModelCatalog(provider, join(options.botRoot, 'runtime'));
+      return readPackagedModelCatalog(provider);
     });
     ipcMain.handle('setup:check', (event, provider: unknown) => {
       if (!fromSetup(event)) throw new Error('Unknown setup window');
@@ -64,8 +62,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
       if (!fromSetup(event) || !isLanguagePreference(value))
         throw new Error('Invalid display language');
-      state.language = value;
-      writeShellState(options.botRoot, state);
+      options.language.write(value);
       window.webContents.send('ui:languageChanged', language());
       return language();
     });

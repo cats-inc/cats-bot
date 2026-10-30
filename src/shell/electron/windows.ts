@@ -5,6 +5,7 @@ import { BrowserWindow, screen } from 'electron';
 
 import type { RemoteBotCore } from '../../core/host-api/remote.ts';
 import type { BotHostEvent } from '../../core/types.ts';
+import { applyWindowIdentity, type WindowIdentity } from './windowIdentity.ts';
 import type { LanguageState } from '../../shared/language.ts';
 import {
   DEFAULT_NOTE_SIZE,
@@ -42,6 +43,10 @@ export interface NoteWindowsOptions {
   /** Windows only; without it notes offer the normal and top layers. */
   desktop?: DesktopHost | null;
   log?(line: string): void;
+  /** SPEC-008 FR-17: the AUMID of this bot's notes. */
+  identity?: WindowIdentity;
+  /** The bot's place among the hub's bots: a note never placed before opens a step further. */
+  slot?: number;
 }
 
 const ATTACHED: readonly NoteLayer[] = ['desktop', 'wallpaper'];
@@ -107,11 +112,6 @@ export class NoteWindows {
 
   get shellState(): ShellState {
     return this.state;
-  }
-
-  setOpenAtLogin(value: boolean): void {
-    this.state.openAtLogin = value;
-    this.persist();
   }
 
   /** Saves the shell state soon; the floating bot shares the file. */
@@ -193,9 +193,18 @@ export class NoteWindows {
       await this.options.core.openView(conversationId);
       return existing;
     }
+    const slot = this.options.slot ?? 0;
+    const area = slot > 0 ? screen.getPrimaryDisplay().workArea : null;
     const bounds = view.x !== undefined && view.y !== undefined
       ? clampToScreen({ x: view.x, y: view.y, width: view.width, height: view.height })
-      : { width: view.width, height: view.height };
+      : area
+        ? clampToScreen({
+          x: Math.round(area.x + (area.width - view.width) / 2 + slot * 40),
+          y: Math.round(area.y + (area.height - view.height) / 2 + slot * 40),
+          width: view.width,
+          height: view.height,
+        })
+        : { width: view.width, height: view.height };
     const window = new BrowserWindow({
       ...bounds,
       minWidth: 260,
@@ -216,6 +225,7 @@ export class NoteWindows {
         spellcheck: false,
       },
     });
+    applyWindowIdentity(window, this.options.identity);
     guardNavigation(window.webContents);
     this.windows.set(conversationId, window);
     const url = pathToFileURL(join(this.options.rendererDir, 'note.html'));
@@ -227,12 +237,12 @@ export class NoteWindows {
       window.hide();
       view.open = false;
       this.persist();
-      void this.options.core.closeView(conversationId);
+      void Promise.resolve(this.options.core.closeView(conversationId)).catch(() => undefined);
     });
     window.on('closed', () => {
       if (this.windows.get(conversationId) === window) this.windows.delete(conversationId);
       this.lifted.delete(conversationId);
-      void this.options.core.setViewFocused(conversationId, false);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, false)).catch(() => undefined);
       // Not closed by us: Explorer restarted and took its children down.
       if (!this.options.isQuitting() && view.open && isAttachedLayer(view.layer)) this.reopenLater(conversationId, REOPEN_TRIES);
     });
@@ -243,10 +253,10 @@ export class NoteWindows {
     // A note that is open but not in front (on the desktop, the wallpaper or behind other windows) has not read
     // a reply: unread counts follow focus, not whether the window exists.
     window.on('focus', () => {
-      void this.options.core.setViewFocused(conversationId, true);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, true)).catch(() => undefined);
     });
     window.on('blur', () => {
-      void this.options.core.setViewFocused(conversationId, false);
+      void Promise.resolve(this.options.core.setViewFocused(conversationId, false)).catch(() => undefined);
       if (this.lifted.has(conversationId)) this.settle(conversationId, window);
     });
     const remember = () => {

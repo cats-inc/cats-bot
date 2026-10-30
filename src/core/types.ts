@@ -46,11 +46,17 @@ export interface DesktopControlPolicy {
 }
 
 /** SPEC-001 FR-1. */
+/** SPEC-008 FR-24 and ADR-010: where a bot runs. This version runs bots natively only. */
+export interface BotEnvironment {
+  kind: 'native';
+}
+
 export interface BotProfile {
   schemaVersion: 2;
   id: string;
   name: string;
   instructions: string;
+  environment: BotEnvironment;
   executionTarget: ExecutionTarget;
   configRevision: number;
   permissions: BotPermissions;
@@ -343,6 +349,8 @@ export interface BotStatus {
   runtime: { state: RuntimeState; pid: number | null };
   queue: { queued: number; running: WorkItem | null };
   pendingInteractions: number;
+  /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
+  awaitingOwner: number;
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null; };

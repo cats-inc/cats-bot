@@ -330,3 +330,15 @@ test('a welcome from another process than the descriptor names is refused (FR-15
     await assert.rejects(HostChannelClient.connect(moved, { host }), (error: ChannelError) => error.reason === 'descriptor');
   } finally { await server.stop(); }
 });
+
+test('a close listener added after the channel closed still hears of it', async () => {
+  const { root, server } = await started();
+  const client = await HostChannelClient.connect(root, { host });
+  await server.stop();
+  await new Promise<void>((resolve) => client.onClose(resolve));
+  assert.equal(client.isClosed, true);
+  let heard = false;
+  client.onClose(() => { heard = true; });
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(heard, true);
+});

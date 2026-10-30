@@ -8,7 +8,9 @@ import { callHostControl, HostControlRejectedError } from '../core/host-api/cont
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
-import { botPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome } from '../core/store/paths.ts';
+import { callHubControl } from '../core/host-api/hubControl.ts';
+import { createFileLogger } from '../core/log.ts';
+import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
 /**
@@ -80,21 +82,16 @@ Commands:
                                          app grant request's answer, or stop (--all: every conversation)
   heartbeat <pause|resume>               stop or restart the hidden heartbeat turns
   tick                                   run one reconcile pass (only when no instance is running)
-  quit                                   ask the running instance (CLI or shell) to stop
+  quit                                   ask the running instance (CLI or hub) to stop
   telegram set-token <token> | clear-token | enable | disable | status
                                          bind the bot to a Telegram bot token (long polling)
-  open [conversation|home]               ask the running shell to show a conversation window
+  open [conversation|home]               ask the running hub to show a conversation window
+  hub status [--json]                    the running hub's bots, through its control endpoint
 
-Every command except init and run takes --id <id>. Bots live under CATS_BOT_HOME/bots
+Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
 An id is 1 to 64 lowercase letters, digits and single hyphens; init derives one from --name.
 `;
-
-/** `init` without `--id`: the name in SPEC-008 FR-27's form; a device name such as "con" becomes "con-bot". */
-export function deriveBotId(name: string): string {
-  const id = name.toLowerCase().replace(/[^a-z0-9]+/gu, '-').slice(0, 64).replace(/^-+|-+$/gu, '') || 'bot';
-  return isValidBotId(id) ? id : `${id.slice(0, 60)}-bot`;
-}
 
 function listBotIds(botsHome: string): string[] {
   if (!existsSync(botsHome)) return [];
@@ -174,8 +171,16 @@ interface Target {
   running: ReturnType<typeof readInstanceLock>;
 }
 
+/** SPEC-008 FR-5: an archived bot's id stays reserved; Settings restores it, nothing creates it again. */
+function assertNotArchived(id: string, env: NodeJS.ProcessEnv): void {
+  if (isValidBotId(id) && existsSync(join(hubPathsFor(resolveCatsBotHome(env)).archive, id))) {
+    throw new Error(`Bot ${id} is archived. Restore it in Settings → Bots before using it.`);
+  }
+}
+
 function resolveTarget(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Target {
   const id = resolveBotId(parsed.flags, env);
+  assertNotArchived(id, env);
   const root = resolveBotRoot(id, env);
   return { id, root, running: readInstanceLock(botPathsFor(root)) };
 }
@@ -193,6 +198,7 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
     return 2;
   }
   const id = flagString(parsed.flags, 'id') ?? deriveBotId(name);
+  assertNotArchived(id, env);
   const permissionMode = flagString(parsed.flags, 'permission-mode') as PermissionMode | undefined;
   const { profile, root } = initializeBot(resolveBotsHome(env), {
     id,
@@ -228,6 +234,11 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
   });
   core.subscribe((event) => printEvent(event, json));
+  // A rejection nothing handled would end this process; the core logs it and keeps running.
+  const coreLog = createFileLogger(core.paths.logs);
+  process.on('unhandledRejection', (reason) => {
+    coreLog(`unhandled rejection: ${reason instanceof Error ? `${reason.name}: ${reason.message}` : typeof reason}`);
+  });
   await core.start();
   const status = core.status();
   if (!json) process.stdout.write(`cats-bot ${status.id} running (pid ${process.pid}); press Ctrl+C or run cats-bot quit to stop\n`);
@@ -599,6 +610,34 @@ async function commandDesktop(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promi
   return 0;
 }
 
+interface HubStatus {
+  pid: number;
+  installationId: string;
+  home: string;
+  coordinator: string | null;
+  bots: Array<{ id: string; state: string; pid: number | null; startAutomatically: boolean }>;
+}
+
+/** SPEC-008 FR-25: hub commands go through the running hub; without one they refuse. */
+async function commandHub(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  if (parsed.positional[0] !== 'status') {
+    process.stderr.write('hub needs a subcommand: status\n');
+    return 2;
+  }
+  const status = await callHubControl(resolveCatsBotHome(env), { operation: 'status' }) as HubStatus;
+  if (parsed.flags.get('json') === true) {
+    process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
+    return 0;
+  }
+  process.stdout.write(`hub pid ${status.pid}, installation ${status.installationId}\nroot ${status.home}\n`);
+  for (const bot of status.bots) {
+    const details = [bot.pid ? `pid ${bot.pid}` : null, bot.id === status.coordinator ? 'coordinator' : null, bot.startAutomatically ? null : 'manual start']
+      .filter(Boolean).join(', ');
+    process.stdout.write(`  ${bot.id}  ${bot.state}${details ? ` (${details})` : ''}\n`);
+  }
+  return 0;
+}
+
 export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env): Promise<number> {
   const parsed = parseArgs(argv);
   try {
@@ -633,6 +672,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandOpen(parsed, env);
       case 'telegram':
         return await commandTelegram(parsed, env);
+      case 'hub':
+        return await commandHub(parsed, env);
       case undefined:
       case 'help':
       case '--help':

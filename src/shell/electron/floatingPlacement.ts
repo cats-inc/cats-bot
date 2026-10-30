@@ -40,19 +40,25 @@ export function catReachable(position: { x: number; y: number }, displays: Displ
 /**
  * Keeps a remembered position while the cat on it can be grabbed; otherwise
  * bottom-right of the primary display. The window is larger than the cat and
- * mostly transparent, so the window touching a screen is not enough.
+ * mostly transparent, so the window touching a screen is not enough. A
+ * further bot's cat (`slot` 1, 2, …) sits one cat to the left of the last.
  */
 export function placeFloating(
   saved: { x?: number; y?: number },
   displays: Display[],
   primary: Display,
   size = FLOATING_SIZE,
+  slot = 0,
 ): { x: number; y: number } {
   if (saved.x !== undefined && saved.y !== undefined && catReachable({ x: saved.x, y: saved.y }, displays)) {
     return { x: saved.x, y: saved.y };
   }
   const area = primary.workArea;
-  return { x: area.x + area.width - size.width - 16, y: area.y + area.height - size.height - 16 };
+  const step = FLOATING_CAT.width + 16;
+  return {
+    x: Math.max(area.x, area.x + area.width - size.width - 16 - slot * step),
+    y: area.y + area.height - size.height - 16,
+  };
 }
 
 /** A reply as one short line of plain text, for the bubble. */

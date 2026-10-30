@@ -4,6 +4,7 @@ import type { BotHostEvent } from '../../core/types.ts';
 import { bubbleText, FLOATING_SIZE, placeFloating } from './floatingPlacement.ts';
 import { guardNavigation } from './navigation.ts';
 import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
+import { applyWindowIdentity } from './windowIdentity.ts';
 import type { FloatingBotState } from './viewState.ts';
 
 /**
@@ -22,6 +23,8 @@ export interface FloatingBubble {
 export interface FloatingBotOptions extends PageWindowOptions {
   state(): FloatingBotState;
   persist(): void;
+  /** SPEC-008 FR-17: the bot's place among the hub's bots, for a cat that was never moved. */
+  slot?: number;
 }
 
 export class FloatingBot {
@@ -79,7 +82,7 @@ export class FloatingBot {
       existing.showInactive();
       return;
     }
-    const position = placeFloating(state, screen.getAllDisplays(), screen.getPrimaryDisplay());
+    const position = placeFloating(state, screen.getAllDisplays(), screen.getPrimaryDisplay(), undefined, this.options.slot ?? 0);
     const window = new BrowserWindow({
       ...position,
       ...FLOATING_SIZE,
@@ -106,6 +109,7 @@ export class FloatingBot {
       },
     });
     this.window = window;
+    applyWindowIdentity(window, this.options.identity);
     guardNavigation(window.webContents);
     // Above ordinary topmost windows, like a desktop pet.
     window.setAlwaysOnTop(true, 'screen-saver');

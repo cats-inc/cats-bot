@@ -161,6 +161,8 @@ export function NoteApp() {
     const profile = await api.invoke('getProfile');
     setSpeakerName(profile.name);
     setTitle(`${profile.name} · ${conversationTitle(record)}`);
+    // SPEC-008 FR-17: the window's title carries the bot's name too.
+    document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
     setLayer((await api.window.state()).layer);
   }, [requested, locale]);
@@ -169,7 +171,7 @@ export function NoteApp() {
   const reload = useCallback(async () => {
     const id = conversation.current;
     try {
-      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems')]);
+      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems', id)]);
       for (const entry of transcript) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
       setEntries(current => mergeTranscriptEntries(current, visibleEntries(transcript)));
       setWorkItems(work.filter((item) => item.conversationId === id));

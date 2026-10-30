@@ -14,6 +14,7 @@ import type {
   SessionCapabilitiesSnapshot,
 } from '../types.ts';
 import { DesktopControlHelperError, type DesktopControlHelperClient } from './helper.ts';
+import type { DesktopLease } from './lease.ts';
 import { evaluateDesktopControlPolicy } from './policy.ts';
 import type { DesktopControlSwitches } from './switches.ts';
 import {
@@ -87,6 +88,8 @@ export interface DesktopControlChange {
 export interface DesktopControlServiceOptions {
   /** null when this host cannot run the helper (BDC-01). */
   helper: DesktopControlHelperClient | null;
+  /** SPEC-008 FR-26: the account's desktop lease, taken before control and clipboard calls. */
+  lease?: DesktopLease;
   unavailableReason: string | null;
   switches: DesktopControlSwitches;
   /** The profile switch (BDC-02). */
@@ -235,6 +238,8 @@ export class DesktopControlService {
   private readonly generations = new Map<string, number>();
   private readonly lastReason = new Map<string, string>();
   private neverGrantablePaths: Set<string>;
+  /** The turn that holds the desktop lease; it keeps it until it ends (FR-26). */
+  private leased: { conversationId: string; workItemId: string } | null = null;
   private closed = false;
 
   constructor(options: DesktopControlServiceOptions) {
@@ -413,6 +418,8 @@ export class DesktopControlService {
       this.options.log(`desktop control stopped in conversation ${id}`);
       this.emit(id);
     }
+    // Stop for every conversation always gives the lease back, also after a revoke forgot the conversation.
+    if (conversationId === undefined || (this.leased && conversations.includes(this.leased.conversationId))) this.releaseLease();
     if (held) this.cancelHelper();
   }
 
@@ -422,6 +429,7 @@ export class DesktopControlService {
    * one turn at a time, so the global `cancel` reaches only this conversation's op.
    */
   turnEnded(conversationId: string, workItemId: string): void {
+    if (this.leased?.workItemId === workItemId) this.releaseLease();
     const attachment = this.attachments.get(conversationId);
     if (!attachment?.holding || attachment.holding.workItemId !== workItemId) return;
     attachment.holding = null;
@@ -433,6 +441,7 @@ export class DesktopControlService {
   close(): void {
     if (this.closed) return;
     this.closed = true;
+    this.releaseLease();
     for (const conversationId of [...this.attachments.keys()]) this.revoke(conversationId, 'core stopped');
     this.denyPending(() => true);
     this.options.helper?.close();
@@ -537,6 +546,7 @@ export class DesktopControlService {
   private revoke(conversationId: string, why: string): void {
     const attachment = this.attachments.get(conversationId);
     this.bump(conversationId);
+    if (this.leased?.conversationId === conversationId) this.releaseLease();
     if (attachment) {
       this.attachments.delete(conversationId);
       this.options.log(`desktop control revoked in conversation ${conversationId}: ${why}`);
@@ -612,12 +622,43 @@ export class DesktopControlService {
     if (typeof operatorIdleMs === 'number' && operatorIdleMs >= 0 && operatorIdleMs < OPERATOR_QUIET_MS) {
       throw new DesktopControlToolError('operator_active', 'The owner is using the computer right now.');
     }
-    // A stop while the window was being checked sends nothing.
-    if (this.generation(attachment.conversationId) !== generation || this.attachments.get(attachment.conversationId) !== attachment) {
+    // A stop while the window was being checked sends nothing and takes no lease.
+    const stopped = () => this.generation(attachment.conversationId) !== generation || this.attachments.get(attachment.conversationId) !== attachment;
+    if (stopped()) throw new DesktopControlToolError('stopped', STOPPED_MESSAGE);
+    await this.takeLease(attachment);
+    if (stopped()) {
+      this.releaseLease();
       throw new DesktopControlToolError('stopped', STOPPED_MESSAGE);
     }
     this.hold(attachment, target.app.name);
     return target;
+  }
+
+  /**
+   * SPEC-008 FR-26: before control or a clipboard call the turn takes the
+   * account's desktop lease, and keeps it until it ends, is stopped or the
+   * core stops. Another bot holding it makes the call unavailable.
+   */
+  private async takeLease(attachment: Attachment): Promise<void> {
+    // A turn the owner cancelled while this call waited sends nothing (review of #66).
+    const turn = this.options.turn(attachment.conversationId);
+    if (!turn) throw new DesktopControlToolError('stopped', 'The turn ended; nothing was sent.');
+    const lease = this.options.lease;
+    if (!lease) return;
+    if (!(await lease.acquire())) {
+      throw new DesktopControlToolError('unavailable', 'Another bot is using the desktop right now.');
+    }
+    if (this.options.turn(attachment.conversationId)?.workItemId !== turn.workItemId) {
+      this.releaseLease();
+      throw new DesktopControlToolError('stopped', 'The turn ended; nothing was sent.');
+    }
+    this.leased = { conversationId: attachment.conversationId, workItemId: turn.workItemId };
+  }
+
+  private releaseLease(): void {
+    this.leased = null;
+    // Released even when no turn recorded it: a lease taken for a call that was then stopped.
+    if (this.options.lease?.held) this.options.lease.release();
   }
 
   private hold(attachment: Attachment, app: string): void {
@@ -827,11 +868,13 @@ export class DesktopControlService {
       // The clipboard needs no app grant and holds no control.
       case 'clipboard_read': {
         parseNoArgs(args);
+        await this.takeLease(attachment);
         const { text } = await helper.call<{ text: string | null }>('clipboard_read', {}, CLIPBOARD_TIMEOUT_MS);
         return toolResult({ text }, text === null ? 'The clipboard holds no text.' : `Read ${text.length} character(s) from the clipboard.`);
       }
       case 'clipboard_write': {
         const { text } = parseClipboardWrite(args);
+        await this.takeLease(attachment);
         await helper.call('clipboard_write', { text }, CLIPBOARD_TIMEOUT_MS);
         return toolResult({ done: true }, `Wrote ${text.length} character(s) to the clipboard.`);
       }

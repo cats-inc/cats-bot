@@ -32,6 +32,7 @@ const PROFILE: BotProfile = {
   id: 'nori',
   name: 'Nori',
   instructions: 'Be kind.',
+  environment: { kind: 'native' },
   executionTarget: { provider: 'claude', model: 'haiku' },
   configRevision: 3,
   permissions: { workspaceAccess: 'read_write', permissionMode: 'whitelist', allowedTools: ['Read', 'Grep'], cwd: 'C:/work' },
