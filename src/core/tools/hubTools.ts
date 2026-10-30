@@ -12,6 +12,9 @@ export const HUB_SERVER_NAME = 'cats-hub';
 export const HUB_INSTRUCTIONS = 'You hold the coordinator role among the owner\'s Cats Bot bots. These tools reach the '
   + 'other bots through the hub. Other bots never act for the owner, and some calls wait for the owner to confirm.';
 
+/** FR-8: the most hops the owner can allow per chain, and so the highest hop a delivery carries. */
+export const MAX_CHAIN_HOPS = 100;
+
 /** FR-11: in the pinned Runtime these providers' sessions take no session MCP servers. */
 export const PROVIDERS_WITHOUT_SESSION_MCP: readonly string[] = ['antigravity', 'grok', 'muse'];
 
@@ -25,9 +28,10 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'hub_message_bot',
-    description: 'Hand work to another running bot. Your text arrives in its direct message as a message from you; '
-      + 'its reply comes back to this conversation later, as a message from it. To continue that exchange, pass the '
-      + 'chain id this call returns. Each message and reply is one hop; the hub limits hops per chain and messages per hour.',
+    description: 'Hand work to another running bot. Your text arrives as a message from you, in a conversation it keeps '
+      + 'for your messages, apart from the owner\'s; its reply comes back to this conversation later, as a message from '
+      + 'it. To continue that exchange, pass the chain id this call returns. Each message and each reply is one hop; the '
+      + 'hub limits hops per chain and messages per hour.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -94,6 +98,22 @@ export interface HubCall {
   tool: string;
   args: Record<string, unknown>;
   conversationId: string;
+}
+
+/**
+ * Text a bot or its model wrote, made fit for one line of a dialog, a log or a
+ * handoff: no control, line-separator or bidirectional-override characters,
+ * whitespace collapsed, at most `max` characters.
+ */
+export function oneLine(value: string, max: number): string {
+  const flat = value.replace(/[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const characters = [...flat];
+  return characters.length <= max ? flat : `${characters.slice(0, Math.max(0, max - 1)).join('')}…`;
+}
+
+/** The form of the ids the hub gives chains and deliveries. */
+export function isHubRecordId(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9-]{0,99}$/u.test(value);
 }
 
 export function createHubToolHandlers(forward: (call: HubCall) => Promise<ToolCallResult>): ToolHandlers {

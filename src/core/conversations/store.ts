@@ -239,7 +239,8 @@ export class ConversationStore {
     appendTranscript(this.paths, id, full);
     this.nextSeq.set(id, seq + 1);
     this.update(id, (record) => {
-      if (entry.kind === 'owner') record.lastOwnerMessageAt = at;
+      // SPEC-009 FR-7: another bot's message does not count as the owner writing.
+      if (entry.kind === 'owner' && entry.origin !== 'bot') record.lastOwnerMessageAt = at;
       if (entry.kind === 'bot') record.lastBotMessageAt = at;
     });
     return full;

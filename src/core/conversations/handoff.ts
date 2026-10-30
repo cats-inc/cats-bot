@@ -14,7 +14,10 @@ const DIGEST_LINE_LIMIT = 160;
 function speaker(entry: TranscriptEntry): string | null {
   switch (entry.kind) {
     case 'owner':
-      return 'Owner';
+      // SPEC-009 FR-7: another bot's message is never handed on as the owner's.
+      return entry.origin === 'bot'
+        ? `${(entry.from || 'Another bot').replace(/\s+/gu, ' ').trim()} (another bot, not the owner)`
+        : 'Owner';
     case 'bot':
       return entry.origin === 'heartbeat' ? 'You (unprompted)' : 'You';
     case 'system':

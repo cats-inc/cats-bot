@@ -1,6 +1,8 @@
 import { delimiter, isAbsolute } from 'node:path';
 
 import { isTerminalWorkState } from '../queue/workItems.ts';
+import { isValidBotId } from '../store/paths.ts';
+import { isHubRecordId, MAX_CHAIN_HOPS } from '../tools/hubTools.ts';
 import type {
   ApprovalDecision, BotDelivery, BotDeliveryState, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus,
   ConversationRecord, DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
@@ -65,14 +67,16 @@ function asDelivery(value: unknown): BotDelivery {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('delivery must be an object');
   const raw = value as Record<string, unknown>;
   const hop = raw.hop;
-  if (typeof hop !== 'number' || !Number.isSafeInteger(hop) || hop < 1 || hop > 100) throw new Error('hop must be a positive integer');
+  if (typeof hop !== 'number' || !Number.isSafeInteger(hop) || hop < 1 || hop > MAX_CHAIN_HOPS) throw new Error('hop must be a positive integer');
   if (raw.kind !== 'message' && raw.kind !== 'reply') throw new Error('kind must be message or reply');
+  if (!isHubRecordId(raw.deliveryId) || !isHubRecordId(raw.chainId)) throw new Error('deliveryId and chainId must be hub ids');
+  if (typeof raw.from !== 'string' || !isValidBotId(raw.from)) throw new Error('from must be a bot id');
   return {
-    deliveryId: asString(raw.deliveryId, 'deliveryId'),
-    chainId: asString(raw.chainId, 'chainId'),
+    deliveryId: raw.deliveryId,
+    chainId: raw.chainId,
     hop,
     kind: raw.kind,
-    from: asString(raw.from, 'from'),
+    from: raw.from,
     fromName: asString(raw.fromName, 'fromName'),
     ...(raw.conversationId === undefined || raw.conversationId === null ? {} : { conversationId: asString(raw.conversationId, 'conversationId') }),
     text: asString(raw.text, 'text', MAX_DELIVERY_TEXT),

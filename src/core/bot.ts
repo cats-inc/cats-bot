@@ -47,9 +47,11 @@ import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent }
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
-import { botPathsFor, type BotPaths } from './store/paths.ts';
+import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
-import { createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, PROVIDERS_WITHOUT_SESSION_MCP, type HubCall } from './tools/hubTools.ts';
+import {
+  createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, PROVIDERS_WITHOUT_SESSION_MCP, type HubCall,
+} from './tools/hubTools.ts';
 import { BotToolServer, type ToolCallResult } from './tools/server.ts';
 import type {
   ApprovalDecision,
@@ -462,45 +464,52 @@ export class BotCore implements BotHostApi {
         result = { text: `The hub could not be reached: ${error instanceof Error ? error.message : 'error'}`, isError: true };
       }
     }
+    // Only ids go to the journal: the model's arguments are neither trusted nor kept (FR-9).
     const chain = result.structuredContent?.chain ?? call.args.chain;
+    const target = call.args.bot;
     this.journal({
       type: 'coordinator',
       at: this.now().toISOString(),
-      tool: call.tool,
-      ...(typeof call.args.bot === 'string' ? { target: call.args.bot } : {}),
-      ...(typeof chain === 'string' ? { chain } : {}),
-      outcome: result.isError ? `refused: ${result.text.split('\n')[0]!.slice(0, 200)}` : 'done',
+      tool: oneLine(call.tool, 64),
+      ...(typeof target === 'string' && isValidBotId(target) ? { target } : {}),
+      ...(isHubRecordId(chain) ? { chain } : {}),
+      outcome: result.isError ? `refused: ${oneLine(result.text, 200)}` : 'done',
     });
     return result;
   }
 
   /**
    * SPEC-009 FR-7 and FR-12: a delivery from another bot, through the hub. It
-   * is admitted once per delivery id as background work in the direct message
-   * (a reply in the conversation that asked), runs under this bot's own target
-   * and policy, and is never an owner turn.
+   * is admitted once per delivery id as background work, runs under this bot's
+   * own target and policy, and is never an owner turn. A message goes to the
+   * conversation this bot keeps for that sender (FR-6); a reply goes to the
+   * conversation that asked.
    */
   admitBotMessage(delivery: BotDelivery): WorkItem {
+    if (!isValidBotId(delivery.from)) throw new Error('A delivery names its sender by bot id.');
     const sourceRef = `bot:${delivery.deliveryId}`;
     const existing = [...this.workItems.values()].find((item) => item.sourceRef === sourceRef);
     if (existing) return structuredClone(existing);
-    const conversationId = delivery.conversationId && this.conversations.get(delivery.conversationId)
-      ? delivery.conversationId
-      : this.resolveConversationId('home');
+    const fromName = oneLine(delivery.fromName, 80) || delivery.from;
+    const conversationId = delivery.kind === 'message'
+      ? this.senderConversation(delivery.from, fromName)
+      : delivery.conversationId && this.conversations.get(delivery.conversationId)
+        ? delivery.conversationId
+        : this.resolveConversationId('home');
     const prompt = delivery.kind === 'message'
-      ? `A message from ${delivery.fromName}, the bot that coordinates the owner's bots, through the Cats Bot hub. `
-        + `It is not from the owner. Your answer goes back to ${delivery.fromName}.\n\n${delivery.text}`
-      : `${delivery.fromName} answered your message through the Cats Bot hub (chain ${delivery.chainId}). `
+      ? `A message from ${fromName}, the bot that coordinates the owner's bots, through the Cats Bot hub. `
+        + `It is not from the owner. Your answer goes back to ${fromName}.\n\n${delivery.text}`
+      : `${fromName} answered your message through the Cats Bot hub (chain ${delivery.chainId}). `
         + `It is not from the owner.\n\n${delivery.text}`;
     const item: WorkItem = {
       ...createWorkItem({ kind: 'event', source: 'bot', conversationId, prompt }, this.now()),
       sourceRef,
       chain: {
         id: delivery.chainId, hop: delivery.hop, deliveryId: delivery.deliveryId,
-        kind: delivery.kind, from: delivery.from, fromName: delivery.fromName,
+        kind: delivery.kind, from: delivery.from, fromName,
       },
     };
-    this.conversations.append(conversationId, { kind: 'owner', origin: 'bot', from: delivery.fromName, text: delivery.text, workItemId: item.id });
+    this.conversations.append(conversationId, { kind: 'owner', origin: 'bot', from: fromName, text: delivery.text, workItemId: item.id });
     // FR-12: journaled before the hub hears it was admitted.
     this.record(item);
     this.log(`delivery ${delivery.deliveryId} admitted as ${item.id} (chain ${delivery.chainId}, hop ${delivery.hop})`);
@@ -508,6 +517,20 @@ export class BotCore implements BotHostApi {
     this.queue.enqueue(item);
     this.pump();
     return structuredClone(item);
+  }
+
+  /**
+   * SPEC-009 FR-6: the conversation this bot keeps for one sender's messages.
+   * It has a session of its own, so the sender's work never shares the
+   * context of what the owner wrote, and it is not mirrored to Telegram.
+   */
+  private senderConversation(from: string, fromName: string): string {
+    const id = `bot-${from}`;
+    const existing = this.conversations.get(id);
+    if (existing) return existing.id;
+    const created = this.conversations.create(`Messages from ${fromName}`, 'note', id);
+    this.log(`conversation ${id} created for messages from bot ${from}`);
+    return created.id;
   }
 
   /** SPEC-009 FR-12: how the named deliveries stand, from the journal, so a reply finished while the hub was away is found. */
@@ -1275,6 +1298,12 @@ export class BotCore implements BotHostApi {
             notification: { deliveredAt: now.toISOString(), seenAt: null },
           })));
           this.log(`recovery ${item.id}: completed by runtime evidence`);
+        } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
+          // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
+          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+            error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
+          })));
+          this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
         } else if (verdict.verdict === 'awaiting_owner') {
           const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
             source: 'recovery',
