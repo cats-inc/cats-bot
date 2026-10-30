@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "07a02f3a30b9e02f0e25e01c348af69a500b3ae6",
+  "commit": "cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
@@ -19,32 +19,32 @@
     },
     {
       "source": "scripts/windows/Install-ClaudeCode.ps1",
-      "sha256": "394f6d9d1d9b83a30b409b747fd17577a685d98ac2e6b22f1a10a5a5f2680644",
+      "sha256": "ab9ee3b25a294ba23e8373b60f6ba4ed4b1ad87ab9a9d2abeb9f2df32dabb973",
       "path": "windows/Install-ClaudeCode.ps1"
     },
     {
       "source": "scripts/windows/Install-Antigravity.ps1",
-      "sha256": "7892748418407eca1c1974b49dcdda99d9e16c24c30da59ef53531c4561eb0b1",
+      "sha256": "bc771308e39aa3da662054280c5fd85289a7df407585ccc26b69687dcc6178c9",
       "path": "windows/Install-Antigravity.ps1"
     },
     {
       "source": "scripts/windows/Install-Grok.ps1",
-      "sha256": "5a74b65e852075e03ff1223469b6bff44f764f4703c7f00900cfc4be8c78fe92",
+      "sha256": "09edf827b472ebe7ff962cd444290a583c2053fce54c0580dc245f145bec5083",
       "path": "windows/Install-Grok.ps1"
     },
     {
       "source": "scripts/windows/Install-MetaCli.ps1",
-      "sha256": "bc90e121b721e84ff0409f8eebd4941cca2ae76e7bd2ee2b6e00b05fe28b3c23",
+      "sha256": "47ed9f7c91077c6afe8f9e72d97c94be6579b0e06dae37c3b4032c40eb914095",
       "path": "windows/Install-MetaCli.ps1"
     },
     {
       "source": "scripts/windows/_HiddenProcess.ps1",
-      "sha256": "80d749965d1571686f54499bbfdac787eb08a4f590c4cf5d746e51ba6b355428",
+      "sha256": "4179f2756702381087d3cae1577208d90622ddc94248584d352575c145fb9d43",
       "path": "windows/_HiddenProcess.ps1"
     },
     {
       "source": "scripts/windows/_NativeInstallerSupport.ps1",
-      "sha256": "fa74ec76ea7f807805b39881daaf4c597463464cec3d681c3a7fb734e76c8c6f",
+      "sha256": "6e5f6908484dab9868acb3c74912467eb9db74e69b613215c93fdba4f3be2f3f",
       "path": "windows/_NativeInstallerSupport.ps1"
     },
     {

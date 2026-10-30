@@ -149,7 +149,7 @@ function Invoke-AntigravityInstaller {
 
   try {
     $installScript = Invoke-RestMethod 'https://antigravity.google/cli/install.ps1'
-    [System.IO.File]::WriteAllText($tempScript, [string]$installScript, [System.Text.UTF8Encoding]::new($false))
+    [System.IO.File]::WriteAllText($tempScript, (Add-CatsScriptPrologue -ScriptText ([string]$installScript) -Prologue $CatsTls12Prologue), [System.Text.UTF8Encoding]::new($false))
 
     $powerShellExe = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
     $installerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)

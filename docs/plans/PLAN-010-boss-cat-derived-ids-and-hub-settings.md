@@ -91,16 +91,103 @@ reaches only its own bot.
 
 ### Phase 3: Clean-machine setup
 
-- [ ] 3.1: A separate SPEC and PLAN, in cats-platform for the shared setup scripts
-      ([ADR-006](../decisions/006-share-runtime-catalogs-and-package-provider-setup-helpers.md))
-      and here for the setup page. Following them:
-      1. Take inventory on a clean Windows (Windows Sandbox) for each of the five
-         providers.
-      2. Port the missing installers, such as winget and Git for Windows, from
-         `environment-bootstrap`. Each one runs only with the owner's consent.
-      3. Pin the new scripts here.
+- [x] 3.1: Take inventory of the five providers on a clean Windows, with the
+      pinned helpers
+      ([ADR-006](../decisions/006-share-runtime-catalogs-and-package-provider-setup-helpers.md)).
+  - Windows Sandbox: Windows 11 22621, signed in as an administrator with UAC
+    off, so the user-scoped helpers ran with `-AllowAdmin`.
+  - A Hyper-V VM, run once at the owner's request (2026-10-31) and not part of
+    CI: Windows 11 Enterprise evaluation 26H2 (build 26300), Traditional
+    Chinese. Both helper runs and the app ran at medium integrity with UAC on;
+    `ConsentPromptBehaviorAdmin=0` stood in for the owner's Yes.
+  - Every provider installs and starts:
+    - Claude Code 2.1.314 in 85 to 253 seconds;
+    - Antigravity 1.4.11 in 62 to 77 seconds;
+    - Grok 1.0.70 in 80 to 111 seconds;
+    - Muse 1.4.14 in 94 to 210 seconds;
+    - Codex 0.166.0 in about 3.5 minutes, Node.js 26.13.0 included.
+  - None needs winget, Git for Windows, the VC++ runtime or PowerShell 7.
+    Claude Code falls back to its PowerShell tool on Windows PowerShell 5.1.
+    No provider binary imports the VC++ runtime.
+  - Node.js installs from the nodejs.org MSI when winget is missing or fails.
+    The fresh 26H2 VM's winget 1.6 failed with 0x8A15005E. In the VM the
+    helper's elevation went through UAC and handed its result back to the
+    medium-integrity caller.
+  - One gap in the helpers: Claude Code's leaves `%USERPROFILE%\.local\bin`
+    off the user PATH, so a new terminal cannot run `claude` to sign in. The
+    Grok, Antigravity and Muse helpers add their folders.
+  - The app's own setup page, driven over CDP in the VM, worked for:
+    - Codex on first run;
+    - Claude Code from a bot's settings;
+    - a relaunch.
+
+    It also showed restarts that were not needed, a stale PATH hint, and help
+    lines in English or twice. Task 3.4 fixes these.
+- [x] 3.2: Nothing is ported from `environment-bootstrap`; nothing it offers is
+      needed. SPEC-008 FR-19 and SPEC-009 FR-4 carry the changes, with no
+      separate SPEC and PLAN.
+  - Git is the exception to come (owner, 2026-10-31). When a feature needs it,
+    such as worktrees and branches as in Cats Code, Git becomes a step installed
+    with the owner's consent, as Node.js is for Codex. Without it, Runtime
+    already reports repository status, commit and push as unsupported. The
+    tools follow `environment-bootstrap`:
+    - Windows: Git for Windows, not MinGit. `Install-Git-Admin.ps1` tries
+      winget, then the official installer; the fresh Windows 11 VM's winget
+      failed.
+    - macOS: Homebrew's git, so Homebrew is a step before it.
+    - Linux: the system package manager.
+    - `Setup-Git` sets the commit identity.
+- [x] 3.3: cats-platform #355 (`cce4ff6e`) puts Claude Code's folder on the user
+      PATH and adds TLS 1.2 (3.7). The six helpers it changed are pinned here
+      at that commit.
+- [x] 3.4: Setup page and Bot tab (SPEC-008 FR-19):
+  - After an install the fresh check decides the step. A restart or relaunch
+    stands only while that check cannot confirm the step; a failure or
+    refused elevation always stands. Before this, every native provider
+    showed 「需要重新開啟程式」 and kept Create and start disabled until Check
+    again.
+  - The provider hint follows an install.
+  - A finished step drops installer diagnostics, and a help line the check and
+    the install both give shows once.
+  - The five providers' sign-in lines are in Traditional Chinese.
+  - A declined UAC prompt shows 「需要管理員授權」. The Node helper reports it
+    as an interruption, not as its status.
+- [x] 3.5: D30 open item 3 (owner, 2026-10-31): first-run setup and New bot
+      install before the bot exists, and a bot's settings reinstall a removed
+      CLI. `hub_create_bot` for a provider not on the hub's PATH opens the New
+      bot window filled in with the request, after the owner's consent
+      (SPEC-009 FR-4). The consent dialog says the window will open. An open
+      window refuses the request before the owner is asked. Names are
+      limited to 40 characters, as the window takes.
+- [x] 3.6: The VM's app test, rerun with these changes, passed:
+  - Codex on first run, with no Check again and no restart;
+  - Codex reinstalled from a bot's settings after npm removed it;
+  - Claude Code from settings, straight to 需要登入 with the hint updated;
+  - a relaunch.
+- [x] 3.7: TLS 1.2 for early Windows 10 (owner, 2026-10-31), in cats-platform
+      #355.
+  - Every helper adds TLS 1.2 to a legacy TLS 1.0 default and leaves the
+    system default alone. Vendor installers run the same line first in their
+    child `powershell.exe`.
+  - Unit tests force the legacy default. The VM's registry attempt to force it
+    did not take effect, so there the run showed only that every install
+    still works with these scripts.
 
 **Deliverables**: a clean machine can set up any of the five providers.
+
+#### Decisions to confirm (Phase 3)
+
+- **D31.** A restart or relaunch from a helper no longer hides a fresh check
+  that confirms the step. This reverses the rule from #48 for those two
+  states; `failed` and `elevation_required` still stand.
+- **D32.** `hub_create_bot` decides by PATH whether to create the bot at once
+  or open the New bot window. Running the helpers there could interrupt an
+  install the owner has open.
+- **D33.** A Boss Cat's request is refused while a New bot window is open,
+  rather than replacing what the owner is typing.
+- **D34.** No separate SPEC/PLAN pair for Phase 3, and nothing ported. The
+  owner left these two of the sandbox report's items unanswered, so they
+  follow the recommendation.
 
 ### Phase 4: Release
 
@@ -119,6 +206,9 @@ reaches only its own bot.
 | `src/renderer/settings/*`, `src/shared/language.ts` | Modify | Hub Settings, labels |
 | `src/shell/electron/trayMenu.ts` | Modify | "Settings…" in every shape |
 | `docs/specs/SPEC-009-*.md` and the docs that name the role | Modify | Boss Cat |
+| `src/shell/electron/providerSetup.ts` | Modify | The fresh check decides a step after an install (Phase 3) |
+| `src/renderer/settings/SetupPage.tsx`, `BotTab.tsx` | Modify | Hint follows installs; New bot window filled in from a Boss Cat's request |
+| `src/shell/electron/main.ts`, `hub/bossCatBroker.ts`, `assets/preload.cjs`, `src/renderer/bridge.ts` | Modify | `hub_create_bot` for a provider not set up opens the New bot window (`setup:prefill`) |
 
 ## Technical Decisions
 
@@ -134,6 +224,9 @@ reaches only its own bot.
 | 2026-10-30 | Phase 1 done: the role is Boss Cat in code, data (`bossCat`), CLI (`hub boss-cat`), interface (主控貓) and the living docs; derived ids end in `-catsbot`. 334 tests pass. |
 | 2026-10-30 | Phase 2 done: Cats Bot Settings (General and Bots) opens from the tray's Settings… in every shape and by itself when no bot runs; a bot's settings keep its own tabs (the former App tab is Details) and its tray item is "Bot settings…". Bot management, start at login and updates refuse any other window. Verified with the real Electron hub in an isolated home over CDP. |
 | 2026-10-30 | Independent review of #71: `cats-bot init` now numbers a derived id as the Bots page does, a `--provider` first run without `--name` keeps the name Mochi, only Cats Bot Settings receives bot and update broadcasts, the macOS Boss Cat sheet opens on Bots, the update prompt says every bot stops, and stale docs and comments were corrected. A protocol bump for the renamed host command was not made: a 0.3 core reattached after a hub crash is restarted, which the pre-launch policy allows. |
+| 2026-10-31 | Phase 3 inventory, in Windows Sandbox and once in a Hyper-V VM with UAC on: the five providers install and start with the pinned helpers, and nothing needs porting. The setup page's install states, PATH hint and help lines, and Boss Cat creation for a provider not set up are fixed. Still to do: re-pin the Platform fix for Claude Code's PATH (3.3) and rerun the VM app test with the changes (3.6). |
+| 2026-10-31 | Independent review of Phase 3. Fixed: Boss Cat names allowed 80 characters where the New bot window takes 40; the owner was asked before a busy window refused; a declined UAC prompt for Node showed as a step to set up; the audit recorded the window as done; SPEC-008 FR-19 wording. Added tests for the Codex chain after the npm folder's restart request, a declined UAC prompt, and the Boss Cat's busy window and name limit. 340 tests pass. |
+| 2026-10-31 | The owner confirmed D31 to D34 and chose TLS 1.2. cats-platform #355 (`cce4ff6e`) carries Claude Code's user PATH and TLS 1.2, and its six changed helpers are pinned here. The VM's app test, rerun with the changes, passed, and a third VM run installed every native provider and Node.js with the TLS scripts. Phase 3 is done; the VM stays for now at the owner's request. |
 
 ---
 

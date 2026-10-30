@@ -147,6 +147,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     models(provider) {
       return ipcRenderer.invoke('setup:models', provider);
     },
+    prefill() {
+      return ipcRenderer.invoke('setup:prefill');
+    },
     finish(input) {
       return ipcRenderer.invoke('setup:finish', input);
     },

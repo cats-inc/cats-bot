@@ -220,6 +220,8 @@ export interface CatsBotBridge {
     ): Promise<import('../shared/providerSetup.ts').ProviderSetupState>;
     providers(): Promise<ProviderInfo[]>;
     models(provider: string): Promise<ModelCatalog>;
+    /** New bot window only: a Boss Cat's request waiting for its provider's setup, once. */
+    prefill(): Promise<{ name: string; persona: string; provider: string } | null>;
     finish(input: SetupInput): Promise<null>;
   };
 }

@@ -53,7 +53,8 @@ function hub(dir: string, cores: Record<string, FakeCore | null>, overrides: Par
     bots: () => [...remotes.keys()].map((id) => ({ id, name: id.toUpperCase(), state: 'running' })),
     core: (id) => remotes.get(id) ?? null,
     atBotCap: () => false,
-    createBot: async () => 'x',
+    setupNeeded: () => 'none',
+    createBot: async () => ({ id: 'x' }),
     startBlocked: () => null,
     startBot: async () => undefined,
     stopBot: async () => undefined,
@@ -91,9 +92,10 @@ function consent(name: string, overrides: Partial<BossCatDeps> = {}) {
     ],
     core: (id) => (id === 'gamma' ? null : {} as RemoteBotCore),
     atBotCap: () => false,
+    setupNeeded: () => 'none',
     createBot: async ({ name: botName }) => {
       created.push(botName);
-      return 'new-bot';
+      return { id: 'new-bot' };
     },
     startBlocked: () => null,
     startBot: async (id) => { started.push(id); },

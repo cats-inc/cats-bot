@@ -56,9 +56,18 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
      (PLAN-009 D29), with source `bot`, a `sourceRef` naming the holder and the
      delivery id, a chain id and a hop count (FR-12). The call returns once the
      hub has recorded the delivery; the reply arrives later (FR-8).
-   - `hub_create_bot`: name and persona, plus a provider from those installed.
-     It uses first-run defaults: desktop control off, Telegram off, the hub's
-     environment profile, and the bot cap applies.
+   - `hub_create_bot`: a name of at most 40 characters, as the New bot window
+     takes, a persona, and one of the five providers. It uses first-run
+     defaults: desktop control off, Telegram off, the hub's environment
+     profile, and the bot cap applies. When the hub's PATH does not have the
+     provider, the hub does not create the bot itself. A fixture CLI set with
+     `CATS_BOT_PROVIDER_COMMAND` counts for every provider. The owner's dialog
+     (FR-5) says the New bot window will open. After consent the window opens
+     filled in with the request; there the owner installs the provider with
+     the packaged helpers (SPEC-008 FR-19) and creates the bot, and the holder
+     is told so. A New bot window that is already open is not replaced: the
+     request is refused, before the owner is asked when the window was already
+     open.
    - `hub_start_bot`, `hub_stop_bot`, `hub_set_heartbeat` (pause or resume) for
      another bot.
    - `hub_propose_transfer`: the target bot id, or none.

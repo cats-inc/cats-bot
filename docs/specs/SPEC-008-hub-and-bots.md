@@ -175,7 +175,13 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     Display language becomes a hub setting (updates ADR-006).
 19. FR-19: Packaged provider setup helpers (ADR-006) run in the hub. CLIs
     installed for the account serve every native bot, and only one setup
-    operation runs at a time across all bots.
+    operation runs at a time across all bots. After an install the fresh check
+    decides the step: a restart or relaunch the helper asks for stands only
+    while that check cannot confirm the step, because the hub hands a found
+    CLI's folder to Runtime and every core; a failure or a refused elevation
+    always stands, a declined UAC prompt included. An install's diagnostics
+    show only for a step that is not done, and a help line the check and the
+    install both give shows once.
 
 ### Host services
 

@@ -8,7 +8,24 @@
     allocate its own visible console. This helper wraps
     System.Diagnostics.Process with CreateNoWindow = $true and proper argument
     quoting so the entire audit chain stays invisible.
+
+    Every helper that downloads sources this file, so it also turns on TLS 1.2
+    for Windows PowerShell 5.1 (see Enable-CatsTls12).
 #>
+
+# Windows PowerShell 5.1 on an early Windows 10 can still default to TLS 1.0, which
+# every download host refuses. TLS 1.2 is added only to such a legacy default: 0 is
+# SystemDefault, where the OS already picks TLS 1.2 or 1.3. 3072 is Tls12.
+function Enable-CatsTls12 {
+  $protocols = [int][Net.ServicePointManager]::SecurityProtocol
+  if ($protocols -ne 0 -and -not ($protocols -band 3072)) {
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]($protocols -bor 3072)
+  }
+}
+Enable-CatsTls12
+# A vendor installer runs in a child powershell.exe that starts from the same default,
+# so its script runs this first.
+$CatsTls12Prologue = "function Enable-CatsTls12 {$(${function:Enable-CatsTls12})}`nEnable-CatsTls12"
 
 function Invoke-HiddenCommand {
   param(

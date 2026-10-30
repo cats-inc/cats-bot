@@ -39,8 +39,9 @@ depending on the Platform application or probing every supported CLI.
   unchanged for Runtime validation. Removed entries or invalid controls fail
   visibly; they never silently select another model.
 - Bundle the selected Platform helpers, their dependency closure and MIT license
-  under `assets/setup/`. `provenance.json` records Platform source commit
-  `07a02f3a30b9e02f0e25e01c348af69a500b3ae6` and each source SHA-256. This is
+  under `assets/setup/`. `provenance.json` records the Platform source commit
+  (first `07a02f3a30b9e02f0e25e01c348af69a500b3ae6`; since PLAN-010 Phase 3,
+  `cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7`) and each source SHA-256. This is
   vendored source reuse, not an application dependency.
 - Onboarding selects a provider before installation. Native providers have one
   check/install step; Codex checks Node/npm, the npm folder, then Codex. Only an
