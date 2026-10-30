@@ -18,6 +18,8 @@ export interface CoreRunnerOptions<T> {
   /** Whether a start failed because another program hosts the core. */
   isExternal(error: unknown): boolean;
   changed(): void;
+  /** Called once when the runner stops restarting a core that keeps failing. */
+  gaveUp?(): void;
   log(line: string): void;
   /** The waits before the first, second and later restarts. */
   delaysMs?: number[];
@@ -39,6 +41,7 @@ export class CoreRunner<T> {
   private restarts: number[] = [];
   private timer: NodeJS.Timeout | null = null;
   private launching: Promise<T | null> | null = null;
+  private gaveUp = false;
 
   constructor(id: string, options: CoreRunnerOptions<T>) {
     this.id = id;
@@ -61,6 +64,7 @@ export class CoreRunner<T> {
   start(): Promise<T | null> {
     this.wanted = true;
     this.restarts = [];
+    this.gaveUp = false;
     this.clearTimer();
     if (this.handleValue) return Promise.resolve(this.handleValue);
     return this.launch();
@@ -69,6 +73,7 @@ export class CoreRunner<T> {
   /** The owner's stop, or Quit: no restart follows. */
   async stop(): Promise<void> {
     this.wanted = false;
+    this.gaveUp = false;
     this.clearTimer();
     await this.launching?.catch(() => null);
     const handle = this.handleValue;
@@ -135,6 +140,9 @@ export class CoreRunner<T> {
     this.restarts = this.restarts.filter((at) => now - at < windowMs);
     if (this.restarts.length >= (this.options.maxRestarts ?? 3)) {
       this.options.log(`bot ${this.id} failed ${this.restarts.length + 1} times and is not started again until the owner starts it`);
+      this.gaveUp = true;
+      this.options.changed();
+      this.options.gaveUp?.();
       return;
     }
     const delays = this.options.delaysMs ?? DEFAULT_DELAYS_MS;
@@ -152,8 +160,8 @@ export class CoreRunner<T> {
     this.timer = null;
   }
 
-  /** Whether the runner gave up restarting until the owner starts it. */
+  /** Whether the runner gave up restarting until the owner starts it; true once, from the moment it does. */
   get exhausted(): boolean {
-    return this.stateValue === 'failed' && this.timer === null && this.launching === null;
+    return this.gaveUp && this.stateValue === 'failed';
   }
 }

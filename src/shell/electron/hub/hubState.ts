@@ -4,7 +4,7 @@ import { join } from 'node:path';
 
 import { readJsonFile, writeJsonAtomic } from '../../../core/store/atomicFile.ts';
 import { acquireLockFile } from '../../../core/store/lock.ts';
-import { hubPathsFor } from '../../../core/store/paths.ts';
+import { hubPathsFor, isValidBotId } from '../../../core/store/paths.ts';
 import { isLanguagePreference, type LanguagePreference } from '../../../shared/language.ts';
 
 /**
@@ -19,6 +19,8 @@ export interface HubState {
   schemaVersion: 1;
   language: LanguagePreference;
   openAtLogin: boolean;
+  /** SPEC-008 FR-22: the bots that ran when an update began, started again after it. */
+  resume?: string[];
 }
 
 export function readHubState(home: string): HubState | null {
@@ -28,6 +30,9 @@ export function readHubState(home: string): HubState | null {
     schemaVersion: 1,
     language: isLanguagePreference(read.value.language) ? read.value.language : 'system',
     openAtLogin: read.value.openAtLogin === true,
+    ...(Array.isArray(read.value.resume)
+      ? { resume: read.value.resume.filter((id): id is string => typeof id === 'string' && isValidBotId(id)) }
+      : {}),
   };
 }
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { createConnection, createServer, type Server } from 'node:net';
-import { homedir, tmpdir, userInfo } from 'node:os';
+import { tmpdir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 /**
@@ -20,7 +20,9 @@ export interface DesktopLease {
 
 /** The account's lease endpoint: a named pipe on Windows, a socket file elsewhere. */
 export function desktopLeaseEndpoint(platform: NodeJS.Platform = process.platform): string {
-  const account = createHash('sha256').update(`${userInfo().username}\0${homedir()}`).digest('hex').slice(0, 24);
+  // The home folder the OS reports, not USERPROFILE, so every core of the account shares one lease.
+  const user = userInfo();
+  const account = createHash('sha256').update(`${user.username}\0${user.homedir}`).digest('hex').slice(0, 24);
   return platform === 'win32'
     ? `\\\\.\\pipe\\cats-bot-desktop-lease-${account}`
     : join(process.env.XDG_RUNTIME_DIR || tmpdir(), `cats-bot-desktop-lease-${account}.sock`);

@@ -666,3 +666,36 @@ test('one process at a time holds the account\'s desktop lease, and its end free
   assert.equal(await first.acquire(), true, 'the OS released it with the process');
   first.release();
 });
+
+test('review of #66: a turn cancelled while it waited for the lease sends nothing, and Stop or a revoke gives the lease back', async (t) => {
+  const events: string[] = [];
+  let onAcquire: () => void = () => undefined;
+  let held = false;
+  const lease: DesktopLease = {
+    get held() { return held; },
+    acquire: async () => {
+      onAcquire();
+      held = true;
+      events.push('acquired');
+      return true;
+    },
+    release: () => { held = false; events.push('released'); },
+  };
+  const f = await fixture(t, { lease });
+  const descriptor = await f.send();
+  f.turn.current = owner();
+  // The owner cancels the turn while the call waits for the lease.
+  onAcquire = () => { f.turn.current = null; };
+  const cancelled = await callDesktopTool(descriptor, 'clipboard_write', { text: 'never sent' });
+  assert.equal(errorCode(cancelled), 'stopped');
+  assert.equal(f.helper.calls.includes('clipboard_write'), false);
+  assert.equal(held, false, 'the lease taken for it is given back');
+  onAcquire = () => undefined;
+  f.turn.current = owner('session-1', 'item-2');
+  await callDesktopTool(descriptor, 'clipboard_read');
+  assert.equal(held, true);
+  f.service.stop();
+  assert.equal(held, false, 'Stop for every conversation gives it back');
+  await callDesktopTool(descriptor, 'clipboard_read');
+  assert.equal(held, false, 'a stopped conversation takes no lease');
+});

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -101,7 +101,7 @@ test('only an archived bot is deleted, through trash, and nothing outside it is 
   const outside = join(root, 'outside');
   mkdirSync(outside);
   writeFileSync(join(outside, 'precious.txt'), 'keep');
-  if (process.platform === 'win32') spawnSync('cmd', ['/c', 'mklink', '/J', join(paths.bots, 'nori', 'link'), outside], { stdio: 'ignore' });
+  symlinkSync(outside, join(paths.bots, 'nori', 'link'), 'junction');
   await manager.archive('nori');
   await manager.delete('nori');
   assert.equal(existsSync(join(paths.archive, 'nori')), false);
@@ -216,4 +216,64 @@ test('an archived id is reserved: cats-bot run and init refuse it (FR-5)', async
     assert.match(result.stderr, /Bot old is archived/u);
   }
   assert.equal(existsSync(join(hubPathsFor(root).bots, 'old')), false, 'no new bot root was created');
+});
+
+test('removing a bot never empties what a link inside it points to, under node and under Electron\'s node (review of #66)', async () => {
+  const { spawnSync: run } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const { pathToFileURL } = await import('node:url');
+  const { resolve: resolvePath } = await import('node:path');
+  const moduleUrl = pathToFileURL(resolvePath('src/core/store/removeTree.ts')).href;
+  const script = resolvePath('tests/support/remove-tree-check.mjs');
+  const electron = resolvePath('node_modules', 'electron', 'dist', process.platform === 'win32' ? 'electron.exe' : 'electron');
+  const runtimes: Array<{ command: string; env: NodeJS.ProcessEnv }> = [{ command: process.execPath, env: process.env }];
+  // The hub runs on Electron's own Node, whose recursive rmSync follows junctions.
+  if (existsSync(electron)) runtimes.push({ command: electron, env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' } });
+  for (const runtime of runtimes) {
+    const temp = mkdtempSync(join(home.root, 'remove-'));
+    const result = run(runtime.command, [script, moduleUrl, temp], { env: runtime.env, encoding: 'utf8', timeout: 60_000, windowsHide: true });
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout) as { runtime: string; botRemoved: boolean; outsideKept: boolean };
+    assert.equal(report.botRemoved, true, report.runtime);
+    assert.equal(report.outsideKept, true, `${report.runtime} emptied the link's target`);
+  }
+});
+
+test('review of #66: the owner hears once that a bot is no longer restarted, and a core lost before it was watched restarts', async () => {
+  const gaveUp: string[] = [];
+  let starts = 0;
+  const lost: Array<() => void> = [];
+  const runner = new CoreRunner<number>('mochi', {
+    start: async () => { starts += 1; return starts; },
+    stop: async () => undefined,
+    // The core is already gone when the runner starts to watch it.
+    onLost: (_handle, listener) => { lost.push(listener); queueMicrotask(listener); },
+    isExternal: () => false,
+    changed: () => undefined,
+    gaveUp: () => gaveUp.push(runner.state),
+    log: () => undefined,
+    delaysMs: [5],
+    maxRestarts: 2,
+    windowMs: 60_000,
+  });
+  await runner.start();
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  assert.equal(starts, 3, 'started, then restarted twice');
+  assert.deepEqual(gaveUp, ['failed'], 'one notice, when it gave up, not at each crash');
+  assert.equal(runner.exhausted, true);
+  await runner.stop();
+});
+
+test('review of #66: trash keeps what the hub did not put there, and a bot with no folder is not moved', async () => {
+  const { root, manager } = setUp(['mochi', 'nori']);
+  const paths = hubPathsFor(root);
+  mkdirSync(join(paths.trash, 'keep-me'), { recursive: true });
+  writeFileSync(join(paths.trash, 'notes.txt'), 'mine');
+  manager.recover();
+  assert.equal(existsSync(join(paths.trash, 'keep-me')), true);
+  assert.equal(existsSync(join(paths.trash, 'notes.txt')), true);
+  const { renameSync } = await import('node:fs');
+  renameSync(join(paths.bots, 'nori'), join(root, 'elsewhere'));
+  await assert.rejects(manager.archive('nori'), /folder is missing/u);
+  assert.equal(existsSync(join(paths.archive, 'nori')), false, 'no empty archive folder');
 });

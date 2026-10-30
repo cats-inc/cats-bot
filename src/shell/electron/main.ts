@@ -15,7 +15,7 @@ import {
 } from 'electron';
 
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
-import { HostChannelClient, type ChannelHostServices } from '../../core/host-api/channel.ts';
+import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
@@ -304,9 +304,16 @@ async function main(): Promise<void> {
   // FR-11: a core that another program started, which the hub only lists and
   // attaches to so that its helper excludes the hub (FR-21).
   const externals = new Map<string, HostChannelClient>();
+  /** A running core this installation started, before or after the hub's own restart (FR-10). */
+  const ownCoreRunning = (id: string): boolean => {
+    const root = botRootIn(hubPaths.bots, id);
+    if (!existsSync(root)) return false;
+    const owner = readChannelOwner(root);
+    return owner !== null && owner.manager === installationId && readInstanceLock(botPathsFor(root))?.pid === owner.pid;
+  };
   const externalPid = (id: string): number | null => {
     const runner = runners.get(id);
-    if (runner?.handle || runner?.state === 'starting') return null;
+    if (runner?.handle || runner?.state === 'starting' || ownCoreRunning(id)) return null;
     const root = botRootIn(hubPaths.bots, id);
     return existsSync(root) ? readInstanceLock(botPathsFor(root))?.pid ?? null : null;
   };
@@ -417,14 +424,19 @@ async function main(): Promise<void> {
     void hubControl.stop();
     app.quit();
   };
+  /**
+   * FR-10: every core this hub manages, reattached ones and ones still starting
+   * included; external ones are left running. Nothing starts once the hub is
+   * quitting, so one pass reaches every runner.
+   */
+  const stopAll = () => Promise.allSettled([...runners.values()].map((runner) => runner.stop()));
   const quit = () => {
     if (quitting) return;
     quitting = true;
     for (const presenter of presented()) presenter.remember();
     void providerSetup
       .whenIdle()
-      // FR-10: every core this hub manages, reattached ones included; external ones are left running.
-      .then(() => Promise.allSettled([...runners.values()].map((runner) => runner.stop())))
+      .then(stopAll)
       .catch((error: unknown) => log(`core stop failed: ${errorMessage(error)}`))
       .finally(closeAll);
   };
@@ -529,14 +541,16 @@ async function main(): Promise<void> {
         isExternal: (error) => error instanceof CoreHostedElsewhereError,
         changed: () => {
           botsChanged();
-          if (created.exhausted && !quitting) {
-            void dialog.showMessageBox({
-              type: 'error',
-              title: 'Cats Bot',
-              message: t('The Bot core stopped unexpectedly.'),
-              detail: `${id}: ${created.error ?? ''}\n${join(botRootIn(hubPaths.bots, id), 'logs', 'core.log')}`,
-            });
-          }
+        },
+        // D18: the owner hears once when a bot is no longer restarted.
+        gaveUp: () => {
+          if (quitting) return;
+          void dialog.showMessageBox({
+            type: 'error',
+            title: 'Cats Bot',
+            message: t('The Bot core stopped unexpectedly.'),
+            detail: `${id}: ${created.error ?? ''}\n${join(botRootIn(hubPaths.bots, id), 'logs', 'core.log')}`,
+          });
         },
         log,
       });
@@ -622,10 +636,12 @@ async function main(): Promise<void> {
       drain: async () => {
         quitting = true;
         for (const presenter of presented()) presenter.remember();
+        // FR-22: the bots that ran start again after the update.
+        saveHubState({ ...hubState, resume: presented().map((presenter) => presenter.botId) });
         await providerSetup.whenIdle();
         const processes = await Promise.all(presented().map(async (presenter) =>
           [presenter.hosted.pid, (await presenter.core.status().catch(() => null))?.runtime.pid ?? null] as const));
-        await Promise.all([...runners.values()].map((runner) => runner.stop()));
+        await stopAll();
         if (processes.some(([corePid, runtimePid]) => processIsAlive(corePid) || (runtimePid && processIsAlive(runtimePid)))) {
           throw new Error('A Bot Runtime has not stopped; installation was cancelled.');
         }
@@ -770,7 +786,7 @@ async function main(): Promise<void> {
       });
       window.destroy();
       botsChanged();
-      void runnerFor(id).start().then((presenter) => presenter?.windows.open('home'));
+      if (!quitting) void runnerFor(id).start().then((presenter) => presenter?.windows.open('home'));
     } catch (error) {
       throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
     } finally {
@@ -845,7 +861,7 @@ async function main(): Promise<void> {
           await manager.register(id);
           break;
         case 'archive':
-          if (!await confirm(owner, t('Archive {name}?', { name }),
+          if (!await confirm(owner, t('Archive {name}?', { name: `${name} (${id})` }),
             t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBots();
           await manager.archive(id);
           runners.delete(id);
@@ -854,7 +870,7 @@ async function main(): Promise<void> {
           await manager.restore(id);
           break;
         case 'delete':
-          if (!await confirm(owner, t('Delete {name} permanently?', { name }),
+          if (!await confirm(owner, t('Delete {name} permanently?', { name: `${name} (${id})` }),
             t('Its conversations, settings and stored secrets are removed. This cannot be undone. The provider CLI folders are kept.'),
             t('Delete'))) return listBots();
           await manager.delete(id);
@@ -1075,7 +1091,7 @@ async function main(): Promise<void> {
       if (typeof id === 'string' && isValidBotId(id) && await adoptRequested(id)) {
         const entry = manager.entry(id);
         if (entry && entry.archivedAt === null) {
-          const presenter = runners.get(id)?.handle ?? await runnerFor(id).start();
+          const presenter = runners.get(id)?.handle ?? (quitting ? null : await runnerFor(id).start());
           if (presenter) {
             await presenter.windows.open('home');
             return;
@@ -1104,8 +1120,12 @@ async function main(): Promise<void> {
   await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
 
   if (requested) await adoptRequested(requested);
-  const starting = manager.registry.bots.filter((bot) => bot.archivedAt === null && (bot.startAutomatically || bot.id === requested)
-    && existsSync(join(hubPaths.bots, bot.id)));
+  // FR-10 and FR-22: this installation's cores that still run are taken back whatever their
+  // start setting, and the bots that ran before an update start again.
+  const resume = new Set(hubState.resume ?? []);
+  if (resume.size > 0) saveHubState({ ...hubState, resume: [] });
+  const starting = manager.registry.bots.filter((bot) => bot.archivedAt === null && existsSync(join(hubPaths.bots, bot.id))
+    && (bot.startAutomatically || bot.id === requested || resume.has(bot.id) || ownCoreRunning(bot.id)));
   // A new core inherits the hub's PATH, so each provider CLI is found first.
   if (!readProviderOverrides().providerCommand) {
     const providers = new Set(starting.map((bot) => {
@@ -1119,7 +1139,10 @@ async function main(): Promise<void> {
       await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
     }
   }
-  for (const bot of starting) await runnerFor(bot.id).start();
+  for (const bot of starting) {
+    if (quitting) break;
+    await runnerFor(bot.id).start();
+  }
   // Bots another program runs are listed, and attached to only for the hub's identity.
   for (const bot of manager.registry.bots) {
     if (externalPid(bot.id) !== null) await attachExternal(bot.id).catch(() => undefined);

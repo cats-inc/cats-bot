@@ -418,7 +418,8 @@ export class DesktopControlService {
       this.options.log(`desktop control stopped in conversation ${id}`);
       this.emit(id);
     }
-    if (this.leased && conversations.includes(this.leased.conversationId)) this.releaseLease();
+    // Stop for every conversation always gives the lease back, also after a revoke forgot the conversation.
+    if (conversationId === undefined || (this.leased && conversations.includes(this.leased.conversationId))) this.releaseLease();
     if (held) this.cancelHelper();
   }
 
@@ -545,6 +546,7 @@ export class DesktopControlService {
   private revoke(conversationId: string, why: string): void {
     const attachment = this.attachments.get(conversationId);
     this.bump(conversationId);
+    if (this.leased?.conversationId === conversationId) this.releaseLease();
     if (attachment) {
       this.attachments.delete(conversationId);
       this.options.log(`desktop control revoked in conversation ${conversationId}: ${why}`);
@@ -620,9 +622,12 @@ export class DesktopControlService {
     if (typeof operatorIdleMs === 'number' && operatorIdleMs >= 0 && operatorIdleMs < OPERATOR_QUIET_MS) {
       throw new DesktopControlToolError('operator_active', 'The owner is using the computer right now.');
     }
+    // A stop while the window was being checked sends nothing and takes no lease.
+    const stopped = () => this.generation(attachment.conversationId) !== generation || this.attachments.get(attachment.conversationId) !== attachment;
+    if (stopped()) throw new DesktopControlToolError('stopped', STOPPED_MESSAGE);
     await this.takeLease(attachment);
-    // A stop while the window was being checked sends nothing.
-    if (this.generation(attachment.conversationId) !== generation || this.attachments.get(attachment.conversationId) !== attachment) {
+    if (stopped()) {
+      this.releaseLease();
       throw new DesktopControlToolError('stopped', STOPPED_MESSAGE);
     }
     this.hold(attachment, target.app.name);
@@ -635,19 +640,25 @@ export class DesktopControlService {
    * core stops. Another bot holding it makes the call unavailable.
    */
   private async takeLease(attachment: Attachment): Promise<void> {
-    const lease = this.options.lease;
+    // A turn the owner cancelled while this call waited sends nothing (review of #66).
     const turn = this.options.turn(attachment.conversationId);
-    if (!lease || !turn) return;
+    if (!turn) throw new DesktopControlToolError('stopped', 'The turn ended; nothing was sent.');
+    const lease = this.options.lease;
+    if (!lease) return;
     if (!(await lease.acquire())) {
       throw new DesktopControlToolError('unavailable', 'Another bot is using the desktop right now.');
+    }
+    if (this.options.turn(attachment.conversationId)?.workItemId !== turn.workItemId) {
+      this.releaseLease();
+      throw new DesktopControlToolError('stopped', 'The turn ended; nothing was sent.');
     }
     this.leased = { conversationId: attachment.conversationId, workItemId: turn.workItemId };
   }
 
   private releaseLease(): void {
-    if (!this.leased) return;
     this.leased = null;
-    this.options.lease?.release();
+    // Released even when no turn recorded it: a lease taken for a call that was then stopped.
+    if (this.options.lease?.held) this.options.lease.release();
   }
 
   private hold(attachment: Attachment, app: string): void {

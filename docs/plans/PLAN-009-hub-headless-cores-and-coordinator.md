@@ -362,23 +362,37 @@ Each entry names where it is implemented.
   - An entry whose directory is missing shows as "Folder missing".
   - A bot whose core another program runs shows as running in another
     program; it cannot be started or archived from the hub.
+  - The archive and delete dialogs name the bot and its id, since two bots
+    can share a name.
+  - Deleting removes the bot's folder without entering a junction or
+    symbolic link in it, under every Node the hub may run on.
+  - Open for the owner (review of #66): any bot's settings window manages
+    every bot, which is wider than FR-17's "a window reaches only its own
+    bot". The Bots page could be the hub's alone.
 - **D18, supervision (3.3).**
   - A core that ends unasked closes its windows and is started again after 1,
     5 and 15 seconds, at most three times in ten minutes. After that the bot
     stays failed with its error, and the hub says so once in a dialog.
-  - A start that fails counts the same way. A start by the owner clears the
-    count.
+  - A start that fails counts the same way, and so does a bot whose lock
+    another process holds without a channel past the wait (a busy bot, such
+    as `cats-bot say` running a turn). A start by the owner clears the count.
+  - The dialog appears once, when the hub stops restarting the bot.
   - Stop and Quit never restart. Quit stops every core this hub manages,
     reattached ones included, and leaves external ones running.
-- **D19, external cores (3.3).** The hub recognises one by its instance lock.
-  At start it attaches only to give the core the hub's identity (FR-21). A
-  core started outside after the hub only gets it at the next hub start.
+- **D19, external cores (3.3).** A core is external when its lock is held but
+  its channel descriptor does not name this installation. At start the hub
+  attaches to it only to give it the hub's identity (FR-21); one started after
+  the hub gets it at the next hub start. A core this installation started,
+  before the hub's own restart, is taken back and managed whatever its start
+  setting (FR-10).
 - **D20, the tray with several bots (3.2).**
   - Each running bot gets a submenu named after it, with the sum of its unread
     replies, waiting work and requests.
   - The hub items are Bots…, Start at login, Check for Updates… and Quit.
   - The tooltip sums unread replies and waiting items.
   - The tray click opens the first bot's direct message, or the Bots page.
+  - Open for the owner (review of #66): FR-16 lists a hub "Settings…" item,
+    which this tray does not have, and with one bot the tray has no "Bots…".
   - `cats-bot quit` for a bot stops only that bot while others run; the last
     running bot's quit ends the hub.
 - **D21, the desktop lease (4.5).**
@@ -386,8 +400,12 @@ Each entry names where it is implemented.
     of the account's user name and home folder. Only one process can listen on
     it, and the OS frees it when that process ends.
   - A turn takes it before its first input or clipboard call and keeps it
-    until the turn ends, Stop, or the core stops. A refused call returns
-    `unavailable` with "Another bot is using the desktop right now."
+    until the turn ends, Stop, a revoke or the core stops. A refused call
+    returns `unavailable` with "Another bot is using the desktop right now."
+  - A call whose turn was cancelled while it waited sends nothing, and a call
+    stopped while it waited gives the lease back.
+  - The lease is named from the account's user name and the home folder the
+    OS reports, so a different `USERPROFILE` gets the same lease.
   - Another local account could hold the name and keep this account's bots
     off the desktop. That is a denial of service only, within the account
     boundary SPEC-008 already states.
@@ -411,7 +429,8 @@ Each entry names where it is implemented.
   - Any bot that runs in another program blocks the install and is named,
     whatever executable runs it. This is stricter than "from this
     installation", and needs no process inspection.
-  - After the update the hub starts the bots set to start automatically.
+  - The bots that ran when the update began start again after it, besides
+    those set to start automatically.
 
 ## Progress Log
 
@@ -429,6 +448,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 3.1 to 3.3 implemented. Unit tests cover the cap, archive, restore, delete through `trash/`, interrupted deletes, a junction inside a deleted bot, and restart limits. With the real Electron hub and two bots made by `cats-bot init`: both were taken in and ran; killing one core restarted only that bot; `cats-bot quit` stopped one bot alone and quitting the last one ended the hub. |
 | 2026-10-30 | Tasks 4.1 to 4.5 done: 4.1, 4.2 and 4.4 were in place from Phases 1 and 2; 4.3 refuses an install while a bot runs elsewhere; 4.5 adds the desktop lease, with a test of two processes. |
 | 2026-10-30 | Independent review of the Phase 2 commit: a corrupt profile ending the hub and the restart dialog stopping other bots were already gone with Phase 3; fixed a core lost before its close was watched, a second quit ending the hub, stacked windows of several bots, a launch-named bot that the hub ignored, window titles and a silent start failure; D23 records the reviewer's challenge of per-account user data. |
+| 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
 
 ---
 

@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
+import { createDesktopLease } from '../../src/core/desktopControl/lease.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import type { BotInteraction, InteractionAnswer } from '../../src/core/types.ts';
 import { makeTempHome, openTestBot, waitForEvent } from '../support/harness.ts';
@@ -20,7 +22,10 @@ test('packed Codex desktop tools wait for tool consent and a separate app grant'
   const helper = fakeHelper(defaultWorld());
   const { core } = openTestBot({ botsHome: home.botsHome, profile: { provider: 'codex' }, core: {
     tools: false,
-    desktopControl: { platform: 'win32', helperPath: 'fixture.exe', spawn: helper.spawn, grantWaitMs: 10_000 },
+    // SPEC-008 FR-26: a lease of its own, never the account's.
+    desktopControl: { platform: 'win32', helperPath: 'fixture.exe', spawn: helper.spawn, grantWaitMs: 10_000, lease: createDesktopLease(process.platform === 'win32'
+      ? `\\\\.\\pipe\\cats-bot-codex-lease-${process.pid}`
+      : join(tmpdir(), `cats-bot-codex-lease-${process.pid}.sock`)) },
     runtime: { runtimeEntry: resolveRuntimeEntry(), providerCommand: process.execPath,
       providerLaunchArgs: [resolve('tests/support/fixture-cli/codex-fixture.mjs')], readyTimeoutMs: 60_000,
       env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, CODEX_HOME: join(home.botsHome, 'codex'),

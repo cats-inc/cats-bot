@@ -16,6 +16,17 @@ import { processIsAlive } from './update/installation.ts';
  * Electron here, so tests run it with node.
  */
 
+/** The bot's lock stayed held without a channel to attach to, for example by `cats-bot say` running a turn. */
+export class CoreBusyError extends Error {
+  readonly pid: number;
+
+  constructor(pid: number) {
+    super(`The bot is in use by another process (pid ${pid}); it starts once that ends.`);
+    this.name = 'CoreBusyError';
+    this.pid = pid;
+  }
+}
+
 /** How long a stopping core may take to answer `quit` before only its process is watched. */
 const QUIT_ANSWER_MS = 5_000;
 
@@ -122,7 +133,9 @@ export async function attachOrStartCore(root: string, launch: CoreLaunch, option
     } else if (!readInstanceLock(paths)) {
       return startCore(root, launch, options);
     }
-    if (Date.now() >= deadline) throw new CoreHostedElsewhereError(readInstanceLock(paths)?.pid ?? owner?.pid ?? 0);
+    // A lock held without a channel past the wait is a busy bot, not another host's core:
+    // the runner tries again later (review of #66).
+    if (Date.now() >= deadline) throw new CoreBusyError(readInstanceLock(paths)?.pid ?? owner?.pid ?? 0);
     await new Promise((resolveWait) => setTimeout(resolveWait, 100));
   }
 }

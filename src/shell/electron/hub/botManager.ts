@@ -1,4 +1,5 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { removeTree } from '../../../core/store/removeTree.ts';
 import { dirname, join } from 'node:path';
 
 import { initializeBot, readBotProfile, type InitializeBotInput } from '../../../core/profile/initialize.ts';
@@ -184,7 +185,11 @@ export class BotManager {
       const trashed = join(paths.trash, `${id}.${this.now().getTime()}`);
       this.move(id, join(paths.archive, id), trashed);
       this.save({ ...this.current, bots: this.current.bots.filter((entry) => entry.id !== id) });
-      removeTree(trashed);
+      try {
+        removeTree(trashed);
+      } catch {
+        // The bot is gone from the registry; what is left in trash/ goes at the next start.
+      }
     });
   }
 
@@ -198,12 +203,18 @@ export class BotManager {
     let registry = this.current;
     if (existsSync(paths.trash)) {
       for (const name of readdirSync(paths.trash)) {
+        // Only the hub's own deletions (`<id>.<time>`); anything else in trash/ is not touched.
         const id = /^([a-z0-9]+(?:-[a-z0-9]+)*)\.\d+$/u.exec(name)?.[1];
+        if (!id) continue;
         // A bot created again under the same id keeps its entry.
-        if (id && !existsSync(join(paths.bots, id)) && !existsSync(join(paths.archive, id))) {
+        if (!existsSync(join(paths.bots, id)) && !existsSync(join(paths.archive, id))) {
           registry = { ...registry, bots: registry.bots.filter((bot) => bot.id !== id) };
         }
-        removeTree(join(paths.trash, name));
+        try {
+          removeTree(join(paths.trash, name));
+        } catch {
+          // Still in use; the next start tries again.
+        }
       }
     }
     if (registry.coordinator.holder && !registry.bots.some((bot) => bot.id === registry.coordinator.holder)) {
@@ -216,6 +227,8 @@ export class BotManager {
 
   /** Renames a stopped bot's directory under its instance lock, which moves with it and is released after. */
   private move(id: string, from: string, to: string): void {
+    // Taking the lock would create a missing folder; a missing bot is refused instead.
+    if (!existsSync(join(from, 'profile.json'))) throw new BotManagementError(`Bot ${id}'s folder is missing; nothing was moved.`);
     const lock = acquireInstanceLock(botPathsFor(from));
     if (!lock.held) {
       throw new BotManagementError(`Bot ${id} is in use by another program (pid ${lock.owner.pid}); it was left as it is.`);
@@ -233,7 +246,4 @@ export class BotManager {
   }
 }
 
-/** Removes a directory tree without following junctions or symbolic links into their targets. */
-function removeTree(dir: string): void {
-  rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-}
+

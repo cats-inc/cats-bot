@@ -85,7 +85,9 @@ test('a turn sent while the Runtime still starts runs once it is ready, not 30 s
   }
 });
 
-test('a stop during start ends the core and its Runtime without waiting for the Runtime', { timeout: 60_000 }, async () => {
+// The fixture Runtime ignores its stop until its delay is over, so the stop may take that long;
+// what counts is that the core quits from inside start() and nothing is left (review of #66).
+test('a stop during start ends the core and its Runtime, with nothing left running', { timeout: 60_000 }, async () => {
   const { root } = initializeBot(home.botsHome, { id: 'early', name: 'Early', provider: 'claude' });
   let hosted: HostedCore | null = null;
   try {
@@ -140,4 +142,28 @@ test('a core that answers nothing is killed once the stop deadline passes', { ti
     await settle(hosted);
     if (wedged.pid && processIsAlive(wedged.pid)) wedged.kill();
   }
+});
+
+test('review of #66: snapshots are bounded where the core answers, the newest item always stays', async () => {
+  const { runCoreCommand } = await import('../../src/core/host-api/commands.ts');
+  const huge = Array.from({ length: 3_000 }, (_, seq) => ({ seq, at: '', kind: 'bot', origin: 'owner', text: 'x'.repeat(2_000) }) as TranscriptEntry);
+  const target = { conversationTranscript: () => huge, transcript: () => huge, listWorkItems: () => [] } as unknown as Parameters<typeof runCoreCommand>[0];
+  const answer = await runCoreCommand(target, 'conversationTranscript', ['home']) as TranscriptEntry[];
+  assert.ok(answer.length < huge.length && answer.length > 0);
+  assert.equal(answer.at(-1)!.seq, 2_999);
+  assert.ok(Buffer.byteLength(JSON.stringify(answer)) <= 4 * 1024 * 1024 + 4_096);
+  const giant = [{ seq: 1, at: '', kind: 'bot', origin: 'owner', text: 'y'.repeat(5 * 1024 * 1024) }] as TranscriptEntry[];
+  assert.equal(recentEntries(giant).length, 1, 'an entry over the budget alone still shows');
+});
+
+test('review of #66: a lock held without a channel past the wait is a busy bot, not another host\'s core', async () => {
+  const { CoreBusyError } = await import('../../src/shell/electron/coreHost.ts');
+  const { root } = initializeBot(home.botsHome, { id: 'busy', name: 'Busy', provider: 'claude' });
+  // A live process holds the lock; its descriptor names this host but its channel is gone.
+  writeFileSync(botPathsFor(root).lock, JSON.stringify({ pid: process.ppid, host: hostname(), startedAt: new Date().toISOString() }));
+  writeFileSync(join(root, 'host-channel.json'), JSON.stringify({
+    protocol: 1, socket: process.platform === 'win32' ? `\\\\.\\pipe\\cats-bot-gone-${process.pid}` : join(root, 'gone.sock'),
+    token: 'c'.repeat(64), pid: process.ppid, manager: 'test-installation', startedAt: '',
+  }));
+  await assert.rejects(attachOrStartCore(root, launchFor('busy'), { host, lockWaitMs: 1_000 }), CoreBusyError);
 });

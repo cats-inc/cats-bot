@@ -68,7 +68,8 @@ function newestWithin<T>(items: T[], budget: number): T[] {
   let from = items.length;
   while (from > 0) {
     const size = Buffer.byteLength(JSON.stringify(items[from - 1]));
-    if (used + size > budget) break;
+    // The newest item stays even when it alone is over the budget.
+    if (used + size > budget && from < items.length) break;
     used += size;
     from -= 1;
   }
