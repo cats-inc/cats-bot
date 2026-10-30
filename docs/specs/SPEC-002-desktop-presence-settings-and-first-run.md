@@ -36,7 +36,8 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
 1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
    optional personality); after submission it creates the bot and opens the core and the home note;
    closing the page exits the program and leaves no half-built bot. The input is validated again in
-   the main process.
+   the main process. Under the hub (SPEC-008 FR-4) this is the hub's first run, which also writes the
+   registry; Settings → Bots opens the same page for each further bot.
 2. FR-2: Every change on the settings page goes through `updateProfile`; changes to the provider,
    model, personality and permissions make existing conversations switch to a new session on the next
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
@@ -48,13 +49,15 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    another model id. The generated `providers.yaml` uses the provider's default command and no longer
    uses the provider name as the command.
 4. FR-4: There is one settings window per bot, opened from the tray ("Settings…", "Manage notes…") and
-   from the ⚙ in a note's title bar; the tabs are Bot, Notes, Life, Telegram, App.
+   from the ⚙ in a note's title bar; the tabs are Bot, Notes, Life, Telegram, App and, under the hub,
+   Bots (SPEC-008 FR-5). Display language and start at login there are the hub's (SPEC-008 FR-18).
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
 6. FR-6: The Telegram tab can save or remove the token (`setTelegramToken`; the token is not returned
    to the page), toggle polling, and shows the protection method, the polling state and the owner chat.
-7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar;
+7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar
+   (one per running bot under the hub, each bound to its bot);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
    opens the home note; right-click gives the same menu as the tray; a short bubble is shown on a new
    reply; it can be hidden from the tray and from settings. The remembered position is reused only if

@@ -26,6 +26,8 @@ export interface PresenterHost {
   /** The hub's display language (FR-18). */
   locale(): Locale;
   refreshTray(): void;
+  /** Every event of this bot's core, after its windows had it. */
+  event?(presenter: BotPresenter, event: BotHostEvent): void;
   /** A `cats-bot quit` handed to this bot's core. */
   quitRequested(presenter: BotPresenter): void;
 }
@@ -169,6 +171,7 @@ export class BotPresenter {
       || event.type === 'turn.completed') {
       refresh();
     }
+    this.host.event?.(this, event);
   }
 
   /** Follows the core's events and opens what was open before. */

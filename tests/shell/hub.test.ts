@@ -9,7 +9,7 @@ import { readBotProfile } from '../../src/core/profile/initialize.ts';
 import { hubPathsFor } from '../../src/core/store/paths.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState } from '../../src/shell/electron/hub/hubState.ts';
 import {
-  activeBots, addBot, adoptionOrder, emptyRegistry, readRegistry, reconcileRegistry, writeRegistry,
+  activeBots, addBot, adoptionOrder, emptyRegistry, readRegistry, reconcileRegistry, withHolder, writeRegistry,
 } from '../../src/shell/electron/hub/registry.ts';
 import { FLOATING_CAT, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
 import { applyWindowIdentity, botWindowIdentity } from '../../src/shell/electron/windowIdentity.ts';
@@ -34,7 +34,7 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
   const root = freshHome();
   assert.deepEqual(readRegistry(root), { state: 'missing' });
   let registry = addBot(addBot(emptyRegistry(), 'mochi', new Date('2026-10-30T00:00:00Z')), 'nori');
-  registry = { ...registry, coordinator: { holder: 'mochi' } };
+  registry = withHolder(registry, 'mochi', 'first-run', new Date('2026-10-30T00:00:00Z'));
   writeRegistry(root, registry);
   const read = readRegistry(root);
   assert.equal(read.state, 'ok');

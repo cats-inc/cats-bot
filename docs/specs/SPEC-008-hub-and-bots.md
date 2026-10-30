@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Implemented on 2026-10-30 (PLAN-009); the release is 0.3.0 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
 

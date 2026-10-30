@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft |
+| **Status** | Implemented on 2026-10-30 (PLAN-009 Phase 5), with the decision-card form of FR-5 deferred (PLAN-009 D25); security review findings addressed the same day (PLAN-009 D29, D30) |
 | **Owner** | Product owner |
 | **Reviewer** | Independent security review before implementation |
 
@@ -50,8 +50,9 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
      transcripts.
    - `hub_message_bot`: target bot id and text. The target must be running and
      managed by the hub (SPEC-008 FR-10); otherwise the call is refused with
-     the reason. The hub delivers it as a work item in the target's home
-     conversation, with source `bot`, a `sourceRef` naming the holder and the
+     the reason. The hub delivers it as a work item in a conversation the
+     target keeps for the holder's messages, apart from its direct message
+     (PLAN-009 D29), with source `bot`, a `sourceRef` naming the holder and the
      delivery id, a chain id and a hop count (FR-12). The call returns once the
      hub has recorded the delivery; the reply arrives later (FR-8).
    - `hub_create_bot`: name and persona, plus a provider from those installed.
@@ -64,7 +65,12 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    owner stopped, and `hub_propose_transfer`. The request appears as a decision
    in the holder's note and in the tray's pending requests. A decline or expiry
    returns as the tool result, and nothing happens. A request still pending when
-   the hub stops or loses the holder's channel expires the same way.
+   the hub stops or loses the holder's channel expires the same way, and so
+   does one whose holder lost the role; an answer given after the request
+   expired counts as a decline. Each holder has one request before the owner
+   at a time, and one the owner declined is not asked again for a minute. What
+   the holder wrote reaches the owner only as labeled single lines (PLAN-009
+   D30).
 6. FR-6: The hub and `cats-hub` refuse, regardless of arguments:
    - answering any provider interaction, desktop grant, `ask_owner` or recovery
      decision of any bot;
@@ -86,15 +92,18 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    target's heartbeat, and a paused heartbeat does not hold it.
 8. FR-8: The target's reply returns to the holder as a work item in the same
    chain. Only the holder starts chains; other bots get no messaging tool. Each
-   delivery, the holder's message or a reply, is one hop. The hub refuses a
-   message beyond the hop limit (default 4 per chain) or beyond the holder's
+   delivery, the holder's message or a reply, is one hop, and a reply still on
+   its way counts already. The hub refuses a
+   message beyond the hop limit (default 4 per chain, at most 100) or beyond the holder's
    per-hour limit (default 10 `hub_message_bot` calls), and tells the holder
    why. The owner can change both limits in Settings → Bots. A delivery the hub
    sends again (FR-12) is not a new hop and does not count toward the hourly
    limit.
 9. FR-9: Every coordinator call (tool, target, chain, outcome) goes to the hub
    log and to the journals of the holder and the target. Delivered text appears
-   in the target's transcript, attributed to the holder bot.
+   in the target's transcript, attributed to the holder bot, and a later
+   session's handoff names it as another bot's, never as the owner's. The
+   records keep ids only; arguments that are not valid ids are left out.
 10. FR-10: Settings → Bots shows the holder. The holder's note shows its role,
     and messages from another bot render with that bot's name.
 11. FR-11: A holder that is not bound to the native environment (ADR-010), or

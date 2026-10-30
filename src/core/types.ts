@@ -127,7 +127,7 @@ export type TranscriptEntryKind =
   | 'error'
   | 'system';
 
-export type MessageOrigin = 'owner' | 'heartbeat' | 'schedule' | 'event' | 'system';
+export type MessageOrigin = 'owner' | 'heartbeat' | 'schedule' | 'event' | 'system' | 'bot';
 
 /** One line of `transcripts/<conversationId>.jsonl`. */
 export interface TranscriptEntry {
@@ -136,6 +136,8 @@ export interface TranscriptEntry {
   kind: TranscriptEntryKind;
   text: string;
   origin: MessageOrigin;
+  /** SPEC-009 FR-10: the name of the bot that sent a message with origin `bot`. */
+  from?: string;
   workItemId?: string;
   toolName?: string;
   toolId?: string;
@@ -170,6 +172,20 @@ export interface NotificationState {
   seenAt: string | null;
 }
 
+/**
+ * SPEC-009 FR-8 and FR-12: a message the coordinator sent another bot through
+ * the hub, or that bot's reply. Each delivery is one hop of its chain.
+ */
+export interface BotChain {
+  id: string;
+  hop: number;
+  deliveryId: string;
+  kind: 'message' | 'reply';
+  /** The bot that sent it, and its name when sent. */
+  from: string;
+  fromName: string;
+}
+
 /** SPEC-001 FR-15. */
 export interface WorkItem {
   id: string;
@@ -185,6 +201,8 @@ export interface WorkItem {
   coalesceKey?: string;
   /** Where an inbound message came from (for example `telegram:<chat>:<message>`), to accept it once. */
   sourceRef?: string;
+  /** SPEC-009 FR-8 and FR-12: a coordinator delivery this work item carries. */
+  chain?: BotChain;
   result?: WorkItemResult;
   notification?: NotificationState;
   /** The provider/model/session the run actually used (ADR-001 §3 evidence). */
@@ -252,7 +270,32 @@ export type JournalEntry =
   | { type: 'presence'; at: string; conversationId: string; presence: PresenceState; reason: PresenceReason }
   | { type: 'runtime'; at: string; event: 'started' | 'ready' | 'exited' | 'restart_scheduled'; detail?: string }
   | { type: 'heartbeat'; at: string; kind: HeartbeatKind; result: HeartbeatResult }
-  | { type: 'config'; at: string; configRevision: number; executionTarget: ExecutionTarget };
+  | { type: 'config'; at: string; configRevision: number; executionTarget: ExecutionTarget }
+  /** SPEC-009 FR-9: a coordinator tool call this bot made, without its text. */
+  | { type: 'coordinator'; at: string; tool: string; target?: string; chain?: string; outcome: string };
+
+/** SPEC-009 FR-12: what the hub hands a bot for one delivery. */
+export interface BotDelivery {
+  deliveryId: string;
+  chainId: string;
+  hop: number;
+  kind: 'message' | 'reply';
+  from: string;
+  fromName: string;
+  /** The conversation a reply returns to; a message goes to the direct message. */
+  conversationId?: string;
+  text: string;
+}
+
+/** SPEC-009 FR-12: how a delivery stands in the bot that received it. */
+export interface BotDeliveryState {
+  deliveryId: string;
+  workItemId: string;
+  state: WorkItemState;
+  /** The reply, once the work item completed. */
+  reply: string | null;
+  error: string | null;
+}
 
 export type RuntimeState = 'stopped' | 'starting' | 'ready' | 'failed';
 
@@ -351,6 +394,8 @@ export interface BotStatus {
   pendingInteractions: number;
   /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
   awaitingOwner: number;
+  /** SPEC-009 FR-10 and FR-11: whether the hub reports this bot as coordinator, and whether its provider gives it the tools. */
+  coordinator: { holder: boolean; tools: boolean };
   conversations: number;
   schedules: number;
   heartbeat: { enabled: boolean; nextAt: string | null; };

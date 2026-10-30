@@ -13,11 +13,12 @@ export type JsonReadResult<T> =
   | { ok: false; reason: 'missing' }
   | { ok: false; reason: 'corrupt'; error: string };
 
-export function writeFileAtomic(path: string, data: string): void {
+/** `mode` applies to the file that replaces `path`, for files only the account may read. */
+export function writeFileAtomic(path: string, data: string, options: { mode?: number } = {}): void {
   mkdirSync(dirname(path), { recursive: true });
   const temp = `${path}.${process.pid}.${randomBytes(4).toString('hex')}.tmp`;
   try {
-    writeFileSync(temp, data, { encoding: 'utf8' });
+    writeFileSync(temp, data, { encoding: 'utf8', ...(options.mode === undefined ? {} : { mode: options.mode }) });
     renameSync(temp, path);
   } catch (error) {
     rmSync(temp, { force: true });

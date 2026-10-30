@@ -162,6 +162,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     create() {
       return ipcRenderer.invoke('hub:createBot');
     },
+    setLimits(limits) {
+      return ipcRenderer.invoke('hub:setLimits', limits);
+    },
     onChange(listener) {
       const wrapped = () => listener();
       ipcRenderer.on('hub:botsChanged', wrapped);

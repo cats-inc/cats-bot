@@ -90,7 +90,8 @@ freeze of the storage format.
    (note position, size, always-on-top, start at login).
 3. FR-3: A data root has only one writer at a time, guaranteed by a lock file; a second instance with the same
    id hands its startup arguments to the first and exits. All writes go through a temp file plus rename; reads
-   never write back.
+   never write back. Under the hub (SPEC-008) the writer is the bot's core process; the hub's own files have
+   their own locks, and the hub takes a bot's lock only to archive, restore or delete it.
 4. FR-4: When reading, missing or invalid fields get defaults field by field without rewriting the existing
    file; when a file is corrupt, report an error and keep the original file, never overwriting it with empty
    content.

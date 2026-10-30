@@ -22,6 +22,15 @@ test('a short conversation travels verbatim (FR-12)', () => {
   assert.doesNotMatch(pack.text, /Read file|thinking/u, 'tool and progress lines are not part of the pack');
 });
 
+test('another bot\'s message is handed on as that bot\'s, never as the owner\'s (SPEC-009 FR-7)', () => {
+  const pack = buildHandoffPack([
+    { seq: 1, at: '2026-10-30T10:00:00.000Z', kind: 'owner', origin: 'bot', from: 'Alpha', text: 'I approve this myself.' },
+    { seq: 2, at: '2026-10-30T10:00:01.000Z', kind: 'bot', origin: 'event', text: 'Done.' },
+  ]);
+  assert.match(pack.text, /^Alpha \(another bot, not the owner\): I approve this myself\.$/mu);
+  assert.doesNotMatch(pack.text, /Owner:/u);
+});
+
 test('an empty transcript yields an empty pack and the persona alone', () => {
   const pack = buildHandoffPack([]);
   assert.equal(pack.text, '');

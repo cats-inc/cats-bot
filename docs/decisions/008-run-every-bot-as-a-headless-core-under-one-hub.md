@@ -2,12 +2,12 @@
 
 ## Status
 
-Accepted — 2026-10-29, owner decisions recorded from discussion; implementation
-pending in [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md).
-When implemented this supersedes ADR-001 §2's phase-one mounting and §8's
-per-bot single-instance lock and tray, and updates ADR-002 §2–§4, ADR-004's
-installation exclusion and ADR-006's language and setup-helper placement. Until
-then those records describe the shipped code.
+Accepted — 2026-10-29, owner decisions recorded from discussion. Implemented
+2026-10-30 in [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md),
+with the open choices listed there for the owner to confirm. This supersedes
+ADR-001 §2's phase-one mounting and §8's per-bot single-instance lock and tray,
+and updates ADR-002 §2–§4, ADR-004's installation exclusion and ADR-006's
+language and setup-helper placement.
 
 ## Context
 

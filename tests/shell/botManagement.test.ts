@@ -9,7 +9,7 @@ import { acquireInstanceLock } from '../../src/core/store/lock.ts';
 import { botPathsFor, hubPathsFor } from '../../src/core/store/paths.ts';
 import { BotManagementError, BotManager, type BotCores } from '../../src/shell/electron/hub/botManager.ts';
 import { CoreRunner } from '../../src/shell/electron/hub/coreRunner.ts';
-import { addBot, emptyRegistry, readRegistry, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { addBot, emptyRegistry, readRegistry, withHolder, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 // PLAN-009 Phase 3 (SPEC-008 FR-3, FR-5, FR-6, FR-9 to FR-11), apart from Electron.
@@ -29,7 +29,7 @@ function setUp(ids: string[] = []) {
     initializeBot(join(root, 'bots'), { id, name: id, provider: 'claude' });
     registry = addBot(registry, id);
   }
-  registry = { ...registry, coordinator: { holder: ids[0] ?? null } };
+  registry = withHolder(registry, ids[0] ?? null, 'owner');
   writeRegistry(root, registry);
   const stopped: string[] = [];
   const external = new Set<string>();

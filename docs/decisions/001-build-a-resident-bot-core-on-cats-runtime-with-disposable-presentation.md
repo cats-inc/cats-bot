@@ -11,9 +11,10 @@ runtime's session status, with `initializing` and `busy` protected.
 For the spec see [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md),
 for the implementation see [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md).
 On 2026-10-30 PLAN-008 Phase 1 implemented [ADR-007](007-give-cats-bot-its-own-identity-and-data-root.md),
-which replaces the §6 data root and the `--managed-by` value. Pending:
-[ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md) supersedes §2's mounting and §8's per-bot
-lock and tray once PLAN-009 lands; until then this record describes the shipped code for those parts.
+which replaces the §6 data root and the `--managed-by` value. On 2026-10-30 PLAN-009 implemented
+[ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md), which supersedes §2's mounting (each core
+now runs as a process of its own under the hub) and §8's per-bot single-instance lock and tray (one hub
+lock, one tray). The rest of this record still holds.
 
 ## Context
 

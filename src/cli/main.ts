@@ -87,6 +87,7 @@ Commands:
                                          bind the bot to a Telegram bot token (long polling)
   open [conversation|home]               ask the running hub to show a conversation window
   hub status [--json]                    the running hub's bots, through its control endpoint
+  hub coordinator <id> | --clear         give a bot the coordinator role, or clear it (through the hub)
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -620,11 +621,22 @@ interface HubStatus {
 
 /** SPEC-008 FR-25: hub commands go through the running hub; without one they refuse. */
 async function commandHub(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  if (parsed.positional[0] !== 'status') {
-    process.stderr.write('hub needs a subcommand: status\n');
+  const [subcommand, bot] = parsed.positional;
+  let status: HubStatus;
+  if (subcommand === 'status') {
+    status = await callHubControl(resolveCatsBotHome(env), { operation: 'status' }) as HubStatus;
+  } else if (subcommand === 'coordinator') {
+    // SPEC-009 FR-2: the owner assigns or clears the role through the running hub.
+    const clear = parsed.flags.get('clear') === true;
+    if (!clear && !bot) {
+      process.stderr.write('hub coordinator needs a bot id, or --clear\n');
+      return 2;
+    }
+    status = await callHubControl(resolveCatsBotHome(env), { operation: 'setCoordinator', bot: clear ? null : bot }) as HubStatus;
+  } else {
+    process.stderr.write('hub needs a subcommand: status or coordinator\n');
     return 2;
   }
-  const status = await callHubControl(resolveCatsBotHome(env), { operation: 'status' }) as HubStatus;
   if (parsed.flags.get('json') === true) {
     process.stdout.write(`${JSON.stringify(status, null, 2)}\n`);
     return 0;

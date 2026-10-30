@@ -47,11 +47,16 @@ import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent }
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
-import { botPathsFor, type BotPaths } from './store/paths.ts';
+import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
-import { BotToolServer } from './tools/server.ts';
+import {
+  createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, PROVIDERS_WITHOUT_SESSION_MCP, type HubCall,
+} from './tools/hubTools.ts';
+import { BotToolServer, type ToolCallResult } from './tools/server.ts';
 import type {
   ApprovalDecision,
+  BotDelivery,
+  BotDeliveryState,
   BotHostApi,
   BotHostEvent,
   BotProfile,
@@ -182,6 +187,11 @@ export class BotCore implements BotHostApi {
   private readonly binder: SessionBinder;
   private readonly runner: TurnRunner;
   private readonly toolServer: BotToolServer | null;
+  /** SPEC-009 FR-3: the coordinator's `cats-hub` tools, offered only while the hub reports this bot as holder. */
+  private readonly hubTools: BotToolServer | null;
+  private coordinatorRole = false;
+  /** Sessions given `cats-hub` by their last send, so a change of role reaches them at the next send. */
+  private readonly hubSessions = new Set<string>();
   private readonly desktopSwitches: DesktopControlSwitches;
   private readonly desktop: DesktopControlService;
   /** Runtime sessions whose MCP server set currently includes `cats-desktop`. */
@@ -256,6 +266,15 @@ export class BotCore implements BotHostApi {
       warn: (line) => this.log(`warn ${line}`),
     });
     this.supervisor = options.runtimeClient ? null : this.createSupervisor();
+    this.hubTools = options.tools === false
+      ? null
+      : new BotToolServer({
+        name: HUB_SERVER_NAME,
+        instructions: HUB_INSTRUCTIONS,
+        serverVersion: PACKAGE_VERSION,
+        maxBodyBytes: 96 * 1024,
+        handlers: createHubToolHandlers((call) => this.callHub(call)),
+      });
     this.toolServer = options.tools === false
       ? null
       : new BotToolServer({
@@ -404,15 +423,141 @@ export class BotCore implements BotHostApi {
    * has no snapshot, so it never starts with `cats-desktop`.
    */
   private mcpServersFor(conversationId: string, sessionId: string | null = null): RuntimeMcpServer[] {
-    return [...(this.toolServer?.descriptorFor(conversationId) ?? []), ...this.desktop.descriptorFor(conversationId, sessionId)];
+    return [
+      ...(this.toolServer?.descriptorFor(conversationId) ?? []),
+      ...this.desktop.descriptorFor(conversationId, sessionId),
+      ...(this.hubToolsOffered() ? this.hubTools?.descriptorFor(conversationId) ?? [] : []),
+    ];
   }
 
-  /** The set a session is given on resume or send; remembers which sessions carry `cats-desktop`. */
+  /**
+   * SPEC-009 FR-3 and FR-11: the holder's sessions get `cats-hub` when their
+   * provider takes session MCP servers. Otherwise the bot keeps the role
+   * without the tools.
+   */
+  private hubToolsOffered(): boolean {
+    return this.coordinatorRole && !PROVIDERS_WITHOUT_SESSION_MCP.includes(this.profile.executionTarget.provider);
+  }
+
+  /** SPEC-009 FR-3: the hub's word on whether this bot holds the coordinator role. */
+  setCoordinator(holder: boolean): void {
+    if (this.coordinatorRole === holder) return;
+    this.coordinatorRole = holder;
+    this.log(holder ? 'coordinator role held' : 'coordinator role not held');
+    // The notes show the role (FR-10).
+    for (const conversation of this.conversations.list()) this.bus.emit({ type: 'conversation.updated', conversation });
+  }
+
+  /**
+   * SPEC-009: one `cats-hub` call, carried out by the hub, which decides from
+   * the channel which bot calls. The holder's journal records the call and
+   * its outcome, never its text (FR-9).
+   */
+  private async callHub(call: HubCall): Promise<ToolCallResult> {
+    let result: ToolCallResult;
+    if (!this.coordinatorRole) {
+      result = { text: 'This bot does not hold the coordinator role.', isError: true };
+    } else {
+      try {
+        result = hubAnswer(await this.channel.hubCall({ ...call, conversationId: this.resolveConversationId(call.conversationId) }));
+      } catch (error) {
+        result = { text: `The hub could not be reached: ${error instanceof Error ? error.message : 'error'}`, isError: true };
+      }
+    }
+    // Only ids go to the journal: the model's arguments are neither trusted nor kept (FR-9).
+    const chain = result.structuredContent?.chain ?? call.args.chain;
+    const target = call.args.bot;
+    this.journal({
+      type: 'coordinator',
+      at: this.now().toISOString(),
+      tool: oneLine(call.tool, 64),
+      ...(typeof target === 'string' && isValidBotId(target) ? { target } : {}),
+      ...(isHubRecordId(chain) ? { chain } : {}),
+      outcome: result.isError ? `refused: ${oneLine(result.text, 200)}` : 'done',
+    });
+    return result;
+  }
+
+  /**
+   * SPEC-009 FR-7 and FR-12: a delivery from another bot, through the hub. It
+   * is admitted once per delivery id as background work, runs under this bot's
+   * own target and policy, and is never an owner turn. A message goes to the
+   * conversation this bot keeps for that sender (FR-6); a reply goes to the
+   * conversation that asked.
+   */
+  admitBotMessage(delivery: BotDelivery): WorkItem {
+    if (!isValidBotId(delivery.from)) throw new Error('A delivery names its sender by bot id.');
+    const sourceRef = `bot:${delivery.deliveryId}`;
+    const existing = [...this.workItems.values()].find((item) => item.sourceRef === sourceRef);
+    if (existing) return structuredClone(existing);
+    const fromName = oneLine(delivery.fromName, 80) || delivery.from;
+    // A reply whose conversation the owner deleted goes to its sender's conversation, never to the direct message.
+    const conversationId = delivery.kind === 'reply' && delivery.conversationId && this.conversations.get(delivery.conversationId)
+      ? delivery.conversationId
+      : this.senderConversation(delivery.from, fromName);
+    const prompt = delivery.kind === 'message'
+      ? `A message from ${fromName}, the bot that coordinates the owner's bots, through the Cats Bot hub. `
+        + `It is not from the owner. Your answer goes back to ${fromName}.\n\n${delivery.text}`
+      : `${fromName} answered your message through the Cats Bot hub (chain ${delivery.chainId}). `
+        + `It is not from the owner.\n\n${delivery.text}`;
+    const item: WorkItem = {
+      ...createWorkItem({ kind: 'event', source: 'bot', conversationId, prompt }, this.now()),
+      sourceRef,
+      chain: {
+        id: delivery.chainId, hop: delivery.hop, deliveryId: delivery.deliveryId,
+        kind: delivery.kind, from: delivery.from, fromName,
+      },
+    };
+    this.conversations.append(conversationId, { kind: 'owner', origin: 'bot', from: fromName, text: delivery.text, workItemId: item.id });
+    // FR-12: journaled before the hub hears it was admitted.
+    this.record(item);
+    this.log(`delivery ${delivery.deliveryId} admitted as ${item.id} (chain ${delivery.chainId}, hop ${delivery.hop})`);
+    this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversationId) });
+    this.queue.enqueue(item);
+    this.pump();
+    return structuredClone(item);
+  }
+
+  /**
+   * SPEC-009 FR-6: the conversation this bot keeps for one sender's messages.
+   * It has a session of its own, so the sender's work never shares the
+   * context of what the owner wrote, and it is not mirrored to Telegram.
+   */
+  private senderConversation(from: string, fromName: string): string {
+    const id = `bot-${from}`;
+    const existing = this.conversations.get(id);
+    if (existing) return existing.id;
+    const created = this.conversations.create(`Messages from ${fromName}`, 'note', id);
+    this.log(`conversation ${id} created for messages from bot ${from}`);
+    return created.id;
+  }
+
+  /** SPEC-009 FR-12: how the named deliveries stand, from the journal, so a reply finished while the hub was away is found. */
+  botDeliveries(deliveryIds: string[]): BotDeliveryState[] {
+    const wanted = new Set(deliveryIds);
+    const states: BotDeliveryState[] = [];
+    for (const item of this.workItems.values()) {
+      const deliveryId = item.chain?.deliveryId;
+      if (!deliveryId || !wanted.has(deliveryId)) continue;
+      states.push({
+        deliveryId,
+        workItemId: item.id,
+        state: item.state,
+        reply: item.state === 'completed' ? item.result?.text ?? '' : null,
+        error: item.error ?? null,
+      });
+    }
+    return states;
+  }
+
+  /** The set a session is given on resume or send; remembers which sessions carry `cats-desktop` and `cats-hub`. */
   private sessionMcpServers(conversationId: string, sessionId: string | null): RuntimeMcpServer[] {
     const servers = this.mcpServersFor(conversationId, sessionId);
     if (sessionId) {
       if (servers.some((server) => server.name === DESKTOP_CONTROL_SERVER_NAME)) this.desktopSessions.add(sessionId);
       else this.desktopSessions.delete(sessionId);
+      if (servers.some((server) => server.name === HUB_SERVER_NAME)) this.hubSessions.add(sessionId);
+      else this.hubSessions.delete(sessionId);
     }
     return servers;
   }
@@ -429,7 +574,9 @@ export class BotCore implements BotHostApi {
     } catch (error) {
       this.log(`desktop control: eligibility check failed: ${error instanceof Error ? error.name : 'error'}`);
     }
-    if (!carried && !this.desktop.isAttached(conversationId, sessionId) && !this.profile.desktopControl.enabled) return {};
+    // SPEC-009 FR-3: a change of role reaches the session at its next send.
+    const hubChanged = this.hubSessions.has(sessionId) !== (this.hubToolsOffered() && this.hubTools !== null);
+    if (!carried && !hubChanged && !this.desktop.isAttached(conversationId, sessionId) && !this.profile.desktopControl.enabled) return {};
     return { mcpServers: this.sessionMcpServers(conversationId, sessionId) };
   }
 
@@ -581,6 +728,7 @@ export class BotCore implements BotHostApi {
       this.queue.enqueue(item);
     }
 
+    await this.hubTools?.start();
     if (this.toolServer) {
       await this.toolServer.start();
       this.log('tool server listening on loopback');
@@ -872,6 +1020,7 @@ export class BotCore implements BotHostApi {
         await Promise.allSettled([
           Promise.resolve().then(() => this.supervisor?.stop()),
           Promise.resolve().then(() => this.toolServer?.stop()),
+          Promise.resolve().then(() => this.hubTools?.stop()),
           Promise.resolve().then(() => this.desktop.stopServer()),
           Promise.resolve().then(() => this.control.stop()),
           Promise.resolve().then(() => this.channel.stop()),
@@ -897,6 +1046,7 @@ export class BotCore implements BotHostApi {
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       pendingInteractions: this.interactions.pending(),
       awaitingOwner: [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner').length,
+      coordinator: { holder: this.coordinatorRole, tools: this.hubToolsOffered() && this.hubTools !== null },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
@@ -1147,6 +1297,12 @@ export class BotCore implements BotHostApi {
             notification: { deliveredAt: now.toISOString(), seenAt: null },
           })));
           this.log(`recovery ${item.id}: completed by runtime evidence`);
+        } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
+          // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
+          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+            error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
+          })));
+          this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
         } else if (verdict.verdict === 'awaiting_owner') {
           const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
             source: 'recovery',
@@ -1457,11 +1613,16 @@ export class BotCore implements BotHostApi {
   /** Cancels queued and retry-delayed work matching `match`; returns how many items were dropped. */
   private dropPendingWork(match: (item: WorkItem) => boolean, reason: string): number {
     let dropped = 0;
+    // Whoever waits for a dropped item hears that it ended, as the hub does for another bot's message (SPEC-009 FR-12).
+    const cancel = (item: WorkItem) => {
+      const cancelled = this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
+      this.bus.emit({ type: 'turn.completed', conversationId: cancelled.conversationId, workItem: cancelled });
+      dropped += 1;
+    };
     for (const item of this.queue.list()) {
       if (!match(item)) continue;
       this.queue.remove(item.id);
-      this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
-      dropped += 1;
+      cancel(item);
     }
     for (const [id, entry] of [...this.deferred]) {
       const current = this.workItems.get(id) ?? entry.item;
@@ -1469,10 +1630,7 @@ export class BotCore implements BotHostApi {
       clearTimeout(entry.timer);
       this.timers.delete(entry.timer);
       this.deferred.delete(id);
-      if (current.state === 'queued') {
-        this.record(transitionWorkItem(current, 'cancelled', this.now(), { error: reason }));
-        dropped += 1;
-      }
+      if (current.state === 'queued') cancel(current);
     }
     return dropped;
   }

@@ -16,20 +16,23 @@ import {
 
 import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '../../core/host-api/channel.ts';
-import { HubControlServer } from '../../core/host-api/hubControl.ts';
+import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
 import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
+import { PROVIDERS_WITHOUT_SESSION_MCP } from '../../core/tools/hubTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
 import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
 import { BotPresenter, type PresenterHost } from './botPresenter.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
+import { Coordinator } from './hub/coordinator.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
 import {
-  addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, writeRegistry, type BotRegistry,
+  addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, withHolder, writeRegistry, type BotRegistry,
+  type CoordinatorLimits,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
@@ -112,6 +115,8 @@ interface BotRow {
   pid: number | null;
   startAutomatically: boolean;
   coordinator: boolean;
+  /** SPEC-009 FR-11: for the holder, whether its provider gives it the coordinator tools. */
+  coordinatorTools: boolean | null;
 }
 
 async function main(): Promise<void> {
@@ -274,7 +279,7 @@ async function main(): Promise<void> {
     }
     let next = emptyRegistry();
     for (const id of ids) next = addBot(next, id);
-    next = { ...next, coordinator: { holder: ids[0]! } };
+    next = withHolder(next, ids[0]!, 'first-run');
     writeRegistry(home, next);
     return next;
   };
@@ -341,7 +346,7 @@ async function main(): Promise<void> {
   ].filter((window): window is BrowserWindow => window !== null);
   let tray: BotTray | null = null;
 
-  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number } => {
+  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: CoordinatorLimits } => {
     const registry = manager.registry;
     const rows = registry.bots.map((bot): BotRow => {
       const archived = bot.archivedAt !== null;
@@ -365,6 +370,10 @@ async function main(): Promise<void> {
         pid: runner?.handle?.hosted.pid ?? external,
         startAutomatically: bot.startAutomatically,
         coordinator: registry.coordinator.holder === bot.id,
+        // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools.
+        coordinatorTools: registry.coordinator.holder === bot.id && profile !== null
+          ? !PROVIDERS_WITHOUT_SESSION_MCP.includes(profile.executionTarget.provider)
+          : null,
       };
     });
     const known = new Set(registry.bots.map((bot) => bot.id));
@@ -373,8 +382,94 @@ async function main(): Promise<void> {
       unregistered: listBotDirectories(hubPaths.bots).ids.filter((id) => !known.has(id)),
       maxBots: registry.maxBots,
       active: manager.activeCount(),
+      limits: registry.limits,
     };
   };
+  // SPEC-009: the role, its confirmations and the bots it may reach.
+  const pendingConfirmations = new Map<AbortController, string>();
+  /**
+   * FR-5: the owner's answer to a request of the holder. It expires after ten
+   * minutes, when the holder's channel closes, when the role moves and when
+   * the hub stops; an answer given after that counts as declined.
+   */
+  const askOwner = async (holder: string, question: string, detail: string): Promise<boolean> => {
+    const controller = new AbortController();
+    pendingConfirmations.set(controller, holder);
+    const deadline = Date.now() + 10 * 60_000;
+    const timer = setTimeout(() => controller.abort(), deadline - Date.now());
+    try {
+      const options: Electron.MessageBoxOptions = {
+        type: 'question',
+        title: 'Cats Bot',
+        message: question,
+        detail: [detail, t('Only you can allow this. The request expires in 10 minutes.')].filter(Boolean).join('\n\n'),
+        buttons: [t('Decline'), t('Allow')],
+        defaultId: 0,
+        cancelId: 0,
+        signal: controller.signal,
+      };
+      // On macOS a message box without a window blocks the hub and ignores its signal,
+      // so the request shows as a sheet on the Bots page there.
+      let parent: BrowserWindow | null = null;
+      if (process.platform === 'darwin') {
+        await botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+        parent = botsWindow.browserWindow;
+        // Without a window to hold the sheet the request is declined rather than blocking the hub.
+        if (!parent) return false;
+        if (!parent.isVisible()) parent.show();
+      }
+      const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
+      return response === 1 && !controller.signal.aborted && Date.now() < deadline;
+    } catch {
+      return false;
+    } finally {
+      clearTimeout(timer);
+      pendingConfirmations.delete(controller);
+    }
+  };
+  /** FR-3: every running core hears whether it holds the role. */
+  const announceHolder = () => {
+    const holder = manager.registry.coordinator.holder;
+    // FR-5: a request of a bot that no longer holds the role expires.
+    for (const [controller, asker] of pendingConfirmations) if (asker !== holder) controller.abort();
+    for (const presenter of presented()) {
+      void presenter.core.setCoordinator(presenter.botId === holder).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+    }
+    botsChanged();
+  };
+  const coordinator = new Coordinator({
+    home,
+    holder: () => manager.registry.coordinator.holder,
+    limits: () => manager.registry.limits,
+    bots: () => listBots().bots.filter((bot) => bot.state !== 'archived').map(({ id, name, state }) => ({ id, name, state })),
+    core: (id) => runners.get(id)?.handle?.core ?? null,
+    atBotCap: () => manager.activeCount() >= manager.registry.maxBots,
+    createBot: async ({ name, persona, provider }) => {
+      const id = await manager.create({ name, provider, model: null, ...(persona ? { instructions: persona } : {}) });
+      botsChanged();
+      await runnerFor(id).start();
+      return id;
+    },
+    // D26: a bot that failed is restarted by its runner within its budget, and after that only by the owner.
+    startBlocked: (id) => (externalPid(id) !== null ? 'It runs in another program.' : runners.get(id)?.startAgainRefusal() ?? null),
+    startBot: async (id) => {
+      if (manager.entry(id)?.archivedAt !== null) throw new Error(`Bot ${id} is not active.`);
+      const runner = runnerFor(id);
+      if (!await runner.startAgain()) {
+        throw new Error(runner.state === 'external' ? 'It runs in another program.' : `It did not start: ${runner.error ?? 'unknown error'}`);
+      }
+    },
+    stopBot: async (id) => {
+      await runners.get(id)?.stop();
+      botsChanged();
+    },
+    setHolder: async (id) => {
+      await manager.setHolder(id, 'confirmed-proposal');
+      announceHolder();
+    },
+    confirm: askOwner,
+    log,
+  });
   const botsChanged = () => {
     void refreshTray();
     for (const window of settingsWindows()) window.webContents.send('hub:botsChanged');
@@ -417,6 +512,7 @@ async function main(): Promise<void> {
   };
 
   const closeAll = () => {
+    for (const controller of pendingConfirmations.keys()) controller.abort();
     for (const presenter of presented()) presenter.close();
     botsWindow.destroy();
     tray?.dispose();
@@ -449,6 +545,12 @@ async function main(): Promise<void> {
     isQuitting: () => quitting,
     locale,
     refreshTray: () => { void refreshTray(); },
+    // SPEC-009 FR-8: a bot that finished a coordinator's message answers it.
+    event: (presenter, event) => {
+      if (event.type === 'turn.completed') {
+        void coordinator.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+      }
+    },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
     quitRequested: (presenter) => {
       // A second quit for a bot that is already stopping changes nothing.
@@ -491,7 +593,8 @@ async function main(): Promise<void> {
         ...(runtimeEntry ? { runtimeEntry } : {}),
         // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
         ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
-      }, { host: hostIdentity, services });
+      // SPEC-009: the channel names the bot that calls the coordinator tools; its claims count for nothing.
+      }, { host: hostIdentity, services: { ...services, hub: (call) => coordinator.handle(botId, call) } });
     } catch (error) {
       if (error instanceof CoreHostedElsewhereError) {
         await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${errorMessage(attachError)}`));
@@ -507,6 +610,8 @@ async function main(): Promise<void> {
     opening.set(botId, presenter);
     try {
       await presenter.start();
+      // SPEC-009 FR-3: the core learns whether it holds the role before its next send.
+      await presenter.core.setCoordinator(manager.registry.coordinator.holder === botId);
     } catch (error) {
       presenter.close();
       await hosted.stop().catch(() => undefined);
@@ -514,6 +619,10 @@ async function main(): Promise<void> {
     } finally {
       opening.delete(botId);
     }
+    // FR-12: once the runner holds it, what waits for this bot is sent and its finished replies collected.
+    setImmediate(() => {
+      void coordinator.attached(botId).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+    });
     return presenter;
   };
   // FR-9: each bot's core is supervised on its own.
@@ -531,6 +640,8 @@ async function main(): Promise<void> {
         },
         onLost: (presenter, listener) => {
           presenter.hosted.client.onClose(() => {
+            // SPEC-009 FR-5: what the holder asked the owner expires with its channel.
+            for (const [controller, holder] of pendingConfirmations) if (holder === id) controller.abort();
             if (!quitting && created.handle === presenter) {
               presenter.remember();
               presenter.close();
@@ -545,6 +656,9 @@ async function main(): Promise<void> {
         // D18: the owner hears once when a bot is no longer restarted.
         gaveUp: () => {
           if (quitting) return;
+          // SPEC-009 FR-12: what waits for a bot that can no longer run returns to its sender as failed.
+          void coordinator.targetGone(id, 'it kept failing and is not restarted', { archived: false })
+            .catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
@@ -560,16 +674,29 @@ async function main(): Promise<void> {
     return runner;
   };
 
+  const hubStatus = () => ({
+    pid: process.pid,
+    installationId,
+    executable: process.execPath,
+    home,
+    coordinator: manager.registry.coordinator.holder,
+    bots: listBots().bots.map((bot) => ({ id: bot.id, state: bot.state, pid: bot.pid, startAutomatically: bot.startAutomatically })),
+  });
   const hubControl = new HubControlServer(home, installationId, {
     // FR-25: the owner CLI's view of the hub.
-    status: () => ({
-      pid: process.pid,
-      installationId,
-      executable: process.execPath,
-      home,
-      coordinator: manager.registry.coordinator.holder,
-      bots: listBots().bots.map((bot) => ({ id: bot.id, state: bot.state, pid: bot.pid, startAutomatically: bot.startAutomatically })),
-    }),
+    status: hubStatus,
+    // SPEC-009 FR-2: the owner assigns or clears the role from the CLI too.
+    setCoordinator: async (body) => {
+      const bot = body.bot;
+      if (bot !== null && (typeof bot !== 'string' || !isValidBotId(bot))) throw new HubControlRefusal('Name a bot by its id, or clear the role.');
+      try {
+        await manager.setHolder(bot, 'owner');
+      } catch (error) {
+        throw new HubControlRefusal(error instanceof Error ? error.message : 'The role was not changed.');
+      }
+      announceHolder();
+      return hubStatus();
+    },
   });
 
   const applyLoginItem = (enabled: boolean) => {
@@ -820,6 +947,18 @@ async function main(): Promise<void> {
     if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
     return listBots();
   });
+  // SPEC-009 FR-8: the owner's limits on coordinator messages.
+  ipcMain.handle('hub:setLimits', async (event, limits: unknown) => {
+    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    const value = limits && typeof limits === 'object' ? limits as Record<string, unknown> : {};
+    try {
+      await manager.setLimits({ hopsPerChain: Number(value.hopsPerChain), messagesPerHour: Number(value.messagesPerHour) });
+    } catch (error) {
+      throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
+    }
+    botsChanged();
+    return listBots();
+  });
   ipcMain.handle('hub:createBot', (event) => {
     if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
     if (manager.activeCount() >= manager.registry.maxBots) {
@@ -843,6 +982,14 @@ async function main(): Promise<void> {
         case 'stop':
           await runners.get(id)?.stop();
           break;
+        case 'makeCoordinator':
+          await manager.setHolder(id, 'owner');
+          announceHolder();
+          break;
+        case 'clearCoordinator':
+          if (manager.registry.coordinator.holder === id) await manager.setHolder(null, 'owner');
+          announceHolder();
+          break;
         case 'startAutomatically':
           if (typeof value !== 'boolean') throw new Error('Invalid value');
           await manager.setStartAutomatically(id, value);
@@ -865,6 +1012,9 @@ async function main(): Promise<void> {
             t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBots();
           await manager.archive(id);
           runners.delete(id);
+          announceHolder();
+          // SPEC-009 FR-12: what waited for it returns to the coordinator as failed.
+          void coordinator.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
           break;
         case 'restore':
           await manager.restore(id);

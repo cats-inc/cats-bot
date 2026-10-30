@@ -80,8 +80,8 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ```text
 ┌───────────────────────────────┐   BotHostApi commands + events
-│ host: cats-bot CLI / Electron │◀────────────────────────────────┐
-│ tray + sticky notes (shell)   │                                 │
+│ host: cats-bot CLI / the hub  │◀────────────────────────────────┐
+│ tray, notes, Bots (Electron)  │                                 │
 └───────────────┬───────────────┘                                 │
                 │ in-process (CLI) / host channel (shell)         │
 ┌───────────────▼───────────────────────────────────────────────┐ │

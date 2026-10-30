@@ -121,12 +121,13 @@ test('the shell reaches the core only through the channel client and core types 
   const coreRoot = join(srcRoot, 'core');
   // Besides the channel client and the command table, only helpers that start no core:
   // paths and the lock reader, the profile reader, provider catalogs, the packaged
-  // helper path, the view-state file writer and the hub's control endpoint. Types may come
+  // helper path, the view-state file writer, the hub's control endpoint and the coordinator
+  // tools' definitions. Types may come
   // from anywhere in the core.
   const allowed = [
     'host-api/channel.ts', 'host-api/commands.ts', 'host-api/remote.ts', 'host-api/hubControl.ts', 'types.ts',
     'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'store/removeTree.ts', 'profile/initialize.ts', 'hostEnv.ts',
-    'providers/catalog.ts', 'providers/selection.ts', 'desktopControl/helper.ts',
+    'providers/catalog.ts', 'providers/selection.ts', 'desktopControl/helper.ts', 'tools/hubTools.ts',
   ].map((file) => join(coreRoot, ...file.split('/')));
   const statement = /\b(?:import|export)\s+(type\s+)?(?:[^'";]*?\s+from\s+)?['"]([^'"]+)['"]/gu;
   const dynamic = /\b(?:import|require)\s*\(\s*['"]([^'"]+)['"]/gu;

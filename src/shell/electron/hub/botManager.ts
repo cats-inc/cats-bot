@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
-import { removeTree } from '../../../core/store/removeTree.ts';
 import { dirname, join } from 'node:path';
 
 import { initializeBot, readBotProfile, type InitializeBotInput } from '../../../core/profile/initialize.ts';
 import { readJsonFile } from '../../../core/store/atomicFile.ts';
 import { acquireInstanceLock } from '../../../core/store/lock.ts';
 import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId } from '../../../core/store/paths.ts';
-import { addBot, reconcileRegistry, writeRegistry, type BotRegistry, type RegistryBot } from './registry.ts';
+import { removeTree } from '../../../core/store/removeTree.ts';
+import { addBot, LIMIT_RANGES, reconcileRegistry, withHolder, writeRegistry, type BotRegistry, type RegistryBot } from './registry.ts';
 
 /**
  * SPEC-008 FR-3, FR-5 and FR-6: what Settings → Bots does to the registry and
@@ -116,6 +116,33 @@ export class BotManager {
     });
   }
 
+  /** SPEC-009 FR-2: the owner assigns or clears the role; a confirmed proposal transfers it. */
+  setHolder(id: string | null, how: 'owner' | 'confirmed-proposal'): Promise<void> {
+    return this.serial(() => {
+      if (id !== null) {
+        const bot = this.entry(id);
+        if (!bot || bot.archivedAt !== null) throw new BotManagementError(`Bot ${id} is not active.`);
+      }
+      this.save(withHolder(this.current, id, how, this.now()));
+    });
+  }
+
+  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  setLimits(limits: { hopsPerChain: number; messagesPerHour: number }): Promise<void> {
+    return this.serial(() => {
+      for (const key of ['hopsPerChain', 'messagesPerHour'] as const) {
+        const [min, max] = LIMIT_RANGES[key];
+        const value = limits[key];
+        if (!Number.isSafeInteger(value) || value < min || value > max) {
+          throw new BotManagementError(key === 'hopsPerChain'
+            ? `Hops per chain is a whole number from ${min} to ${max}.`
+            : `Messages per hour is a whole number from ${min} to ${max}.`);
+        }
+      }
+      this.save({ ...this.current, limits: { hopsPerChain: limits.hopsPerChain, messagesPerHour: limits.messagesPerHour } });
+    });
+  }
+
   setStartAutomatically(id: string, value: boolean): Promise<void> {
     return this.serial(() => {
       if (!this.entry(id)) throw new BotManagementError(`There is no bot ${id}.`);
@@ -149,10 +176,11 @@ export class BotManager {
       await this.cores.stop(id);
       const paths = hubPathsFor(this.home);
       this.move(id, join(paths.bots, id), join(paths.archive, id));
-      const holder = this.current.coordinator.holder === id ? null : this.current.coordinator.holder;
+      // SPEC-009 FR-2: archiving the holder clears the role.
+      const coordinator = this.current.coordinator.holder === id ? { holder: null, assignedAt: null, how: null } : this.current.coordinator;
       this.save({
         ...this.current,
-        coordinator: { holder },
+        coordinator,
         bots: this.current.bots.map((entry) => (entry.id === id ? { ...entry, archivedAt: this.now().toISOString() } : entry)),
       });
     });
@@ -218,7 +246,7 @@ export class BotManager {
       }
     }
     if (registry.coordinator.holder && !registry.bots.some((bot) => bot.id === registry.coordinator.holder)) {
-      registry = { ...registry, coordinator: { holder: null } };
+      registry = { ...registry, coordinator: { holder: null, assignedAt: null, how: null } };
     }
     const reconciled = reconcileRegistry(this.home, registry, this.now());
     if (JSON.stringify(reconciled.registry) !== JSON.stringify(this.current)) this.save(reconciled.registry);
