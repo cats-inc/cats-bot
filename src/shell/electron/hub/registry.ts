@@ -118,8 +118,9 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
     ? coordinator.how as CoordinatorAssignment : null;
   const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
   const limits = isRecord(raw.limits) ? raw.limits : {};
+  // A whole number out of range is brought within it, so it keeps the direction the owner chose.
   const limit = (value: unknown, fallback: number, [min, max]: readonly [number, number]) =>
-    (Number.isSafeInteger(value) && (value as number) >= min && (value as number) <= max ? value as number : fallback);
+    (Number.isSafeInteger(value) ? Math.min(max, Math.max(min, value as number)) : fallback);
   return {
     schemaVersion: 1,
     bots: sortBots(bots),

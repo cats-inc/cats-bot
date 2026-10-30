@@ -49,6 +49,13 @@ test('another bot\'s message runs apart from the owner\'s direct message and doe
     const again = core.admitBotMessage({ deliveryId: 'delivery-r1b', chainId: 'chain-r1', hop: 3, kind: 'message', from: 'alpha', fromName: 'Alpha', text: 'Thanks.' });
     assert.equal(again.conversationId, 'bot-alpha');
     assert.throws(() => core.admitBotMessage({ deliveryId: 'delivery-x', chainId: 'chain-x', hop: 1, kind: 'message', from: '../x', fromName: 'X', text: 'x' }), /bot id/u);
+    // A reply whose conversation the owner deleted goes to the replying bot's conversation, not the direct message.
+    const reply = core.admitBotMessage({
+      deliveryId: 'reply-delivery-y', chainId: 'chain-y', hop: 2, kind: 'reply', from: 'gamma', fromName: 'Gam\u200Bma',
+      conversationId: 'conv-deleted', text: 'Here is the answer.',
+    });
+    assert.equal(reply.conversationId, 'bot-gamma');
+    assert.equal((await core.listConversations()).find((record) => record.id === 'bot-gamma')?.title, 'Messages from Gamma');
   } finally {
     await core.stop();
   }

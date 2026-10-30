@@ -491,11 +491,10 @@ export class BotCore implements BotHostApi {
     const existing = [...this.workItems.values()].find((item) => item.sourceRef === sourceRef);
     if (existing) return structuredClone(existing);
     const fromName = oneLine(delivery.fromName, 80) || delivery.from;
-    const conversationId = delivery.kind === 'message'
-      ? this.senderConversation(delivery.from, fromName)
-      : delivery.conversationId && this.conversations.get(delivery.conversationId)
-        ? delivery.conversationId
-        : this.resolveConversationId('home');
+    // A reply whose conversation the owner deleted goes to its sender's conversation, never to the direct message.
+    const conversationId = delivery.kind === 'reply' && delivery.conversationId && this.conversations.get(delivery.conversationId)
+      ? delivery.conversationId
+      : this.senderConversation(delivery.from, fromName);
     const prompt = delivery.kind === 'message'
       ? `A message from ${fromName}, the bot that coordinates the owner's bots, through the Cats Bot hub. `
         + `It is not from the owner. Your answer goes back to ${fromName}.\n\n${delivery.text}`
@@ -1614,11 +1613,16 @@ export class BotCore implements BotHostApi {
   /** Cancels queued and retry-delayed work matching `match`; returns how many items were dropped. */
   private dropPendingWork(match: (item: WorkItem) => boolean, reason: string): number {
     let dropped = 0;
+    // Whoever waits for a dropped item hears that it ended, as the hub does for another bot's message (SPEC-009 FR-12).
+    const cancel = (item: WorkItem) => {
+      const cancelled = this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
+      this.bus.emit({ type: 'turn.completed', conversationId: cancelled.conversationId, workItem: cancelled });
+      dropped += 1;
+    };
     for (const item of this.queue.list()) {
       if (!match(item)) continue;
       this.queue.remove(item.id);
-      this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
-      dropped += 1;
+      cancel(item);
     }
     for (const [id, entry] of [...this.deferred]) {
       const current = this.workItems.get(id) ?? entry.item;
@@ -1626,10 +1630,7 @@ export class BotCore implements BotHostApi {
       clearTimeout(entry.timer);
       this.timers.delete(entry.timer);
       this.deferred.delete(id);
-      if (current.state === 'queued') {
-        this.record(transitionWorkItem(current, 'cancelled', this.now(), { error: reason }));
-        dropped += 1;
-      }
+      if (current.state === 'queued') cancel(current);
     }
     return dropped;
   }

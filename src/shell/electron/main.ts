@@ -414,6 +414,9 @@ async function main(): Promise<void> {
       if (process.platform === 'darwin') {
         await botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
         parent = botsWindow.browserWindow;
+        // Without a window to hold the sheet the request is declined rather than blocking the hub.
+        if (!parent) return false;
+        if (!parent.isVisible()) parent.show();
       }
       const { response } = parent ? await dialog.showMessageBox(parent, options) : await dialog.showMessageBox(options);
       return response === 1 && !controller.signal.aborted && Date.now() < deadline;
@@ -654,7 +657,8 @@ async function main(): Promise<void> {
         gaveUp: () => {
           if (quitting) return;
           // SPEC-009 FR-12: what waits for a bot that can no longer run returns to its sender as failed.
-          void coordinator.targetGone(id, 'it kept failing and is not restarted').catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+          void coordinator.targetGone(id, 'it kept failing and is not restarted', { archived: false })
+            .catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
@@ -1010,7 +1014,7 @@ async function main(): Promise<void> {
           runners.delete(id);
           announceHolder();
           // SPEC-009 FR-12: what waited for it returns to the coordinator as failed.
-          void coordinator.targetGone(id, 'the bot was archived').catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+          void coordinator.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
           break;
         case 'restore':
           await manager.restore(id);

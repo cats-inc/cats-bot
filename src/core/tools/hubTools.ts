@@ -100,15 +100,25 @@ export interface HubCall {
   conversationId: string;
 }
 
+/** Characters that do not show: format characters (zero-width, direction marks, tags) and blank fillers. */
+const UNSEEN = /[\p{Cf}\u115F\u1160\u2800\u3164\uFFA0]/gu;
+const LINE_BREAKS = /[\p{Cc}\u2028\u2029]+/gu;
+const NOT_PLAIN = /[\p{Cc}\p{Cf}\u2028\u2029\u115F\u1160\u2800\u3164\uFFA0]/u;
+
 /**
  * Text a bot or its model wrote, made fit for one line of a dialog, a log or a
- * handoff: no control, line-separator or bidirectional-override characters,
- * whitespace collapsed, at most `max` characters.
+ * handoff: characters that do not show removed, line breaks and control
+ * characters made spaces, whitespace collapsed, at most `max` characters.
  */
 export function oneLine(value: string, max: number): string {
-  const flat = value.replace(/[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]+/gu, ' ').replace(/\s+/gu, ' ').trim();
+  const flat = value.replace(UNSEEN, '').replace(LINE_BREAKS, ' ').replace(/\s+/gu, ' ').trim();
   const characters = [...flat];
   return characters.length <= max ? flat : `${characters.slice(0, Math.max(0, max - 1)).join('')}…`;
+}
+
+/** Whether `value` is one line whose every character shows, as a name the owner reads in a dialog must be. */
+export function isPlainLine(value: string): boolean {
+  return !NOT_PLAIN.test(value);
 }
 
 /** The form of the ids the hub gives chains and deliveries. */

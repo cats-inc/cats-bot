@@ -500,8 +500,12 @@ Each entry names where it is implemented.
   - Deliveries go out one at a time per target, so a target that does not
     answer holds up only its own.
   - A target that is archived, or that the hub gave up restarting, answers the
-    holder with the reason. Replies on their way to an archived bot are
-    dropped, so a new bot that later gets its id receives none.
+    holder with the reason. An archived bot's id may later be given to a new
+    bot, so its deliveries end there: replies on their way to it are dropped,
+    and its own messages, sent or not, bring no reply. A bot the hub gave up on
+    keeps its replies for when the owner starts it again.
+  - A queued message the target drops, for example because the owner deleted
+    its conversation, ends cancelled and the holder hears so at once.
   - A turn on another bot's message that a crash interrupted ends failed, and
     the holder hears "interrupted". It is not the owner's to rerun. If the
     target's recovery later finds that it did answer, that answer stays in the
@@ -514,21 +518,29 @@ Each entry names where it is implemented.
   it to the holder, which FR-6 forbids. The conversation is a note the owner
   can open; it is not mirrored to Telegram. Messages from another bot do not
   count as the owner writing, so they neither move the heartbeat nor read as
-  the owner's in a later handoff.
+  the owner's in a later handoff. A reply whose asking conversation the owner
+  deleted goes to the replying bot's conversation in the holder, never to the
+  holder's direct message.
 - **D30, confirmations the holder cannot game (review of Phase 5).**
   - An answer counts only while the bot that asked still holds the role, so a
     former holder's request does nothing, and a request expires when the role
     moves.
   - Each holder has one request before the owner at a time. One the owner
     declined, or that expired, is not asked again for a minute.
-  - The dialog's headline is the hub's. What the holder wrote, the new bot's
-    name and an excerpt of its persona, appears below as labeled single lines:
-    a name with line breaks is refused, and the persona shows its first 300
-    characters.
+  - The dialog's headline is the hub's, and it names bots by name and id, so a
+    look-alike name cannot pass for another bot. What the holder wrote, the new
+    bot's name and an excerpt of its persona, appears below as labeled single
+    lines: a name with line breaks or characters that do not show (zero-width,
+    direction marks, blank fillers) is refused, and the persona shows its first
+    300 characters in quotes. Text the holder chose can still claim anything
+    within those lines; the labels say whose it is.
   - An answer given after the request expired counts as a decline. On macOS,
     where a message box without a window blocks the hub and ignores its
-    signal, the request shows as a sheet on the Bots page; this path is not yet
-    tested on macOS (6.2).
+    signal, the request shows as a sheet on the Bots page, which waits behind
+    it; when that window cannot be shown, the request is declined. This path is
+    not yet tested on macOS (6.2).
+  - The owner's limits: a stored whole number out of range is brought within
+    2 to 100 hops and 1 to 1000 messages an hour.
   - Open for the owner: `hub_set_heartbeat` resumes a heartbeat without
     consent, also one the owner paused. FR-4 and FR-5 allow it; a resumed
     heartbeat spends turns on the owner's account.
@@ -559,6 +571,7 @@ Each entry names where it is implemented.
 | 2026-10-30 | Tasks 6.1 and 6.3 done: the measurement table above; ADR-001, ADR-002, ADR-004, ADR-006 and ADR-008 statuses, SPEC-001 FR-3, SPEC-002 FR-1, FR-4 and FR-7, SPEC-006's hub changes, and `architecture.md`, `services.md`, `setup-guide.md` and `testing.md` describe the hub. Task 6.2 is partly done; 6.4 waits for the owner. |
 | 2026-10-30 | Independent review of Phases 3 and 4: fixed deleting a bot emptying a junction's target under Electron's Node (critical), quit during start leaving cores, own cores treated as external after a hub restart, the restart dialog's timing, the lease after a cancel, Stop or revoke, a busy lock counted as external, trash keeping foreign files, and a missing folder being archived; tests now remove under Electron's Node too. |
 | 2026-10-30 | Independent security review of Phase 5 (task 5.4): fixed another bot's text handed on as the owner's, a former holder's request still carried out, unbounded and holder-worded dialogs, the restart budget reset by `hub_start_bot`, interrupted messages rerun as the owner's, hops counted by depth, a torn log line, one target holding up all deliveries, a core answering for another's deliveries, a reply lost between two writes, raw arguments in logs, an uncompacted log, and replies kept for an archived bot. Messages now arrive in a conversation per sender (D29); D25, D26, D28 and D30 record the rest and what stays open. 330 tests pass. |
+| 2026-10-30 | Independent review of those fixes: fixed a message dropped silently when the owner deletes its conversation, replies lost for a bot the hub gave up on, an archived sender's own messages answered to a new bot with its id, look-alike names and characters that do not show in the owner's dialog, a reply falling back to the holder's direct message, and the macOS dialog without a window. 334 tests pass. |
 
 ---
 

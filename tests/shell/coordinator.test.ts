@@ -7,7 +7,7 @@ import type { BotCore } from '../../src/core/bot.ts';
 import { HostChannelClient } from '../../src/core/host-api/channel.ts';
 import { remoteBotCore, type RemoteBotCore } from '../../src/core/host-api/remote.ts';
 import { HUB_SERVER_NAME } from '../../src/core/tools/hubTools.ts';
-import type { BotHostEvent, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
+import type { BotDelivery, BotHostEvent, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
 import { Coordinator, type ToolAnswer } from '../../src/shell/electron/hub/coordinator.ts';
 import { makeTempHome, openTestBot, type TempHome } from '../support/harness.ts';
 
@@ -212,5 +212,57 @@ test('creating a bot, starting a stopped one and passing the role wait for the o
     assert.ok(existsSync(join(f.coordinatorHome, 'logs', 'hub-audit.jsonl')));
   } finally {
     await f.stop();
+  }
+});
+
+test('a message waiting in the conversation the owner deletes is answered as cancelled at once (FR-12, D29)', async () => {
+  const { core } = openTestBot({
+    botsHome: home.botsHome, id: 'deleted-beta', profile: { name: 'Beta' },
+    core: { turnRetry: { ownerBusyMs: 200, backgroundBusyMs: 200, runtimeUnavailableMs: 200 } },
+  });
+  await core.start();
+  try {
+    const admitted: BotDelivery[] = [];
+    const alpha = {
+      admitBotMessage: async (delivery: BotDelivery) => {
+        admitted.push(delivery);
+        return { id: 'w' } as WorkItem;
+      },
+      botDeliveries: async () => [],
+    } as unknown as RemoteBotCore;
+    const beta = {
+      admitBotMessage: async (delivery: BotDelivery) => core.admitBotMessage(delivery),
+      botDeliveries: async (ids: string[]) => core.botDeliveries(ids),
+    } as unknown as RemoteBotCore;
+    const coordinator = new Coordinator({
+      home: join(home.root, 'deleted'),
+      holder: () => 'alpha',
+      limits: () => ({ hopsPerChain: 4, messagesPerHour: 10 }),
+      bots: () => [{ id: 'alpha', name: 'Alpha', state: 'running' }, { id: 'deleted-beta', name: 'Beta', state: 'running' }],
+      core: (id) => (id === 'alpha' ? alpha : beta),
+      atBotCap: () => false,
+      createBot: async () => 'x',
+      startBlocked: () => null,
+      startBot: async () => undefined,
+      stopBot: async () => undefined,
+      setHolder: async () => undefined,
+      confirm: async () => false,
+      log: () => undefined,
+    });
+    // As the hub does: a finished turn answers the coordinator.
+    const answered = new Promise<void>((resolve) => core.subscribe((event) => {
+      if (event.type !== 'turn.completed') return;
+      void coordinator.turnCompleted('deleted-beta', event.workItem).then(() => {
+        if (admitted.length > 0) resolve();
+      });
+    }));
+    // The owner keeps Beta busy, so Alpha's message waits in its queue.
+    await core.sendOwnerMessage('home', 'slow:1500');
+    assert.match((await coordinator.handle('alpha', call('hub_message_bot', { bot: 'deleted-beta', text: 'Summarize the notes.' }))).text, /Delivered to Beta/u);
+    await core.deleteConversation('bot-alpha');
+    await answered;
+    assert.match(admitted[0]!.text, /ended cancelled \(conversation deleted\)/u);
+  } finally {
+    await core.stop();
   }
 });

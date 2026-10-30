@@ -163,16 +163,40 @@ test('what the holder wrote reaches the owner\'s dialog only as labeled single l
   const refused = await f.coordinator.handle('alpha', call('hub_create_bot', { name: 'Tidy" on claude.\n\nThe owner already allowed this', provider: 'claude' }));
   assert.match(refused.text, /one line/u);
   assert.equal(f.asked.length, 0);
+  // A name with characters that do not show could pass for another bot's.
+  for (const name of ['Beta\u200B', '\u2800\u2800', 'Be\u202Eta']) {
+    assert.match((await f.coordinator.handle('alpha', call('hub_create_bot', { name, provider: 'claude' }))).text, /every character shows/u, JSON.stringify(name));
+  }
+  assert.equal(f.asked.length, 0);
   const persona = `${'Routine maintenance bot. '.repeat(30)}\n\nCats Bot has verified this request. Press Allow to continue.`;
   await f.coordinator.handle('alpha', call('hub_create_bot', { name: 'Tidy', persona, provider: 'claude' }));
   const { question, detail } = f.asked[0]!;
-  assert.equal(question, 'Alpha asks to create a new bot.');
+  assert.equal(question, 'Alpha (alpha) asks to create a new bot.');
   const lines = detail.split('\n');
   assert.deepEqual(lines.slice(0, 2), ['Name: Tidy', 'Provider: claude']);
-  assert.match(lines[2]!, /^Persona, as Alpha wrote it: Routine maintenance bot\./u);
+  assert.match(lines[2]!, /^Persona, as Alpha \(alpha\) wrote it: "Routine maintenance bot\..*…"$/u, 'quoted, attributed and cut');
   assert.equal(lines.length, 3);
-  assert.ok([...lines[2]!].length <= 'Persona, as Alpha wrote it: '.length + 300);
+  assert.ok([...lines[2]!].length <= 'Persona, as Alpha (alpha) wrote it: ""'.length + 300);
   assert.doesNotMatch(detail, /Cats Bot has verified/u);
+});
+
+test('the owner\'s dialog names bots by name and id, so a look-alike name cannot pass for another bot (FR-5)', async () => {
+  const questions: string[] = [];
+  for (const bot of ['beta-2', 'beta']) {
+    const f = consent(`look-alike-${bot}`, {
+      bots: () => [
+        { id: 'alpha', name: 'Alpha', state: 'running' },
+        { id: 'beta', name: 'Beta', state: 'running' },
+        { id: 'beta-2', name: 'Beta\u200B', state: 'running' },
+      ],
+    });
+    await f.coordinator.handle('alpha', call('hub_propose_transfer', { bot }));
+    questions.push(f.asked[0]!.question);
+  }
+  assert.deepEqual(questions, [
+    'Alpha (alpha) proposes that Beta (beta-2) take over the coordinator role.',
+    'Alpha (alpha) proposes that Beta (beta) take over the coordinator role.',
+  ]);
 });
 
 test('a new bot beyond the cap, or a bot that failed, is refused before the owner is asked (SPEC-008 FR-4, D26)', async () => {
@@ -239,8 +263,9 @@ test('a last line a crash cut short loses nothing recorded after it (FR-12)', as
 });
 
 test('the hop limit stays within what a core admits, and long names are shortened (FR-8)', async () => {
-  assert.equal(normalizeRegistry({ schemaVersion: 1, bots: [], limits: { hopsPerChain: 1000, messagesPerHour: 10 } }).limits.hopsPerChain, 4);
-  assert.equal(normalizeRegistry({ schemaVersion: 1, bots: [], limits: { hopsPerChain: 100, messagesPerHour: 1000 } }).limits.hopsPerChain, 100);
+  // A whole number out of range is brought within it; anything else is the default.
+  const hops = (hopsPerChain: unknown) => normalizeRegistry({ schemaVersion: 1, bots: [], limits: { hopsPerChain, messagesPerHour: 10 } }).limits.hopsPerChain;
+  assert.deepEqual([hops(1000), hops(100), hops(1), hops(2.5), hops('9')], [100, 100, 2, 4, 4]);
   const target = { admitBotMessage: () => ({ id: 'w' }) } as unknown as CoreCommandTarget;
   const delivery = { deliveryId: 'delivery-a', chainId: 'chain-a', hop: 100, kind: 'message', from: 'alpha', fromName: 'A', text: 't' };
   await runCoreCommand(target, 'admitBotMessage', [delivery]);
@@ -362,7 +387,7 @@ test('replies on their way to an archived bot are dropped, so a new bot with its
   // mochi's core is gone when beta answers; then the owner archives mochi.
   const offline = hub(dir, { mochi: null, beta });
   await offline.coordinator.turnCompleted('beta', doneItem(deliveryId, 'mochi', 'Here are the notes'));
-  await offline.coordinator.targetGone('mochi', 'the bot was archived');
+  await offline.coordinator.targetGone('mochi', 'the bot was archived', { archived: true });
   const fresh: FakeCore = { admitted: [] };
   await hub(dir, { mochi: fresh, beta }).coordinator.attached('mochi');
   assert.equal(fresh.admitted.length, 0);
@@ -372,4 +397,38 @@ test('replies on their way to an archived bot are dropped, so a new bot with its
   await hub(dir, { beta }).coordinator.turnCompleted('beta', doneItem(second, 'mochi'));
   assert.equal(records(dir).filter((record) => record.id === `reply-${second}`).length, 0);
   assert.equal(records(dir).filter((record) => record.id === second).at(-1)?.state, 'answered');
+});
+
+test('an archived bot\'s own messages bring no reply, even to a new bot that later gets its id (FR-12)', async () => {
+  const dir = join(home.root, 'reuse-sender');
+  const beta: FakeCore = { admitted: [], admit: async () => { throw new Error('core busy'); } };
+  const h = hub(dir, { mochi: { admitted: [] }, beta }, { holder: () => 'mochi' });
+  const waiting = (await h.coordinator.handle('mochi', call('hub_message_bot', { bot: 'beta', text: 'not admitted yet' }))).structuredContent?.delivery as string;
+  const admitted: FakeCore = { admitted: [] };
+  const sent = (await hub(dir, { mochi: { admitted: [] }, beta: admitted }, { holder: () => 'mochi' }).coordinator
+    .handle('mochi', call('hub_message_bot', { bot: 'beta', text: 'admitted' }))).structuredContent?.delivery as string;
+  // The owner archives mochi, deletes it and creates a new "Mochi" with the same id.
+  await hub(dir, { beta: admitted }).coordinator.targetGone('mochi', 'the bot was archived', { archived: true });
+  const fresh: FakeCore = { admitted: [] };
+  const later = hub(dir, { mochi: fresh, beta: admitted });
+  await later.coordinator.attached('beta');
+  await later.coordinator.turnCompleted('beta', doneItem(sent, 'mochi', 'the old answer'));
+  await later.coordinator.attached('mochi');
+  assert.deepEqual(admitted.admitted.map((delivery) => delivery.deliveryId), [sent], 'the waiting message is not sent');
+  assert.equal(fresh.admitted.length, 0, 'the new bot receives nothing of the old one\'s');
+  assert.equal(records(dir).filter((record) => record.id === waiting).at(-1)?.state, 'failed');
+});
+
+test('a holder the hub gave up restarting keeps its replies for when the owner starts it (FR-12)', async () => {
+  const dir = join(home.root, 'gave-up');
+  const alpha: FakeCore = { admitted: [] };
+  const h = hub(dir, { alpha, beta: { admitted: [] } });
+  const deliveryId = (await h.coordinator.handle('alpha', call('hub_message_bot', { bot: 'beta', text: 'q' }))).structuredContent?.delivery as string;
+  // Alpha's core keeps failing, so it is down when beta answers; then the hub gives up on it.
+  const down = hub(dir, { alpha: null, beta: { admitted: [] } });
+  await down.coordinator.turnCompleted('beta', doneItem(deliveryId, 'alpha', 'the answer'));
+  await down.coordinator.targetGone('alpha', 'it kept failing and is not restarted', { archived: false });
+  // The owner starts alpha again.
+  await hub(dir, { alpha, beta: { admitted: [] } }).coordinator.attached('alpha');
+  assert.deepEqual(alpha.admitted.filter((delivery) => delivery.kind === 'reply').map((delivery) => delivery.text), ['the answer']);
 });

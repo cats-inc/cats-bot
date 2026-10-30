@@ -6,7 +6,7 @@ import type { RemoteBotCore } from '../../../core/host-api/remote.ts';
 import { CLI_PROVIDERS } from '../../../core/providers/catalog.ts';
 import { writeFileAtomic } from '../../../core/store/atomicFile.ts';
 import { isValidBotId } from '../../../core/store/paths.ts';
-import { isHubRecordId, oneLine } from '../../../core/tools/hubTools.ts';
+import { isHubRecordId, isPlainLine, oneLine } from '../../../core/tools/hubTools.ts';
 import type { BotDeliveryState, WorkItem, WorkItemState } from '../../../core/types.ts';
 import type { CoordinatorLimits } from './registry.ts';
 
@@ -79,7 +79,6 @@ const MAX_TEXT = 64 * 1024;
 const NAME_LENGTH = 40;
 const RECORD_NAME_LENGTH = 80;
 const PERSONA_PREVIEW = 300;
-const LINE_BREAKING = /[\p{Cc}\u2028\u2029\u202A-\u202E\u2066-\u2069]/u;
 /** FR-5: a declined or expired request is not asked again for this long. */
 export const CONSENT_COOLDOWN_MS = 60_000;
 /** FR-12: settled deliveries stay in the log this long, for the hourly limit and the chains they belong to. */
@@ -180,6 +179,12 @@ export class Coordinator {
   /** A bot's name as the owner sees it in a dialog or a record: one line, short. */
   private name(id: string, length = NAME_LENGTH): string {
     return oneLine(this.deps.bots().find((bot) => bot.id === id)?.name ?? id, length) || id;
+  }
+
+  /** A bot as the owner's dialog names it: its name and its id, which no other bot's name can imitate. */
+  private label(id: string): string {
+    const name = this.name(id);
+    return name === id ? id : `${name} (${id})`;
   }
 
   /** A `cats-hub` call from the bot whose channel carried it. */
@@ -405,16 +410,22 @@ export class Coordinator {
   }
 
   /**
-   * FR-12: a bot that was archived or can no longer run. What still waits for
-   * it fails back to its sender, and replies on their way to it are dropped,
-   * so a new bot that later gets the same id receives none of them.
+   * FR-12: a bot that was archived, or that the hub gave up restarting. What
+   * still waits for it fails back to its sender. An archived bot's id may
+   * later be given to a new bot, so its deliveries end there too: replies on
+   * their way to it are dropped, and its own messages bring no reply. A bot
+   * the hub gave up on keeps its replies for when the owner starts it again.
    */
-  async targetGone(botId: string, reason: string): Promise<void> {
+  async targetGone(botId: string, reason: string, { archived }: { archived: boolean }): Promise<void> {
     for (const record of [...this.deliveries.values()]) {
-      if (record.kind === 'message' && record.to === botId && (record.state === 'accepted' || record.state === 'sent')) {
+      const open = record.state === 'accepted' || (record.kind === 'message' && record.state === 'sent');
+      if (!open) continue;
+      if (record.kind === 'message' && record.to === botId) {
         await this.answer(record, 'failed', null, reason);
-      } else if (record.kind === 'reply' && record.to === botId && record.state === 'accepted') {
+      } else if (archived && record.kind === 'reply' && record.to === botId) {
         this.save({ ...record, state: 'failed', reason });
+      } else if (archived && record.kind === 'message' && record.from === botId) {
+        this.save({ ...record, state: 'failed', reason: 'its sender was archived' });
       }
     }
   }
@@ -423,20 +434,20 @@ export class Coordinator {
     const name = typeof args.name === 'string' ? args.name.trim() : '';
     const persona = typeof args.persona === 'string' ? args.persona.trim() : '';
     const provider = typeof args.provider === 'string' ? args.provider : '';
-    if (!name || name.length > 80 || LINE_BREAKING.test(name)) {
-      return refuse('The new bot needs a name of one line, at most 80 characters.');
+    if (!name || name.length > 80 || !isPlainLine(name)) {
+      return refuse('The new bot needs a name of one line, at most 80 characters, whose every character shows.');
     }
     if (persona.length > 4_000) return refuse('The persona is too long.');
     if (!CLI_PROVIDERS.some((entry) => entry.id === provider)) {
       return refuse(`Choose one of these providers: ${CLI_PROVIDERS.map((entry) => entry.id).join(', ')}.`);
     }
     if (this.deps.atBotCap()) return refuse('The owner\'s bots are at the bot cap; the owner can archive one first.');
-    // FR-5: the owner decides. What the holder wrote stays in the detail, marked as the holder's.
-    const holder = this.name(caller);
+    // FR-5: the owner decides. What the holder wrote stays in the detail, quoted and marked as the holder's.
+    const holder = this.label(caller);
     const refusal = await this.ownerAllows(caller, `${holder} asks to create a new bot.`, [
       `Name: ${oneLine(name, 80)}`,
       `Provider: ${provider}`,
-      ...(persona ? [`Persona, as ${holder} wrote it: ${oneLine(persona, PERSONA_PREVIEW)}`] : []),
+      ...(persona ? [`Persona, as ${holder} wrote it: "${oneLine(persona, PERSONA_PREVIEW)}"`] : []),
     ].join('\n'));
     if (refusal) return refusal;
     const id = await this.deps.createBot({ name, persona, provider });
@@ -449,7 +460,7 @@ export class Coordinator {
     const blocked = this.deps.startBlocked(target);
     if (blocked) return refuse(`${this.name(target)} cannot be started now. ${blocked}`);
     // FR-5 and D26: a stopped bot starts only with the owner's consent.
-    const refusal = await this.ownerAllows(caller, `${this.name(caller)} asks to start ${this.name(target)}.`, '');
+    const refusal = await this.ownerAllows(caller, `${this.label(caller)} asks to start ${this.label(target)}.`, '');
     if (refusal) return refusal;
     await this.deps.startBot(target);
     return ok(`Started ${this.name(target)}.`);
@@ -474,8 +485,8 @@ export class Coordinator {
   private async transfer(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {
     const proposed = args.bot === null ? null : this.other(caller, args);
     const question = proposed
-      ? `${this.name(caller)} proposes that ${this.name(proposed)} take over the coordinator role.`
-      : `${this.name(caller)} proposes that no bot hold the coordinator role.`;
+      ? `${this.label(caller)} proposes that ${this.label(proposed)} take over the coordinator role.`
+      : `${this.label(caller)} proposes that no bot hold the coordinator role.`;
     const refusal = await this.ownerAllows(caller, question, '');
     if (refusal) return refusal;
     await this.deps.setHolder(proposed);
