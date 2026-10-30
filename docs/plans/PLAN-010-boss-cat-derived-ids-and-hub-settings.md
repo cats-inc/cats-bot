@@ -126,6 +126,17 @@ reaches only its own bot.
 - [x] 3.2: Nothing is ported from `environment-bootstrap`; nothing it offers is
       needed. SPEC-008 FR-19 and SPEC-009 FR-4 carry the changes, with no
       separate SPEC and PLAN.
+  - Git is the exception to come (owner, 2026-10-31). When a feature needs it,
+    such as worktrees and branches as in Cats Code, Git becomes a step installed
+    with the owner's consent, as Node.js is for Codex. Without it, Runtime
+    already reports repository status, commit and push as unsupported. The
+    tools follow `environment-bootstrap`:
+    - Windows: Git for Windows, not MinGit. `Install-Git-Admin.ps1` tries
+      winget, then the official installer; the fresh Windows 11 VM's winget
+      failed.
+    - macOS: Homebrew's git, so Homebrew is a step before it.
+    - Linux: the system package manager.
+    - `Setup-Git` sets the commit identity.
 - [ ] 3.3: In cats-platform, `Install-ClaudeCode.ps1` puts the folder on the
       user PATH; it was verified in the VM. Pin it here once merged.
 - [x] 3.4: Setup page and Bot tab (SPEC-008 FR-19):
