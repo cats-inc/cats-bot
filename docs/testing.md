@@ -136,6 +136,13 @@ released explicitly, without sleeps or real profile access.
   crash and reattach, two bots with a killed core, `cats-bot quit` per bot, and
   `cats-bot hub coordinator`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot` and
   the provider folders before and after; nothing may change.
+- **Manual, first run through the setup page**: launch without `--provider`,
+  with an isolated home whose `.npmrc` names an existing global npm prefix, so
+  the page's provider check runs the packaged setup helper as an owner's first
+  launch does. The check must report its components, and **Create and start**
+  must leave the bot running with its note open. Starting with `--provider`
+  skips the page and its helper callbacks; 0.3.0 shipped with a first-run
+  error this path would have shown.
 
 ### Windows desktop control helper
 
