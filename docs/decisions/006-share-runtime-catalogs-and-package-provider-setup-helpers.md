@@ -44,7 +44,8 @@ depending on the Platform application or probing every supported CLI.
   `cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7`) and each source SHA-256. This is
   vendored source reuse, not an application dependency.
 - Onboarding selects a provider before installation. Native providers have one
-  check/install step; Codex checks Node/npm, the npm folder, then Codex. Only an
+  check/install step; Codex checks Node/npm, the npm folder, on Windows the
+  PowerShell scripts policy (Setup-CliReadiness, scoped to the policy), then Codex. Only an
   owned main-frame IPC may request a fixed helper and fixed action. Installation
   requires its explicit button, rechecks prerequisites/results, excludes concurrent
   operations and completes before shutdown. No arbitrary paths or arguments

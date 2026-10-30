@@ -72,8 +72,22 @@ export function ProviderInstallation({
               disabled={busy || step.status === 'prerequisite_required'}
               onClick={() => void run(step.id)}
             >
-              {t(step.id === 'npm' ? 'Prepare npm' : 'Install {name}', { name: t(step.label) })}
+              {t(
+                step.id === 'npm'
+                  ? 'Prepare npm'
+                  : step.id === 'shell'
+                    ? 'Allow PowerShell scripts'
+                    : 'Install {name}',
+                { name: t(step.label) },
+              )}
             </button>
+          )}
+          {step.id === 'shell' && step.status !== 'ready' && (
+            <p className="hint">
+              {t(
+                'Lets PowerShell run codex and npm, so you can sign in there: your own execution policy becomes RemoteSigned.',
+              )}
+            </p>
           )}
           {step.status === 'auth_required' && (
             <p>{t('Installed. Complete the provider sign-in in a terminal, then check again.')}</p>

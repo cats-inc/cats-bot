@@ -1,4 +1,4 @@
-export type SetupStepId = 'node' | 'npm' | 'provider';
+export type SetupStepId = 'node' | 'npm' | 'shell' | 'provider';
 export interface SetupStep {
   id: SetupStepId;
   label: string;

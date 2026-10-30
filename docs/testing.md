@@ -195,6 +195,9 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   - A runner started before Node is installed has no `npm` on its PATH. A
     helper reports Codex's `codex.ps1`; run the `codex.cmd` beside it, or
     `cmd.exe` opens the `.ps1` in Notepad.
+  - Check sign-in commands in PowerShell too. A clean Windows has the
+    Restricted execution policy, which blocks `codex.ps1` and `npm.ps1` there
+    but not in `cmd.exe`.
 - The floating bot (SPEC-002 FR-7) needs real input: move the mouse with
   injected events (`mouse_event` with `MOUSEEVENTF_MOVE | MOUSEEVENTF_ABSOLUTE`
   or `SendInput`), not `SetCursorPos`, which bypasses the low-level hook

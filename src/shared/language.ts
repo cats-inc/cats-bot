@@ -305,6 +305,10 @@ export const zhTW: Record<string, string> = {
   'Node.js and npm': 'Node.js 與 npm',
   'npm installation folder': 'npm 安裝資料夾',
   'Prepare npm': '設定 npm',
+  'PowerShell scripts': 'PowerShell 指令碼',
+  'Allow PowerShell scripts': '允許 PowerShell 指令碼',
+  'Lets PowerShell run codex and npm, so you can sign in there: your own execution policy becomes RemoteSigned.':
+    '讓 PowerShell 能執行 codex 和 npm，方便你在終端機登入：會把你自己的執行原則設為 RemoteSigned。',
   'Install {name}': '安裝 {name}',
   'Check again': '重新檢查',
   'Installed. Complete the provider sign-in in a terminal, then check again.':

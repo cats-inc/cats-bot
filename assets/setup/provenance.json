@@ -63,6 +63,11 @@
       "path": "windows/_VerifiedNpmUpdate.ps1"
     },
     {
+      "source": "scripts/windows/Setup-CliReadiness.ps1",
+      "sha256": "0f73dcd94b6f7166705ef451f81d6f4fe6b68facdab29d10f62437aa7cf887c6",
+      "path": "windows/Setup-CliReadiness.ps1"
+    },
+    {
       "source": "scripts/macos/install-node.sh",
       "sha256": "a52ec312dd45383050276c05a9974c3a04918aa31cccd23c95218c0a1cc15a4e",
       "path": "macos/install-node.sh"

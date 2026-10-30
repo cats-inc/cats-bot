@@ -68,7 +68,7 @@ test('Codex requires working Node/npm, a writable npm folder, then Codex in that
     calls.push(`${helper}:${apply}`);
     if (apply) installed.add(helper);
     return installed.has(helper) ? ready() : { status: 'changes_required', installed: false };
-  });
+  }, { windows: false });
   const missing = await setup.check('codex');
   assert.equal(missing.canFinish, false);
   assert.deepEqual(
@@ -279,7 +279,7 @@ test('Codex goes on after the npm folder without a restart or Check again', asyn
       return { status: 'ready', installed: true };
     }
     return codexInstalled ? ready() : { status: 'not_installed' };
-  });
+  }, { windows: false });
   await setup.check('codex');
   const afterNpm = await setup.install('codex', 'npm');
   assert.equal(afterNpm.steps[1]?.status, 'ready');
@@ -299,4 +299,34 @@ test('a declined UAC prompt shows as elevation_required, not as a step to set up
   assert.equal(state.steps[0]?.status, 'elevation_required');
   assert.deepEqual(state.steps[0]?.warnings, [declined]);
   assert.equal(state.canFinish, false);
+});
+
+// On Windows, PowerShell runs npm's codex.ps1 only under a permissive execution policy, so
+// `codex login` in a fresh terminal needs the PowerShell scripts step (Setup-CliReadiness).
+test('on Windows Codex also needs the PowerShell scripts step, after npm and before Codex', async () => {
+  const installed = new Set<string>(['node', 'npm']);
+  const calls: string[] = [];
+  const setup = new ProviderSetup(async (helper, apply) => {
+    calls.push(`${helper}:${apply}`);
+    if (apply) installed.add(helper);
+    return installed.has(helper) ? ready() : { status: 'changes_required', installed: false };
+  }, { windows: true });
+  const before = await setup.check('codex');
+  assert.deepEqual(before.steps.map((step) => [step.id, step.status]), [
+    ['node', 'ready'], ['npm', 'ready'], ['shell', 'changes_required'], ['provider', 'prerequisite_required'],
+  ]);
+  await assert.rejects(setup.install('codex', 'provider'), /Complete the steps above first/u);
+  const shell = await setup.install('codex', 'shell');
+  assert.equal(shell.steps[2]?.status, 'ready');
+  assert.equal(shell.steps[3]?.status, 'changes_required');
+  assert.equal((await setup.install('codex', 'provider')).canFinish, true);
+  assert.deepEqual(calls.filter((call) => call.endsWith(':true')), ['shell:true', 'codex:true']);
+  // Other providers and other systems never see the step.
+  const elsewhere = new ProviderSetup(async () => ready(), { windows: false });
+  await elsewhere.check('codex');
+  assert.throws(() => elsewhere.install('codex', 'shell'), /outside/u);
+  assert.throws(() => helperInvocation(assets, 'darwin', 'shell', false), /Windows only/u);
+  assert.deepEqual(helperInvocation(assets, 'win32', 'shell', true).args.slice(-3), ['-Helper', 'shell', '-Apply']);
+  const claude = new ProviderSetup(async () => ready(), { windows: true });
+  assert.deepEqual((await claude.check('claude')).steps.map((step) => step.id), ['provider']);
 });

@@ -173,9 +173,21 @@ reaches only its own bot.
     did not take effect, so there the run showed only that every install
     still works with these scripts.
 
+- [x] 3.8: A clean Windows defaults to the Restricted execution policy, so
+      `codex` and `npm` in a PowerShell terminal hit their `.ps1` shims and
+      fail. Signing in with `codex login` there then fails too. The VM tests ran
+      through `cmd.exe` and missed it; Cats Desktop's `Setup-CliReadiness.ps1`
+      already handles it.
+  - Codex on Windows gets a PowerShell scripts step after the npm folder,
+    using that helper (pinned at `cce4ff6e`) scoped to the policy.
+  - The step sets the user's own policy to RemoteSigned and adds no PATH
+    entries; Claude Code's helper adds its own.
+
 **Deliverables**: a clean machine can set up any of the five providers.
 
 #### Decisions to confirm (Phase 3)
+
+The owner confirmed D31 to D34 on 2026-10-31; D35 waits.
 
 - **D31.** A restart or relaunch from a helper no longer hides a fresh check
   that confirms the step. This reverses the rule from #48 for those two
@@ -188,6 +200,9 @@ reaches only its own bot.
 - **D34.** No separate SPEC/PLAN pair for Phase 3, and nothing ported. The
   owner left these two of the sandbox report's items unanswered, so they
   follow the recommendation.
+- **D35.** On Windows the PowerShell scripts step is required before Codex,
+  like the npm folder, rather than optional: the sign-in the page asks for
+  happens in a terminal, and Windows Terminal opens PowerShell.
 
 ### Phase 4: Release
 
