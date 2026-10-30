@@ -61,7 +61,9 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
    environment profile (only native in this version), then creates the first bot
    with SPEC-002 FR-1's provider-first flow. The registry is then written, with
    the first bot as the Boss Cat.
-5. FR-5: Bot management in Settings lists every bot that is not archived, with
+5. FR-5: Bot management, the Bots tab of Cats Bot Settings (the hub's own
+   settings window, beside its General tab: display language, start at login,
+   version, updates and the data folder; PLAN-010), lists every bot that is not archived, with
    its state (starting, running, stopped, failed, externally hosted), and offers
    create, start, stop, start automatically and order. Archived bots are listed
    separately. Removing a bot takes two separate steps, each with its own
@@ -157,12 +159,14 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 16. FR-16: One tray icon. With one bot, the menu has today's items (SPEC-002).
     With more, each bot's conversation, heartbeat, floating Cat, request and Stop
-    items move into a submenu per bot. Hub items are shared: Bots…, Settings…,
-    Start at login, Check for Updates…, Quit. Pending owner requests and unread
+    items move into a submenu per bot. Hub items are shared in both shapes:
+    Settings… (Cats Bot Settings), Start at login, Check for Updates…, Quit; a
+    bot's own settings are "Bot settings…" (PLAN-010). Pending owner requests and unread
     counts are aggregated on the icon.
 17. FR-17: Notes, floating Cats and per-bot settings are hub windows bound to one
     bot id. A window receives only its own bot's events and can only reach its
-    own bot's channel. Titles carry the bot name. On Windows each window uses
+    own bot's channel; bot management is reached only from Cats Bot Settings
+    (PLAN-010). Titles carry the bot name. On Windows each window uses
     the AUMID `io.catsinc.catsbot.<botId>`. If renderers keep storage, it is
     partitioned per bot.
 18. FR-18: Per-bot view state (note bounds and layers, floating Cat position)

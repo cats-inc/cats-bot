@@ -345,10 +345,10 @@ async function main(): Promise<void> {
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
   const pages = { preloadPath, rendererDir, iconPath };
   // FR-5: Settings → Bots, also reachable when no bot runs.
-  const botsWindow = new SettingsWindow(pages, { scope: 'hub' });
+  const hubSettings = new SettingsWindow(pages, { scope: 'hub' });
   const settingsWindows = (): Array<BrowserWindow> => [
     ...presented().map((presenter) => presenter.settings.browserWindow),
-    botsWindow.browserWindow,
+    hubSettings.browserWindow,
   ].filter((window): window is BrowserWindow => window !== null);
   let tray: BotTray | null = null;
 
@@ -418,8 +418,8 @@ async function main(): Promise<void> {
       // so the request shows as a sheet on the Bots page there.
       let parent: BrowserWindow | null = null;
       if (process.platform === 'darwin') {
-        await botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
-        parent = botsWindow.browserWindow;
+        await hubSettings.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+        parent = hubSettings.browserWindow;
         // Without a window to hold the sheet the request is declined rather than blocking the hub.
         if (!parent) return false;
         if (!parent.isVisible()) parent.show();
@@ -520,7 +520,7 @@ async function main(): Promise<void> {
   const closeAll = () => {
     for (const controller of pendingConfirmations.keys()) controller.abort();
     for (const presenter of presented()) presenter.close();
-    botsWindow.destroy();
+    hubSettings.destroy();
     tray?.dispose();
     for (const client of externals.values()) client.close();
     void hubControl.stop();
@@ -807,8 +807,9 @@ async function main(): Promise<void> {
           owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
       }),
   });
-  const openBots = () => {
-    void botsWindow.open().catch((error: unknown) => log(`open bots failed: ${errorMessage(error)}`));
+  // D20: the hub's Settings: the app language, start at login, version and updates, and the Bots tab.
+  const openHubSettings = (tab?: 'general' | 'bots') => {
+    void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${errorMessage(error)}`));
   };
   // FR-16: one bot's items act on that bot; with one bot the menu is today's.
   const trayActionsFor = (target: () => BotPresenter | undefined): TrayMenuActions => ({
@@ -823,6 +824,7 @@ async function main(): Promise<void> {
       void presenter?.core.createConversation().then((record) => presenter.windows.open(record.id)).then(refreshTray);
     },
     onOpenSettings: (tab) => target()?.openSettings(tab),
+    onOpenHubSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
       void trayUpdates.open().catch((error) => log(errorMessage(error)));
     },
@@ -840,7 +842,7 @@ async function main(): Promise<void> {
     onQuit: quit,
   });
   const hubTrayActions = {
-    onOpenBots: openBots,
+    onOpenSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
       void trayUpdates.open().catch((error) => log(errorMessage(error)));
     },
@@ -860,9 +862,7 @@ async function main(): Promise<void> {
     const from = senderOf(event);
     return from?.role === 'settings' ? from.presenter : null;
   };
-  const fromBotsWindow = (event: Electron.IpcMainInvokeEvent) => botsWindow.owns(event.sender.id);
-  /** A settings page of a bot, or the hub's Bots page. */
-  const fromAnySettings = (event: Electron.IpcMainInvokeEvent) => fromSettings(event) !== null || fromBotsWindow(event);
+  const fromHubSettings = (event: Electron.IpcMainInvokeEvent) => hubSettings.owns(event.sender.id);
   // FR-5: a new bot is created with the provider-first page.
   let createWindow: BrowserWindow | null = null;
   const fromCreate = (event: Electron.IpcMainInvokeEvent) =>
@@ -870,15 +870,15 @@ async function main(): Promise<void> {
   const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
     event.senderFrame === event.sender.mainFrame;
   ipcMain.handle('ui:language', (event) => {
-    if (!ownedMainFrame(event) || (!senderOf(event) && !fromBotsWindow(event) && !fromCreate(event))) throw new Error('Unknown window');
+    if (!ownedMainFrame(event) || (!senderOf(event) && !fromHubSettings(event) && !fromCreate(event))) throw new Error('Unknown window');
     return languageState();
   });
   ipcMain.handle('ui:setLanguage', (event, value: unknown) => {
-    if (!ownedMainFrame(event) || (!fromAnySettings(event) && !fromCreate(event)) || !isLanguagePreference(value))
+    if (!ownedMainFrame(event) || (!fromHubSettings(event) && !fromCreate(event)) || !isLanguagePreference(value))
       throw new Error('Invalid display language');
     saveHubState({ ...hubState, language: value });
     for (const presenter of presented()) presenter.sendLanguage(languageState());
-    for (const window of [botsWindow.browserWindow, createWindow]) {
+    for (const window of [hubSettings.browserWindow, createWindow]) {
       if (window && !window.isDestroyed()) window.webContents.send('ui:languageChanged', languageState());
     }
     void refreshTray();
@@ -950,12 +950,12 @@ async function main(): Promise<void> {
     return (owner ? await dialog.showMessageBox(owner, options) : await dialog.showMessageBox(options)).response === 1;
   };
   ipcMain.handle('hub:bots', (event) => {
-    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
     return listBots();
   });
   // SPEC-009 FR-8: the owner's limits on Boss Cat messages.
   ipcMain.handle('hub:setLimits', async (event, limits: unknown) => {
-    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
     const value = limits && typeof limits === 'object' ? limits as Record<string, unknown> : {};
     try {
       await manager.setLimits({ hopsPerChain: Number(value.hopsPerChain), messagesPerHour: Number(value.messagesPerHour) });
@@ -966,7 +966,7 @@ async function main(): Promise<void> {
     return listBots();
   });
   ipcMain.handle('hub:createBot', (event) => {
-    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
     if (manager.activeCount() >= manager.registry.maxBots) {
       throw new Error(`Cats Bot runs at most ${manager.registry.maxBots} bots. Archive one first.`);
     }
@@ -974,10 +974,10 @@ async function main(): Promise<void> {
     return null;
   });
   ipcMain.handle('hub:botAction', async (event, action: unknown, id: unknown, value: unknown) => {
-    if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
+    if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
     if (quitting) throw new Error('Cats Bot is stopping');
     if (typeof id !== 'string' || !isValidBotId(id)) throw new Error('Unknown bot');
-    const owner = (fromSettings(event)?.settings.browserWindow ?? botsWindow.browserWindow) ?? null;
+    const owner = hubSettings.browserWindow;
     const name = listBots().bots.find((bot) => bot.id === id)?.name ?? id;
     try {
       switch (action) {
@@ -1042,7 +1042,7 @@ async function main(): Promise<void> {
     return listBots();
   });
 
-  const isSettingsWindow = (id: number) => presented().some((presenter) => presenter.settings.owns(id)) || botsWindow.owns(id);
+  const isSettingsWindow = (id: number) => hubSettings.owns(id);
   ipcMain.handle('shell:updateState', (event) => {
     if (!isUpdateSender(event, isSettingsWindow)) throw new Error('Updates are available only from Settings.');
     return updates.snapshot();
@@ -1153,15 +1153,17 @@ async function main(): Promise<void> {
     return null;
   });
   // SPEC-002 FR-4: shell preferences and helpers the settings page uses.
+  // A bot's settings get its own items; the hub's Settings get the app's (D20), with no bot.
   ipcMain.handle('shell:state', (event) => {
     const presenter = fromSettings(event);
-    if (!presenter) return null;
+    if (!presenter && !fromHubSettings(event)) return null;
     return {
-      botId: presenter.botId,
+      botId: presenter?.botId ?? null,
       openAtLogin: hubState.openAtLogin,
       openAtLoginAvailable,
-      floatingVisible: presenter.windows.shellState.floatingBot.visible,
+      floatingVisible: presenter ? presenter.windows.shellState.floatingBot.visible : false,
       version: app.getVersion(),
+      root: presenter ? presenter.root : home,
     };
   });
   ipcMain.handle('shell:setFloatingVisible', (event, visible: unknown) => {
@@ -1200,7 +1202,7 @@ async function main(): Promise<void> {
     return null;
   });
   ipcMain.handle('shell:setOpenAtLogin', (event, enabled: unknown) => {
-    if (!fromSettings(event) || typeof enabled !== 'boolean') return null;
+    if (!fromHubSettings(event) || typeof enabled !== 'boolean') return null;
     setOpenAtLogin(enabled);
     return enabled;
   });
@@ -1216,8 +1218,8 @@ async function main(): Promise<void> {
   });
   ipcMain.handle('shell:openDataFolder', async (event) => {
     const presenter = fromSettings(event);
-    if (!presenter) return null;
-    await shell.openPath(presenter.root);
+    if (!presenter && !fromHubSettings(event)) return null;
+    await shell.openPath(presenter ? presenter.root : home);
     return null;
   });
   ipcMain.handle('shell:openSettings', (event, tab: unknown) => {
@@ -1237,7 +1239,7 @@ async function main(): Promise<void> {
       return true;
     } catch (error) {
       log(`bot ${id} was not added: ${errorMessage(error)}`);
-      openBots();
+      openHubSettings('bots');
       return false;
     }
   };
@@ -1256,7 +1258,7 @@ async function main(): Promise<void> {
       }
       const presenter = primary();
       if (presenter) await presenter.windows.open('home');
-      else openBots();
+      else openHubSettings('bots');
     })().catch((error: unknown) => log(`second launch: ${errorMessage(error)}`));
   });
   app.on('before-quit', (event) => {
@@ -1270,7 +1272,7 @@ async function main(): Promise<void> {
     onClick: () => {
       const presenter = primary();
       if (presenter) void presenter.windows.open('home').then(refreshTray);
-      else openBots();
+      else openHubSettings('bots');
     },
   });
   await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
@@ -1304,7 +1306,7 @@ async function main(): Promise<void> {
     if (externalPid(bot.id) !== null) await attachExternal(bot.id).catch(() => undefined);
   }
   await refreshTray();
-  if (presented().length === 0) openBots();
+  if (presented().length === 0) openHubSettings('bots');
 }
 
 main().catch((error: unknown) => {

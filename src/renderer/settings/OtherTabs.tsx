@@ -193,6 +193,52 @@ export function TelegramTab() {
   );
 }
 
+/** D20: Cats Bot Settings' own tab: what belongs to the app, not to one bot. */
+export function GeneralTab() {
+  useI18n();
+  const toast = useToast();
+  const [shell, setShell] = useState<ShellStateView | null>(null);
+
+  const load = useCallback(async () => {
+    setShell(await api.shell.state());
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const setLogin = async (enabled: boolean) => {
+    await api.shell.setOpenAtLogin(enabled);
+    toast(enabled ? t('Starts at sign-in') : t('No longer starts at sign-in'));
+    await load();
+  };
+
+  return (
+    <section className="panel" data-panel="general">
+      <h2>{t('General')}</h2>
+      <div className="form">
+        <LanguageField />
+        <label className="check" id="app-login-row" hidden={!shell?.openAtLoginAvailable}>
+          <input
+            type="checkbox"
+            id="app-login"
+            checked={shell?.openAtLogin ?? false}
+            onChange={(event) => void setLogin(event.target.checked)}
+          />
+          <span>{t('Start Cats Bot when I sign in')}</span>
+        </label>
+        {shell && <Facts id="general-facts" facts={[['Data folder', shell.root]]} />}
+        <Updates />
+        <div className="row">
+          <button type="button" id="general-open-data" onClick={() => void api.shell.openDataFolder()}>
+            {t('Open data folder')}
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** A bot's own presence and facts; the app's items are in Cats Bot Settings (D20). */
 export function AppTab() {
   useI18n();
   const toast = useToast();
@@ -213,17 +259,11 @@ export function AppTab() {
     toast(visible ? t('The cat is back') : t('The cat is hidden; the tray can bring it back'));
     await load();
   };
-  const setLogin = async (enabled: boolean) => {
-    await api.shell.setOpenAtLogin(enabled);
-    toast(enabled ? t('Starts at sign-in') : t('No longer starts at sign-in'));
-    await load();
-  };
 
   return (
     <section className="panel" data-panel="app">
-      <h2>{t('App')}</h2>
+      <h2>{t('Details')}</h2>
       <div className="form">
-        <LanguageField />
         <label className="check">
           <input
             type="checkbox"
@@ -233,17 +273,7 @@ export function AppTab() {
           />
           <span>{t('Show the floating cat above other windows')}</span>
         </label>
-        <label className="check" id="app-login-row" hidden={!shell?.openAtLoginAvailable}>
-          <input
-            type="checkbox"
-            id="app-login"
-            checked={shell?.openAtLogin ?? false}
-            onChange={(event) => void setLogin(event.target.checked)}
-          />
-          <span>{t('Start Cats Bot when I sign in')}</span>
-        </label>
         {shell && status && <Facts id="app-facts" facts={appFacts(status, shell.version)} />}
-        <Updates />
         <div className="row">
           <button type="button" id="app-open-data" onClick={() => void api.shell.openDataFolder()}>
             {t('Open data folder')}

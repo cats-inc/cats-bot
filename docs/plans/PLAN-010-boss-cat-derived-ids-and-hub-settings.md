@@ -72,15 +72,15 @@ interface or living documents; new bots get `-catsbot` ids.
 
 ### Phase 2: Hub settings
 
-- [ ] 2.1: The hub's Settings window (`scope=hub`) gets a General tab and the Bots
+- [x] 2.1: The hub's Settings window (`scope=hub`) gets a General tab and the Bots
       tab.
   - General holds the app language, start at login, the version, updates and
     the data folder.
   - The tray offers "Settings…" for it with one bot or several.
-- [ ] 2.2: A bot's settings window loses the Bots tab and the hub-level items. It
+- [x] 2.2: A bot's settings window loses the Bots tab and the hub-level items. It
       keeps its bot, notes, life and Telegram tabs, and its own app items: the
       floating cat, its facts and its folder.
-- [ ] 2.3: The hub accepts bot management only from its own Settings window:
+- [x] 2.3: The hub accepts bot management only from its own Settings window:
       `hub:botAction`, `hub:setLimits`, `hub:create` and the Bots listing
       (SPEC-008 FR-17).
 
@@ -130,6 +130,7 @@ reaches only its own bot.
 |------|--------|
 | 2026-10-30 | Plan created from the owner's review of PLAN-009 D1 to D30. |
 | 2026-10-30 | Phase 1 done: the role is Boss Cat in code, data (`bossCat`), CLI (`hub boss-cat`), interface (主控貓) and the living docs; derived ids end in `-catsbot`. 334 tests pass. |
+| 2026-10-30 | Phase 2 done: Cats Bot Settings (General and Bots) opens from the tray's Settings… in every shape and by itself when no bot runs; a bot's settings keep its own tabs (the former App tab is Details) and its tray item is "Bot settings…". Bot management, start at login and updates refuse any other window. Verified with the real Electron hub in an isolated home over CDP. |
 
 ---
 

@@ -107,11 +107,14 @@ export interface NoteLayersView {
 }
 
 export interface ShellStateView {
-  botId: string;
+  /** Null in Cats Bot Settings, which belongs to no bot (D20). */
+  botId: string | null;
   openAtLogin: boolean;
   openAtLoginAvailable: boolean;
   floatingVisible: boolean;
   version: string;
+  /** The bot's folder, or the Cats Bot root in Cats Bot Settings. */
+  root: string;
 }
 
 export interface FloatingBubbleMessage {
