@@ -36,11 +36,11 @@ function BotLine({ bot, first, last, act }: { bot: BotRow; first: boolean; last:
           {bot.id}
           {bot.provider ? ` · ${bot.provider}` : ''} · {t(STATE_LABELS[bot.state])}
           {bot.pid ? ` · pid ${bot.pid}` : ''}
-          {bot.coordinator ? ` · ${t('Coordinator')}` : ''}
+          {bot.bossCat ? ` · ${t('Boss Cat')}` : ''}
         </small>
         {bot.error && bot.state === 'failed' ? <small className="error">{bot.error}</small> : null}
-        {bot.coordinator && bot.coordinatorTools === false
-          ? <small>{t('This provider gives the coordinator no tools; the role stays with the bot.')}</small>
+        {bot.bossCat && bot.bossCatTools === false
+          ? <small>{t('This provider gives the Boss Cat no tools; the role stays with the bot.')}</small>
           : null}
       </div>
       {bot.state === 'archived' ? (
@@ -59,9 +59,9 @@ function BotLine({ bot, first, last, act }: { bot: BotRow; first: boolean; last:
           </label>
           <button type="button" aria-label={t('Move up')} disabled={first} onClick={() => act('moveUp')}>↑</button>
           <button type="button" aria-label={t('Move down')} disabled={last} onClick={() => act('moveDown')}>↓</button>
-          {bot.coordinator
-            ? <button type="button" onClick={() => act('clearCoordinator')}>{t('Clear coordinator')}</button>
-            : <button type="button" onClick={() => act('makeCoordinator')}>{t('Make coordinator')}</button>}
+          {bot.bossCat
+            ? <button type="button" onClick={() => act('clearBossCat')}>{t('Remove Boss Cat')}</button>
+            : <button type="button" onClick={() => act('makeBossCat')}>{t('Make Boss Cat')}</button>}
           <button type="button" disabled={bot.state === 'external'} onClick={() => act('archive')}>{t('Archive…')}</button>
         </div>
       )}
@@ -104,7 +104,7 @@ export function BotsTab() {
     }
   };
 
-  // SPEC-009 FR-8: the owner's limits on what the coordinator sends.
+  // SPEC-009 FR-8: the owner's limits on what the Boss Cat sends.
   const setLimit = async (key: 'hopsPerChain' | 'messagesPerHour', value: number) => {
     if (!listing || !Number.isSafeInteger(value) || value < 1) return;
     try {
@@ -138,9 +138,9 @@ export function BotsTab() {
       </ul>
       {listing && (
         <>
-          <h3>{t('Coordinator')}</h3>
+          <h3>{t('Boss Cat')}</h3>
           <p className="lead">
-            {t('The coordinator can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.')}
+            {t('The Boss Cat can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.')}
           </p>
           <div className="row">
             <label>

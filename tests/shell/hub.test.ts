@@ -41,17 +41,17 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
   if (read.state !== 'ok') return;
   assert.deepEqual(read.registry.bots.map((bot) => [bot.id, bot.order, bot.startAutomatically, bot.archivedAt]),
     [['mochi', 0, true, null], ['nori', 1, true, null]]);
-  assert.equal(read.registry.coordinator.holder, 'mochi');
+  assert.equal(read.registry.bossCat.holder, 'mochi');
   assert.deepEqual(read.registry.environmentProfile, { kind: 'native' });
   assert.equal(read.registry.maxBots, 3);
 
   // Missing fields get defaults; a holder that names no bot is cleared.
-  writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], coordinator: { holder: 'ghost' } }));
+  writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], bossCat: { holder: 'ghost' } }));
   const defaults = readRegistry(root);
   assert.equal(defaults.state, 'ok');
   if (defaults.state === 'ok') {
     assert.deepEqual(defaults.registry.bots[0], { id: 'mochi', order: 0, startAutomatically: true, createdAt: new Date(0).toISOString(), archivedAt: null });
-    assert.equal(defaults.registry.coordinator.holder, null);
+    assert.equal(defaults.registry.bossCat.holder, null);
   }
 
   for (const corrupt of ['{not json', JSON.stringify({ schemaVersion: 2 }), JSON.stringify({ schemaVersion: 1, bots: [{ id: '../x' }] }),

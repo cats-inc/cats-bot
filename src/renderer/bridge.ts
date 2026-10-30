@@ -129,9 +129,9 @@ export interface BotRow {
   error: string | null;
   pid: number | null;
   startAutomatically: boolean;
-  coordinator: boolean;
-  /** SPEC-009 FR-11: for the holder, whether its provider gives it the coordinator tools. */
-  coordinatorTools: boolean | null;
+  bossCat: boolean;
+  /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
+  bossCatTools: boolean | null;
 }
 
 export interface BotListing {
@@ -140,12 +140,12 @@ export interface BotListing {
   unregistered: string[];
   maxBots: number;
   active: number;
-  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  /** SPEC-009 FR-8: the owner's limits on Boss Cat messages. */
   limits: { hopsPerChain: number; messagesPerHour: number };
 }
 
 export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete'
-  | 'makeCoordinator' | 'clearCoordinator';
+  | 'makeBossCat' | 'clearBossCat';
 
 export interface SetupInput {
   name: string;

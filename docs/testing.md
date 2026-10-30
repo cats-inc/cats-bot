@@ -107,12 +107,12 @@ released explicitly, without sleeps or real profile access.
   running core with a fake helper. `tests/core/desktopControl.test.ts` covers
   the phase B guard fixtures (PLAN-006 P5).
 
-### Hub, cores and coordinator (PLAN-009)
+### Hub, cores and Boss Cat (PLAN-009, PLAN-010)
 
 - **Location**: `tests/core/channel.test.ts`, `channelCore.test.ts`,
   `tests/integration/channelRun.test.ts`, `coreProcess.test.ts`,
-  `tests/shell/hub.test.ts`, `botManagement.test.ts`, `coordinator.test.ts`,
-  `coordinatorSafety.test.ts`, `tests/core/botMessages.test.ts`,
+  `tests/shell/hub.test.ts`, `botManagement.test.ts`, `bossCat.test.ts`,
+  `bossCatSafety.test.ts`, `tests/core/botMessages.test.ts`,
   `tests/core/desktopControl.test.ts` (the lease) and
   `tests/architecture-boundaries.test.ts`.
 - **Scope**: the host channel's protocol rules against a fake core and with real
@@ -121,7 +121,7 @@ released explicitly, without sleeps or real profile access.
   while waiting, a core that answers nothing), the snapshot budgets, the hub's
   registry, state, locks and control endpoint, archive, restore and delete
   through `trash/` with a junction inside a bot, the cap, supervision limits,
-  the desktop lease held by another process, and the coordinator between two
+  the desktop lease held by another process, and the Boss Cat between two
   cores reached only through their channels: deliveries once, answers back,
   limits, consent and authorization. The security review's cases run with fake
   cores: a former holder's request, one request at a time and the cool-down,
@@ -134,7 +134,7 @@ released explicitly, without sleeps or real profile access.
 - **Manual**: the real Electron hub in an isolated `CATS_BOT_HOME` and
   `--user-data-dir`, with the fixture CLI: first run, a second launch, a hub
   crash and reattach, two bots with a killed core, `cats-bot quit` per bot, and
-  `cats-bot hub coordinator`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot` and
+  `cats-bot hub boss-cat`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot` and
   the provider folders before and after; nothing may change.
 - **Manual, first run through the setup page**: launch without `--provider`,
   with an isolated home whose `.npmrc` names an existing global npm prefix, so

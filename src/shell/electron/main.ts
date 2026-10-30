@@ -27,12 +27,12 @@ import { isLanguagePreference, resolveLocale, translate } from '../../shared/lan
 import { BotPresenter, type PresenterHost } from './botPresenter.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
-import { Coordinator } from './hub/coordinator.ts';
+import { BossCatBroker } from './hub/bossCatBroker.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
 import {
   addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, withHolder, writeRegistry, type BotRegistry,
-  type CoordinatorLimits, type RegistryBot,
+  type BossCatLimits, type RegistryBot,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
@@ -114,9 +114,9 @@ interface BotRow {
   error: string | null;
   pid: number | null;
   startAutomatically: boolean;
-  coordinator: boolean;
-  /** SPEC-009 FR-11: for the holder, whether its provider gives it the coordinator tools. */
-  coordinatorTools: boolean | null;
+  bossCat: boolean;
+  /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
+  bossCatTools: boolean | null;
 }
 
 async function main(): Promise<void> {
@@ -271,7 +271,7 @@ async function main(): Promise<void> {
   };
   // FR-2 to FR-4: the registry, created on the first run. Bots set up before
   // there was a hub (`cats-bot init`, a development shell) are taken in, up to
-  // the cap; the first is the coordinator holder.
+  // the cap; the first is the Boss Cat.
   const createRegistry = async (): Promise<BotRegistry | null> => {
     const existing = listBotDirectories(hubPaths.bots).ids;
     let ids: string[];
@@ -352,7 +352,7 @@ async function main(): Promise<void> {
   ].filter((window): window is BrowserWindow => window !== null);
   let tray: BotTray | null = null;
 
-  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: CoordinatorLimits } => {
+  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: BossCatLimits } => {
     const registry = manager.registry;
     const rows = registry.bots.map((bot): BotRow => {
       const archived = bot.archivedAt !== null;
@@ -375,9 +375,9 @@ async function main(): Promise<void> {
         error: runner?.error ?? null,
         pid: runner?.handle?.hosted.pid ?? external,
         startAutomatically: bot.startAutomatically,
-        coordinator: registry.coordinator.holder === bot.id,
+        bossCat: registry.bossCat.holder === bot.id,
         // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools.
-        coordinatorTools: registry.coordinator.holder === bot.id && profile !== null
+        bossCatTools: registry.bossCat.holder === bot.id && profile !== null
           ? !PROVIDERS_WITHOUT_SESSION_MCP.includes(profile.executionTarget.provider)
           : null,
       };
@@ -435,17 +435,17 @@ async function main(): Promise<void> {
   };
   /** FR-3: every running core hears whether it holds the role. */
   const announceHolder = () => {
-    const holder = manager.registry.coordinator.holder;
+    const holder = manager.registry.bossCat.holder;
     // FR-5: a request of a bot that no longer holds the role expires.
     for (const [controller, asker] of pendingConfirmations) if (asker !== holder) controller.abort();
     for (const presenter of presented()) {
-      void presenter.core.setCoordinator(presenter.botId === holder).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+      void presenter.core.setBossCat(presenter.botId === holder).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
     }
     botsChanged();
   };
-  const coordinator = new Coordinator({
+  const bossCat = new BossCatBroker({
     home,
-    holder: () => manager.registry.coordinator.holder,
+    holder: () => manager.registry.bossCat.holder,
     limits: () => manager.registry.limits,
     bots: () => listBots().bots.filter((bot) => bot.state !== 'archived').map(({ id, name, state }) => ({ id, name, state })),
     core: (id) => runners.get(id)?.handle?.core ?? null,
@@ -551,10 +551,10 @@ async function main(): Promise<void> {
     isQuitting: () => quitting,
     locale,
     refreshTray: () => { void refreshTray(); },
-    // SPEC-009 FR-8: a bot that finished a coordinator's message answers it.
+    // SPEC-009 FR-8: a bot that finished a Boss Cat's message answers it.
     event: (presenter, event) => {
       if (event.type === 'turn.completed') {
-        void coordinator.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+        void bossCat.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
       }
     },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
@@ -599,8 +599,8 @@ async function main(): Promise<void> {
         ...(runtimeEntry ? { runtimeEntry } : {}),
         // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
         ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
-      // SPEC-009: the channel names the bot that calls the coordinator tools; its claims count for nothing.
-      }, { host: hostIdentity, services: { ...services, hub: (call) => coordinator.handle(botId, call) } });
+      // SPEC-009: the channel names the bot that calls the Boss Cat tools; its claims count for nothing.
+      }, { host: hostIdentity, services: { ...services, hub: (call) => bossCat.handle(botId, call) } });
     } catch (error) {
       if (error instanceof CoreHostedElsewhereError) {
         await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${errorMessage(attachError)}`));
@@ -617,7 +617,7 @@ async function main(): Promise<void> {
     try {
       await presenter.start();
       // SPEC-009 FR-3: the core learns whether it holds the role before its next send.
-      await presenter.core.setCoordinator(manager.registry.coordinator.holder === botId);
+      await presenter.core.setBossCat(manager.registry.bossCat.holder === botId);
     } catch (error) {
       presenter.close();
       await hosted.stop().catch(() => undefined);
@@ -627,7 +627,7 @@ async function main(): Promise<void> {
     }
     // FR-12: once the runner holds it, what waits for this bot is sent and its finished replies collected.
     setImmediate(() => {
-      void coordinator.attached(botId).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+      void bossCat.attached(botId).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
     });
     return presenter;
   };
@@ -663,8 +663,8 @@ async function main(): Promise<void> {
         gaveUp: () => {
           if (quitting) return;
           // SPEC-009 FR-12: what waits for a bot that can no longer run returns to its sender as failed.
-          void coordinator.targetGone(id, 'it kept failing and is not restarted', { archived: false })
-            .catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+          void bossCat.targetGone(id, 'it kept failing and is not restarted', { archived: false })
+            .catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
@@ -685,14 +685,14 @@ async function main(): Promise<void> {
     installationId,
     executable: process.execPath,
     home,
-    coordinator: manager.registry.coordinator.holder,
+    bossCat: manager.registry.bossCat.holder,
     bots: listBots().bots.map((bot) => ({ id: bot.id, state: bot.state, pid: bot.pid, startAutomatically: bot.startAutomatically })),
   });
   const hubControl = new HubControlServer(home, installationId, {
     // FR-25: the owner CLI's view of the hub.
     status: hubStatus,
     // SPEC-009 FR-2: the owner assigns or clears the role from the CLI too.
-    setCoordinator: async (body) => {
+    setBossCat: async (body) => {
       const bot = body.bot;
       if (bot !== null && (typeof bot !== 'string' || !isValidBotId(bot))) throw new HubControlRefusal('Name a bot by its id, or clear the role.');
       try {
@@ -953,7 +953,7 @@ async function main(): Promise<void> {
     if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
     return listBots();
   });
-  // SPEC-009 FR-8: the owner's limits on coordinator messages.
+  // SPEC-009 FR-8: the owner's limits on Boss Cat messages.
   ipcMain.handle('hub:setLimits', async (event, limits: unknown) => {
     if (!ownedMainFrame(event) || !fromAnySettings(event)) throw new Error('Bots are managed only from Settings');
     const value = limits && typeof limits === 'object' ? limits as Record<string, unknown> : {};
@@ -988,12 +988,12 @@ async function main(): Promise<void> {
         case 'stop':
           await runners.get(id)?.stop();
           break;
-        case 'makeCoordinator':
+        case 'makeBossCat':
           await manager.setHolder(id, 'owner');
           announceHolder();
           break;
-        case 'clearCoordinator':
-          if (manager.registry.coordinator.holder === id) await manager.setHolder(null, 'owner');
+        case 'clearBossCat':
+          if (manager.registry.bossCat.holder === id) await manager.setHolder(null, 'owner');
           announceHolder();
           break;
         case 'startAutomatically':
@@ -1019,8 +1019,8 @@ async function main(): Promise<void> {
           await manager.archive(id);
           runners.delete(id);
           announceHolder();
-          // SPEC-009 FR-12: what waited for it returns to the coordinator as failed.
-          void coordinator.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`coordinator: ${errorMessage(error)}`));
+          // SPEC-009 FR-12: what waited for it returns to the Boss Cat as failed.
+          void bossCat.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
           break;
         case 'restore':
           await manager.restore(id);

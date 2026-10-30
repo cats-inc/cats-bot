@@ -30,7 +30,7 @@ export const CORE_COMMANDS = [
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
 export const HOST_ONLY_COMMANDS = [
   'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory',
-  'admitBotMessage', 'botDeliveries', 'setCoordinator', 'quit',
+  'admitBotMessage', 'botDeliveries', 'setBossCat', 'quit',
 ] as const;
 
 export type CoreCommand = (typeof CORE_COMMANDS)[number] | (typeof HOST_ONLY_COMMANDS)[number];
@@ -57,8 +57,8 @@ export interface CoreCommandTarget extends BotHostApi {
   admitBotMessage(delivery: BotDelivery): MaybePromise<WorkItem>;
   /** SPEC-009 FR-12: how the named deliveries stand, read from the journal. */
   botDeliveries(deliveryIds: string[]): MaybePromise<BotDeliveryState[]>;
-  /** SPEC-009 FR-3: whether the hub reports this bot as the coordinator holder. */
-  setCoordinator(holder: boolean): MaybePromise<void>;
+  /** SPEC-009 FR-3: whether the hub reports this bot as the Boss Cat. */
+  setBossCat(holder: boolean): MaybePromise<void>;
 }
 
 const MAX_DELIVERY_TEXT = 64 * 1024;
@@ -214,9 +214,9 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       if (!Array.isArray(ids) || ids.length > 1000) throw new Error('deliveryIds must be a list');
       return target.botDeliveries(ids.map((id) => asString(id, 'deliveryId')));
     }
-    case 'setCoordinator':
+    case 'setBossCat':
       if (typeof args[0] !== 'boolean') throw new Error('holder must be true or false');
-      await target.setCoordinator(args[0]);
+      await target.setBossCat(args[0]);
       return null;
     case 'useCommandDirectory': {
       const directory = asString(args[0], 'directory', 4096);

@@ -21,11 +21,11 @@ export interface LanguageState {
 }
 
 export const zhTW: Record<string, string> = {
-  'Coordinator, without tools on this provider': '協調者（這個 provider 沒有工具）',
-  'This provider gives the coordinator no tools; the role stays with the bot.': '這個 provider 不提供協調者工具；角色仍由這個機器人保留。',
-  'Clear coordinator': '取消協調者',
-  'Make coordinator': '設為協調者',
-  'The coordinator can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.': '協調者可以把工作交給其他機器人。建立或啟動機器人、轉交角色，都要等你確認。',
+  'Boss Cat, without tools on this provider': '主控貓（這個 provider 沒有工具）',
+  'This provider gives the Boss Cat no tools; the role stays with the bot.': '這個 provider 不提供主控貓工具；角色仍由這個機器人保留。',
+  'Remove Boss Cat': '取消主控貓',
+  'Make Boss Cat': '設為主控貓',
+  'The Boss Cat can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.': '主控貓可以把工作交給其他機器人。建立或啟動機器人、轉交角色，都要等你確認。',
   'Hops per chain': '每條對話鏈的轉送次數',
   'Messages per hour': '每小時訊息數',
   'from {name}': '來自 {name}',
@@ -41,7 +41,7 @@ export const zhTW: Record<string, string> = {
   Stopped: '已停止',
   Failed: '失敗',
   Starting: '啟動中',
-  Coordinator: '協調者',
+  'Boss Cat': '主控貓',
   Bots: '機器人',
   'Bots…': '機器人…',
   'New bot': '新增機器人',

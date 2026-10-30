@@ -84,10 +84,8 @@ export class BotManager {
       if (taken(input.id)) throw new BotManagementError(`A bot with the id ${input.id} already exists.`);
       return input.id;
     }
-    const base = deriveBotId(input.name);
-    if (!taken(base)) return base;
-    for (let n = 2; n < 1000; n += 1) {
-      const id = `${base.slice(0, 60)}-${n}`;
+    for (let copy = 1; copy < 1000; copy += 1) {
+      const id = deriveBotId(input.name, copy);
       if (!taken(id)) return id;
     }
     throw new BotManagementError('No free bot id is left for that name.');
@@ -127,7 +125,7 @@ export class BotManager {
     });
   }
 
-  /** SPEC-009 FR-8: the owner's limits on coordinator messages. */
+  /** SPEC-009 FR-8: the owner's limits on Boss Cat messages. */
   setLimits(limits: { hopsPerChain: number; messagesPerHour: number }): Promise<void> {
     return this.serial(() => {
       for (const key of ['hopsPerChain', 'messagesPerHour'] as const) {
@@ -177,10 +175,10 @@ export class BotManager {
       const paths = hubPathsFor(this.home);
       this.move(id, join(paths.bots, id), join(paths.archive, id));
       // SPEC-009 FR-2: archiving the holder clears the role.
-      const coordinator = this.current.coordinator.holder === id ? { holder: null, assignedAt: null, how: null } : this.current.coordinator;
+      const bossCat = this.current.bossCat.holder === id ? { holder: null, assignedAt: null, how: null } : this.current.bossCat;
       this.save({
         ...this.current,
-        coordinator,
+        bossCat,
         bots: this.current.bots.map((entry) => (entry.id === id ? { ...entry, archivedAt: this.now().toISOString() } : entry)),
       });
     });
@@ -245,8 +243,8 @@ export class BotManager {
         }
       }
     }
-    if (registry.coordinator.holder && !registry.bots.some((bot) => bot.id === registry.coordinator.holder)) {
-      registry = { ...registry, coordinator: { holder: null, assignedAt: null, how: null } };
+    if (registry.bossCat.holder && !registry.bots.some((bot) => bot.id === registry.bossCat.holder)) {
+      registry = { ...registry, bossCat: { holder: null, assignedAt: null, how: null } };
     }
     const reconciled = reconcileRegistry(this.home, registry, this.now());
     if (JSON.stringify(reconciled.registry) !== JSON.stringify(this.current)) this.save(reconciled.registry);

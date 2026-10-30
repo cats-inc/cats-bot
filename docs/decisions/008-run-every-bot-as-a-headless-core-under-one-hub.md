@@ -66,11 +66,11 @@ precise total.
    in both directions:
    - from hub to core, the whole `BotHostApi`;
    - from core to hub, the event stream and the host services only the hub can
-     provide (secret cipher, hub PID, coordinator brokering for ADR-009).
+     provide (secret cipher, hub PID, Boss Cat brokering for ADR-009).
 
    The hub still never receives the Runtime URL or key. Calls from the hub's own
    windows keep today's work-item sources. The only new source is `bot`, for work
-   that the coordinator hands over (ADR-009). No new path can create an
+   that the Boss Cat hands over (ADR-009). No new path can create an
    owner-sourced work item.
 4. **Lifecycle.** At start the hub attaches to cores that are already running and
    starts bots marked to start automatically. Closing windows changes nothing
@@ -91,8 +91,8 @@ precise total.
 
 - One Chromium for all bots; an extra bot costs its core, Runtime and CLI.
 - Restarting or crashing the UI no longer stops any bot.
-- Bot management, one tray, aggregate unread state and one update coordinator
-  become possible, and the coordinator role (ADR-009) has a host to ask.
+- Bot management, one tray, aggregate unread state and one updater
+  become possible, and the Boss Cat role (ADR-009) has a host to ask.
 
 ### Negative
 

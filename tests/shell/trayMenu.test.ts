@@ -95,7 +95,7 @@ const status: BotStatus = {
   queue: { queued: 0, running: null },
   pendingInteractions: 0,
   awaitingOwner: 0,
-  coordinator: { holder: false, tools: false },
+  bossCat: { holder: false, tools: false },
   conversations: 2,
   schedules: 0,
   heartbeat: { enabled: true, nextAt: null },

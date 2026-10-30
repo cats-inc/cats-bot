@@ -87,11 +87,11 @@ Commands:
                                          bind the bot to a Telegram bot token (long polling)
   open [conversation|home]               ask the running hub to show a conversation window
   hub status [--json]                    the running hub's bots, through its control endpoint
-  hub coordinator <id> | --clear         give a bot the coordinator role, or clear it (through the hub)
+  hub boss-cat <id> | --clear        make a bot the Boss Cat, or clear the role (through the hub)
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
-An id is 1 to 64 lowercase letters, digits and single hyphens; init derives one from --name.
+An id is 1 to 64 lowercase letters, digits and single hyphens; init derives one from --name, ending in -catsbot.
 `;
 
 function listBotIds(botsHome: string): string[] {
@@ -615,7 +615,7 @@ interface HubStatus {
   pid: number;
   installationId: string;
   home: string;
-  coordinator: string | null;
+  bossCat: string | null;
   bots: Array<{ id: string; state: string; pid: number | null; startAutomatically: boolean }>;
 }
 
@@ -625,16 +625,16 @@ async function commandHub(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   let status: HubStatus;
   if (subcommand === 'status') {
     status = await callHubControl(resolveCatsBotHome(env), { operation: 'status' }) as HubStatus;
-  } else if (subcommand === 'coordinator') {
+  } else if (subcommand === 'boss-cat') {
     // SPEC-009 FR-2: the owner assigns or clears the role through the running hub.
     const clear = parsed.flags.get('clear') === true;
     if (!clear && !bot) {
-      process.stderr.write('hub coordinator needs a bot id, or --clear\n');
+      process.stderr.write('hub boss-cat needs a bot id, or --clear\n');
       return 2;
     }
-    status = await callHubControl(resolveCatsBotHome(env), { operation: 'setCoordinator', bot: clear ? null : bot }) as HubStatus;
+    status = await callHubControl(resolveCatsBotHome(env), { operation: 'setBossCat', bot: clear ? null : bot }) as HubStatus;
   } else {
-    process.stderr.write('hub needs a subcommand: status or coordinator\n');
+    process.stderr.write('hub needs a subcommand: status or boss-cat\n');
     return 2;
   }
   if (parsed.flags.get('json') === true) {
@@ -643,7 +643,7 @@ async function commandHub(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   }
   process.stdout.write(`hub pid ${status.pid}, installation ${status.installationId}\nroot ${status.home}\n`);
   for (const bot of status.bots) {
-    const details = [bot.pid ? `pid ${bot.pid}` : null, bot.id === status.coordinator ? 'coordinator' : null, bot.startAutomatically ? null : 'manual start']
+    const details = [bot.pid ? `pid ${bot.pid}` : null, bot.id === status.bossCat ? 'Boss Cat' : null, bot.startAutomatically ? null : 'manual start']
       .filter(Boolean).join(', ');
     process.stdout.write(`  ${bot.id}  ${bot.state}${details ? ` (${details})` : ''}\n`);
   }
