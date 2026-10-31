@@ -120,6 +120,8 @@ test('required validate gate rejects missing, failed or cancelled package covera
   assert.notEqual(check('failure', 'tested', 'success', 'skipped'), 0);
   assert.notEqual(check('success', '', 'success', 'skipped'), 0);
   assert.notEqual(check('success', 'other', 'success', 'skipped'), 0, 'only docs or tested may skip the contract');
+  assert.notEqual(check('success', 'docs', 'success', 'success'), 0, 'a skip must not also run the contract');
+  assert.notEqual(check('success', 'tested', 'success', 'success'), 0);
 });
 
 test('the plan skips docs-only changes first, then a merged pull request that already passed', () => {
