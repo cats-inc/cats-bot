@@ -19,6 +19,11 @@ concurrency:
 jobs:
   guard:
     runs-on: ubuntu-latest
+    # Job permissions replace the workflow's, so contents: read is restated.
+    # actions: read lets the guard find main's CI run for the source commit.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       tag: ${{ steps.identity.outputs.tag }}
       source: ${{ steps.identity.outputs.source }}
@@ -36,8 +41,9 @@ jobs:
           RELEASE_TAG: ${{ inputs.tag }}
         with:
           script: |
-            const { guardRelease } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
+            const { guardRelease, requireTestedSource } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
             const input = await guardRelease({ github, root: process.env.GITHUB_WORKSPACE, tag: process.env.RELEASE_TAG, sourceCommit: context.sha });
+            await requireTestedSource({ github, owner: input.owner, repo: input.repo, sourceCommit: context.sha });
             core.setOutput('tag', input.tag);
             core.setOutput('source', context.sha);
             core.setOutput('runtime', input.runtime.commit);
@@ -86,8 +92,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      - run: npm run typecheck
-      - run: npm test
+      # The guard required main's CI to pass on this commit, which ran typecheck
+      # and the tests on all three platforms; the release only builds and signs.
       - run: npm run build
       - name: Stage macOS notarization key
         if: matrix.platform == 'macos'

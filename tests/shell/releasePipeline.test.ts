@@ -9,7 +9,7 @@ import { parseBotRelease, UPDATE_REPOSITORY } from '../../src/shell/electron/upd
 
 // CI scripts are intentionally plain JavaScript, also loaded by github-script.
 const contract = await import(new URL('../../scripts/release-contract.mjs', import.meta.url).href);
-const { guardRelease } = await import(new URL('../../scripts/release-github.mjs', import.meta.url).href);
+const { guardRelease, requireTestedSource } = await import(new URL('../../scripts/release-github.mjs', import.meta.url).href);
 const sourceCommit = 'a'.repeat(40);
 async function inputs(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'cats-release-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -72,6 +72,25 @@ test('release guard only resumes its own draft and rejects reused tags, publicat
   tagged = true; await assert.rejects(guard(), /tag already exists/u); tagged = false;
   releases = [{ ...draft, target_commitish: 'c'.repeat(40) }]; await assert.rejects(guard(), /Refusing/u);
   releases = [{ ...draft, draft: false }]; await assert.rejects(guard(), /must exceed/u);
+});
+
+test('the preview needs main CI to have passed on its commit and does not rerun the tests', async () => {
+  let runs: object[] = [], asked: Record<string, unknown> = {};
+  const github = { rest: { actions: { listWorkflowRuns: async (params: Record<string, unknown>) => {
+    asked = params; return { data: { workflow_runs: runs } };
+  } } } };
+  const check = () => requireTestedSource({ github, owner: 'cats-inc', repo: 'cats-bot', sourceCommit });
+  await assert.rejects(check(), /CI has not passed/u);
+  assert.deepEqual([asked.workflow_id, asked.head_sha, asked.event, asked.branch], ['ci.yaml', sourceCommit, 'push', 'main']);
+  runs = [{ head_sha: sourceCommit, conclusion: 'failure' }]; await assert.rejects(check(), /CI has not passed/u);
+  runs = [{ head_sha: 'c'.repeat(40), conclusion: 'success' }]; await assert.rejects(check(), /CI has not passed/u);
+  runs = [{ head_sha: sourceCommit, conclusion: 'failure' }, { head_sha: sourceCommit, conclusion: 'success' }]; await check();
+  const workflow = parse(await readFile(new URL('../../.github/workflows/bot-preview.yml', import.meta.url), 'utf8'));
+  assert.deepEqual(workflow.jobs.guard.permissions, { contents: 'read', actions: 'read' });
+  assert.match(workflow.jobs.guard.steps.at(-1).with.script, /requireTestedSource/u);
+  const commands = workflow.jobs.build.steps.map((step: { run?: string }) => step.run ?? '');
+  assert.ok(commands.includes('npm run build'));
+  assert.ok(!commands.some((run: string) => /npm (test|run typecheck)/u.test(run)));
 });
 
 test('complete assets verify bytes, architecture metadata, source bundle and packaged identity', async t => {
