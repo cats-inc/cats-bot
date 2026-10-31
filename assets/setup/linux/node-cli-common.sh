@@ -256,7 +256,8 @@ run_node_prefix_setup() {
       printf '"desiredPrefix":"%s",' "$(json_escape "$desired_prefix")"
       printf '"shellRc":"%s",' "$(json_escape "$shell_rc")"
       printf '"plannedActions":'
-      json_string_array "${planned_actions[@]}"
+      # Bash 3.2 treats an empty array as unset under nounset; the JSON writer skips empty values.
+      json_string_array "${planned_actions[@]:-}"
       printf ','
       printf '"appliedChanges":[],'
       printf '"warnings":[],'
@@ -326,10 +327,10 @@ run_node_prefix_setup() {
     printf '"desiredPrefix":"%s",' "$(json_escape "$desired_prefix")"
     printf '"shellRc":"%s",' "$(json_escape "$shell_rc")"
     printf '"plannedActions":'
-    json_string_array "${planned_actions[@]}"
+    json_string_array "${planned_actions[@]:-}"
     printf ','
     printf '"appliedChanges":'
-    json_string_array "${applied_changes[@]}"
+    json_string_array "${applied_changes[@]:-}"
     printf ','
     printf '"warnings":[],'
     printf '"manualSteps":[],'
