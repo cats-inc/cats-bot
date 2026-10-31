@@ -178,6 +178,17 @@ test('ADR-011: a note hidden before it is forgotten is reported as not shown, so
   assert.deepEqual(released.at(-1), { handles: [window.webContents.id], shown: [false], visible: [false], destroyed: [true] });
 });
 
+test('ADR-011: a note Electron closes while the app quits is hidden and reported, and opens again next time', async t => {
+  const { host, released } = recordingHost('wallpaper');
+  const { windows, quit } = fixture(t, host);
+  const window = await restoredNote(windows, 'home', 'wallpaper');
+  quit();
+  window.close();
+  assert.deepEqual(released, [{ handles: [window.webContents.id], shown: [true], visible: [false], destroyed: [false] }]);
+  assert.equal(window.isDestroyed(), true, 'not kept open as an owner close would be');
+  assert.equal(windows.shellState.views.home!.open, true);
+});
+
 test('ADR-011: quitting reports every note in one call after all of them are gone', async t => {
   const { host, released } = recordingHost('wallpaper');
   const { windows } = fixture(t, host);

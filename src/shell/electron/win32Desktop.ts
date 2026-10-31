@@ -220,6 +220,9 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
     }
   };
 
+  /** Shown as the shell means it: the window's own WS_VISIBLE, whatever its host's. */
+  const shown = (window: Hwnd): boolean => (windows.style(window) & WS_VISIBLE) !== 0;
+
   /**
    * A saved style with the window's visibility now: the style saved at the first attach
    * carries WS_VISIBLE from then, and writing it back would show a hidden note.
@@ -252,7 +255,7 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
         return false;
       }
       const current = attached.get(window);
-      const uncovers = current?.layer === 'wallpaper' && current.parent !== parent && windows.visible(window);
+      const uncovers = current?.layer === 'wallpaper' && current.parent !== parent && shown(window);
       const style = current?.style ?? windows.style(window);
       const rect = windows.rect(window);
       windows.setStyle(window, withCurrentVisibility(window, (style & ~WS_POPUP) | WS_CHILD));
@@ -270,8 +273,11 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
       const current = attached.get(window);
       if (!current) return;
       attached.delete(window);
+      // A child dies with its host, so with the host gone the entry is stale and a window with its handle is another
+      // one (a lift can come before anything looks at the hosts again): left alone, and nothing to uncover.
+      if (!windows.alive(current.parent)) return;
       // A destroyed window may have been shown until then.
-      const uncovers = current.layer === 'wallpaper' && (!windows.alive(window) || windows.visible(window));
+      const uncovers = current.layer === 'wallpaper' && (!windows.alive(window) || shown(window));
       if (windows.alive(window)) {
         const rect = windows.rect(window);
         windows.setParent(window, 0);

@@ -44,16 +44,20 @@ porting fleet's handling would not fix this defect.
   that never uses the wallpaper layer never receives it.
 - The Win32 desktop host asks for it on every way a shown note leaves the wallpaper layer: `attach`
   to another host, `detach` (a destroyed window counts as shown), and a new `released(windows)` for
-  windows the shell hid or destroyed. A note hidden already uncovers nothing and sends none, read
-  with `IsWindowVisible` before the move, or reported by the shell.
+  windows the shell hid or destroyed. A note hidden already uncovers nothing and sends none: shown
+  is the window's own `WS_VISIBLE`, read before the move or reported by the shell, whatever its
+  host's visibility.
 - The note manager reports a note after hiding it, with whether it was shown until then, and destroys
   notes (forget, quit) by hiding all of them first, destroying them, then reporting them in one call,
   so a quit with several wallpaper notes sends one request after all of them are gone, before the
   process exits. Quit and the update installation both stop every bot's runner first, which closes
-  its presenter and so its notes this way.
+  its presenter and so its notes this way. A note Electron closes itself while the app quits (its
+  presenter was not closed, as when its core was lost during the quit) is hidden and reported as it
+  closes.
 - Explorer restarting takes attached notes down without a report. The host forgets an entry whose
-  window or host is gone each time it looks at the hosts, so a later window given the same handle is
-  not mistaken for the dead note; the new hosts draw a fresh wallpaper, so nothing is requested.
+  window or host is gone each time it looks at the hosts, and `detach` (the lift) leaves a window
+  alone when its entry's host is gone, so a later window given the same handle is not mistaken for
+  the dead note; the new hosts draw a fresh wallpaper, so nothing is requested.
 - The request is synchronous with the same bounded `SendMessageTimeout` (abort if hung, 250 ms) as
   discovery. Nothing global changes: no wallpaper setting, registry value or Explorer restart.
 

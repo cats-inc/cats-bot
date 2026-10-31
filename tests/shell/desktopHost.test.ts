@@ -193,6 +193,32 @@ test('after Explorer restarts, the notes it took down are forgotten and a window
   assert.equal(windows.style(reused), style, "its own top-level style, not the dead note's");
 });
 
+test('a lift before anything looks at the hosts leaves a window holding a dead note handle alone', () => {
+  const { windows, host } = setup();
+  host.attach(windows.addNote(100, NOTE), 'wallpaper');
+  windows.restartExplorer(1000);
+  const reused = windows.addNote(100, NOTE);
+  windows.get(reused).style |= 0x00040000;
+  const style = windows.style(reused);
+  const placed = windows.positions.length;
+  // The owner opens the new note: the shell lifts it with detach, before any refresh.
+  host.detach(reused);
+  assert.equal(windows.style(reused), style);
+  assert.equal(windows.positions.length, placed, 'not moved');
+  assert.deepEqual(windows.requests, []);
+  assert.equal(host.hostAlive(reused), false, 'forgotten');
+});
+
+test('shown means the own WS_VISIBLE of the note, as the shell reports it, whatever the visibility of its host', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  host.attach(note, 'wallpaper');
+  windows.setShown(WALLPAPER_HOST, false);
+  assert.equal(windows.visible(note), false, 'IsWindowVisible would say hidden');
+  host.attach(note, 'desktop');
+  assert.deepEqual(windows.requests, [REPAINT]);
+});
+
 test('bring to front shows and activates a top-level note', () => {
   const { windows, host } = setup();
   const note = windows.addNote(100, NOTE, false);

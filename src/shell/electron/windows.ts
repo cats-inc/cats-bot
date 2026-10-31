@@ -234,12 +234,17 @@ export class NoteWindows {
     const url = pathToFileURL(join(this.options.rendererDir, 'note.html'));
     url.searchParams.set('conversation', conversationId);
     window.on('close', (event) => {
-      if (this.options.isQuitting()) return;
-      event.preventDefault();
-      this.rememberBounds(conversationId, window);
+      // Electron closes a note itself only while the app quits and its presenter was not closed first
+      // (its core was lost during the quit); it is hidden and reported too (ADR-011), then closes.
+      const quitting = this.options.isQuitting();
+      if (!quitting) {
+        event.preventDefault();
+        this.rememberBounds(conversationId, window);
+      }
       const shown = window.isVisible();
       window.hide();
       this.options.desktop?.released([{ window: handleOf(window), shown }]);
+      if (quitting) return;
       view.open = false;
       this.persist();
       void Promise.resolve(this.options.core.closeView(conversationId)).catch(() => undefined);

@@ -778,8 +778,8 @@ async function main(): Promise<void> {
         return installation.acquire(version);
       },
       drain: async () => {
-        // Stopping a runner closes its presenter, so every note is hidden, destroyed and reported to the
-        // desktop host (ADR-011) before the installer quits the app.
+        // Stopping a runner closes its presenter, so its notes are hidden, destroyed and reported to the desktop
+        // host (ADR-011) before the installer quits the app; a note Electron closes itself is reported as it closes.
         quitting = true;
         for (const presenter of presented()) presenter.remember();
         // FR-22: the bots that ran start again after the update.
