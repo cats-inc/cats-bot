@@ -26,7 +26,8 @@ interface FakeWindow {
 
 class FakeShell implements ShellWindows {
   windows: FakeWindow[];
-  requests: Array<[number, number]> = [];
+  /** 0x052C requests as [target, wParam, lParam]. */
+  requests: Array<[Hwnd, number, number]> = [];
   onRequest: ((shell: FakeShell) => void) | null = null;
   constructor(windows: FakeWindow[]) {
     this.windows = windows;
@@ -61,8 +62,8 @@ class FakeShell implements ShellWindows {
   alive(window: Hwnd): boolean {
     return this.windows.some((item) => item.id === window);
   }
-  requestWallpaper(_shell: Hwnd, wParam: number, lParam: number): void {
-    this.requests.push([wParam, lParam]);
+  requestWallpaper(shell: Hwnd, wParam: number, lParam: number): void {
+    this.requests.push([shell, wParam, lParam]);
     this.onRequest?.(this);
   }
 }
@@ -91,7 +92,7 @@ test('a WorkerW above the icons or hidden is not the wallpaper; Explorer is aske
     if (fake.requests.length === 2) fake.windows.push({ id: 7, className: 'WorkerW', parent: 2, process: EXPLORER });
   };
   assert.deepEqual(discoverShellHosts(shell), { desktop: 2, wallpaper: 7, shell: 2 });
-  assert.deepEqual(shell.requests, [[13, 0], [13, 1]]);
+  assert.deepEqual(shell.requests, [[2, 13, 0], [2, 13, 1]], 'sent to Progman');
 });
 
 test('classic Explorer: the icons live in a WorkerW and the wallpaper is a WorkerW sibling behind it', () => {
@@ -171,7 +172,7 @@ test('a wallpaper repaint sends Explorer exactly (13, 1), and nothing without a 
   ]);
   const hosts = discoverShellHosts(shell);
   assert.equal(repaintWallpaper(hosts, shell), true);
-  assert.deepEqual(shell.requests, [[13, 1]], '(13, 0) and (0, 0) leave the white; ADR-011');
+  assert.deepEqual(shell.requests, [[2, 13, 1]], 'to Progman; (13, 0) and (0, 0) leave the remnant (ADR-011)');
 
   shell.requests = [];
   assert.equal(repaintWallpaper({ ...hosts, wallpaper: 0 }, shell), false, 'no wallpaper host');

@@ -1,0 +1,158 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+
+import { createDesktopHost } from '../../src/shell/electron/win32Desktop.ts';
+import {
+  DESKTOP_WINDOW,
+  FakeDesktopWindows,
+  ICONS_HOST,
+  PROGMAN,
+  SWP_FRAMECHANGED,
+  SWP_NOACTIVATE,
+  SWP_SHOWWINDOW,
+  WALLPAPER_HOST,
+  WS_CHILD,
+  WS_POPUP,
+  WS_VISIBLE,
+} from '../support/fake-desktop-windows.ts';
+
+/**
+ * SPEC-002 FR-8 / ADR-002 §1 / ADR-011: the Windows desktop host's rules
+ * against a fake window system with the classic 23H2 Explorer layout; no real
+ * window is touched.
+ */
+
+const NOTE = { left: 100, top: 200, right: 400, bottom: 500 };
+const REPAINT = [PROGMAN, 13, 1];
+
+function setup(origin = { x: 0, y: 0 }) {
+  const windows = new FakeDesktopWindows(origin);
+  const host = createDesktopHost(windows, () => undefined);
+  windows.requests = [];
+  return { windows, host };
+}
+
+test('attach makes a note a child of the layer host at the same screen rectangle, without showing or activating it', () => {
+  // A monitor left of the primary one: Explorer's hosts start at the virtual screen's left edge.
+  const { windows, host } = setup({ x: -1920, y: 0 });
+  const note = windows.addNote(100, NOTE);
+
+  assert.equal(host.attach(note, 'wallpaper'), true);
+  assert.equal(windows.get(note).parent, WALLPAPER_HOST);
+  assert.equal(windows.style(note) & WS_CHILD, WS_CHILD);
+  assert.equal(windows.style(note) & WS_POPUP, 0);
+  assert.equal(windows.style(note) & WS_VISIBLE, WS_VISIBLE);
+  assert.deepEqual(windows.positions.at(-1), { window: note, x: 2020, y: 200, width: 300, height: 300, flags: SWP_FRAMECHANGED | SWP_NOACTIVATE });
+  assert.deepEqual(windows.rect(note), NOTE, 'the same place on screen');
+  assert.equal(host.isAttached(note), true);
+  assert.equal(host.attachedLayer(note), 'wallpaper');
+  assert.equal(host.hostAlive(note), true);
+  assert.deepEqual(windows.requests, [], 'joining the wallpaper uncovers nothing');
+
+  assert.equal(host.attach(note, 'desktop'), true);
+  assert.equal(windows.get(note).parent, ICONS_HOST);
+  assert.equal(host.attachedLayer(note), 'desktop');
+  assert.deepEqual(windows.rect(note), NOTE);
+});
+
+test('a hidden note stays hidden when it is attached or moved to another layer', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE, false);
+
+  host.attach(note, 'wallpaper');
+  assert.equal(windows.style(note) & WS_VISIBLE, 0);
+  host.attach(note, 'desktop');
+  assert.equal(windows.style(note) & WS_VISIBLE, 0);
+  assert.ok(windows.positions.every((call) => (call.flags & SWP_SHOWWINDOW) === 0));
+});
+
+test('attach is refused when the DPI awareness differs or the layer has no host', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  windows.get(note).awareness = 1;
+  assert.equal(host.attach(note, 'wallpaper'), false);
+  assert.equal(windows.get(note).parent, 0);
+  assert.equal(host.attachedLayer(note), null);
+
+  windows.get(note).awareness = 2;
+  windows.destroy(WALLPAPER_HOST);
+  assert.equal(host.attach(note, 'wallpaper'), false);
+  assert.equal(windows.get(note).parent, 0);
+});
+
+test('a note moved from the wallpaper to the icons host asks Progman once to redraw the wallpaper', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  host.attach(note, 'wallpaper');
+  host.attach(note, 'wallpaper');
+  assert.deepEqual(windows.requests, [], 'attaching again to the same host leaves nothing');
+  host.attach(note, 'desktop');
+  assert.deepEqual(windows.requests, [REPAINT]);
+  host.attach(note, 'wallpaper');
+  assert.deepEqual(windows.requests, [REPAINT], 'leaving the icons host needs no wallpaper redraw');
+});
+
+test('detach makes a note top-level again with its own style and current visibility; leaving the wallpaper repaints it', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  const style = windows.style(note);
+  host.attach(note, 'wallpaper');
+
+  host.detach(note);
+  assert.equal(windows.get(note).parent, 0);
+  assert.equal(windows.style(note), style);
+  assert.deepEqual(windows.rect(note), NOTE);
+  assert.equal(host.attachedLayer(note), null);
+  assert.equal(host.isAttached(note), false);
+  assert.deepEqual(windows.requests, [REPAINT]);
+
+  host.attach(note, 'desktop');
+  windows.setShown(note, false);
+  host.detach(note);
+  assert.equal(windows.style(note), style & ~WS_VISIBLE, 'a note hidden while attached stays hidden');
+  assert.deepEqual(windows.requests, [REPAINT], 'the icons host needs no wallpaper redraw');
+
+  host.detach(note);
+  assert.deepEqual(windows.requests, [REPAINT], 'a top-level note is left alone');
+});
+
+test('detach forgets a destroyed note; one destroyed on the wallpaper still has the wallpaper redrawn', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  host.attach(note, 'wallpaper');
+  windows.destroy(note);
+  host.detach(note);
+  assert.deepEqual(windows.requests, [REPAINT]);
+  assert.equal(host.hostAlive(note), false);
+});
+
+test('released notes repaint the wallpaper once for all of them, and destroyed ones are forgotten', () => {
+  const { windows, host } = setup();
+  const [a, b, c] = [windows.addNote(100, NOTE), windows.addNote(101, NOTE), windows.addNote(102, NOTE)];
+  host.attach(a, 'wallpaper');
+  host.attach(b, 'wallpaper');
+  host.attach(c, 'desktop');
+
+  windows.setShown(c, false);
+  host.released([c]);
+  assert.deepEqual(windows.requests, [], 'the icons host needs no wallpaper redraw');
+
+  windows.destroy(a);
+  windows.destroy(b);
+  host.released([a, b]);
+  assert.deepEqual(windows.requests, [REPAINT]);
+  assert.equal(host.hostAlive(a), false, 'forgotten');
+  host.released([a, b]);
+  assert.deepEqual(windows.requests, [REPAINT], 'nothing left to uncover');
+
+  host.released([windows.addNote(103, NOTE)]);
+  assert.deepEqual(windows.requests, [REPAINT], 'a note never attached is ignored');
+});
+
+test('bring to front shows and activates a top-level note', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE, false);
+  assert.equal(host.bringToFront(note), true);
+  assert.equal(windows.style(note) & WS_VISIBLE, WS_VISIBLE);
+  assert.equal(windows.parentOf(note), DESKTOP_WINDOW);
+});
