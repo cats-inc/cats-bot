@@ -15,12 +15,6 @@ Check the **Project Roles** table in `AGENTS.md`.
 ## Command Aliases
 
 - `dyu` - **MUST** confirm you have read `AGENTS.md` and this file. **MUST** respond with exactly: "I am Claude, and I understand."
-- `mbf` - **Merge Bootstrap Files**:
-  1. Find all `*.bootstrap` files in the project
-  2. For each `.bootstrap` file, compare with its corresponding file and merge appropriate content
-  3. Delete each `.bootstrap` file after successful merge
-  4. Find all `.gitkeep` files and check if their parent directory contains other files - if so, delete the `.gitkeep` file
-  5. Report summary of changes when complete
 
 ## Output Formatting Rules
 
