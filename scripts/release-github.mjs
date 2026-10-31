@@ -21,3 +21,12 @@ export async function guardRelease({ github, root, tag, sourceCommit }) {
   } catch (error) { if (error.status !== 404) throw error; }
   return { ...input, notes, existing, identity, owner, repo };
 }
+
+/** The preview build does not rerun the tests, so main's CI must have passed on this exact commit. */
+export async function requireTestedSource({ github, owner, repo, sourceCommit }) {
+  const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yaml', head_sha: sourceCommit,
+    event: 'push', branch: 'main', status: 'completed', per_page: 20 });
+  if (!data.workflow_runs.some(run => run.head_sha === sourceCommit && run.conclusion === 'success')) {
+    throw new Error(`CI has not passed on ${sourceCommit} on main; wait for that run to pass, then dispatch again.`);
+  }
+}

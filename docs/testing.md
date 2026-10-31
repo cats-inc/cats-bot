@@ -261,15 +261,17 @@ skip on lightweight Ubuntu runners; no Windows/macOS runner, dependency install,
 application test, build or candidate artifact is needed. `preview-contract` is
 skipped, while `validate` still checks the expected job results, required files
 and tracked YAML. Mixed changes still require all three platforms and the full
-package contract. The separate `Package` workflow also ignores docs-only pushes;
-its manual dispatch remains available. Application tests keep executable inputs
+package contract. Application tests keep executable inputs
 outside repo documentation and exercise the actual workflow detector and final
 job gates. Manual publication still reads the prepared release notes.
 
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and
-checksums. Candidate identity disables updates. Publication is a separate manual
-workflow documented in [deployment.md](deployment.md).
+checksums. Candidate identity disables updates. The `candidate-windows` artifact
+is also the Windows installer and portable build that SPEC-002 FR-9 keeps for
+every main update. Publication is a separate manual workflow documented in
+[deployment.md](deployment.md). It does not rerun typecheck or the tests: its
+guard requires a successful CI push run on `main` for the source commit.
 
 The signed macOS release job routes Apple's ticket requests over TCP before
 packaging to avoid the hosted runner's HTTP/3 failure. Candidate CI has no signing

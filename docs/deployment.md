@@ -21,14 +21,17 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    as the Bot identity; the workflow appends its exact SHA without a self-reference
    in the commit. Data migrations need tested validation, backup and atomic
    recovery; a version bump alone is insufficient.
-4. Pass CI and independent review, merge the prepared commit, then select that
-   ref in Actions → Cats Bot Standard Preview → Run workflow, with tag `vX.Y.Z`.
-   Nothing here authorizes publishing from an ordinary feature PR.
+4. Pass CI and independent review, merge the prepared commit, and wait for CI on
+   `main` to pass on the merged commit. Then select `main` in Actions → Cats Bot
+   Standard Preview → Run workflow, with tag `vX.Y.Z`. Nothing here authorizes
+   publishing from an ordinary feature PR.
 
-The workflow pins the selected SHA, serializes all preview releases, reserves a
-draft, builds all platforms, verifies every asset, attaches source/checksums and
-provenance, then publishes a prerelease with `make_latest=false`. The tag is
-created only at publication. No push or tag trigger publishes.
+The workflow pins the selected SHA and refuses it unless CI passed on that commit
+on `main`; it does not rerun typecheck or the tests. It serializes all preview
+releases, reserves a draft, builds all platforms, verifies every asset, attaches
+source/checksums and provenance, then publishes a prerelease with
+`make_latest=false`. The tag is created only at publication. No push or tag
+trigger publishes.
 
 ## Artifacts and signing
 
