@@ -83,9 +83,9 @@ dragging are correct at 3840×2160 with 150% scaling.
 
 ### 6. Installers
 
-The Windows NSIS installer and the portable build are built by CI on every main update outside root `docs/` and uploaded
-as Actions artifacts; publishing a GitHub Release still follows the release SOP and owner
-authorization.
+The Windows NSIS installer and the portable build are built by CI for every main update outside root `docs/` and uploaded
+as Actions artifacts (by the merged pull request's run when the push reuses it for the same tree); publishing a GitHub
+Release still follows the release SOP and owner authorization.
 
 ## Consequences
 
