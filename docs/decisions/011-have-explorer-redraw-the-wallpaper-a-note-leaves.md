@@ -5,6 +5,8 @@
 Accepted — 2026-10-31. Fixes a defect the owner reported on the installed 0.4.0: a direct-message
 note moved from the wallpaper layer to the desktop layer and then hidden left a white rectangle on
 the (black) wallpaper. Supplements [ADR-002](002-give-the-bot-a-desktop-presence-in-the-electron-shell.md) §1.
+Amended the same day after an independent review: only a shown note uncovers anything, entries for
+notes Explorer took down are forgotten, and the remnant is described as measured.
 
 ## Context
 
@@ -14,12 +16,14 @@ background), reading each Explorer window's own content with `PrintWindow(PW_REN
 
 - The white is in the wallpaper `WorkerW`. The icons host and Progman stay black there; the icons
   host shows the wallpaper host through, so a hole in the wallpaper shows on the desktop layer too.
-- Any way a note leaves the wallpaper host whitens the area it covered: hidden while attached,
+- Any way a shown note leaves the wallpaper host leaves white where it was: hidden while attached,
   moved to the icons host while visible (`setLayer` to desktop), made top-level while visible (the
   lift when the owner opens it). A window still covering the area hides the white until it moves or
   hides. The icons host does not show the problem.
-- The wallpaper host erases an uncovered area white and does not draw the wallpaper again by
-  itself. `RedrawWindow` with `RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN`, with or without
+- The wallpaper host keeps what was left in its surface where the note was and does not draw the
+  wallpaper there again by itself. For a note that is pure white (#FFFFFF), not the note's own
+  #fff8d6 background; desktop-work-fleet's transparent scenes leave black the same way (its ADR-060).
+  `RedrawWindow` with `RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN`, with or without
   `RDW_UPDATENOW | RDW_FRAME`, on the wallpaper host, the icons host, its list view or Progman,
   changes nothing.
 - Explorer's private 0x052C message to Progman, which `shellHosts.ts` already sends while looking for
@@ -38,12 +42,22 @@ porting fleet's handling would not fix this defect.
 - `repaintWallpaper` in `shellHosts.ts` sends 0x052C (13, 1) to Progman, only when a wallpaper host
   is known and alive. It is sent only when a note was attached to the wallpaper host, so a machine
   that never uses the wallpaper layer never receives it.
-- The Win32 desktop host asks for it on every way off the wallpaper layer: `attach` to another host,
-  `detach` (including a destroyed window), and a new `released(windows)` for windows the shell hid or
-  destroyed.
-- The note manager reports a note after hiding it, and destroys notes (forget, quit) by hiding all of
-  them first, destroying them, then reporting them in one call, so a quit with several wallpaper
-  notes sends one request after all of them are gone, before the process exits.
+- The Win32 desktop host asks for it on every way a shown note leaves the wallpaper layer: `attach`
+  to another host, `detach` (a destroyed window counts as shown), and a new `released(windows)` for
+  windows the shell hid or destroyed. A note hidden already uncovers nothing and sends none: shown
+  is the window's own `WS_VISIBLE`, read before the move or reported by the shell, whatever its
+  host's visibility.
+- The note manager reports a note after hiding it, with whether it was shown until then, and destroys
+  notes (forget, quit) by hiding all of them first, destroying them, then reporting them in one call,
+  so a quit with several wallpaper notes sends one request after all of them are gone, before the
+  process exits. Quit and the update installation both stop every bot's runner first, which closes
+  its presenter and so its notes this way. A note Electron closes itself while the app quits (its
+  presenter was not closed, as when its core was lost during the quit) is hidden and reported as it
+  closes.
+- Explorer restarting takes attached notes down without a report. The host forgets an entry whose
+  window or host is gone each time it looks at the hosts, and `detach` (the lift) leaves a window
+  alone when its entry's host is gone, so a later window given the same handle is not mistaken for
+  the dead note; the new hosts draw a fresh wallpaper, so nothing is requested.
 - The request is synchronous with the same bounded `SendMessageTimeout` (abort if hung, 250 ms) as
   discovery. Nothing global changes: no wallpaper setting, registry value or Explorer restart.
 
@@ -54,7 +68,8 @@ porting fleet's handling would not fix this defect.
 - Hiding, lifting, deleting or quitting with wallpaper notes leaves the wallpaper intact on the
   measured machine, and the white left by earlier builds is cleared the next time a note leaves the
   wallpaper.
-- The decision is a pure function with unit tests; the note manager's reports are tested against a
+- The desktop host's rules run over a window interface and are tested against a fake classic
+  Explorer, including the request reaching Progman; the note manager's reports are tested against a
   recording host.
 
 ### Negative

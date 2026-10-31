@@ -29,9 +29,10 @@ import type { DesktopHost } from './win32Desktop.ts';
  * desktop note that gets focus is lifted to an ordinary window while it is
  * used and goes back when it loses focus (desktop-work-fleet ADR-030 projects
  * an operated scene to floating the same way). Explorer destroys its children
- * when it restarts; such notes are opened again in their layer. Explorer leaves
- * white where a note leaves the wallpaper, so a hidden or destroyed note is
- * reported to the desktop host, which has the wallpaper drawn again (ADR-011).
+ * when it restarts; such notes are opened again in their layer. Explorer's
+ * wallpaper host keeps what a shown note left there (white), so a note the
+ * shell hides or destroys is reported to the desktop host with whether it was
+ * shown, and the host has the wallpaper drawn again (ADR-011).
  */
 
 export interface NoteWindowsOptions {
@@ -233,11 +234,17 @@ export class NoteWindows {
     const url = pathToFileURL(join(this.options.rendererDir, 'note.html'));
     url.searchParams.set('conversation', conversationId);
     window.on('close', (event) => {
-      if (this.options.isQuitting()) return;
-      event.preventDefault();
-      this.rememberBounds(conversationId, window);
+      // Electron closes a note itself only while the app quits and its presenter was not closed first
+      // (its core was lost during the quit); it is hidden and reported too (ADR-011), then closes.
+      const quitting = this.options.isQuitting();
+      if (!quitting) {
+        event.preventDefault();
+        this.rememberBounds(conversationId, window);
+      }
+      const shown = window.isVisible();
       window.hide();
-      this.options.desktop?.released([handleOf(window)]);
+      this.options.desktop?.released([{ window: handleOf(window), shown }]);
+      if (quitting) return;
       view.open = false;
       this.persist();
       void Promise.resolve(this.options.core.closeView(conversationId)).catch(() => undefined);
@@ -433,14 +440,14 @@ export class NoteWindows {
   /**
    * Destroys windows. They are hidden first and reported together, so a quit
    * with several wallpaper notes asks Explorer for one repaint after all of
-   * them are gone (ADR-011).
+   * them are gone, and none when every one was hidden already (ADR-011).
    */
   private dispose(windows: BrowserWindow[]): void {
     const live = windows.filter((window) => !window.isDestroyed());
-    const handles = live.map(handleOf);
+    const released = live.map((window) => ({ window: handleOf(window), shown: window.isVisible() }));
     for (const window of live) window.hide();
     for (const window of live) window.destroy();
-    if (handles.length > 0) this.options.desktop?.released(handles);
+    if (released.length > 0) this.options.desktop?.released(released);
   }
 
   forget(conversationId: string): void {

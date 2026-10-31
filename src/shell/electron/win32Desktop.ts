@@ -19,13 +19,21 @@ import {
  * child style, the same DPI awareness level, physical bounds mapped into the
  * parent's client coordinates, no activation.
  *
- * ADR-011: Explorer fills the part of its wallpaper host that a window leaves
- * with white and does not paint it again by itself, so every way off the
- * wallpaper layer (another host, top-level, hidden, destroyed) ends with a
- * request for Explorer to draw the wallpaper again.
+ * ADR-011: where a shown window leaves Explorer's wallpaper host, the host
+ * keeps what was left in its surface there (white for a note) and does not
+ * draw the wallpaper there again by itself, so every way a shown note leaves
+ * the wallpaper layer (another host, top-level, hidden, destroyed) ends with a
+ * request for Explorer to draw the wallpaper again. A note that was hidden
+ * already uncovers nothing and sends none.
  */
 
 export type AttachedLayer = 'desktop' | 'wallpaper';
+
+/** A window the shell has just hidden or destroyed, and whether it was shown until then. */
+export interface ReleasedWindow {
+  window: Hwnd;
+  shown: boolean;
+}
 
 export interface DesktopHost {
   /** Puts the window under the layer's host at its current screen rectangle; false when there is no host. */
@@ -33,19 +41,20 @@ export interface DesktopHost {
   /** Makes an attached window top-level again at the same screen rectangle; also forgets a destroyed one. */
   detach(window: Hwnd): void;
   /**
-   * Attached windows the shell has just hidden or destroyed. If any was on the
-   * wallpaper, Explorer is asked once to draw the wallpaper again; destroyed
-   * windows are forgotten.
+   * Attached windows the shell has just hidden or destroyed. If any of them was
+   * shown on the wallpaper, Explorer is asked once to draw the wallpaper again;
+   * destroyed windows are forgotten.
    */
-  released(windows: readonly Hwnd[]): void;
+  released(windows: readonly ReleasedWindow[]): void;
   isAttached(window: Hwnd): boolean;
   /** The layer a window is attached to, or null when it is top-level. */
   attachedLayer(window: Hwnd): AttachedLayer | null;
   /** True while the host a window is attached to still exists. */
   hostAlive(window: Hwnd): boolean;
   /**
-   * Re-reads the hosts when Explorer restarted, or when the given layer had no
-   * host yet (rate-limited); returns whether they changed.
+   * Forgets attached windows that are gone or whose host is gone, then re-reads
+   * the hosts when Explorer restarted, or when the given layer had no host yet
+   * (rate-limited); returns whether the hosts changed.
    */
   refresh(layer?: AttachedLayer): boolean;
   bringToFront(window: Hwnd): boolean;
@@ -62,11 +71,35 @@ const SWP_FRAMECHANGED = 0x0020;
 const SWP_SHOWWINDOW = 0x0040;
 const HWND_TOP = 0;
 
-interface Rect {
+export interface Rect {
   left: number;
   top: number;
   right: number;
   bottom: number;
+}
+
+/**
+ * The user32 calls the desktop host makes besides discovering the hosts, so
+ * its rules are tested against fake windows; koffi binds them on Windows.
+ */
+export interface DesktopWindows extends ShellWindows {
+  /** GetWindowLongPtrW(GWL_STYLE). */
+  style(window: Hwnd): number;
+  /** SetWindowLongPtrW(GWL_STYLE). */
+  setStyle(window: Hwnd, style: number): void;
+  setParent(window: Hwnd, parent: Hwnd): void;
+  /** GetAncestor(GA_PARENT). */
+  parentOf(window: Hwnd): Hwnd;
+  /** GetWindowRect: screen coordinates. */
+  rect(window: Hwnd): Rect;
+  /** ScreenToClient. */
+  toClient(parent: Hwnd, point: { x: number; y: number }): { x: number; y: number };
+  /** SetWindowPos with HWND_TOP. */
+  setPosition(window: Hwnd, x: number, y: number, width: number, height: number, flags: number): void;
+  /** The DPI awareness level of the window's context. */
+  awareness(window: Hwnd): number;
+  /** SetForegroundWindow. */
+  foreground(window: Hwnd): boolean;
 }
 
 /** Loads the binding on Windows; null elsewhere or when koffi cannot load, so the shell offers normal and top only. */
@@ -81,6 +114,10 @@ export function loadDesktopHost(log: (line: string) => void): DesktopHost | null
 }
 
 function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
+  return createDesktopHost(bindUser32(), log);
+}
+
+function bindUser32(): DesktopWindows {
   const koffi = createRequire(import.meta.url)('koffi') as typeof import('koffi');
   const user32 = koffi.load('user32.dll');
   const enumProc = koffi.proto('bool __stdcall CatsBotEnumProc(intptr_t hwnd, intptr_t lParam)');
@@ -104,9 +141,8 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
   const SetForegroundWindow = user32.func('bool __stdcall SetForegroundWindow(intptr_t hwnd)');
   const GetWindowDpiAwarenessContext = user32.func('intptr_t __stdcall GetWindowDpiAwarenessContext(intptr_t hwnd)');
   const GetAwarenessFromDpiAwarenessContext = user32.func('int __stdcall GetAwarenessFromDpiAwarenessContext(intptr_t context)');
-  const awarenessOf = (window: Hwnd) => Number(GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(window)));
 
-  const windows: ShellWindows = {
+  return {
     progman: () => Number(FindWindowW('Progman', null)),
     topLevel: () => {
       const list: Hwnd[] = [];
@@ -133,37 +169,73 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
     requestWallpaper: (shell, wParam, lParam) => {
       SendMessageTimeoutW(shell, 0x052c, wParam, lParam, 3, 250, [0]);
     },
+    style: (window) => Number(GetWindowLongPtrW(window, GWL_STYLE)),
+    setStyle: (window, style) => {
+      SetWindowLongPtrW(window, GWL_STYLE, style);
+    },
+    setParent: (window, parent) => {
+      SetParent(window, parent);
+    },
+    parentOf: (window) => Number(GetAncestor(window, 1)),
+    rect: (window) => {
+      const rect: Rect = { left: 0, top: 0, right: 0, bottom: 0 };
+      GetWindowRect(window, rect);
+      return rect;
+    },
+    toClient: (parent, point) => {
+      const mapped = { ...point };
+      ScreenToClient(parent, mapped);
+      return mapped;
+    },
+    setPosition: (window, x, y, width, height, flags) => {
+      SetWindowPos(window, HWND_TOP, x, y, width, height, flags);
+    },
+    awareness: (window) => Number(GetAwarenessFromDpiAwarenessContext(GetWindowDpiAwarenessContext(window))),
+    foreground: (window) => SetForegroundWindow(window) as boolean,
   };
+}
+
+/** The desktop host's rules over any window system; `now` is the clock for the missing-host retry. */
+export function createDesktopHost(windows: DesktopWindows, log: (line: string) => void, now: () => number = Date.now): DesktopHost {
 
   let hosts: ShellHosts = discoverShellHosts(windows);
-  let discoveredAt = Date.now();
+  let discoveredAt = now();
   log(`desktop hosts: icons ${hosts.desktop || 'none'}, wallpaper ${hosts.wallpaper || 'none'}`);
   /** Attached windows and the style each had as a top-level window. */
   const attached = new Map<Hwnd, { layer: AttachedLayer; parent: Hwnd; style: number }>();
 
-  const rectOf = (window: Hwnd): Rect => {
-    const rect: Rect = { left: 0, top: 0, right: 0, bottom: 0 };
-    GetWindowRect(window, rect);
-    return rect;
-  };
-
-  /** ADR-011: what a window left on the wallpaper host stays white until Explorer draws the wallpaper again. */
+  /** ADR-011: what a shown window left on the wallpaper host stays until Explorer draws the wallpaper again. */
   const restoreWallpaper = () => {
     repaintWallpaper(hosts, windows);
   };
+
+  /**
+   * A child dies with its parent, so an entry whose window or host is gone is stale; Explorer
+   * restarting takes attached notes down this way, unreported. Kept, a later window given the same
+   * handle would inherit the old style and layer. The new hosts draw a fresh wallpaper.
+   */
+  const forgetStale = () => {
+    for (const [window, entry] of attached) {
+      if (!windows.alive(window) || !windows.alive(entry.parent)) attached.delete(window);
+    }
+  };
+
+  /** Shown as the shell means it: the window's own WS_VISIBLE, whatever its host's. */
+  const shown = (window: Hwnd): boolean => (windows.style(window) & WS_VISIBLE) !== 0;
 
   /**
    * A saved style with the window's visibility now: the style saved at the first attach
    * carries WS_VISIBLE from then, and writing it back would show a hidden note.
    */
   const withCurrentVisibility = (window: Hwnd, style: number): number =>
-    (style & ~WS_VISIBLE) | (Number(GetWindowLongPtrW(window, GWL_STYLE)) & WS_VISIBLE);
+    (style & ~WS_VISIBLE) | (windows.style(window) & WS_VISIBLE);
 
   const refresh = (layer?: AttachedLayer): boolean => {
-    if (!shellHostsStale(hosts, windows, layer ?? null, Date.now() - discoveredAt)) return false;
+    forgetStale();
+    if (!shellHostsStale(hosts, windows, layer ?? null, now() - discoveredAt)) return false;
     const before = hosts;
     hosts = discoverShellHosts(windows);
-    discoveredAt = Date.now();
+    discoveredAt = now();
     if (hosts.desktop === before.desktop && hosts.wallpaper === before.wallpaper && hosts.shell === before.shell) return false;
     log(`desktop hosts changed: icons ${hosts.desktop || 'none'}, wallpaper ${hosts.wallpaper || 'none'}`);
     return true;
@@ -173,68 +245,73 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
     attach(window, layer) {
       refresh(layer);
       const parent = layer === 'desktop' ? hosts.desktop : hosts.wallpaper;
-      if (parent === 0 || !IsWindow(parent)) return false;
+      if (parent === 0 || !windows.alive(parent)) return false;
       // Fleet requires equal contexts; Electron 41 windows are per-monitor v1 (0x12) and Explorer's are v2 (0x22),
       // so only the awareness level is compared: both per-monitor, measured correct at 150% (PLAN-002 slice 4).
-      const childAwareness = awarenessOf(window);
-      const hostAwareness = awarenessOf(parent);
+      const childAwareness = windows.awareness(window);
+      const hostAwareness = windows.awareness(parent);
       if (childAwareness !== hostAwareness) {
         log(`desktop ${layer} layer refused: DPI awareness ${childAwareness} differs from the host's ${hostAwareness}`);
         return false;
       }
       const current = attached.get(window);
-      const style = current?.style ?? Number(GetWindowLongPtrW(window, GWL_STYLE));
-      const rect = rectOf(window);
-      SetWindowLongPtrW(window, GWL_STYLE, withCurrentVisibility(window, (style & ~WS_POPUP) | WS_CHILD));
-      SetParent(window, parent);
-      const origin = { x: rect.left, y: rect.top };
-      ScreenToClient(parent, origin);
+      const uncovers = current?.layer === 'wallpaper' && current.parent !== parent && shown(window);
+      const style = current?.style ?? windows.style(window);
+      const rect = windows.rect(window);
+      windows.setStyle(window, withCurrentVisibility(window, (style & ~WS_POPUP) | WS_CHILD));
+      windows.setParent(window, parent);
+      const origin = windows.toClient(parent, { x: rect.left, y: rect.top });
       // No SWP_SHOWWINDOW (fleet's Attach has none either) and the current WS_VISIBLE: a hidden note whose
       // layer is changed in settings stays hidden.
-      SetWindowPos(window, HWND_TOP, origin.x, origin.y, rect.right - rect.left, rect.bottom - rect.top,
+      windows.setPosition(window, origin.x, origin.y, rect.right - rect.left, rect.bottom - rect.top,
         SWP_FRAMECHANGED | SWP_NOACTIVATE);
       attached.set(window, { layer, parent, style });
-      if (current?.layer === 'wallpaper' && current.parent !== parent) restoreWallpaper();
+      if (uncovers) restoreWallpaper();
       return true;
     },
     detach(window) {
       const current = attached.get(window);
       if (!current) return;
       attached.delete(window);
-      if (IsWindow(window)) {
-        const rect = rectOf(window);
-        SetParent(window, 0);
-        SetWindowLongPtrW(window, GWL_STYLE, withCurrentVisibility(window, current.style));
-        SetWindowPos(window, HWND_TOP, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+      // A child dies with its host, so with the host gone the entry is stale and a window with its handle is another
+      // one (a lift can come before anything looks at the hosts again): left alone, and nothing to uncover.
+      if (!windows.alive(current.parent)) return;
+      // A destroyed window may have been shown until then.
+      const uncovers = current.layer === 'wallpaper' && (!windows.alive(window) || shown(window));
+      if (windows.alive(window)) {
+        const rect = windows.rect(window);
+        windows.setParent(window, 0);
+        windows.setStyle(window, withCurrentVisibility(window, current.style));
+        windows.setPosition(window, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
       }
-      if (current.layer === 'wallpaper') restoreWallpaper();
+      if (uncovers) restoreWallpaper();
     },
     released(list) {
       let uncovered = false;
-      for (const window of list) {
+      for (const { window, shown } of list) {
         const current = attached.get(window);
         if (!current) continue;
-        if (current.layer === 'wallpaper') uncovered = true;
-        if (!IsWindow(window)) attached.delete(window);
+        if (shown && current.layer === 'wallpaper') uncovered = true;
+        if (!windows.alive(window)) attached.delete(window);
       }
       if (uncovered) restoreWallpaper();
     },
     isAttached(window) {
       const current = attached.get(window);
-      return current !== undefined && Number(GetAncestor(window, 1)) === current.parent;
+      return current !== undefined && windows.parentOf(window) === current.parent;
     },
     attachedLayer(window) {
       const current = attached.get(window);
-      return current !== undefined && Number(GetAncestor(window, 1)) === current.parent ? current.layer : null;
+      return current !== undefined && windows.parentOf(window) === current.parent ? current.layer : null;
     },
     hostAlive(window) {
       const current = attached.get(window);
-      return current !== undefined && (IsWindow(current.parent) as boolean);
+      return current !== undefined && windows.alive(current.parent);
     },
     refresh,
     bringToFront(window) {
-      SetWindowPos(window, HWND_TOP, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
-      return SetForegroundWindow(window) as boolean;
+      windows.setPosition(window, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+      return windows.foreground(window);
     },
   };
 }
