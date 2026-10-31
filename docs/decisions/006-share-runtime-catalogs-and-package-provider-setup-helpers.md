@@ -41,7 +41,8 @@ depending on the Platform application or probing every supported CLI.
 - Bundle the selected Platform helpers, their dependency closure and MIT license
   under `assets/setup/`. `provenance.json` records the Platform source commit
   (first `07a02f3a30b9e02f0e25e01c348af69a500b3ae6`; since PLAN-010 Phase 3,
-  `cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7`) and each source SHA-256. This is
+  `cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7`; since the macOS Bash 3.2 npm-prefix
+  correction, `60037a9ba9f22f31b2e51592f96694376464165c`) and each source SHA-256. This is
   vendored source reuse, not an application dependency.
 - Onboarding selects a provider before installation. Native providers have one
   check/install step; Codex checks Node/npm, the npm folder, on Windows the

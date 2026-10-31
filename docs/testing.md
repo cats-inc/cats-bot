@@ -350,6 +350,9 @@ was opened. Screenshots and JSON evidence stay in ignored `tmp/`.
 
 The helper runner/unit tests verify fixed arguments, prerequisite order, restart
 and failure handling, mutual exclusion, startup PATH recovery and source hashes.
+On macOS/Linux they also run the packaged Node → npm-folder → Codex checks with
+the system Bash and disposable CLI fixtures. An already configured npm folder
+must return complete JSON and allow setup to finish, including with macOS Bash 3.2.
 They do not install CLIs or access provider credentials. The real Runtime integration
 test verifies stale catalog revision recovery and saved effort reaching CLI arguments.
 

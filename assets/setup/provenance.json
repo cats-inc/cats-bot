@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7",
+  "commit": "60037a9ba9f22f31b2e51592f96694376464165c",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
@@ -104,7 +104,7 @@
     },
     {
       "source": "scripts/macos/node-cli-common.sh",
-      "sha256": "6b90aa7d6afda375ec9a9fefc76f6b6899f07cf314d634c929d483f100bbceba",
+      "sha256": "c3ed7cc5a18a7ab88af3ac0b1d23ee247d0165d683cb67a5cda4e72bf602ba3f",
       "path": "macos/node-cli-common.sh"
     },
     {
@@ -159,7 +159,7 @@
     },
     {
       "source": "scripts/linux/node-cli-common.sh",
-      "sha256": "6b90aa7d6afda375ec9a9fefc76f6b6899f07cf314d634c929d483f100bbceba",
+      "sha256": "c3ed7cc5a18a7ab88af3ac0b1d23ee247d0165d683cb67a5cda4e72bf602ba3f",
       "path": "linux/node-cli-common.sh"
     },
     {

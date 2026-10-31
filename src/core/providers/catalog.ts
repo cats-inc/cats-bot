@@ -22,7 +22,7 @@ import type {
 
 export const CLI_PROVIDERS: readonly ProviderDefinition[] = [
   { id: 'codex', label: 'Codex', command: 'codex' },
-  { id: 'claude', label: 'Claude Code', command: 'claude' },
+  { id: 'claude', label: 'Claude', command: 'claude' },
   { id: 'antigravity', label: 'Antigravity', command: 'agy' },
   { id: 'grok', label: 'Grok', command: 'grok' },
   { id: 'muse', label: 'Muse', command: 'muse' },
