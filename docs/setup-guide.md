@@ -141,6 +141,12 @@ unchecked "Remove all user data" box for `~/.catsbot`, `%APPDATA%\Cats Bot` and
 the update cache, which never follows links inside them (SPEC-007 FR-9);
 installing over a copy, updates included, removes neither. Icons come from `src/renderer/cat.svg` through
 `npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
+Linux packages use the generated `assets/installer/linux/` icon set at standard
+hicolor sizes (16, 24, 32, 48, 64, 128, 256 and 512 pixels). A single 1024-pixel
+PNG is not discoverable in standard hicolor themes and leaves the taskbar with a
+generic icon. The package's `desktopName` is `cats-bot.desktop` and
+`linux.syncDesktopName` keeps the installed launcher filename and
+`StartupWMClass` aligned with Electron's desktop identity.
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the
 runtime bin stays a plain file.
