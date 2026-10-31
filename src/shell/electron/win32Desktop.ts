@@ -1,6 +1,13 @@
 import { createRequire } from 'node:module';
 
-import { discoverShellHosts, shellHostsStale, type Hwnd, type ShellHosts, type ShellWindows } from './shellHosts.ts';
+import {
+  discoverShellHosts,
+  repaintWallpaper,
+  shellHostsStale,
+  type Hwnd,
+  type ShellHosts,
+  type ShellWindows,
+} from './shellHosts.ts';
 
 /**
  * SPEC-002 FR-8 / ADR-002 §1, §5: the Windows desktop and wallpaper layers.
@@ -11,6 +18,11 @@ import { discoverShellHosts, shellHostsStale, type Hwnd, type ShellHosts, type S
  * follow desktop-work-fleet `DesktopSurface.Attach` at revision fcaa942 (MIT):
  * child style, the same DPI awareness level, physical bounds mapped into the
  * parent's client coordinates, no activation.
+ *
+ * ADR-011: Explorer fills the part of its wallpaper host that a window leaves
+ * with white and does not paint it again by itself, so every way off the
+ * wallpaper layer (another host, top-level, hidden, destroyed) ends with a
+ * request for Explorer to draw the wallpaper again.
  */
 
 export type AttachedLayer = 'desktop' | 'wallpaper';
@@ -18,8 +30,14 @@ export type AttachedLayer = 'desktop' | 'wallpaper';
 export interface DesktopHost {
   /** Puts the window under the layer's host at its current screen rectangle; false when there is no host. */
   attach(window: Hwnd, layer: AttachedLayer): boolean;
-  /** Makes an attached window top-level again at the same screen rectangle. */
+  /** Makes an attached window top-level again at the same screen rectangle; also forgets a destroyed one. */
   detach(window: Hwnd): void;
+  /**
+   * Attached windows the shell has just hidden or destroyed. If any was on the
+   * wallpaper, Explorer is asked once to draw the wallpaper again; destroyed
+   * windows are forgotten.
+   */
+  released(windows: readonly Hwnd[]): void;
   isAttached(window: Hwnd): boolean;
   /** The layer a window is attached to, or null when it is top-level. */
   attachedLayer(window: Hwnd): AttachedLayer | null;
@@ -128,6 +146,11 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
     return rect;
   };
 
+  /** ADR-011: what a window left on the wallpaper host stays white until Explorer draws the wallpaper again. */
+  const restoreWallpaper = () => {
+    repaintWallpaper(hosts, windows);
+  };
+
   const refresh = (layer?: AttachedLayer): boolean => {
     if (!shellHostsStale(hosts, windows, layer ?? null, Date.now() - discoveredAt)) return false;
     const before = hosts;
@@ -161,17 +184,30 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
       SetWindowPos(window, HWND_TOP, origin.x, origin.y, rect.right - rect.left, rect.bottom - rect.top,
         SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW);
       attached.set(window, { layer, parent, style });
+      if (current?.layer === 'wallpaper' && current.parent !== parent) restoreWallpaper();
       return true;
     },
     detach(window) {
       const current = attached.get(window);
       if (!current) return;
       attached.delete(window);
-      if (!IsWindow(window)) return;
-      const rect = rectOf(window);
-      SetParent(window, 0);
-      SetWindowLongPtrW(window, GWL_STYLE, current.style);
-      SetWindowPos(window, HWND_TOP, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+      if (IsWindow(window)) {
+        const rect = rectOf(window);
+        SetParent(window, 0);
+        SetWindowLongPtrW(window, GWL_STYLE, current.style);
+        SetWindowPos(window, HWND_TOP, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
+      }
+      if (current.layer === 'wallpaper') restoreWallpaper();
+    },
+    released(list) {
+      let uncovered = false;
+      for (const window of list) {
+        const current = attached.get(window);
+        if (!current) continue;
+        if (current.layer === 'wallpaper') uncovered = true;
+        if (!IsWindow(window)) attached.delete(window);
+      }
+      if (uncovered) restoreWallpaper();
     },
     isAttached(window) {
       const current = attached.get(window);

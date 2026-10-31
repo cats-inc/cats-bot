@@ -57,6 +57,23 @@ export function shellHostsStale(
   return missing && sinceDiscoveryMs >= MISSING_HOST_RETRY_MS;
 }
 
+/**
+ * The 0x052C request that makes Explorer draw the wallpaper into its wallpaper
+ * host again. ADR-011: when a window leaves that `WorkerW` (hidden, destroyed,
+ * moved to another host or made top-level), Windows erases the uncovered area
+ * white, and neither `WM_PAINT` nor `RedrawWindow` brings the wallpaper back;
+ * measured on Windows 11 23H2 (build 22631, classic shell), where (13, 0) and
+ * (0, 0) left the white and (13, 1) repainted it without covering attached windows.
+ */
+export const WALLPAPER_REPAINT_REQUEST = [13, 1] as const;
+
+/** Asks Explorer to redraw the wallpaper host; returns false, sending nothing, when there is none. */
+export function repaintWallpaper(hosts: ShellHosts, windows: ShellWindows): boolean {
+  if (hosts.shell === 0 || hosts.wallpaper === 0 || !windows.alive(hosts.wallpaper)) return false;
+  windows.requestWallpaper(hosts.shell, ...WALLPAPER_REPAINT_REQUEST);
+  return true;
+}
+
 export function discoverShellHosts(windows: ShellWindows): ShellHosts {
   const shell = windows.progman();
   if (shell === 0) return { desktop: 0, wallpaper: 0, shell };

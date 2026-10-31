@@ -214,6 +214,14 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   and before sending any key check `GetForegroundWindow()` is the note: a
   click on an attached note does not make it the foreground window, so keys
   sent without that check land in whatever window the owner had active.
+- Wallpaper repaint (ADR-011) on Windows: with a solid black background, put
+  a note on the wallpaper where no window covers it, then in turn move it to
+  the desktop layer and hide it, open it (the lift), delete its conversation
+  and quit. After each, read the wallpaper `WorkerW`'s own pixels at the old
+  place with `PrintWindow(hwnd, hdc, PW_RENDERFULLCONTENT)` and expect black;
+  screen captures alone cannot tell which Explorer window holds a white block.
+  `RedrawWindow` on that host does not clear a block; 0x052C (13, 1) to
+  Progman does.
 
 ## Running Tests
 

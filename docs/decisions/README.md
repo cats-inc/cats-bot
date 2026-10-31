@@ -49,6 +49,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [008](./008-run-every-bot-as-a-headless-core-under-one-hub.md)                         | Run Every Bot as a Headless Core under One Hub                         | Accepted | 2026-10-29 |
 | [009](./009-give-one-bot-a-bounded-coordinator-role.md)                                | Give One Bot a Bounded Coordinator Role                                | Accepted | 2026-10-29 |
 | [010](./010-bind-each-bot-to-an-execution-environment.md)                              | Bind Each Bot to an Execution Environment                              | Accepted | 2026-10-29 |
+| [011](./011-have-explorer-redraw-the-wallpaper-a-note-leaves.md)                       | Have Explorer Redraw the Wallpaper a Note Leaves                       | Accepted | 2026-10-31 |
 
 <!-- Add new ADRs above this line -->
 

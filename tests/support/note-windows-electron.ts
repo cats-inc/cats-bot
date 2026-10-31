@@ -30,7 +30,12 @@ export class BrowserWindow extends EventEmitter {
   isFocused(): boolean { return false; }
   getBounds() { return this.bounds; }
   setBounds(bounds: typeof this.bounds): void { Object.assign(this.bounds, bounds); }
-  getNativeWindowHandle(): Buffer { return Buffer.alloc(8); }
+  /** Each window's HWND is its webContents id, so desktop-host calls can be told apart. */
+  getNativeWindowHandle(): Buffer {
+    const handle = Buffer.alloc(8);
+    handle.writeBigUInt64LE(BigInt(this.webContents.id));
+    return handle;
+  }
   setAlwaysOnTop(): void {}
   focus(): void {}
   show(): void { this.visible = true; this.emit('show'); }

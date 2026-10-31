@@ -29,7 +29,9 @@ import type { DesktopHost } from './win32Desktop.ts';
  * desktop note that gets focus is lifted to an ordinary window while it is
  * used and goes back when it loses focus (desktop-work-fleet ADR-030 projects
  * an operated scene to floating the same way). Explorer destroys its children
- * when it restarts; such notes are opened again in their layer.
+ * when it restarts; such notes are opened again in their layer. Explorer leaves
+ * white where a note leaves the wallpaper, so a hidden or destroyed note is
+ * reported to the desktop host, which has the wallpaper drawn again (ADR-011).
  */
 
 export interface NoteWindowsOptions {
@@ -235,6 +237,7 @@ export class NoteWindows {
       event.preventDefault();
       this.rememberBounds(conversationId, window);
       window.hide();
+      this.options.desktop?.released([handleOf(window)]);
       view.open = false;
       this.persist();
       void Promise.resolve(this.options.core.closeView(conversationId)).catch(() => undefined);
@@ -427,9 +430,22 @@ export class NoteWindows {
       if (!window.isDestroyed()) window.webContents.send('ui:languageChanged', state);
   }
 
+  /**
+   * Destroys windows. They are hidden first and reported together, so a quit
+   * with several wallpaper notes asks Explorer for one repaint after all of
+   * them are gone (ADR-011).
+   */
+  private dispose(windows: BrowserWindow[]): void {
+    const live = windows.filter((window) => !window.isDestroyed());
+    const handles = live.map(handleOf);
+    for (const window of live) window.hide();
+    for (const window of live) window.destroy();
+    if (handles.length > 0) this.options.desktop?.released(handles);
+  }
+
   forget(conversationId: string): void {
     const window = this.windows.get(conversationId);
-    if (window && !window.isDestroyed()) window.destroy();
+    if (window) this.dispose([window]);
     this.windows.delete(conversationId);
     delete this.state.views[conversationId];
     this.persist();
@@ -441,9 +457,7 @@ export class NoteWindows {
       this.healthTimer = null;
     }
     this.flush();
-    for (const window of this.windows.values()) {
-      if (!window.isDestroyed()) window.destroy();
-    }
+    this.dispose([...this.windows.values()]);
     this.windows.clear();
   }
 }
