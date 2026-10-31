@@ -187,7 +187,7 @@ reaches only its own bot.
 
 #### Decisions to confirm (Phase 3)
 
-The owner confirmed D31 to D34 on 2026-10-31; D35 waits.
+The owner confirmed D31 to D35 on 2026-10-31.
 
 - **D31.** A restart or relaunch from a helper no longer hides a fresh check
   that confirms the step. This reverses the rule from #48 for those two
@@ -243,6 +243,7 @@ The owner confirmed D31 to D34 on 2026-10-31; D35 waits.
 | 2026-10-31 | Independent review of Phase 3. Fixed: Boss Cat names allowed 80 characters where the New bot window takes 40; the owner was asked before a busy window refused; a declined UAC prompt for Node showed as a step to set up; the audit recorded the window as done; SPEC-008 FR-19 wording. Added tests for the Codex chain after the npm folder's restart request, a declined UAC prompt, and the Boss Cat's busy window and name limit. 340 tests pass. |
 | 2026-10-31 | The owner confirmed D31 to D34 and chose TLS 1.2. cats-platform #355 (`cce4ff6e`) carries Claude Code's user PATH and TLS 1.2, and its six changed helpers are pinned here. The VM's app test, rerun with the changes, passed, and a third VM run installed every native provider and Node.js with the TLS scripts. Phase 3 is done; the VM stays for now at the owner's request. |
 | 2026-10-31 | 3.8 verified once in the VM at medium integrity. With the Restricted default, `codex --version` in PowerShell failed on its `.ps1` shim; after the PowerShell scripts step set the user's policy to RemoteSigned, it printed `codex-cli 0.166.0`. The app test passed with the step in the Codex chain: Node.js, the npm folder, PowerShell scripts and Codex each reached 已就緒 with no Check again. The reinstall from a bot's settings, Claude Code from settings and the relaunch passed again. |
+| 2026-10-31 | The owner confirmed D35: on Windows, Codex waits for the PowerShell scripts step. |
 
 ---
 
