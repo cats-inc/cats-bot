@@ -223,7 +223,9 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   `RedrawWindow` on that host does not clear a block; 0x052C (13, 1) to
   Progman does.
   Also change a hidden note's layer to desktop or wallpaper from settings and
-  check `IsWindowVisible` stays false.
+  check `IsWindowVisible` stays false, and restart Explorer with a wallpaper
+  note shown: the note opens again on the wallpaper, and hiding it leaves the
+  wallpaper intact.
 
 ## Running Tests
 

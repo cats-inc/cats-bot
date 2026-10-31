@@ -59,11 +59,13 @@ export function shellHostsStale(
 
 /**
  * The 0x052C request that makes Explorer draw the wallpaper into its wallpaper
- * host again. ADR-011: when a window leaves that `WorkerW` (hidden, destroyed,
- * moved to another host or made top-level), Windows erases the uncovered area
- * white, and neither `WM_PAINT` nor `RedrawWindow` brings the wallpaper back;
- * measured on Windows 11 23H2 (build 22631, classic shell), where (13, 0) and
- * (0, 0) left the white and (13, 1) repainted it without covering attached windows.
+ * host again. ADR-011: where a shown window leaves that `WorkerW` (hidden,
+ * destroyed, moved to another host or made top-level), the host keeps what was
+ * left in its surface there (white for a note, black for desktop-work-fleet's
+ * scenes) and does not draw the wallpaper there again, and `RedrawWindow` does
+ * not make it; measured on Windows 11 23H2 (build 22631, classic shell), where
+ * (13, 0) and (0, 0) left the remnant and (13, 1) repainted it without covering
+ * attached windows.
  */
 export const WALLPAPER_REPAINT_REQUEST = [13, 1] as const;
 
