@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   discoverShellHosts,
   MISSING_HOST_RETRY_MS,
+  repaintWallpaper,
   shellHostsChanged,
   shellHostsStale,
   type Hwnd,
@@ -159,4 +160,23 @@ test('a restarted Explorer is stale at once, whatever the layer and the time sin
   const hosts = discoverShellHosts(shell);
   shell.windows = [{ id: 30, className: 'Progman', parent: 0, process: 11 }];
   assert.equal(shellHostsStale(hosts, shell, null, 0), true);
+});
+
+test('a wallpaper repaint sends Explorer exactly (13, 1), and nothing without a living wallpaper host', () => {
+  const shell = new FakeShell([
+    { id: 8, className: 'WorkerW', parent: 0, process: EXPLORER },
+    { id: 3, className: 'SHELLDLL_DefView', parent: 8, process: EXPLORER },
+    { id: 9, className: 'WorkerW', parent: 0, process: EXPLORER },
+    { id: 2, className: 'Progman', parent: 0, process: EXPLORER },
+  ]);
+  const hosts = discoverShellHosts(shell);
+  assert.equal(repaintWallpaper(hosts, shell), true);
+  assert.deepEqual(shell.requests, [[13, 1]], '(13, 0) and (0, 0) leave the white; ADR-011');
+
+  shell.requests = [];
+  assert.equal(repaintWallpaper({ ...hosts, wallpaper: 0 }, shell), false, 'no wallpaper host');
+  shell.windows = shell.windows.filter((window) => window.id !== 9);
+  assert.equal(repaintWallpaper(hosts, shell), false, 'the wallpaper host died with Explorer');
+  assert.equal(repaintWallpaper({ desktop: 0, wallpaper: 0, shell: 0 }, shell), false, 'no Explorer');
+  assert.deepEqual(shell.requests, []);
 });
