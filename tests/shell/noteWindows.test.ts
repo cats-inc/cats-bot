@@ -117,18 +117,22 @@ test('a delayed desktop focus event cannot lift a hidden note', async t => {
   assert.equal(window.isVisible(), false);
 });
 
-/** A desktop host that records which windows the shell reported hidden or destroyed, and their state then. */
+/**
+ * A desktop host that records which windows the shell reported hidden or destroyed, whether the
+ * shell said each was shown until then, and their state when reported.
+ */
 function recordingHost(layer: 'desktop' | 'wallpaper') {
-  const released: Array<{ handles: number[]; visible: boolean[]; destroyed: boolean[] }> = [];
+  const released: Array<{ handles: number[]; shown: boolean[]; visible: boolean[]; destroyed: boolean[] }> = [];
   const host: DesktopHost = {
     isAttached: () => true,
     attachedLayer: () => layer,
     attach: () => true,
     detach() {},
-    released(handles) {
-      const windows = handles.map((handle) => BrowserWindow.instances.find((window) => window.webContents.id === handle)!);
+    released(list) {
+      const windows = list.map(({ window: handle }) => BrowserWindow.instances.find((window) => window.webContents.id === handle)!);
       released.push({
-        handles: [...handles],
+        handles: list.map(({ window }) => window),
+        shown: list.map(({ shown }) => shown),
         visible: windows.map((window) => window.isVisible()),
         destroyed: windows.map((window) => window.isDestroyed()),
       });
@@ -154,7 +158,7 @@ test('ADR-011: hiding an attached note reports it after it is hidden, so the wal
   const { windows } = fixture(t, host);
   const window = await restoredNote(windows, 'home', 'wallpaper');
   windows.hide('home');
-  assert.deepEqual(released, [{ handles: [window.webContents.id], visible: [false], destroyed: [false] }]);
+  assert.deepEqual(released, [{ handles: [window.webContents.id], shown: [true], visible: [false], destroyed: [false] }]);
 });
 
 test('ADR-011: a forgotten note is reported once it is hidden and destroyed', async t => {
@@ -162,7 +166,16 @@ test('ADR-011: a forgotten note is reported once it is hidden and destroyed', as
   const { windows } = fixture(t, host);
   const window = await restoredNote(windows, 'home', 'wallpaper');
   windows.forget('home');
-  assert.deepEqual(released, [{ handles: [window.webContents.id], visible: [false], destroyed: [true] }]);
+  assert.deepEqual(released, [{ handles: [window.webContents.id], shown: [true], visible: [false], destroyed: [true] }]);
+});
+
+test('ADR-011: a note hidden before it is forgotten is reported as not shown, so nothing is redrawn for it', async t => {
+  const { host, released } = recordingHost('wallpaper');
+  const { windows } = fixture(t, host);
+  const window = await restoredNote(windows, 'home', 'wallpaper');
+  windows.hide('home');
+  windows.forget('home');
+  assert.deepEqual(released.at(-1), { handles: [window.webContents.id], shown: [false], visible: [false], destroyed: [true] });
 });
 
 test('ADR-011: quitting reports every note in one call after all of them are gone', async t => {
@@ -173,6 +186,7 @@ test('ADR-011: quitting reports every note in one call after all of them are gon
   windows.destroyAll();
   assert.deepEqual(released, [{
     handles: [first.webContents.id, second.webContents.id],
+    shown: [true, true],
     visible: [false, false],
     destroyed: [true, true],
   }]);

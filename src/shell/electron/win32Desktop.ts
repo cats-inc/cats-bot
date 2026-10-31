@@ -19,13 +19,21 @@ import {
  * child style, the same DPI awareness level, physical bounds mapped into the
  * parent's client coordinates, no activation.
  *
- * ADR-011: Explorer fills the part of its wallpaper host that a window leaves
- * with white and does not paint it again by itself, so every way off the
- * wallpaper layer (another host, top-level, hidden, destroyed) ends with a
- * request for Explorer to draw the wallpaper again.
+ * ADR-011: where a shown window leaves Explorer's wallpaper host, the host
+ * keeps what was left in its surface there (white for a note) and does not
+ * draw the wallpaper there again by itself, so every way a shown note leaves
+ * the wallpaper layer (another host, top-level, hidden, destroyed) ends with a
+ * request for Explorer to draw the wallpaper again. A note that was hidden
+ * already uncovers nothing and sends none.
  */
 
 export type AttachedLayer = 'desktop' | 'wallpaper';
+
+/** A window the shell has just hidden or destroyed, and whether it was shown until then. */
+export interface ReleasedWindow {
+  window: Hwnd;
+  shown: boolean;
+}
 
 export interface DesktopHost {
   /** Puts the window under the layer's host at its current screen rectangle; false when there is no host. */
@@ -33,19 +41,20 @@ export interface DesktopHost {
   /** Makes an attached window top-level again at the same screen rectangle; also forgets a destroyed one. */
   detach(window: Hwnd): void;
   /**
-   * Attached windows the shell has just hidden or destroyed. If any was on the
-   * wallpaper, Explorer is asked once to draw the wallpaper again; destroyed
-   * windows are forgotten.
+   * Attached windows the shell has just hidden or destroyed. If any of them was
+   * shown on the wallpaper, Explorer is asked once to draw the wallpaper again;
+   * destroyed windows are forgotten.
    */
-  released(windows: readonly Hwnd[]): void;
+  released(windows: readonly ReleasedWindow[]): void;
   isAttached(window: Hwnd): boolean;
   /** The layer a window is attached to, or null when it is top-level. */
   attachedLayer(window: Hwnd): AttachedLayer | null;
   /** True while the host a window is attached to still exists. */
   hostAlive(window: Hwnd): boolean;
   /**
-   * Re-reads the hosts when Explorer restarted, or when the given layer had no
-   * host yet (rate-limited); returns whether they changed.
+   * Forgets attached windows that are gone or whose host is gone, then re-reads
+   * the hosts when Explorer restarted, or when the given layer had no host yet
+   * (rate-limited); returns whether the hosts changed.
    */
   refresh(layer?: AttachedLayer): boolean;
   bringToFront(window: Hwnd): boolean;
@@ -195,9 +204,20 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
   /** Attached windows and the style each had as a top-level window. */
   const attached = new Map<Hwnd, { layer: AttachedLayer; parent: Hwnd; style: number }>();
 
-  /** ADR-011: what a window left on the wallpaper host stays white until Explorer draws the wallpaper again. */
+  /** ADR-011: what a shown window left on the wallpaper host stays until Explorer draws the wallpaper again. */
   const restoreWallpaper = () => {
     repaintWallpaper(hosts, windows);
+  };
+
+  /**
+   * A child dies with its parent, so an entry whose window or host is gone is stale; Explorer
+   * restarting takes attached notes down this way, unreported. Kept, a later window given the same
+   * handle would inherit the old style and layer. The new hosts draw a fresh wallpaper.
+   */
+  const forgetStale = () => {
+    for (const [window, entry] of attached) {
+      if (!windows.alive(window) || !windows.alive(entry.parent)) attached.delete(window);
+    }
   };
 
   /**
@@ -208,6 +228,7 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
     (style & ~WS_VISIBLE) | (windows.style(window) & WS_VISIBLE);
 
   const refresh = (layer?: AttachedLayer): boolean => {
+    forgetStale();
     if (!shellHostsStale(hosts, windows, layer ?? null, now() - discoveredAt)) return false;
     const before = hosts;
     hosts = discoverShellHosts(windows);
@@ -231,6 +252,7 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
         return false;
       }
       const current = attached.get(window);
+      const uncovers = current?.layer === 'wallpaper' && current.parent !== parent && windows.visible(window);
       const style = current?.style ?? windows.style(window);
       const rect = windows.rect(window);
       windows.setStyle(window, withCurrentVisibility(window, (style & ~WS_POPUP) | WS_CHILD));
@@ -241,27 +263,29 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
       windows.setPosition(window, origin.x, origin.y, rect.right - rect.left, rect.bottom - rect.top,
         SWP_FRAMECHANGED | SWP_NOACTIVATE);
       attached.set(window, { layer, parent, style });
-      if (current?.layer === 'wallpaper' && current.parent !== parent) restoreWallpaper();
+      if (uncovers) restoreWallpaper();
       return true;
     },
     detach(window) {
       const current = attached.get(window);
       if (!current) return;
       attached.delete(window);
+      // A destroyed window may have been shown until then.
+      const uncovers = current.layer === 'wallpaper' && (!windows.alive(window) || windows.visible(window));
       if (windows.alive(window)) {
         const rect = windows.rect(window);
         windows.setParent(window, 0);
         windows.setStyle(window, withCurrentVisibility(window, current.style));
         windows.setPosition(window, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
       }
-      if (current.layer === 'wallpaper') restoreWallpaper();
+      if (uncovers) restoreWallpaper();
     },
     released(list) {
       let uncovered = false;
-      for (const window of list) {
+      for (const { window, shown } of list) {
         const current = attached.get(window);
         if (!current) continue;
-        if (current.layer === 'wallpaper') uncovered = true;
+        if (shown && current.layer === 'wallpaper') uncovered = true;
         if (!windows.alive(window)) attached.delete(window);
       }
       if (uncovered) restoreWallpaper();

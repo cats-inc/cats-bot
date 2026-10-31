@@ -55,7 +55,7 @@ test('attach makes a note a child of the layer host at the same screen rectangle
   assert.deepEqual(windows.rect(note), NOTE);
 });
 
-test('a hidden note stays hidden when it is attached or moved to another layer', () => {
+test('a hidden note stays hidden when it is attached or moved to another layer, and uncovers nothing', () => {
   const { windows, host } = setup();
   const note = windows.addNote(100, NOTE, false);
 
@@ -64,6 +64,12 @@ test('a hidden note stays hidden when it is attached or moved to another layer',
   host.attach(note, 'desktop');
   assert.equal(windows.style(note) & WS_VISIBLE, 0);
   assert.ok(windows.positions.every((call) => (call.flags & SWP_SHOWWINDOW) === 0));
+  assert.deepEqual(windows.requests, [], 'a hidden note left nothing on the wallpaper host');
+
+  host.attach(note, 'wallpaper');
+  host.detach(note);
+  assert.equal(windows.style(note) & WS_VISIBLE, 0);
+  assert.deepEqual(windows.requests, []);
 });
 
 test('attach is refused when the DPI awareness differs or the layer has no host', () => {
@@ -134,19 +140,57 @@ test('released notes repaint the wallpaper once for all of them, and destroyed o
   host.attach(c, 'desktop');
 
   windows.setShown(c, false);
-  host.released([c]);
+  host.released([{ window: c, shown: true }]);
   assert.deepEqual(windows.requests, [], 'the icons host needs no wallpaper redraw');
 
   windows.destroy(a);
   windows.destroy(b);
-  host.released([a, b]);
+  host.released([{ window: a, shown: true }, { window: b, shown: true }]);
   assert.deepEqual(windows.requests, [REPAINT]);
   assert.equal(host.hostAlive(a), false, 'forgotten');
-  host.released([a, b]);
+  host.released([{ window: a, shown: true }, { window: b, shown: true }]);
   assert.deepEqual(windows.requests, [REPAINT], 'nothing left to uncover');
 
-  host.released([windows.addNote(103, NOTE)]);
+  host.released([{ window: windows.addNote(103, NOTE), shown: true }]);
   assert.deepEqual(windows.requests, [REPAINT], 'a note never attached is ignored');
+});
+
+test('released notes that were hidden already uncover nothing, but destroyed ones are still forgotten', () => {
+  const { windows, host } = setup();
+  const [a, b] = [windows.addNote(100, NOTE), windows.addNote(101, NOTE)];
+  host.attach(a, 'wallpaper');
+  host.attach(b, 'wallpaper');
+  windows.setShown(a, false);
+  host.released([{ window: a, shown: true }]);
+  assert.deepEqual(windows.requests, [REPAINT], 'hidden by the shell just now');
+
+  windows.destroy(a);
+  windows.destroy(b);
+  host.released([{ window: a, shown: false }, { window: b, shown: false }]);
+  assert.deepEqual(windows.requests, [REPAINT], 'forgetting hidden notes sends nothing more');
+  assert.equal(host.hostAlive(a), false);
+  assert.equal(host.hostAlive(b), false);
+});
+
+test('after Explorer restarts, the notes it took down are forgotten and a window given an old handle starts clean', () => {
+  const { windows, host } = setup();
+  const note = windows.addNote(100, NOTE);
+  host.attach(note, 'wallpaper');
+  windows.restartExplorer(1000);
+  assert.equal(windows.alive(note), false, 'the child died with its host');
+
+  // Windows reuses the handle for a new note window before anything reports the old one or looks
+  // for the new hosts; attach does both.
+  const reused = windows.addNote(100, NOTE);
+  windows.get(reused).style |= 0x00040000;
+  const style = windows.style(reused);
+  assert.equal(host.attachedLayer(reused), null);
+  assert.equal(host.hostAlive(reused), false);
+  assert.equal(host.attach(reused, 'desktop'), true);
+  assert.equal(windows.get(reused).parent, ICONS_HOST + 1000);
+  assert.deepEqual(windows.requests, [], 'the old wallpaper host is gone and the new one draws its own wallpaper');
+  host.detach(reused);
+  assert.equal(windows.style(reused), style, "its own top-level style, not the dead note's");
 });
 
 test('bring to front shows and activates a top-level note', () => {
