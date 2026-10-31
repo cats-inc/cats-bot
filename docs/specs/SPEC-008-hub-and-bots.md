@@ -181,7 +181,11 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     CLI's folder to Runtime and every core; a failure or a refused elevation
     always stands, a declined UAC prompt included. An install's diagnostics
     show only for a step that is not done, and a help line the check and the
-    install both give shows once.
+    install both give shows once. On Windows, Codex has a PowerShell scripts
+    step after the npm folder. PowerShell runs npm's `codex.ps1` only under a
+    permissive execution policy, and a clean Windows has Restricted. The step
+    sets the user's own policy to RemoteSigned, so `codex login` works in a
+    PowerShell terminal; Cats Bot itself runs `codex.cmd`.
 
 ### Host services
 

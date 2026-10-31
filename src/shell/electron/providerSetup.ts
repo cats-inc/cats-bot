@@ -8,6 +8,8 @@ const execute = promisify(execFile);
 const FILES: Record<string, [string, string]> = {
   node: ['Install-Node.ps1', 'install-node.sh'],
   npm: ['Setup-NodeGlobalPrefix.ps1', 'setup-node-global-prefix.sh'],
+  // Windows only: PowerShell may run npm's .ps1 shims, so `codex login` works there.
+  shell: ['Setup-CliReadiness.ps1', ''],
   codex: ['Install-Codex.ps1', 'install-codex.sh'],
   claude: ['Install-ClaudeCode.ps1', 'install-claude-code.sh'],
   antigravity: ['Install-Antigravity.ps1', 'install-antigravity.sh'],
@@ -67,6 +69,7 @@ export function helperInvocation(
     };
   if (platform !== 'darwin' && platform !== 'linux')
     throw new Error('Provider setup is unavailable on this platform');
+  if (!file[1]) throw new Error('This setup step is for Windows only');
   return {
     command: '/bin/bash',
     args: [
@@ -129,8 +132,10 @@ export class ProviderSetup {
   private selected: string | null = null;
   private active = false;
   private waiters: Array<() => void> = [];
-  constructor(runHelper: SetupHelperRunner) {
+  private readonly windows: boolean;
+  constructor(runHelper: SetupHelperRunner, options: { windows?: boolean } = {}) {
     this.runHelper = runHelper;
+    this.windows = options.windows ?? process.platform === 'win32';
   }
   get busy(): boolean {
     return this.active;
@@ -177,16 +182,21 @@ export class ProviderSetup {
     this.assertProvider(provider);
     if (provider !== this.selected) throw new Error('Check this provider before installing it');
     if (
-      !['node', 'npm', 'provider'].includes(String(step)) ||
-      (step !== 'provider' && provider !== 'codex')
+      !['node', 'npm', 'shell', 'provider'].includes(String(step)) ||
+      (step !== 'provider' && provider !== 'codex') ||
+      (step === 'shell' && !this.windows)
     )
       throw new Error('This prerequisite is outside the selected provider');
     return this.exclusive(async () => {
       if (provider === 'codex' && step !== 'node') {
         const before = await this.inspect(provider);
-        const needed = step === 'npm' ? ['node'] : ['node', 'npm'];
+        // Each step needs the ones above it, as the page shows them.
+        const order = before.steps.map((item) => item.id);
+        const needed = order.slice(0, order.indexOf(step as SetupStepId));
         if (before.steps.some((item) => needed.includes(item.id) && item.status !== 'ready'))
-          throw new Error('Complete Node.js and npm setup first');
+          throw new Error(step === 'npm' || (step === 'provider' && !this.windows)
+            ? 'Complete Node.js and npm setup first'
+            : 'Complete the steps above first');
       }
       const applied = await this.runHelper(step === 'provider' ? provider : (step as string), true);
       const checked = await this.inspect(provider);
@@ -225,6 +235,7 @@ export class ProviderSetup {
         ? [
             ['node', 'node', 'Node.js and npm'],
             ['npm', 'npm', 'npm installation folder'],
+            ...(this.windows ? [['shell', 'shell', 'PowerShell scripts'] as [SetupStepId, string, string]] : []),
             ['provider', provider, 'Codex'],
           ]
         : [['provider', provider, CLI_PROVIDERS.find((item) => item.id === provider)!.label]];
