@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { test } from 'node:test';
 import {
   helperInvocation,
@@ -13,6 +16,50 @@ import {
 
 const assets = fileURLToPath(new URL('../../assets/setup/', import.meta.url));
 const ready = (): HelperResult => ({ status: 'ready', installed: true, detectedVersion: '1.2.3' });
+
+test('the packaged Codex prerequisite chain accepts an already configured npm folder with system Bash', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cats-bot-setup-bash-'));
+  try {
+    const bin = join(home, 'prefix', 'bin');
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(join(home, '.nvm'));
+    writeFileSync(join(home, '.nvm', 'nvm.sh'), 'export PATH="$HOME/prefix/bin:$PATH"\n');
+    writeFileSync(join(home, '.npmrc'), `prefix=${join(home, 'prefix')}\n`);
+    const nodeExecutable = `'${process.execPath.replaceAll("'", "'\\''")}'`;
+    writeFileSync(join(bin, 'node'), `#!/bin/sh
+if [ "$1" = '-v' ]; then printf 'v24.0.0\\n'; else exec ${nodeExecutable} "$@"; fi
+`, { mode: 0o755 });
+    writeFileSync(join(bin, 'codex'), '#!/bin/sh\nprintf "codex-cli 0.166.0\\n"\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'npm'), `#!/bin/sh
+case "$*" in
+  'config get prefix') printf '%s\\n' "$HOME/prefix" ;;
+  'config get registry') printf '%s\\n' 'https://registry.npmjs.org/' ;;
+  'list -g --depth=0 --json @openai/codex') printf '%s\\n' '{"dependencies":{"@openai/codex":{"version":"0.166.0"}}}' ;;
+  *) printf 'Unexpected npm mutation: %s\\n' "$*" >&2; exit 95 ;;
+esac
+`, { mode: 0o755 });
+    const calls: string[] = [];
+    const setup = new ProviderSetup(async (helper, apply) => {
+      assert.equal(apply, false);
+      calls.push(helper);
+      const invocation = helperInvocation(assets, process.platform, helper, apply);
+      const { stdout } = await promisify(execFile)(invocation.command, invocation.args, {
+        env: { HOME: home, NVM_DIR: join(home, '.nvm'), PATH: '/usr/bin:/bin', SHELL: '/bin/bash' },
+        timeout: 10_000,
+      });
+      return JSON.parse(stdout) as HelperResult;
+    });
+    const state = await setup.check('codex');
+    assert.deepEqual(calls, ['node', 'npm', 'codex']);
+    assert.deepEqual(state.steps.map((step) => step.status), ['ready', 'ready', 'ready']);
+    assert.equal(state.steps.at(-1)?.version, '0.166.0');
+    assert.equal(state.canFinish, true);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 test('a fresh GUI startup rediscovers nvm/custom npm directories without installing or checking other providers', async () => {
   let path = '/usr/bin:/bin';

@@ -55,6 +55,10 @@ test('the five provider menus keep Runtime catalog model and effort order withou
     CLI_PROVIDERS.map((provider) => provider.id),
     ['codex', 'claude', 'antigravity', 'grok', 'muse'],
   );
+  assert.deepEqual(
+    CLI_PROVIDERS.map((provider) => provider.label),
+    ['Codex', 'Claude', 'Antigravity', 'Grok', 'Muse'],
+  );
   for (const provider of CLI_PROVIDERS) {
     const catalog = readPackagedModelCatalog(provider.id);
     assert.deepEqual(

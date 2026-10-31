@@ -72,7 +72,10 @@ Node/npm and a usable npm installation folder; native providers skip those steps
 Installation and sign-in are reported separately. No other provider is installed.
 
 The model and effort lists use Runtime's catalog, matching Desktop. Model controls
-are saved for new sessions. Cats Bot Settings > General offers Follow system, English and
+are saved for new sessions. The five supported provider names follow Desktop;
+choosing Claude runs the Claude Code CLI. Catalog data comes from the pinned
+Runtime package or the bot's running Runtime, rather than Desktop's profile.
+Cats Bot Settings > General offers Follow system, English and
 Traditional Chinese; open conversation windows and the tray update immediately.
 Closing a conversation hides it. Avatar visibility/position and conversation
 visibility/position/layer survive restart, including an entirely hidden desktop.
