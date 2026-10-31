@@ -130,9 +130,10 @@ accepted update id lives in `telegram-state.json`.
 
 Packaging (Windows): `npm run dist:dir` builds `release/win-unpacked/`,
 `npm run dist:win` builds the NSIS installer and the portable executable.
-CI builds both, for x64 and arm64, on every main update outside `docs/` and keeps
-them in the run's `candidate-windows` artifact; candidate builds do not update
-themselves. The installer is
+CI builds both, for x64 and arm64, for every main update outside `docs/` and keeps
+them in the run's `candidate-windows` artifact. When the push run reuses its merged
+pull request's green run, that pull request's run has them. Candidate builds do
+not update themselves. The installer is
 per-user, needs no administrator, adds Start menu and desktop shortcuts and
 starts the app; a bot that was never set up opens the first-run page
 (SPEC-002 FR-1). Uninstalling removes Cats Bot's login entries and offers an

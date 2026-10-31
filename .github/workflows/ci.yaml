@@ -11,8 +11,15 @@ jobs:
   # required checks still report. Unknown bases and failed detection run CI.
   changes:
     runs-on: ubuntu-latest
+    # Job permissions replace the defaults: checkout and the merge lookups read
+    # contents, the merged pull request and its CI runs.
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
     outputs:
       code: ${{ steps.paths.outputs.code }}
+      skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,18 +45,62 @@ jobs:
             if [ -n "$changed" ] && [ -z "$code_changed" ]; then code=false; fi
           fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+      - name: Reuse the merged pull request's green run
+        id: merged
+        if: github.event_name == 'push' && steps.paths.outputs.code == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # Main requires up-to-date branches, so a squash merge lands the tree
+          # its pull request's CI already passed. Reuse that run only when this
+          # push adds one commit, the commit is a pull request's merge, the
+          # request's final head contains the previous main and has this exact
+          # tree, and CI passed on that head. Anything else, or any failed
+          # lookup, runs every check.
+          tested=false
+          sha=$(git rev-parse HEAD)
+          if [ -n "$BEFORE" ] && [ "$(git rev-parse --verify --quiet 'HEAD^' || true)" = "$BEFORE" ]; then
+            pr=$(gh api "repos/$REPO/commits/$sha/pulls" --jq ".[] | select(.merge_commit_sha == \"$sha\") | \"\(.number) \(.head.sha)\"" 2>/dev/null | head -n 1 || true)
+            number=${pr%% *}
+            head=${pr##* }
+            if [[ "$number" =~ ^[0-9]+$ && "$head" =~ ^[0-9a-f]{40}$ ]] &&
+              git fetch --no-tags --quiet origin "refs/pull/$number/head" &&
+              [ "$(git rev-parse FETCH_HEAD)" = "$head" ] &&
+              git merge-base --is-ancestor "$BEFORE" "$head" &&
+              [ "$(git rev-parse "$head^{tree}")" = "$(git rev-parse 'HEAD^{tree}')" ]; then
+              passed=$(gh api "repos/$REPO/actions/workflows/ci.yaml/runs?head_sha=$head&event=pull_request&status=success&per_page=1" --jq '.total_count' 2>/dev/null || true)
+              if [[ "$passed" =~ ^[1-9][0-9]*$ ]]; then
+                tested=true
+                echo "Pull request #$number passed CI on $head, which has this exact tree."
+              fi
+            fi
+          fi
+          echo "tested=$tested" | tee -a "$GITHUB_OUTPUT"
+      - name: Decide what to skip
+        id: plan
+        env:
+          CODE: ${{ steps.paths.outputs.code }}
+          TESTED: ${{ steps.merged.outputs.tested }}
+        run: |
+          set -euo pipefail
+          skip=
+          if [ "$CODE" = "false" ]; then skip=docs; elif [ "$TESTED" = "true" ]; then skip=tested; fi
+          echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
 
   # ADR-001 §9 / PLAN-005: test and package on each supported platform.
-  # Keep required matrix names stable, but use only lightweight Ubuntu jobs for
-  # docs-only acknowledgements. Tests run `.ts` files directly through
-  # Node 24 type stripping, so the source stays limited to erasable syntax.
+  # Keep required matrix names stable, but use only lightweight Ubuntu jobs to
+  # acknowledge a skip: a docs-only change, or a main push whose merged pull
+  # request already passed on the same tree. Tests run `.ts` files directly
+  # through Node 24 type stripping, so the source stays limited to erasable syntax.
   node:
     name: node (${{ matrix.os }})
     needs: changes
     if: ${{ !cancelled() }}
-    runs-on: ${{ needs.changes.result == 'success' && needs.changes.outputs.code == 'false' && 'ubuntu-latest' || matrix.os }}
+    runs-on: ${{ needs.changes.result == 'success' && needs.changes.outputs.skip != '' && 'ubuntu-latest' || matrix.os }}
     env:
-      DOCS_ONLY: ${{ needs.changes.result == 'success' && needs.changes.outputs.code == 'false' }}
+      SKIP: ${{ needs.changes.result == 'success' && needs.changes.outputs.skip || '' }}
     strategy:
       fail-fast: false
       matrix:
@@ -62,36 +113,39 @@ jobs:
             platform: macos
     steps:
       - name: Documentation-only change
-        if: env.DOCS_ONLY == 'true'
+        if: env.SKIP == 'docs'
         run: echo "Only docs/ changed; install, typecheck, tests and packaging are skipped."
+      - name: Already tested in its pull request
+        if: env.SKIP == 'tested'
+        run: echo "The merged pull request passed CI on this exact tree; install, typecheck, tests and packaging are skipped, and its run holds the candidate packages."
       - uses: actions/checkout@v4
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
 
       - name: Use Node.js 24
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         uses: actions/setup-node@v4
         with:
           node-version: '24'
           cache: 'npm'
 
       - name: Install dependencies
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         run: npm ci
 
       - name: Typecheck
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         run: npm run typecheck
 
       - name: Test
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         run: npm test
 
       - name: Build
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         run: npm run build
 
       - name: Build candidate packages (updates disabled)
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         shell: bash
         env:
           RELEASE_PLATFORM: ${{ matrix.platform }}
@@ -100,7 +154,7 @@ jobs:
           tag="v$(node -p 'require("./package.json").version')"
           node scripts/build-preview.mjs --platform "$RELEASE_PLATFORM" --tag "$tag" --source "$SOURCE_COMMIT"
       - uses: actions/upload-artifact@v4
-        if: env.DOCS_ONLY != 'true'
+        if: env.SKIP == ''
         with:
           name: candidate-${{ matrix.platform }}
           path: |
@@ -115,7 +169,7 @@ jobs:
 
   preview-contract:
     needs: [changes, node]
-    if: ${{ !cancelled() && needs.node.result == 'success' && (needs.changes.result != 'success' || needs.changes.outputs.code != 'false') }}
+    if: ${{ !cancelled() && needs.node.result == 'success' && (needs.changes.result != 'success' || needs.changes.outputs.skip == '') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -157,13 +211,13 @@ jobs:
       - name: Require the expected platform and package checks
         env:
           CHANGES_RESULT: ${{ needs.changes.result }}
-          CODE: ${{ needs.changes.outputs.code }}
+          SKIP: ${{ needs.changes.outputs.skip }}
           NODE_RESULT: ${{ needs.node.result }}
           CONTRACT_RESULT: ${{ needs.preview-contract.result }}
         run: |
           set -euo pipefail
           test "$NODE_RESULT" = success
-          if [ "$CHANGES_RESULT" = success ] && [ "$CODE" = false ]; then
+          if [ "$CHANGES_RESULT" = success ] && { [ "$SKIP" = docs ] || [ "$SKIP" = tested ]; }; then
             test "$CONTRACT_RESULT" = skipped
           else
             test "$CONTRACT_RESULT" = success

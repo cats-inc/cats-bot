@@ -265,11 +265,28 @@ package contract. Application tests keep executable inputs
 outside repo documentation and exercise the actual workflow detector and final
 job gates. Manual publication still reads the prepared release notes.
 
+A push to `main` also skips the checks when its merged pull request already
+passed on the same tree. `main` requires up-to-date branches, so a squash merge
+usually lands exactly what the pull request's CI tested. The `changes` job
+reuses that run only when all of these hold:
+
+- the push adds one commit on the previous `main`;
+- the GitHub API names that commit as a pull request's merge;
+- the request's final head, fetched from `refs/pull/<n>/head`, contains the
+  previous `main` and has the pushed commit's tree;
+- CI passed on that head as a `pull_request` run.
+
+The `node (...)` checks then acknowledge the skip on Ubuntu, and
+`preview-contract` is skipped. Any other push, or any failed lookup, runs every
+check. `tests/shell/ci.test.ts` runs this step against a local origin with a
+stubbed `gh`.
+
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and
 checksums. Candidate identity disables updates. The `candidate-windows` artifact
 is also the Windows installer and portable build that SPEC-002 FR-9 keeps for
-every main update. Publication is a separate manual workflow documented in
+every main update: in the push run, or in the merged pull request's run when the
+push reuses it. Publication is a separate manual workflow documented in
 [deployment.md](deployment.md). It does not rerun typecheck or the tests: its
 guard requires a successful CI push run on `main` for the source commit.
 
