@@ -53,6 +53,7 @@ export interface DesktopHost {
 
 const WS_CHILD = 0x40000000;
 const WS_POPUP = 0x80000000;
+const WS_VISIBLE = 0x10000000;
 const GWL_STYLE = -16;
 const SWP_NOSIZE = 0x0001;
 const SWP_NOMOVE = 0x0002;
@@ -151,6 +152,13 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
     repaintWallpaper(hosts, windows);
   };
 
+  /**
+   * A saved style with the window's visibility now: the style saved at the first attach
+   * carries WS_VISIBLE from then, and writing it back would show a hidden note.
+   */
+  const withCurrentVisibility = (window: Hwnd, style: number): number =>
+    (style & ~WS_VISIBLE) | (Number(GetWindowLongPtrW(window, GWL_STYLE)) & WS_VISIBLE);
+
   const refresh = (layer?: AttachedLayer): boolean => {
     if (!shellHostsStale(hosts, windows, layer ?? null, Date.now() - discoveredAt)) return false;
     const before = hosts;
@@ -177,12 +185,14 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
       const current = attached.get(window);
       const style = current?.style ?? Number(GetWindowLongPtrW(window, GWL_STYLE));
       const rect = rectOf(window);
-      SetWindowLongPtrW(window, GWL_STYLE, (style & ~WS_POPUP) | WS_CHILD);
+      SetWindowLongPtrW(window, GWL_STYLE, withCurrentVisibility(window, (style & ~WS_POPUP) | WS_CHILD));
       SetParent(window, parent);
       const origin = { x: rect.left, y: rect.top };
       ScreenToClient(parent, origin);
+      // No SWP_SHOWWINDOW (fleet's Attach has none either) and the current WS_VISIBLE: a hidden note whose
+      // layer is changed in settings stays hidden.
       SetWindowPos(window, HWND_TOP, origin.x, origin.y, rect.right - rect.left, rect.bottom - rect.top,
-        SWP_FRAMECHANGED | SWP_NOACTIVATE | SWP_SHOWWINDOW);
+        SWP_FRAMECHANGED | SWP_NOACTIVATE);
       attached.set(window, { layer, parent, style });
       if (current?.layer === 'wallpaper' && current.parent !== parent) restoreWallpaper();
       return true;
@@ -194,7 +204,7 @@ function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
       if (IsWindow(window)) {
         const rect = rectOf(window);
         SetParent(window, 0);
-        SetWindowLongPtrW(window, GWL_STYLE, current.style);
+        SetWindowLongPtrW(window, GWL_STYLE, withCurrentVisibility(window, current.style));
         SetWindowPos(window, HWND_TOP, rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top, SWP_FRAMECHANGED | SWP_NOACTIVATE);
       }
       if (current.layer === 'wallpaper') restoreWallpaper();

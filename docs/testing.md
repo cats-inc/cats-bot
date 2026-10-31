@@ -222,6 +222,8 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   screen captures alone cannot tell which Explorer window holds a white block.
   `RedrawWindow` on that host does not clear a block; 0x052C (13, 1) to
   Progman does.
+  Also change a hidden note's layer to desktop or wallpaper from settings and
+  check `IsWindowVisible` stays false.
 
 ## Running Tests
 
