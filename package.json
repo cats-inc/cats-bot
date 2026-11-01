@@ -151,6 +151,7 @@
       ],
       "category": "Utility",
       "executableName": "cats-bot",
+      "executableArgs": ["--ozone-platform=x11"],
       "syncDesktopName": true,
       "artifactName": "Cats-Bot-${version}-${arch}.${ext}",
       "icon": "assets/installer/linux"

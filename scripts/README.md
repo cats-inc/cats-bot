@@ -42,6 +42,15 @@ node scripts/sync-shared-tools.mjs --refresh \
   --source cats-inc/cats-platform=/path/to/cats-platform
 ```
 
+## Standards
+
+Follow `docs/SCRIPT-STANDARDS.md` for naming and documentation rules.
+
+`testing/bot-interaction-acceptance.mjs` exercises real Electron waiting controls
+with a fake Runtime and an isolated temporary profile. Its optional `--native-drag`
+mode uses Linux `xdotool` input for avatar dragging, click-through and bubbles;
+see [the testing guide](../docs/testing.md#shell-tests) before running it.
+
 Use the provider manifest separately to refresh its complete closure from Platform.
 Skill sync discovers nested packages, rejects duplicates/links and preserves
 unrelated skills even with `--clean`. Windows PowerShell and Linux wrappers expose

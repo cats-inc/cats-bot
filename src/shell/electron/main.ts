@@ -52,6 +52,7 @@ import { initialUpdateState, parseBotRelease, type BotRelease } from './update/r
 import { NOTE_LAYER_LABELS, NOTE_LAYERS, readShellState, type NoteLayer } from './viewState.ts';
 import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
+import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phases 2 and 3 (SPEC-008):
@@ -120,6 +121,7 @@ interface BotRow {
 }
 
 async function main(): Promise<void> {
+  if (relaunchForLinuxWindowing(app)) return;
   const args = parseArgs(process.argv.slice(1));
   // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
   // invalid id before it reaches any path.
@@ -1208,6 +1210,9 @@ async function main(): Promise<void> {
   };
   ipcMain.on('floating:interactive', (event, interactive: unknown) => {
     fromFloating(event)?.floating.setInteractive(interactive === true);
+  });
+  ipcMain.on('floating:regions', (event, regions: unknown) => {
+    fromFloating(event)?.floating.setInputRegions(regions);
   });
   ipcMain.on('floating:moveTo', (event, x: unknown, y: unknown) => {
     if (typeof x === 'number' && typeof y === 'number') fromFloating(event)?.floating.moveTo(x, y);

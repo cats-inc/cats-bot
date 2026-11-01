@@ -209,6 +209,8 @@ export class BotCore implements BotHostApi {
   private readonly retiring = new Set<string>();
   /** Work items waiting out a retry delay; cancellation and coalescing see them like queued ones. */
   private readonly deferred = new Map<string, { item: WorkItem; timer: NodeJS.Timeout }>();
+  /** Only HTTP-admitted sends own a Runtime turn that Cancel may stop. */
+  private readonly admittedTurns = new Set<string>();
   /** FR-27: a provider change restarts the runtime only once the running turn has ended. */
   private runtimeSwapPending = false;
   private swappingRuntime = false;
@@ -314,6 +316,14 @@ export class BotCore implements BotHostApi {
         if (client) this.interactions.track(item, client);
       },
       providerEvent: (item, event) => this.interactions.notice(item, event),
+      accepted: item => {
+        if (this.running?.item.id !== item.id || this.running.controller.signal.aborted) return;
+        this.admittedTurns.add(item.id);
+        if (item.error) {
+          item.error = undefined;
+          this.record({ ...item, error: undefined });
+        }
+      },
       prepareSend: (item, sessionId) => this.prepareSend(item.conversationId, sessionId),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
@@ -1558,10 +1568,15 @@ export class BotCore implements BotHostApi {
 
   async cancelTurn(conversationId: string): Promise<void> {
     const id = this.resolveConversationId(conversationId);
+    this.dropPendingWork(item => item.conversationId === id, 'cancelled by the owner');
     const running = this.running;
     if (!running || running.item.conversationId !== id) return;
+    // A rejected send can still be unwinding while its work is deferred. It
+    // owns no Runtime turn: cancelling it must not cancel the other turn.
+    if (this.workItems.get(running.item.id)?.state !== 'running') return;
     this.log(`turn ${running.item.id} cancelled by the owner`);
     running.controller.abort();
+    if (!this.admittedTurns.has(running.item.id)) return;
     const sessionId = running.item.run?.sessionId;
     const client = this.client();
     if (sessionId && client) {
@@ -1667,6 +1682,7 @@ export class BotCore implements BotHostApi {
     const controller = new AbortController();
     this.running = { item, controller };
     void this.runItem(item, controller).finally(() => {
+      this.admittedTurns.delete(item.id);
       try { this.interactions.end(item.id); }
       finally {
         if (this.running?.item.id === item.id) this.running = null;
@@ -1696,6 +1712,7 @@ export class BotCore implements BotHostApi {
     switch (outcome.kind) {
       case 'completed': {
         const finished = this.record(transitionWorkItem(admitted, 'completed', now, {
+          error: undefined,
           result: { text: outcome.text, completedAt: now.toISOString() },
           ...(outcome.text ? { notification: { deliveredAt: now.toISOString(), seenAt: null } } : {}),
           ...(admitted.run ? { run: admitted.run } : {}),
@@ -1755,14 +1772,6 @@ export class BotCore implements BotHostApi {
           error: outcome.reason,
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
-        if (conversation && outcome.reason === 'session_busy' && admitted.attempts === 1) {
-          this.conversations.append(conversation.id, {
-            kind: 'system',
-            origin: 'system',
-            text: 'Waiting: the session is still busy with another turn.',
-            workItemId: waiting.id,
-          });
-        }
         this.log(`turn ${waiting.id} deferred (${outcome.reason}) for ${outcome.retryAfterMs}ms`);
         const timer = this.schedule(outcome.retryAfterMs, () => {
           this.deferred.delete(waiting.id);

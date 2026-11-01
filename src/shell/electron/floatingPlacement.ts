@@ -11,6 +11,24 @@ export const FLOATING_SIZE = { width: 300, height: 230 };
  */
 export const FLOATING_CAT = { x: 192, y: 126, width: 96, height: 96 };
 
+/** Renderer-provided visible regions stay inside this fixed-size avatar window. */
+export function floatingInputRegions(value: unknown): Rect[] | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) return null;
+  const regions: Rect[] = [];
+  for (const raw of value) {
+    if (!raw || typeof raw !== 'object') return null;
+    const { x, y, width, height } = raw;
+    if (![x, y, width, height].every(n => typeof n === 'number' && Number.isFinite(n)) || width <= 0 || height <= 0) return null;
+    const left = Math.max(0, Math.floor(x));
+    const top = Math.max(0, Math.floor(y));
+    const right = Math.min(FLOATING_SIZE.width, Math.ceil(x + width));
+    const bottom = Math.min(FLOATING_SIZE.height, Math.ceil(y + height));
+    if (right <= left || bottom <= top) return null;
+    regions.push({ x: left, y: top, width: right - left, height: bottom - top });
+  }
+  return regions;
+}
+
 /** How much of the cat must be on a screen to be grabbed. */
 const REACHABLE = 48;
 

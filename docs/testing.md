@@ -80,6 +80,22 @@ last step, not the first.
 
 ### Shell tests
 
+`tests/core/busyRetry.test.ts` covers non-busy 409 failures, bounded busy retries,
+safe cancellation before HTTP admission and removal of deferred work.
+`tests/renderer/workState.test.ts` covers waiting controls and stale/equal-time
+work snapshots. `tests/shell/linuxWindowing.test.ts` covers the Linux relaunch
+arguments and bounded avatar input regions.
+
+After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
+for the real renderer's waiting/polling/cancellation checks, including recovery
+with completion notifications deliberately suppressed. On Linux with X11 or
+XWayland and `xdotool`, add `--native-drag` to exercise native avatar dragging,
+fixed bounds, transparent click-through and bubble clicks. The helper creates a
+temporary Bot/Electron profile and starts only the fake Runtime. It sends pointer
+input only to its fixture windows and leaves private screenshots and `result.json`
+in the printed evidence directory. Use `--ozone-platform=x11` at Electron startup
+to test X11 directly; omitting it on Wayland also exercises the one-time relaunch.
+
 On macOS, the tray uses a 20pt canvas, matching Cats Desktop, with native 20px
 and 40px Retina representations. When checking a native candidate, compare the
 menu-bar footprint with Desktop and check sharpness on a Retina display.

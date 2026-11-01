@@ -66,6 +66,12 @@ async function handleMessage(req, res, session, body) {
     busyOnce.add(session.id);
     return json(res, 409, { error: 'Session is busy processing another message' });
   }
+  if (message.startsWith('busy-always')) {
+    return json(res, 409, { error: 'Session is busy processing another message' });
+  }
+  if (message.startsWith('selection-conflict')) {
+    return json(res, 409, { error: 'This session provider is no longer selected', code: 'provider_changed' });
+  }
   if (message.startsWith('noworker-once') && !noWorkerOnce.has(session.id)) {
     noWorkerOnce.add(session.id);
     session.status = 'closed';
@@ -139,8 +145,8 @@ async function handleMessage(req, res, session, body) {
     reply('partial');
     const deadline = Date.now() + 10000;
     while (Date.now() < deadline && !aborted()) await sleep(20);
-  } else if (message.startsWith('slow:')) {
-    const ms = Number(message.slice('slow:'.length)) || 1000;
+  } else if (message.startsWith('slow:') || message === 'busy-once-slow') {
+    const ms = message === 'busy-once-slow' ? 300 : Number(message.slice('slow:'.length)) || 1000;
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
       if (aborted()) return finish(false);

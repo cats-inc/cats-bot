@@ -15,6 +15,17 @@ const body = document.body;
 const cat = $('cat');
 const badge = $('badge');
 const bubble = $('bubble');
+function reportInputRegions(): void {
+  const regions = [...document.querySelectorAll<HTMLElement>('#cat, #bubble, .thinking-dots, .zzz')]
+    .filter(element => element.getClientRects().length > 0)
+    .map(element => {
+      const r = element.getBoundingClientRect();
+      return { x: r.x - 8, y: r.y - 8, width: r.width + 16, height: r.height + 16 };
+    });
+  api.floating.setInputRegions(regions);
+}
+const regionObserver = new ResizeObserver(reportInputRegions);
+for (const element of document.querySelectorAll<HTMLElement>('#cat, #bubble, .thinking-dots, .zzz')) regionObserver.observe(element);
 let locale: Locale = 'en';
 const changeLanguage = (next: { locale: Locale }) => {
   locale = next.locale;
@@ -45,6 +56,7 @@ function render(): void {
     'aria-label',
     `${botName}: ${translate(locale, state)}${unread ? `, ${translate(locale, '{count} unread', { count: unread })}` : ''}`,
   );
+  reportInputRegions();
 }
 
 async function refresh(): Promise<void> {
@@ -144,6 +156,7 @@ function hideBubble(): void {
   bubbleConversation = null;
   clearTimeout(bubbleTimer);
   if (!cat.matches(':hover')) setInteractive(false);
+  reportInputRegions();
 }
 bubble.addEventListener('click', () => {
   if (bubbleConversation) void api.window.openConversation(bubbleConversation);
@@ -160,6 +173,7 @@ api.floating.onBubble((message) => {
   bubble.hidden = false;
   clearTimeout(bubbleTimer);
   bubbleTimer = setTimeout(hideBubble, 15000);
+  reportInputRegions();
 });
 
 void refresh();

@@ -132,7 +132,7 @@ test('a busy session is retried, a lost worker is resumed and an exited worker i
     const busy = await sendAndWait(core, 'home', 'busy-once');
     assert.equal(busy.state, 'completed', busy.error);
     assert.equal(busy.attempts, 2);
-    assert.ok(core.transcript('home').some((entry) => entry.kind === 'system' && /Waiting/u.test(entry.text)));
+    assert.equal(core.transcript('home').some((entry) => entry.kind === 'system' && /Waiting/u.test(entry.text)), false);
 
     const before = (await core.listConversations())[0]!.attachment.sessionId;
     const resumed = await sendAndWait(core, 'home', 'noworker-once');
