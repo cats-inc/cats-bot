@@ -18,6 +18,8 @@ launcher supplies `--ozone-platform=x11`. Direct executable launches on an
 automatically selected Wayland backend relaunch once with that argument before
 starting cores, taking locks or creating windows. Preserve other launch arguments,
 including CDP and bot selection, and honor an explicit backend override.
+The isolated candidate launcher also supplies X11 at startup, keeping its
+control receipt attached to the same process instead of relaunching underneath it.
 
 Linux avatars remain interactive inside validated, renderer-reported shapes for
 the cat, bubble and state indicators; input outside these shapes passes through.

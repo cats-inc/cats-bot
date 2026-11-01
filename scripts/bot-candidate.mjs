@@ -54,7 +54,10 @@ export async function startCandidate(options) {
     launch.stage = 'launching'; await save();
     const log = await open(path.join(root, 'bot.log'), 'a', 0o600);
     try {
-      const child = spawn(options.electron ?? require('electron'), [host, `--user-data-dir=${path.join(root, 'user-data')}`], {
+      const child = spawn(options.electron ?? require('electron'), [
+        ...(process.platform === 'linux' ? ['--ozone-platform=x11'] : []),
+        host, `--user-data-dir=${path.join(root, 'user-data')}`,
+      ], {
         cwd: root, detached: true, stdio: ['ignore', log.fd, log.fd], windowsHide: true,
         env: { ...env, CATS_BOT_HOME: path.join(root, 'bot-home'), CATS_BOT_CANDIDATE_ROOT: root, CATS_BOT_CANDIDATE_TOKEN: token },
       });
