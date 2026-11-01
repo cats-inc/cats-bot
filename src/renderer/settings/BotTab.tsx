@@ -5,7 +5,16 @@ import type { BotProfile, ModelCatalog, ProviderInfo } from '../../core/types.ts
 import type { ProviderSetupState } from '../../shared/providerSetup.ts';
 import { errorText } from '../errors.ts';
 import { ModelField, useModelMenu } from './ModelField.tsx';
-import { botForm, botPatch, providerChoices, providerHint, providerLabel, saveNotice, type BotForm } from './settingsLogic.ts';
+import {
+  botForm,
+  botPatch,
+  botReplyLanguageOptions,
+  providerChoices,
+  providerHint,
+  providerLabel,
+  saveNotice,
+  type BotForm,
+} from './settingsLogic.ts';
 import { useToast } from './toast.ts';
 import { DesktopControlSettings } from './DesktopControlSettings.tsx';
 import { ProviderSettings } from './ProviderSettings.tsx';
@@ -26,7 +35,7 @@ export function BotTab({
   profile: BotProfile;
   onSaved(profile: BotProfile): void
 }) {
-  useI18n();
+  const { locale } = useI18n();
   const toast = useToast();
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [form, setForm] = useState<BotForm>(() => botForm(profile));
@@ -152,6 +161,20 @@ export function BotTab({
             value={form.instructions}
             onChange={(event) => update({ instructions: event.target.value })}
           />
+        </label>
+        <label className="field">
+          <span>{t('Reply language')}</span>
+          <select
+            id="bot-reply-language"
+            value={form.replyLanguage}
+            onChange={(event) => update({ replyLanguage: event.target.value as BotForm['replyLanguage'] })}
+          >
+            {botReplyLanguageOptions(locale, profile.hubLanguage).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </label>
         <details className="advanced">
           <summary>{t('Workspace and permissions')}</summary>

@@ -1,5 +1,7 @@
 import type { ConversationStore } from './store.ts';
 import { buildHandoffPack, composeInstructions } from './handoff.ts';
+import { effectiveReplyLanguage } from '../profile/profile.ts';
+import { replyLanguageInstruction } from '../../shared/language.ts';
 import type { CreateSessionRequest, RuntimeClient, RuntimeMcpServer } from '../runtime/client.ts';
 import type { BotProfile, ConversationRecord, SessionAttachment } from '../types.ts';
 
@@ -37,13 +39,18 @@ export function attachmentIsCurrent(conversation: ConversationRecord, profile: B
   );
 }
 
-/** What the owner reads when a conversation moves to a session of a newer revision. */
-export function staleNotice(attachment: SessionAttachment, profile: BotProfile): string {
+/**
+ * What the owner reads when a conversation moves to a session of a newer
+ * revision; `replyLanguageOnly` says the reply language was all that changed.
+ */
+export function staleNotice(attachment: SessionAttachment, profile: BotProfile, replyLanguageOnly = false): string {
   const { provider, model } = profile.executionTarget;
   const retargeted = attachment.provider !== provider || (attachment.model ?? null) !== (model ?? null);
   const change = retargeted
     ? `The bot now runs on ${provider}${model ? ` (${model})` : ''}`
-    : 'The bot\'s instructions or permissions changed';
+    : replyLanguageOnly
+      ? 'The bot\'s reply language changed'
+      : 'The bot\'s instructions or permissions changed';
   return `${change}; this conversation continues in a new session with a handoff of what was said so far.`;
 }
 
@@ -155,7 +162,11 @@ export class SessionBinder {
       workspaceAccess: profile.permissions.workspaceAccess,
       ...(!profile.providerPolicy ? { permissionMode: profile.permissions.permissionMode } : {}),
       ...(!profile.providerPolicy && profile.permissions.allowedTools ? { allowedTools: profile.permissions.allowedTools } : {}),
-      instructions: composeInstructions(profile.instructions, pack),
+      instructions: composeInstructions(
+        profile.instructions,
+        pack,
+        replyLanguageInstruction(effectiveReplyLanguage(profile)),
+      ),
       ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id, null) } : {}),
     };
     const replaced = conversation.attachment.sessionId;

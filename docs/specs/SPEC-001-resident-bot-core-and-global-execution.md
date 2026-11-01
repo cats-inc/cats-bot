@@ -240,7 +240,8 @@ freeze of the storage format.
 
 ### Global provider/model changes
 
-27. FR-27: When `executionTarget`, `instructions` or `permissions` (including `cwd`) change, `configRevision`
+27. FR-27: When `executionTarget`, `instructions`, `permissions` (including `cwd`) or the resolved reply
+    language (SPEC-008 FR-28) change, `configRevision`
     is incremented and persisted; a `running` work item finishes under the revision it recorded or is
     cancelled; a `queued` work item rereads at admission; an attachment created under an older revision is
     marked `stale` and not resumed, the next admission rebuilds the session from the handoff pack and tells the

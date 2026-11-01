@@ -4,6 +4,8 @@
  * in-memory view of those files plus the `BotHostApi` the shell speaks.
  */
 
+import type { BotReplyLanguage, HubLanguageReport } from '../shared/language.ts';
+
 /** SPEC-001 FR-1: the one global provider/model of a bot. */
 export interface ExecutionTarget {
   provider: string;
@@ -67,6 +69,10 @@ export interface BotProfile {
   telegram: TelegramPolicy;
   /** SPEC-006 BDC-02: absent or invalid reads as off, so an older writer that drops it fails closed. */
   desktopControl: DesktopControlPolicy;
+  /** SPEC-008 FR-28: this bot's reply language; `hub`, the default, takes Cats Bot Settings'. */
+  replyLanguage: BotReplyLanguage;
+  /** SPEC-008 FR-28: what the hub last reported through `setHubLanguage`; null until it has. */
+  hubLanguage: HubLanguageReport | null;
   updatedAt: string;
 }
 
@@ -353,6 +359,7 @@ export interface BotProfilePatch {
   providerPolicy?: SessionExecutionPolicy | null;
   telegram?: Partial<TelegramPolicy>;
   desktopControl?: Partial<DesktopControlPolicy>;
+  replyLanguage?: BotReplyLanguage;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */

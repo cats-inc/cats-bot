@@ -1,4 +1,13 @@
 import { t } from '../localeStore.ts';
+import {
+  LANGUAGE_OPTIONS,
+  REPLY_LANGUAGE_CODES,
+  replyLanguageName,
+  type BotReplyLanguage,
+  type HubLanguageReport,
+  type HubReplyLanguage,
+  type Locale,
+} from '../../shared/language.ts';
 import type {
   BotPermissions,
   BotProfile,
@@ -153,6 +162,36 @@ export class RequestGate {
   }
 }
 
+// ---- Reply language (SPEC-008 FR-28) ---------------------------------------------
+
+export interface ReplyLanguageOption<T extends string> {
+  value: T;
+  label: string;
+}
+
+/** Cats Bot Settings' choices: the display language first, each language, Unspecified last. */
+export function hubReplyLanguageOptions(locale: Locale): ReplyLanguageOption<HubReplyLanguage>[] {
+  const display = LANGUAGE_OPTIONS.find((option) => option.value === locale)?.label ?? locale;
+  return [
+    { value: 'display', label: t('Same as display language ({language})', { language: t(display) }) },
+    ...REPLY_LANGUAGE_CODES.map((code) => ({ value: code, label: replyLanguageName(code, locale) })),
+    { value: 'unspecified', label: t('Unspecified') },
+  ];
+}
+
+/** A bot's choices: following Cats Bot Settings first, naming what it resolves to, then the same list. */
+export function botReplyLanguageOptions(
+  locale: Locale,
+  hub: HubLanguageReport | null,
+): ReplyLanguageOption<BotReplyLanguage>[] {
+  const follow = hub
+    ? t('Follow Cats Bot Settings ({language})', {
+      language: hub.reply ? replyLanguageName(hub.reply, locale) : t('Unspecified'),
+    })
+    : t('Follow Cats Bot Settings');
+  return [{ value: 'hub', label: follow }, ...hubReplyLanguageOptions(locale)];
+}
+
 // ---- Bot tab ----------------------------------------------------------------------
 
 export interface BotForm {
@@ -167,6 +206,7 @@ export interface BotForm {
   workspaceAccess: BotPermissions['workspaceAccess'];
   permissionMode: BotPermissions['permissionMode'];
   allowedTools: string;
+  replyLanguage: BotReplyLanguage;
 }
 
 export function botForm(profile: BotProfile): BotForm {
@@ -183,6 +223,7 @@ export function botForm(profile: BotProfile): BotForm {
     workspaceAccess: profile.permissions.workspaceAccess,
     permissionMode: profile.permissions.permissionMode,
     allowedTools: (profile.permissions.allowedTools ?? []).join(', '),
+    replyLanguage: profile.replyLanguage,
   };
 }
 
@@ -211,6 +252,7 @@ export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | 
     };
   }
   if (form.instructions !== profile.instructions) patch.instructions = form.instructions;
+  if (form.replyLanguage !== profile.replyLanguage) patch.replyLanguage = form.replyLanguage;
   const permissions: Partial<BotPermissions> = {};
   const cwd = form.cwd.trim();
   if (cwd && cwd !== profile.permissions.cwd) permissions.cwd = cwd;

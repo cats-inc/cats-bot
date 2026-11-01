@@ -242,6 +242,43 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     No id can then name a path outside its own bot root, such as the hub's part
     of `<CATS_BOT_HOME>` (SPEC-007 FR-3).
 
+### Reply language
+
+28. FR-28: Cats Bot Settings' General tab has a reply language below the
+    display language. It offers the choices of Cats Desktop's assistant reply
+    language (its SPEC-097), in the same order: *Same as display language
+    (<language>)* first, then English, Traditional Chinese, Simplified Chinese,
+    Japanese, Korean, French, German, Spanish, Brazilian Portuguese, Italian,
+    Dutch, Polish, Turkish, Indonesian, Vietnamese, Thai, Hindi and Arabic,
+    and *Unspecified* last. The first choice names the display language in
+    use, so a System display language shows what it resolved to.
+    - The hub keeps the choice as `replyLanguage` in `hub-state.json`. It
+      defaults to `unspecified`, and a file without it reads as that.
+    - Each bot's Bot tab has its own reply language. It defaults to *Follow
+      Cats Bot Settings (<language>)*, which names what Cats Bot Settings
+      resolves to. Below it are the same choices as the hub's. The profile
+      keeps the choice as `replyLanguage` (`hub` by default).
+    - The hub reports `{ reply, display }` to every core with the host-only
+      `setHubLanguage` command. `reply` is its choice with `display`
+      resolved, or null for `unspecified`; `display` is the display language
+      in use. It reports when a core opens, after the Boss Cat role, and again
+      whenever the display language or the reply language changes. The core
+      keeps the last report in its profile as `hubLanguage`, so a restarted
+      core knows the language before the hub reports again. A core that
+      refuses the report still opens.
+    - A bot that follows the hub replies in `hubLanguage.reply`. A bot set to
+      *Same as display language* replies in `hubLanguage.display`. Either one
+      sends no instruction until the hub has reported. A named language is
+      used as given; *Unspecified* sends none.
+    - The resolved language goes into a session's instructions between the
+      persona and the handoff pack, worded as Desktop words it. When the
+      resolved language changes, `configRevision` is bumped (SPEC-001 FR-27).
+      Each conversation then continues in a new session with a handoff, and
+      the conversation says the reply language changed. A report or choice
+      that leaves the resolved language as it was only records the change.
+    - An older Bot that rewrites the profile drops both fields. That reads as
+      following the hub, and the hub reports again on the next start.
+
 ### Non-Functional Requirements
 
 - **Performance**: record working set and time to first usable note for the hub
@@ -300,5 +337,6 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 ---
 
 *Created: 2026-10-29*
+*Updated: 2026-11-01 (FR-28 reply language)*
 *Author: Claude, from the owner's decisions*
 *Related Plan: [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)*

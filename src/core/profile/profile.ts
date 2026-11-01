@@ -3,6 +3,15 @@ import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
 import { parseModelSelection } from '../providers/selection.ts';
 
+import {
+  BOT_REPLY_LANGUAGE_DEFAULT,
+  isBotReplyLanguage,
+  isHubLanguageReport,
+  resolveBotReplyLanguage,
+  sameHubLanguageReport,
+  type HubLanguageReport,
+  type ReplyLanguageCode,
+} from '../../shared/language.ts';
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
 import type { BotPaths } from '../store/paths.ts';
 import type {
@@ -77,6 +86,8 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
     telegram: { ...TELEGRAM_DEFAULTS },
     desktopControl: { ...DESKTOP_CONTROL_DEFAULTS },
+    replyLanguage: BOT_REPLY_LANGUAGE_DEFAULT,
+    hubLanguage: null,
     updatedAt: now,
   };
 }
@@ -208,8 +219,19 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
     telegram: normalizeTelegram(raw.telegram, fallback.telegram),
     desktopControl: normalizeDesktopControl(raw.desktopControl),
+    // SPEC-008 FR-28: an older writer drops both, which reads as following the hub
+    // until the hub reports again.
+    replyLanguage: isBotReplyLanguage(raw.replyLanguage) ? raw.replyLanguage : BOT_REPLY_LANGUAGE_DEFAULT,
+    hubLanguage: isHubLanguageReport(raw.hubLanguage)
+      ? { reply: raw.hubLanguage.reply, display: raw.hubLanguage.display }
+      : null,
     updatedAt: stringOr(raw.updatedAt, fallback.updatedAt),
   };
+}
+
+/** SPEC-008 FR-28: the language this bot's sessions are told to reply in, or none. */
+export function effectiveReplyLanguage(profile: Pick<BotProfile, 'replyLanguage' | 'hubLanguage'>): ReplyLanguageCode | null {
+  return resolveBotReplyLanguage(profile.replyLanguage, profile.hubLanguage);
 }
 
 export type ProfileLoadResult =
@@ -283,17 +305,26 @@ function samePermissions(a: BotPermissions, b: BotPermissions): boolean {
   );
 }
 
+export interface ProfileChange {
+  profile: BotProfile;
+  targetChanged: boolean;
+  providerChanged: boolean;
+  sessionChanged: boolean;
+  /** SPEC-008 FR-28: the language sessions are told to reply in was the only session setting that changed. */
+  replyLanguageOnly: boolean;
+}
+
 /**
  * SPEC-001 FR-27: a change to anything a session is created with (execution
- * target, instructions, permissions, cwd) bumps `configRevision`, so sessions
- * of the old revision are replaced; an identical value is a no-op. Returns the
- * new profile and what changed.
+ * target, instructions, permissions, cwd, the reply language it is told)
+ * bumps `configRevision`, so sessions of the old revision are replaced; an
+ * identical value is a no-op. Returns the new profile and what changed.
  */
 export function applyProfilePatch(
   profile: BotProfile,
   patch: BotProfilePatch,
   now: Date,
-): { profile: BotProfile; targetChanged: boolean; providerChanged: boolean; sessionChanged: boolean } {
+): ProfileChange {
   const nextTarget = patch.executionTarget
     ? normalizeExecutionTarget(patch.executionTarget, profile.executionTarget)
     : profile.executionTarget;
@@ -304,10 +335,17 @@ export function applyProfilePatch(
     : profile.permissions;
   const nextProviderPolicy = patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy);
   assertPolicyBoundary(nextProviderPolicy, nextPermissions);
-  const sessionChanged = targetChanged
+  if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
+    throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
+  }
+  const nextReplyLanguage = patch.replyLanguage ?? profile.replyLanguage;
+  const replyLanguageChanged = effectiveReplyLanguage({ replyLanguage: nextReplyLanguage, hubLanguage: profile.hubLanguage })
+    !== effectiveReplyLanguage(profile);
+  const otherSessionChange = targetChanged
     || nextInstructions !== profile.instructions
     || !samePermissions(nextPermissions, profile.permissions)
     || JSON.stringify(nextProviderPolicy) !== JSON.stringify(profile.providerPolicy);
+  const sessionChanged = otherSessionChange || replyLanguageChanged;
   const next: BotProfile = {
     ...profile,
     name: patch.name ?? profile.name,
@@ -327,6 +365,7 @@ export function applyProfilePatch(
     desktopControl: patch.desktopControl
       ? normalizeDesktopControl({ ...profile.desktopControl, ...patch.desktopControl })
       : profile.desktopControl,
+    replyLanguage: nextReplyLanguage,
     updatedAt: now.toISOString(),
   };
   return {
@@ -336,5 +375,31 @@ export function applyProfilePatch(
     providerChanged: nextTarget.provider !== profile.executionTarget.provider
       || (nextTarget.claudeInChrome === true) !== (profile.executionTarget.claudeInChrome === true),
     sessionChanged,
+    replyLanguageOnly: replyLanguageChanged && !otherSessionChange,
+  };
+}
+
+/**
+ * SPEC-008 FR-28: the hub's report of its reply language and display language.
+ * It bumps the revision only when the language this bot's sessions are told
+ * changes; a bot with its own language just records the report. Returns null
+ * when the report is what the profile already holds.
+ */
+export function applyHubLanguage(profile: BotProfile, report: HubLanguageReport, now: Date): ProfileChange | null {
+  if (profile.hubLanguage && sameHubLanguageReport(profile.hubLanguage, report)) return null;
+  const hubLanguage = { reply: report.reply, display: report.display };
+  const replyLanguageChanged = effectiveReplyLanguage({ replyLanguage: profile.replyLanguage, hubLanguage })
+    !== effectiveReplyLanguage(profile);
+  return {
+    profile: {
+      ...profile,
+      hubLanguage,
+      configRevision: replyLanguageChanged ? profile.configRevision + 1 : profile.configRevision,
+      updatedAt: now.toISOString(),
+    },
+    targetChanged: false,
+    providerChanged: false,
+    sessionChanged: replyLanguageChanged,
+    replyLanguageOnly: replyLanguageChanged,
   };
 }
