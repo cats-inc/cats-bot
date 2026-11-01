@@ -75,3 +75,4 @@ cross-platform contract tests.
 | ---------- | ------------------------------------------------------------------------------------ |
 | 2026-10-29 | Scope accepted by the owner's implementation request; worktree created from 01b7cfc. |
 | 2026-10-29 | Implemented all seven corrections, documented ADR-006, and completed regression, isolated Windows acceptance and independent review. |
+| 2026-11-01 | Ported cats-platform #364 (21bb92b2): the macOS tray update dialog no longer opens as a sheet on a centered 1x1 owner, which hung it from the screen's vertical middle. A transient window activates Cats Bot and is destroyed before the parentless alert opens at the native position; a quit during the wait returns the dismissal. Build and unit tests only; native macOS acceptance has not been run. |

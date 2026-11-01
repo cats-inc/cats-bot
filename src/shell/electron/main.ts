@@ -844,10 +844,10 @@ async function main(): Promise<void> {
       showDesktopUpdateMessageBox({
         platform: process.platform,
         dialogSpec,
-        createOwner: (options) => new BaseWindow(options),
+        createActivationWindow: (options) => new BaseWindow(options),
         focusApp: () => app.focus({ steal: true }),
-        showMessageBox: (options, owner) =>
-          owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
+        isShuttingDown: () => quitting,
+        showMessageBox: (options) => dialog.showMessageBox(options),
       }),
   });
   // D20: the hub's Settings: the app language, start at login, version and updates, and the Bots tab.

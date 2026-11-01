@@ -32,7 +32,12 @@ approved providers and Runtime model/control entries with no synthetic default o
 custom rows. Existing saved targets stay unchanged until explicitly edited.
 Language offers System / English / Traditional Chinese. Startup restores each
 view's visibility, position and layer, including all hidden; the avatar has no
-hover tooltip. Tray Check for Updates uses a native result/action dialog.
+hover tooltip. Tray Check for Updates uses a native result/action dialog. On
+macOS it comes in front of the active app without revealing a bot window: a
+transparent 1x1 window is made key until Cats Bot is active (at most 1 s) and is
+destroyed, then the standard parentless alert opens where macOS places it, not
+as a sheet. A quit that begins during that wait answers with the dismissal
+instead of opening the alert.
 
 1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
    optional personality); after submission it creates the bot and opens the core and the home note;
