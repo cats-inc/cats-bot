@@ -55,6 +55,7 @@ export interface TurnRetryDelays {
   backgroundBusyMs: number;
   runtimeUnavailableMs: number;
   noCapacityMs: number;
+  maxBusyAttempts: number;
 }
 
 export const DEFAULT_TURN_RETRY_DELAYS: TurnRetryDelays = {
@@ -62,6 +63,7 @@ export const DEFAULT_TURN_RETRY_DELAYS: TurnRetryDelays = {
   backgroundBusyMs: BACKGROUND_BUSY_RETRY_MS,
   runtimeUnavailableMs: RUNTIME_UNAVAILABLE_RETRY_MS,
   noCapacityMs: NO_CAPACITY_RETRY_MS,
+  maxBusyAttempts: 8,
 };
 
 export interface TurnRunnerDependencies {
@@ -73,6 +75,7 @@ export interface TurnRunnerDependencies {
   /** FR-28: journals the item with its run before the prompt leaves, so a crash mid-turn keeps the evidence. */
   persistRun(item: WorkItem): void;
   providerEvent?(item: WorkItem, event: RuntimeStreamEvent): void;
+  accepted?(item: WorkItem): void;
   /**
    * SPEC-006 BDC-04: decided inside the session gate right before the prompt is sent; may
    * return the session's MCP server set, which Runtime keeps until a send changes it.
@@ -189,6 +192,21 @@ export class TurnRunner {
       return 'rebuild';
     }
     if (error.status === 409) {
+      // 409 also covers provider-selection and routing conflicts; retrying
+      // those as busy can never make progress and hides the actual failure.
+      const busy = error.code === 'session_busy' || [
+        'Session is busy processing another message',
+        'Worker is busy processing another message',
+      ].includes(error.message);
+      if (!busy) {
+        this.deps.log(`turn ${item.id}: runtime rejected HTTP 409${error.code ? ` (${error.code.replace(/[^a-zA-Z0-9_-]/gu, '').slice(0, 80)})` : ''}`);
+        return { kind: 'failed', reason: `Runtime rejected the message (HTTP 409${error.code ? `, ${error.code}` : ''}): ${error.message}` };
+      }
+      const limit = item.kind === 'owner_message' ? this.delays.maxBusyAttempts : 2;
+      if (item.attempts >= limit) {
+        this.deps.log(`turn ${item.id}: HTTP 409 session_busy; automatic retries stopped after ${item.attempts} attempts`);
+        return { kind: 'failed', reason: 'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.' };
+      }
       const retryAfterMs = item.kind === 'owner_message' ? this.delays.ownerBusyMs : this.delays.backgroundBusyMs;
       this.deps.log(`turn ${item.id}: session ${sessionId} busy; retry in ${retryAfterMs}ms`);
       return { kind: 'retry_later', reason: 'session_busy', retryAfterMs };
@@ -341,7 +359,7 @@ export class TurnRunner {
     if (controller.signal.aborted) return { kind: 'cancelled' };
     let outcome;
     try {
-      outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal);
+      outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal, () => this.deps.accepted?.(item));
     } catch (error) {
       presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed');
       publishPresentation();

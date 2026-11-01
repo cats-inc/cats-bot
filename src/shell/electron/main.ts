@@ -23,7 +23,15 @@ import { listProviders, readPackagedModelCatalog } from '../../core/providers/ca
 import { PROVIDERS_WITHOUT_SESSION_MCP } from '../../core/tools/hubTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
-import { isLanguagePreference, resolveLocale, translate } from '../../shared/language.ts';
+import {
+  HUB_REPLY_LANGUAGE_DEFAULT,
+  isHubReplyLanguage,
+  isLanguagePreference,
+  resolveHubReplyLanguage,
+  resolveLocale,
+  translate,
+  type HubLanguageReport,
+} from '../../shared/language.ts';
 import { BotPresenter, type PresenterHost } from './botPresenter.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
@@ -52,6 +60,7 @@ import { initialUpdateState, parseBotRelease, type BotRelease } from './update/r
 import { NOTE_LAYER_LABELS, NOTE_LAYERS, readShellState, type NoteLayer } from './viewState.ts';
 import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
+import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phases 2 and 3 (SPEC-008):
@@ -120,6 +129,7 @@ interface BotRow {
 }
 
 async function main(): Promise<void> {
+  if (relaunchForLinuxWindowing(app)) return;
   const args = parseArgs(process.argv.slice(1));
   // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
   // invalid id before it reaches any path.
@@ -187,7 +197,12 @@ async function main(): Promise<void> {
   let hubState: HubState = readHubState(home) ?? (() => {
     const first = requested ?? listBotDirectories(hubPaths.bots).ids[0];
     const shellState = first ? readShellState(botRootIn(hubPaths.bots, first)) : null;
-    return { schemaVersion: 1, language: shellState?.language ?? 'system', openAtLogin: shellState?.openAtLogin === true };
+    return {
+      schemaVersion: 1,
+      language: shellState?.language ?? 'system',
+      replyLanguage: HUB_REPLY_LANGUAGE_DEFAULT,
+      openAtLogin: shellState?.openAtLogin === true,
+    };
   })();
   const saveHubState = (next: HubState) => {
     hubState = next;
@@ -215,6 +230,19 @@ async function main(): Promise<void> {
     .map((bot) => runners.get(bot.id)?.handle ?? opening.get(bot.id))
     .filter((presenter): presenter is BotPresenter => presenter !== null && presenter !== undefined);
   const primary = (): BotPresenter | undefined => presented()[0];
+  // SPEC-008 FR-28: what every bot hears: the reply language of Cats Bot Settings,
+  // with `display` resolved, and the display language in use for a bot that follows it.
+  const hubLanguageReport = (): HubLanguageReport => ({
+    reply: resolveHubReplyLanguage(hubState.replyLanguage, locale()),
+    display: locale(),
+  });
+  const reportHubLanguage = (presenter: BotPresenter): Promise<void> =>
+    presenter.core.setHubLanguage(hubLanguageReport()).catch((error: unknown) => {
+      log(`reply language: ${errorMessage(error)}`);
+    });
+  const announceHubLanguage = () => {
+    for (const presenter of presented()) void reportHubLanguage(presenter);
+  };
 
   // FR-19: one setup helper at a time for every bot; a CLI it found reaches every core's PATH,
   // a core the hub reattaches to included.
@@ -641,6 +669,8 @@ async function main(): Promise<void> {
     }
     opening.set(botId, presenter);
     try {
+      // FR-28: the core learns its reply language first; one that refuses the report still opens.
+      await reportHubLanguage(presenter);
       await presenter.start();
       // SPEC-009 FR-3: the core learns whether it holds the role before its next send.
       await presenter.core.setBossCat(manager.registry.bossCat.holder === botId);
@@ -830,10 +860,10 @@ async function main(): Promise<void> {
       showDesktopUpdateMessageBox({
         platform: process.platform,
         dialogSpec,
-        createOwner: (options) => new BaseWindow(options),
+        createActivationWindow: (options) => new BaseWindow(options),
         focusApp: () => app.focus({ steal: true }),
-        showMessageBox: (options, owner) =>
-          owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
+        isShuttingDown: () => quitting,
+        showMessageBox: (options) => dialog.showMessageBox(options),
       }),
   });
   // D20: the hub's Settings: the app language, start at login, version and updates, and the Bots tab.
@@ -905,11 +935,24 @@ async function main(): Promise<void> {
       throw new Error('Invalid display language');
     saveHubState({ ...hubState, language: value });
     for (const presenter of presented()) presenter.sendLanguage(languageState());
+    // FR-28: a reply language that follows the display language follows it here too.
+    announceHubLanguage();
     for (const window of [hubSettings.browserWindow, createWindow]) {
       if (window && !window.isDestroyed()) window.webContents.send('ui:languageChanged', languageState());
     }
     void refreshTray();
     return languageState();
+  });
+  ipcMain.handle('ui:replyLanguage', (event) => {
+    if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('The reply language is set only in Cats Bot Settings');
+    return hubState.replyLanguage;
+  });
+  ipcMain.handle('ui:setReplyLanguage', (event, value: unknown) => {
+    if (!ownedMainFrame(event) || !fromHubSettings(event) || !isHubReplyLanguage(value))
+      throw new Error('Invalid reply language');
+    saveHubState({ ...hubState, replyLanguage: value });
+    announceHubLanguage();
+    return hubState.replyLanguage;
   });
   ipcMain.handle('setup:check', (event, provider: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
@@ -1242,6 +1285,9 @@ async function main(): Promise<void> {
   };
   ipcMain.on('floating:interactive', (event, interactive: unknown) => {
     fromFloating(event)?.floating.setInteractive(interactive === true);
+  });
+  ipcMain.on('floating:regions', (event, regions: unknown) => {
+    fromFloating(event)?.floating.setInputRegions(regions);
   });
   ipcMain.on('floating:moveTo', (event, x: unknown, y: unknown) => {
     if (typeof x === 'number' && typeof y === 'number') fromFloating(event)?.floating.moveTo(x, y);

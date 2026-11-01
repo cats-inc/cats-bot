@@ -62,3 +62,12 @@ test('composeInstructions puts the persona before the pack', () => {
   assert.ok(text.startsWith('You are Mochi.\n\n'));
   assert.match(text, /code is 1234/u);
 });
+
+test('composeInstructions puts the reply language between the persona and the pack (SPEC-008 FR-28)', () => {
+  const pack = buildHandoffPack([entry(1, 'owner', 'remember the code is 1234')]);
+  const text = composeInstructions('You are Mochi.', pack, 'Reply to the user in Japanese.');
+  assert.ok(text.startsWith('You are Mochi.\n\nReply to the user in Japanese.\n\n'));
+  assert.match(text, /code is 1234/u);
+  assert.equal(composeInstructions('', buildHandoffPack([]), 'Reply in Japanese.'), 'Reply in Japanese.');
+  assert.equal(composeInstructions('You are Mochi.', buildHandoffPack([]), null), 'You are Mochi.');
+});

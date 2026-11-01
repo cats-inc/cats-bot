@@ -32,7 +32,12 @@ approved providers and Runtime model/control entries with no synthetic default o
 custom rows. Existing saved targets stay unchanged until explicitly edited.
 Language offers System / English / Traditional Chinese. Startup restores each
 view's visibility, position and layer, including all hidden; the avatar has no
-hover tooltip. Tray Check for Updates uses a native result/action dialog.
+hover tooltip. Tray Check for Updates uses a native result/action dialog. On
+macOS it comes in front of the active app without revealing a bot window: a
+transparent 1x1 window is made key until Cats Bot is active (at most 1 s) and is
+destroyed, then the standard parentless alert opens where macOS places it, not
+as a sheet. A quit that begins during that wait answers with the dismissal
+instead of opening the alert.
 
 1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
    optional personality); after submission it creates the bot and opens the core and the home note;
@@ -40,7 +45,7 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    the main process. Under the hub (SPEC-008 FR-4) this is the hub's first run, which also writes the
    registry; Settings → Bots opens the same page for each further bot.
 2. FR-2: Every change on the settings page goes through `updateProfile`; changes to the provider,
-   model, personality and permissions make existing conversations switch to a new session on the next
+   model, personality, reply language and permissions make existing conversations switch to a new session on the next
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
    provider changes, the runtime restarts only after the turn in progress ends.
 3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
@@ -52,8 +57,8 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
 4. FR-4: There is one settings window per bot, opened from the tray ("Bot settings…", "Manage
    notes…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
    (the floating Cat, the bot's facts and folder), and it reaches only its own bot. Cats Bot Settings,
-   the hub's own window (tray "Settings…"), has General (display language, start at login, version and
-   updates, the data folder) and Bots (SPEC-008 FR-5, FR-18; PLAN-010).
+   the hub's own window (tray "Settings…"), has General (display language, reply language, start at
+   login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
@@ -68,7 +73,9 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    returns to the bottom-right corner of the primary screen; the same check is made when screens are
    added or removed or the scaling changes. Unread follows focus: when a note on the desktop or
    wallpaper layer, or one covered by other windows, is open but not focused, a new reply still counts
-   as unread, and is marked as read only when it is focused.
+   as unread, and is marked as read only when it is focused. Linux uses startup-time
+   X11/XWayland selection and bounded avatar input shapes (ADR-012); native Wayland
+   does not claim global position restoration or this programmatic drag contract.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

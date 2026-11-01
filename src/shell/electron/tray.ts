@@ -22,6 +22,17 @@ export interface BotTrayOptions {
 function loadTrayIcon(assetsDir: string): Electron.NativeImage {
   const bundled = nativeImage.createFromPath(join(assetsDir, 'tray-icon.png'));
   if (!bundled.isEmpty()) {
+    if (process.platform === 'darwin') {
+      // Match Desktop's 20pt macOS tray canvas and retain a real Retina image.
+      const icon = nativeImage.createEmpty();
+      for (const scaleFactor of [1, 2]) {
+        const pixels = 20 * scaleFactor;
+        const representation = nativeImage.createFromBuffer(bundled.toPNG({ scaleFactor }))
+          .resize({ width: pixels, height: pixels, quality: 'best' });
+        icon.addRepresentation({ scaleFactor, buffer: representation.toPNG() });
+      }
+      return icon;
+    }
     return process.platform === 'linux' ? bundled.resize({ width: 22, height: 22 }) : bundled;
   }
   return nativeImage.createEmpty();

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
 import { BotCore, BotInstanceRunningError } from '../../src/core/bot.ts';
@@ -132,7 +132,7 @@ test('a busy session is retried, a lost worker is resumed and an exited worker i
     const busy = await sendAndWait(core, 'home', 'busy-once');
     assert.equal(busy.state, 'completed', busy.error);
     assert.equal(busy.attempts, 2);
-    assert.ok(core.transcript('home').some((entry) => entry.kind === 'system' && /Waiting/u.test(entry.text)));
+    assert.equal(core.transcript('home').some((entry) => entry.kind === 'system' && /Waiting/u.test(entry.text)), false);
 
     const before = (await core.listConversations())[0]!.attachment.sessionId;
     const resumed = await sendAndWait(core, 'home', 'noworker-once');
@@ -440,6 +440,81 @@ test('tightened permissions or new instructions replace the session before the n
     await core.updateProfile({ name: 'Renamed', heartbeat: { enabled: false } });
     const fourth = await sendAndWait(core, 'home', 'still here?');
     assert.equal(fourth.run?.sessionId, third.run?.sessionId, 'a name or heartbeat change keeps the session');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('the reply language reaches new sessions and a change replaces the session with a handoff (SPEC-008 FR-28)', async () => {
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'polyglot', core: fastRetries });
+  await core.start();
+  const createdInstructions = async (): Promise<string[]> => {
+    const state = await fetchFakeState(core);
+    return (state.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>)
+      .map((call) => String(call.body.instructions ?? ''));
+  };
+  try {
+    const first = await sendAndWait(core, 'home', 'the password hint is teapot');
+    assert.doesNotMatch((await createdInstructions()).at(-1)!, /Reply to the user in/u, 'no report, no instruction');
+
+    // The hub reports Japanese; this bot follows the hub by default.
+    await core.setHubLanguage({ reply: 'ja', display: 'zh-TW' });
+    let profile = await core.getProfile();
+    assert.equal(profile.configRevision, 2);
+    assert.deepEqual(profile.hubLanguage, { reply: 'ja', display: 'zh-TW' });
+    assert.equal((await core.listConversations()).find((record) => record.role === 'home')!.attachment.state, 'stale');
+    assert.ok(core.transcript('home').some((entry) => entry.kind === 'system' && /reply language changed/u.test(entry.text)));
+    const second = await sendAndWait(core, 'home', 'instructions?');
+    assert.notEqual(second.run?.sessionId, first.run?.sessionId);
+    assert.match(second.result?.text ?? '', /teapot/u, 'the new session received the handoff pack');
+    assert.match((await createdInstructions()).at(-1)!, /Reply to the user in Japanese/u);
+
+    // The same report again is not a change.
+    await core.setHubLanguage({ reply: 'ja', display: 'zh-TW' });
+    assert.equal((await core.getProfile()).configRevision, 2);
+
+    // The bot's own choice: the display language the hub reported.
+    profile = await core.updateProfile({ replyLanguage: 'display' });
+    assert.equal(profile.configRevision, 3);
+    await sendAndWait(core, 'home', 'and now?');
+    assert.match((await createdInstructions()).at(-1)!, /Reply to the user in Traditional Chinese/u);
+
+    // A bot with its own language only records a new hub reply language.
+    await core.setHubLanguage({ reply: 'fr', display: 'zh-TW' });
+    profile = await core.getProfile();
+    assert.equal(profile.configRevision, 3);
+    assert.deepEqual(profile.hubLanguage, { reply: 'fr', display: 'zh-TW' });
+    const kept = await sendAndWait(core, 'home', 'still you?');
+    assert.equal((await createdInstructions()).length, 3, 'the session was kept');
+    assert.ok(kept.run?.sessionId);
+
+    await assert.rejects(core.updateProfile({ replyLanguage: 'klingon' as never }), /replyLanguage/u);
+
+    // A restarted core reads the last report and its own choice from the profile.
+    const saved = JSON.parse(readFileSync(botPathsFor(root).profile, 'utf8')) as Record<string, unknown>;
+    assert.deepEqual(saved.hubLanguage, { reply: 'fr', display: 'zh-TW' });
+    assert.equal(saved.replyLanguage, 'display');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a hub report that arrives during a profile save is not saved over (SPEC-008 FR-28)', async () => {
+  const { core } = openTestBot({
+    botsHome: home.botsHome, id: 'overlap', core: fastRetries, runtimeEnv: { FAKE_PROVIDER_INTERACTIONS: '1' },
+  });
+  await core.start();
+  try {
+    await sendAndWait(core, 'home', 'hello');
+    // A policy change asks the running runtime for its session controls before it saves.
+    const policy = { version: 1, mode: 'provider', constraints: { maxAccess: 'workspace-write', network: false } } as const;
+    await Promise.all([
+      core.updateProfile({ providerPolicy: policy }),
+      core.setHubLanguage({ reply: 'ja', display: 'en' }),
+    ]);
+    const profile = await core.getProfile();
+    assert.deepEqual(profile.providerPolicy, policy);
+    assert.deepEqual(profile.hubLanguage, { reply: 'ja', display: 'en' });
   } finally {
     await core.stop();
   }

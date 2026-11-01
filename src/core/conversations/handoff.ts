@@ -89,9 +89,10 @@ export function buildHandoffPack(entries: TranscriptEntry[], limit: number = HAN
   return { text: text.length <= limit ? text : text.slice(0, limit), lossy: true, throughSeq };
 }
 
-/** Session bootstrap instructions: the persona first, then the handoff pack (FR-11). */
-export function composeInstructions(persona: string, pack: HandoffPack): string {
-  const trimmed = persona.trim();
-  if (!pack.text) return trimmed;
-  return trimmed ? `${trimmed}\n\n${pack.text}` : pack.text;
+/**
+ * Session bootstrap instructions: the persona first, then the reply language
+ * (SPEC-008 FR-28), then the handoff pack (FR-11).
+ */
+export function composeInstructions(persona: string, pack: HandoffPack, replyLanguage: string | null = null): string {
+  return [persona.trim(), replyLanguage ?? '', pack.text].filter(Boolean).join('\n\n');
 }

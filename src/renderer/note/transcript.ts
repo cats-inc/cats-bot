@@ -8,6 +8,14 @@ import { t } from '../localeStore.ts';
  * transcript is read again.
  */
 
+/**
+ * SPEC-009 FR-10: the Boss Cat's note names its role in the header. Whether its
+ * provider gives it tools is shown only in Settings → Bots (FR-11).
+ */
+export function noteRoleSuffix(bossCat: { holder: boolean; tools: boolean } | undefined): string {
+  return bossCat?.holder ? ` · ${t('Boss Cat')}` : '';
+}
+
 export interface PendingReply {
   workItemId: string;
   text: string;
@@ -15,7 +23,8 @@ export interface PendingReply {
 
 /** Progress lines are for the runtime, not the owner. */
 export function visibleEntries(entries: readonly TranscriptEntry[]): TranscriptEntry[] {
-  return entries.filter((entry) => entry.kind !== 'progress');
+  return entries.filter((entry) => entry.kind !== 'progress'
+    && !(entry.kind === 'system' && entry.text === 'Waiting: the session is still busy with another turn.'));
 }
 
 /**
@@ -250,4 +259,19 @@ export function upsertWorkItem(items: readonly WorkItem[], item: WorkItem): Work
   const next = [...items];
   next[index] = item;
   return next;
+}
+
+/** A late read cannot revive work already settled by a live event. */
+export function mergeWorkItems(current: readonly WorkItem[], snapshot: readonly WorkItem[]): WorkItem[] {
+  return snapshot.reduce((items, item) => {
+    const known = items.find(value => value.id === item.id);
+    if (known) {
+      const settled = ['completed', 'cancelled', 'failed', 'interrupted'].includes(known.state);
+      const incomingSettled = ['completed', 'cancelled', 'failed', 'interrupted'].includes(item.state);
+      if (!settled && incomingSettled && item.attempts >= known.attempts) return upsertWorkItem(items, item);
+      if ((settled && ['queued', 'running'].includes(item.state))
+        || known.updatedAt >= item.updatedAt || known.attempts > item.attempts) return items;
+    }
+    return upsertWorkItem(items, item);
+  }, [...current]);
 }

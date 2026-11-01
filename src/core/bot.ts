@@ -28,10 +28,13 @@ import {
   type ProviderInfo,
 } from './providers/catalog.ts';
 import {
+  applyHubLanguage,
   applyProfilePatch,
   loadProfile,
   saveProfile,
+  type ProfileChange,
 } from './profile/profile.ts';
+import type { HubLanguageReport } from '../shared/language.ts';
 import { WorkQueue } from './queue/queue.ts';
 import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turnRunner.ts';
 import { createWorkItem, isTerminalWorkState, transitionWorkItem } from './queue/workItems.ts';
@@ -209,11 +212,15 @@ export class BotCore implements BotHostApi {
   private readonly retiring = new Set<string>();
   /** Work items waiting out a retry delay; cancellation and coalescing see them like queued ones. */
   private readonly deferred = new Map<string, { item: WorkItem; timer: NodeJS.Timeout }>();
+  /** Only HTTP-admitted sends own a Runtime turn that Cancel may stop. */
+  private readonly admittedTurns = new Set<string>();
   /** FR-27: a provider change restarts the runtime only once the running turn has ended. */
   private runtimeSwapPending = false;
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
+  /** The tail of the profile changes in progress (`changeProfile`). */
+  private profileChanges: Promise<unknown> = Promise.resolve();
   private handoffTimer: NodeJS.Timeout | null = null;
   private runtimeAttempt = 0;
   private runtimeRestartTimer: NodeJS.Timeout | null = null;
@@ -314,6 +321,14 @@ export class BotCore implements BotHostApi {
         if (client) this.interactions.track(item, client);
       },
       providerEvent: (item, event) => this.interactions.notice(item, event),
+      accepted: item => {
+        if (this.running?.item.id !== item.id || this.running.controller.signal.aborted) return;
+        this.admittedTurns.add(item.id);
+        if (item.error) {
+          item.error = undefined;
+          this.record({ ...item, error: undefined });
+        }
+      },
       prepareSend: (item, sessionId) => this.prepareSend(item.conversationId, sessionId),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
@@ -1337,6 +1352,29 @@ export class BotCore implements BotHostApi {
    * the revision and makes attachments of older revisions stale.
    */
   async updateProfile(patch: BotProfilePatch): Promise<BotProfile> {
+    return this.changeProfile(() => applyProfilePatch(this.profile, patch, this.now()), patch);
+  }
+
+  /**
+   * SPEC-008 FR-28: the hub's reply language and display language. A report
+   * that changes the language this bot replies in moves its conversations to
+   * new sessions with a handoff, like any other session setting.
+   */
+  async setHubLanguage(report: HubLanguageReport): Promise<void> {
+    await this.changeProfile(() => applyHubLanguage(this.profile, report, this.now()), {});
+  }
+
+  /**
+   * One profile change at a time. A change can wait on the runtime's session
+   * controls, and a hub report arriving meanwhile must not be saved over.
+   */
+  private changeProfile(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
+    const next = this.profileChanges.then(() => this.runProfileChange(change, patch));
+    this.profileChanges = next.catch(() => undefined);
+    return next;
+  }
+
+  private async runProfileChange(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
     if (!this.releaseLock) {
       const lock = acquireInstanceLock(this.paths);
       if (!lock.held) throw new BotInstanceRunningError(lock.owner);
@@ -1345,10 +1383,11 @@ export class BotCore implements BotHostApi {
         const loaded = loadProfile(this.paths, this.profile, true);
         if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
         this.profile = loaded.profile;
-        return await this.updateProfile(patch);
+        return await this.runProfileChange(change, patch);
       } finally { this.releaseLock(); this.releaseLock = null; }
     }
-    const result = applyProfilePatch(this.profile, patch, this.now());
+    const result = change();
+    if (!result) return structuredClone(this.profile);
     const policy = result.profile.providerPolicy;
     const client = this.client();
     // Refuse a ceiling the running provider cannot enforce now, not at the next session.
@@ -1370,7 +1409,9 @@ export class BotCore implements BotHostApi {
         configRevision: this.profile.configRevision,
         executionTarget: this.profile.executionTarget,
       });
-      this.log(`config revision ${this.profile.configRevision}: ${result.targetChanged ? 'target' : 'session settings'} changed`);
+      const languageOnly = result.replyLanguageOnly;
+      this.log(`config revision ${this.profile.configRevision}: ${
+        result.targetChanged ? 'target' : languageOnly ? 'reply language' : 'session settings'} changed`);
       for (const conversation of this.conversations.list()) {
         const { attachment } = conversation;
         if (attachment.sessionId && !attachmentIsCurrent(conversation, this.profile) && attachment.state !== 'stale') {
@@ -1378,7 +1419,7 @@ export class BotCore implements BotHostApi {
           this.conversations.append(conversation.id, {
             kind: 'system',
             origin: 'system',
-            text: staleNotice(attachment, this.profile),
+            text: staleNotice(attachment, this.profile, languageOnly),
           });
           this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversation.id) });
         }
@@ -1558,10 +1599,15 @@ export class BotCore implements BotHostApi {
 
   async cancelTurn(conversationId: string): Promise<void> {
     const id = this.resolveConversationId(conversationId);
+    this.dropPendingWork(item => item.conversationId === id, 'cancelled by the owner');
     const running = this.running;
     if (!running || running.item.conversationId !== id) return;
+    // A rejected send can still be unwinding while its work is deferred. It
+    // owns no Runtime turn: cancelling it must not cancel the other turn.
+    if (this.workItems.get(running.item.id)?.state !== 'running') return;
     this.log(`turn ${running.item.id} cancelled by the owner`);
     running.controller.abort();
+    if (!this.admittedTurns.has(running.item.id)) return;
     const sessionId = running.item.run?.sessionId;
     const client = this.client();
     if (sessionId && client) {
@@ -1667,6 +1713,7 @@ export class BotCore implements BotHostApi {
     const controller = new AbortController();
     this.running = { item, controller };
     void this.runItem(item, controller).finally(() => {
+      this.admittedTurns.delete(item.id);
       try { this.interactions.end(item.id); }
       finally {
         if (this.running?.item.id === item.id) this.running = null;
@@ -1696,6 +1743,7 @@ export class BotCore implements BotHostApi {
     switch (outcome.kind) {
       case 'completed': {
         const finished = this.record(transitionWorkItem(admitted, 'completed', now, {
+          error: undefined,
           result: { text: outcome.text, completedAt: now.toISOString() },
           ...(outcome.text ? { notification: { deliveredAt: now.toISOString(), seenAt: null } } : {}),
           ...(admitted.run ? { run: admitted.run } : {}),
@@ -1755,14 +1803,6 @@ export class BotCore implements BotHostApi {
           error: outcome.reason,
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
-        if (conversation && outcome.reason === 'session_busy' && admitted.attempts === 1) {
-          this.conversations.append(conversation.id, {
-            kind: 'system',
-            origin: 'system',
-            text: 'Waiting: the session is still busy with another turn.',
-            workItemId: waiting.id,
-          });
-        }
         this.log(`turn ${waiting.id} deferred (${outcome.reason}) for ${outcome.retryAfterMs}ms`);
         const timer = this.schedule(outcome.retryAfterMs, () => {
           this.deferred.delete(waiting.id);

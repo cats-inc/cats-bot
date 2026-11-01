@@ -155,8 +155,12 @@ freeze of the storage format.
     of all background work items; a `running` background work item is not preempted; cancellation is triggered
     only by an explicit owner action (`POST /sessions/{id}/cancel`).
 17. FR-17: The core holds a gate keyed by runtime session, to ensure its own concurrency does not cause 409s.
-    If a 409 is still received: a background work item is retried once after 4 minutes, and an owner message
-    stays in the queue and the conversation shows 「等待中」 ("Waiting").
+    Only a recognized session-busy 409 is retried: a background work item is retried once after 4 minutes;
+    an owner message waits 15 seconds between attempts, with at most eight attempts. Waiting remains
+    cancellable and keeps Send disabled. After the limit the item fails with an explicit notice and its
+    prompt stays in history for an owner-directed retry. Other 409 responses fail with their original
+    reason and code. A retry never replaces or cancels another turn's session. Runtime cancellation is
+    sent only after this work item's HTTP stream was admitted. No persisted format changes are needed.
 18. FR-18: Turn execution goes through `POST /sessions/{id}/messages` with `Accept: application/x-ndjson`;
     `text`, `tool_use`, `tool_result`, `progress`, `error` and `result` events are appended to the transcript
     and the view in real time; receiving `result` marks `completed`; a stream that ends without `result` marks
@@ -236,7 +240,8 @@ freeze of the storage format.
 
 ### Global provider/model changes
 
-27. FR-27: When `executionTarget`, `instructions` or `permissions` (including `cwd`) change, `configRevision`
+27. FR-27: When `executionTarget`, `instructions`, `permissions` (including `cwd`) or the resolved reply
+    language (SPEC-008 FR-28) change, `configRevision`
     is incremented and persisted; a `running` work item finishes under the revision it recorded or is
     cancelled; a `queued` work item rereads at admission; an attachment created under an older revision is
     marked `stale` and not resumed, the next admission rebuilds the session from the handoff pack and tells the

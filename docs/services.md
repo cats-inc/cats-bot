@@ -5,11 +5,13 @@
 
 ## Services
 
-This repository registers no fixed port. Each running bot owns its loopback
-listeners, whose ports are chosen by the operating system at startup:
+Normal Bot services use dynamic ports. Optional renderer debugging defaults to
+9223, separately from Desktop's 9222. Each running bot owns its loopback services:
 
 | Service Name | Port | Protocol | Description | Start Command |
 |--------------|------|----------|-------------|---------------|
+| Bot Hub renderer CDP (opt-in) | `9223`, configurable with `--port` | HTTP/WebSocket, loopback only | Installed Hub renderer inspection; close with `--disable` | `./scripts/macos/restart-bot-with-cdp.sh` |
+| Source candidate control | dynamic | HTTP, `127.0.0.1`, per-launch bearer token | Private status/screenshot/graceful stop; independent Bot/userData roots | `npm run desktop:candidate -- start --root NEW_DIRECTORY` |
 | cats-runtime (app-managed child) | dynamic (a free loopback port reserved by the core at each start) | HTTP | The bot's private `@cats-inc/cats-runtime` instance; the bot core reads the bound port from the `runtime.ready` stdout event and confirms it with `GET /health` | spawned by the bot core (SPEC-001 FR-5); never started by hand |
 | bot tool server (PLAN-001 Phase 2) | dynamic (loopback only) | HTTP (MCP Streamable HTTP) | The bot's session MCP server (`schedule_create`, `schedule_list`, `schedule_cancel`, `ask_owner`), handed to the provider CLI through the runtime's `mcpServers` field | spawned in-process by the bot core |
 | Boss Cat tools (PLAN-009 5.2) | dynamic (loopback only) | HTTP (MCP Streamable HTTP) | The `cats-hub` session MCP (SPEC-009), served by every core and handed only to the Boss Cat's sessions while the hub reports it as holder and its provider takes session MCP servers. Each call goes over the host channel to the hub, which decides from the channel which bot calls and refuses anything outside FR-4 | spawned in-process by the bot core |

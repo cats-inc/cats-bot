@@ -76,7 +76,10 @@ running. Quit cancels read-only provider checks. An explicitly requested install
 and the brief bot-creation step finish before setup closes.
 
 The model and effort lists use Runtime's catalog, matching Desktop. Model controls
-are saved for new sessions. Cats Bot Settings > General offers Follow system, English and
+are saved for new sessions. The five supported provider names follow Desktop;
+choosing Claude runs the Claude Code CLI. Catalog data comes from the pinned
+Runtime package or the bot's running Runtime, rather than Desktop's profile.
+Cats Bot Settings > General offers Follow system, English and
 Traditional Chinese; open conversation windows and the tray update immediately.
 Closing a conversation hides it. Avatar visibility/position and conversation
 visibility/position/layer survive restart, including an entirely hidden desktop.
@@ -87,6 +90,20 @@ actions. It does not open Settings.
 
 The UI names the built-in conversation Direct message. Existing `home` CLI
 arguments, IDs, persisted roles and owner-assigned titles remain compatible.
+
+On Linux, the shell uses X11 (XWayland on a Wayland desktop) for avatar dragging,
+position restoration and transparent input regions. Installations need an X server
+or XWayland (`DISPLAY`). The installed launcher supplies `--ozone-platform=x11`;
+a direct executable launch on Wayland relaunches once with that flag before
+starting any bot. Explicit `--ozone-platform=wayland` remains an advanced override
+and does not support these floating-window features. See
+[ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md).
+
+A busy conversation keeps its waiting status and Cancel button through automatic
+retries. After eight owner-message attempts, retrying stops and the message stays
+in history; wait for the other turn to finish before sending it again. Other
+Runtime conflicts show their original reason immediately. This fix does not
+automatically replace sessions or replay potentially executed work.
 
 ```bash
 npm run build
@@ -145,6 +162,12 @@ unchecked "Remove all user data" box for `~/.catsbot`, `%APPDATA%\Cats Bot` and
 the update cache, which never follows links inside them (SPEC-007 FR-9);
 installing over a copy, updates included, removes neither. Icons come from `src/renderer/cat.svg` through
 `npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
+Linux packages use the generated `assets/installer/linux/` icon set at standard
+hicolor sizes (16, 24, 32, 48, 64, 128, 256 and 512 pixels). A single 1024-pixel
+PNG is not discoverable in standard hicolor themes and leaves the taskbar with a
+generic icon. The package's `desktopName` is `cats-bot.desktop` and
+`linux.syncDesktopName` keeps the installed launcher filename and
+`StartupWMClass` aligned with Electron's desktop identity.
 The runtime package ships inside the app and runs with the app's own Node
 (`ELECTRON_RUN_AS_NODE=1`); the app is not packed into an asar so the
 runtime bin stays a plain file.

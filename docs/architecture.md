@@ -303,3 +303,13 @@ does not establish browser/desktop helper availability or successful invocation.
 ---
 
 _Last updated: 2026-10-29_
+
+## Development/build script mechanisms
+
+Repository maintenance is pinned from cats-one and development/build mechanisms
+from Platform through complete source closures and producer licenses. The Bot
+CDP/candidate adapters retain its 9223 default, file pages, bridge, Hub/core
+lifetime and independent profiles. Core/CLI do not import these development
+scripts or the Platform application. Source/package verification and rendering
+mechanisms are shared; release identity, signing and publication policy stay
+Bot-owned. See scripts/README.md and Platform PLAN-129 for the convergence scope.

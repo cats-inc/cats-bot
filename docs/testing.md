@@ -89,6 +89,33 @@ cancellation, idle waiters and preservation of an explicitly requested install.
 fixture with a hung CLI and grandchild, and checks that all three processes have
 stopped before the provider setup becomes idle.
 
+`tests/core/busyRetry.test.ts` covers non-busy 409 failures, bounded busy retries,
+safe cancellation before HTTP admission and removal of deferred work.
+`tests/renderer/workState.test.ts` covers waiting controls and stale/equal-time
+work snapshots. `tests/shell/linuxWindowing.test.ts` covers the Linux relaunch
+arguments and bounded avatar input regions.
+
+After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
+for the real renderer's waiting/polling/cancellation checks, including recovery
+with completion notifications deliberately suppressed. On Linux with X11 or
+XWayland and `xdotool`, add `--native-drag` to exercise native avatar dragging,
+fixed bounds, transparent click-through and bubble clicks. The helper creates a
+temporary Bot/Electron profile and starts only the fake Runtime. It sends pointer
+input only to its fixture windows and leaves private screenshots and `result.json`
+in the printed evidence directory. Use `--ozone-platform=x11` at Electron startup
+to test X11 directly; omitting it on Wayland also exercises the one-time relaunch.
+
+On macOS, the tray uses a 20pt canvas, matching Cats Desktop, with native 20px
+and 40px Retina representations. When checking a native candidate, compare the
+menu-bar footprint with Desktop and check sharpness on a Retina display.
+
+`tests/shell/linuxIcons.test.ts` runs electron-builder's icon resolver and
+desktop-entry generator against the package configuration. It checks standard
+hicolor PNG sizes and matching launcher, icon and window identities. For native
+Linux acceptance, inspect the built `.deb` with `dpkg-deb --contents`, then check
+that GTK resolves `cats-bot` and the running window shows the cat icon in the
+taskbar. These native checks are separate from the cross-platform test suite.
+
 `tests/shell/noteWindows.test.ts` runs the real note window manager against a
 controllable Electron double. It covers a close after startup selected its restore
 list, overlapping opens during page load, explicit reopening, shutdown/deletion
@@ -352,9 +379,19 @@ was opened. Screenshots and JSON evidence stay in ignored `tmp/`.
 
 The helper runner/unit tests verify fixed arguments, prerequisite order, restart
 and failure handling, mutual exclusion, startup PATH recovery and source hashes.
+On macOS/Linux they also run the packaged Node → npm-folder → Codex checks with
+the system Bash and disposable CLI fixtures. An already configured npm folder
+must return complete JSON and allow setup to finish, including with macOS Bash 3.2.
 They do not install CLIs or access provider credentials. The real Runtime integration
 test verifies stale catalog revision recovery and saved effort reaching CLI arguments.
 
 ---
 
 _Last updated: 2026-10-29_
+
+Shared tooling regressions live in `tests/shell/sharedTools.test.ts`. They cover
+Bot-specific CDP defaults/file-target selection, candidate argument boundaries
+and offline source/mode provenance. The common producer tests cover handshake
+timeouts, occupied-port/active-Runtime refusal, exact Git objects, skill
+preflight and image rendering. Real private candidate acceptance additionally
+verifies readiness, screenshot and graceful drain without installed-app changes.

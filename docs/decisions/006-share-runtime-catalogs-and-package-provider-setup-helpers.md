@@ -8,6 +8,9 @@ sections 2–3 and SPEC-002 FR-1/FR-3. The resident-core boundary stays unchange
 Updated 2026-10-30: under [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md), implemented by
 PLAN-009, the setup helpers run in the hub, one at a time for every bot, and a CLI they find reaches every
 core's PATH. Display language is a hub preference in `<CATS_BOT_HOME>/hub-state.json`.
+Updated 2026-11-01: the reply language is a hub preference there too, with Desktop's choices. Each bot
+can override it in its profile, and the hub reports its resolved choice to every core, which keeps the
+last report in its profile (SPEC-008 FR-28).
 
 ## Context
 
@@ -39,9 +42,9 @@ depending on the Platform application or probing every supported CLI.
   unchanged for Runtime validation. Removed entries or invalid controls fail
   visibly; they never silently select another model.
 - Bundle the selected Platform helpers, their dependency closure and MIT license
-  under `assets/setup/`. `provenance.json` records the Platform source commit
-  (first `07a02f3a30b9e02f0e25e01c348af69a500b3ae6`; since PLAN-010 Phase 3,
-  `cce4ff6e3ffefea684e4bc45fa72fb91f30a3fe7`) and each source SHA-256. This is
+  under `assets/setup/`. `provenance.json` records the exact Platform source commit
+  and each source SHA-256/mode. The shared-tool synchronizer explicitly refreshes
+  this complete closure from committed source and verifies it offline. This is
   vendored source reuse, not an application dependency.
 - Onboarding selects a provider before installation. Native providers have one
   check/install step; Codex checks Node/npm, the npm folder, on Windows the

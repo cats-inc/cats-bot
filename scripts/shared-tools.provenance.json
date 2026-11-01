@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "sources": [
+    {
+      "repository": "cats-inc/cats-one",
+      "commit": "f17ae5f488b774116b82f04ff2781576a3460b12",
+      "files": [
+        {
+          "source": "scripts/shared/sync-agent-skills.mjs",
+          "path": "scripts/shared/sync-agent-skills.mjs",
+          "sha256": "8685feaad78ada08ded230dec8da5e96ab529e2d88fe592bc75893de445b8ec7",
+          "executable": false
+        },
+        {
+          "source": "scripts/sync-shared-tools.mjs",
+          "path": "scripts/sync-shared-tools.mjs",
+          "sha256": "4ffc224ff29aae919ed8cc0ef9f0a58365b609e0b0e6172ec37b38c7a44dd71d",
+          "executable": false
+        },
+        {
+          "source": "scripts/macos/sync-agent-skills.sh",
+          "path": "scripts/macos/sync-agent-skills.sh",
+          "sha256": "16cad7a6c10855661d67e5d80914028a7b51f524f37b18b4e440fcc0b2b24561",
+          "executable": true
+        },
+        {
+          "source": "scripts/linux/sync-agent-skills.sh",
+          "path": "scripts/linux/sync-agent-skills.sh",
+          "sha256": "16cad7a6c10855661d67e5d80914028a7b51f524f37b18b4e440fcc0b2b24561",
+          "executable": true
+        },
+        {
+          "source": "scripts/windows/Sync-AgentSkills.ps1",
+          "path": "scripts/windows/Sync-AgentSkills.ps1",
+          "sha256": "ccdc1b0e6f8965871777c8cb8dc59bac3530dc22afc01be179a923ea4ce5577b",
+          "executable": false
+        },
+        {
+          "source": "scripts/macos/remove-merged-branches.sh",
+          "path": "scripts/macos/remove-merged-branches.sh",
+          "sha256": "4d4beed35b39dd8cabac057f6de35babab22947efcbbb231daf2bcdcd1a6eea7",
+          "executable": true
+        },
+        {
+          "source": "scripts/linux/remove-merged-branches.sh",
+          "path": "scripts/linux/remove-merged-branches.sh",
+          "sha256": "4d4beed35b39dd8cabac057f6de35babab22947efcbbb231daf2bcdcd1a6eea7",
+          "executable": true
+        },
+        {
+          "source": "scripts/windows/Remove-MergedBranches.ps1",
+          "path": "scripts/windows/Remove-MergedBranches.ps1",
+          "sha256": "3a56d75c39d4bc9e7a247ef4fe77da4acd96db8cc975aac48476349f1b2c7aaa",
+          "executable": false
+        },
+        {
+          "source": "LICENSE",
+          "path": "scripts/licenses/cats-one-LICENSE",
+          "sha256": "096afcaa76b8b0b37020c7ec2ad46e59bbfdf968dbf3670d1924f45c1d238cde",
+          "executable": false
+        }
+      ]
+    },
+    {
+      "repository": "cats-inc/cats-platform",
+      "commit": "fd61bc2bb980e491f63b4035d04abee9b99c5021",
+      "files": [
+        {
+          "source": "scripts/shared/renderer-cdp.mjs",
+          "path": "scripts/shared/renderer-cdp.mjs",
+          "sha256": "c64b2252b738cfe21cf53dc4dbba41179a095f17a609658401ddf1ee1eed30c7",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/restart-electron-with-cdp.sh",
+          "path": "scripts/shared/restart-electron-with-cdp.sh",
+          "sha256": "d18eb091d2cd3174b031c452e6f50d5dcd516a4a610e4c509e96aa4ca90e3631",
+          "executable": true
+        },
+        {
+          "source": "scripts/shared/dotnet-runtime-notices.mjs",
+          "path": "scripts/shared/dotnet-runtime-notices.mjs",
+          "sha256": "6cc732d49840e5da3c707a31800f266f8aed7f5f39ce59767403313dfabaa9ff",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/renderer-license-collector.ts",
+          "path": "scripts/shared/renderer-license-collector.ts",
+          "sha256": "be3b74d7f91daae90950f829ab2a56b1c211e87b4253394b2ef59a5794f1eece",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/icon-pipeline.mjs",
+          "path": "scripts/shared/icon-pipeline.mjs",
+          "sha256": "8d8fffe889381ee22403f4b9780d8d18051725ab63fe267dc72af58ba56fa29a",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/source-candidate.mjs",
+          "path": "scripts/shared/source-candidate.mjs",
+          "sha256": "dd49f3abee7168c0d79420d71817f9c76f4e12ccf602dcde5c2c54a9e6f05fe0",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/candidate-control.mjs",
+          "path": "scripts/shared/candidate-control.mjs",
+          "sha256": "3445cbd5f28b54202daae1b9831ffa94158a950dc62aa8907cad28e64de30d53",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/git-source.mjs",
+          "path": "scripts/shared/git-source.mjs",
+          "sha256": "70f1b4a375bb00bcc0299eb832de3a90ccca9485e9c8c195bc1906d3d948c1f8",
+          "executable": false
+        },
+        {
+          "source": "LICENSE",
+          "path": "scripts/licenses/cats-platform-LICENSE",
+          "sha256": "9d01ec7f782908ae4adef53d826020a61803e95c86be9793332a751989779434",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/release-primitives.mjs",
+          "path": "scripts/shared/release-primitives.mjs",
+          "sha256": "214223c5b4c79a48366954ca0b2ec89ab3654676b5c0e88141a514628638c087",
+          "executable": false
+        }
+      ]
+    }
+  ]
+}

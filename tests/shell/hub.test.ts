@@ -82,13 +82,16 @@ test('reconciling follows the directories and reports the rest, deleting nothing
   assert.deepEqual(activeBots(reconciled.registry, root).map((bot) => bot.id), ['mochi', 'nori']);
 });
 
-test('hub preferences live in the hub state file, and the installation keeps one id (FR-1, FR-18)', () => {
+test('hub preferences live in the hub state file, and the installation keeps one id (FR-1, FR-18, FR-28)', () => {
   const root = freshHome();
   assert.equal(readHubState(root), null);
-  writeHubState(root, { schemaVersion: 1, language: 'zh-TW', openAtLogin: true });
-  assert.deepEqual(readHubState(root), { schemaVersion: 1, language: 'zh-TW', openAtLogin: true });
-  writeFileSync(hubPathsFor(root).state, JSON.stringify({ language: 'klingon', openAtLogin: 'yes' }));
-  assert.deepEqual(readHubState(root), { schemaVersion: 1, language: 'system', openAtLogin: false });
+  writeHubState(root, { schemaVersion: 1, language: 'zh-TW', replyLanguage: 'display', openAtLogin: true });
+  assert.deepEqual(readHubState(root), { schemaVersion: 1, language: 'zh-TW', replyLanguage: 'display', openAtLogin: true });
+  writeFileSync(hubPathsFor(root).state, JSON.stringify({ language: 'klingon', replyLanguage: 'klingon', openAtLogin: 'yes' }));
+  assert.deepEqual(readHubState(root), { schemaVersion: 1, language: 'system', replyLanguage: 'unspecified', openAtLogin: false });
+  // A file from before the reply language reads as the default.
+  writeFileSync(hubPathsFor(root).state, JSON.stringify({ schemaVersion: 1, language: 'en', openAtLogin: false }));
+  assert.equal(readHubState(root)?.replyLanguage, 'unspecified');
 
   const userData = join(root, 'electron');
   const id = readOrCreateInstallationId(userData);

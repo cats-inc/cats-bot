@@ -1,3 +1,4 @@
+import { digest, stableReleaseVersion } from './shared/release-primitives.mjs';
 import { createHash } from 'node:crypto';
 import { readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
@@ -5,13 +6,10 @@ import { basename, join } from 'node:path';
 export const repository = 'cats-inc/cats-bot';
 export const workflowName = 'Cats Bot Standard Preview';
 export const platforms = ['windows', 'macos', 'linux'];
-export const digest = (bytes, algorithm = 'sha256', encoding = 'hex') => createHash(algorithm).update(bytes).digest(encoding);
+export { digest } from './shared/release-primitives.mjs';
 const json = async file => JSON.parse(await readFile(file, 'utf8'));
-export function releaseVersion(tag) {
-  if (typeof tag !== 'string' || !/^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(tag)
-    || !tag.slice(1).split('.').map(Number).every(Number.isSafeInteger)) throw new Error('Use an exact vX.Y.Z release tag.');
-  return tag.slice(1);
-}
+export function releaseVersion(tag) { return stableReleaseVersion(tag); }
+
 export function compareVersions(left, right) {
   const a = releaseVersion(`v${left}`).split('.').map(Number), b = releaseVersion(`v${right}`).split('.').map(Number);
   for (let index = 0; index < 3; index++) if (a[index] !== b[index]) return a[index] > b[index] ? 1 : -1;

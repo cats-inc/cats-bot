@@ -28,6 +28,15 @@ contextBridge.exposeInMainWorld('catsBot', {
       return () => ipcRenderer.removeListener('ui:languageChanged', wrapped);
     },
   },
+  // SPEC-008 FR-28: the reply language Cats Bot Settings sets for every bot.
+  replyLanguage: {
+    get() {
+      return ipcRenderer.invoke('ui:replyLanguage');
+    },
+    set(value) {
+      return ipcRenderer.invoke('ui:setReplyLanguage', value);
+    },
+  },
   invoke(command, ...args) {
     return ipcRenderer.invoke('bot:invoke', command, args);
   },
@@ -111,6 +120,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
   },
   floating: {
+    setInputRegions(regions) {
+      ipcRenderer.send('floating:regions', regions);
+    },
     setInteractive(interactive) {
       ipcRenderer.send('floating:interactive', interactive === true);
     },

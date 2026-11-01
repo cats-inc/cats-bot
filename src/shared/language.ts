@@ -20,8 +20,111 @@ export interface LanguageState {
   locale: Locale;
 }
 
+// ---- Reply language: the assistant reply language of Cats Desktop (its SPEC-097) ----
+
+/** The languages a bot can be told to reply in, in Desktop's order. */
+export const REPLY_LANGUAGE_CODES = [
+  'en', 'zh-TW', 'zh-CN', 'ja', 'ko', 'fr', 'de', 'es', 'pt-BR',
+  'it', 'nl', 'pl', 'tr', 'id', 'vi', 'th', 'hi', 'ar',
+] as const;
+export type ReplyLanguageCode = (typeof REPLY_LANGUAGE_CODES)[number];
+/**
+ * The choice in Cats Bot Settings, shared by every bot: `display` follows the
+ * display language in use, auto-detect included; `unspecified` sends no instruction.
+ */
+export type HubReplyLanguage = 'display' | ReplyLanguageCode | 'unspecified';
+/** A bot's own choice; `hub`, the default, takes the one in Cats Bot Settings. */
+export type BotReplyLanguage = 'hub' | HubReplyLanguage;
+/** What the hub tells each bot: its resolved reply language and the display language in use. */
+export interface HubLanguageReport {
+  reply: ReplyLanguageCode | null;
+  display: Locale;
+}
+
+export const HUB_REPLY_LANGUAGE_DEFAULT: HubReplyLanguage = 'unspecified';
+export const BOT_REPLY_LANGUAGE_DEFAULT: BotReplyLanguage = 'hub';
+
+export function isReplyLanguageCode(value: unknown): value is ReplyLanguageCode {
+  return (REPLY_LANGUAGE_CODES as readonly unknown[]).includes(value);
+}
+export function isHubReplyLanguage(value: unknown): value is HubReplyLanguage {
+  return value === 'display' || value === 'unspecified' || isReplyLanguageCode(value);
+}
+export function isBotReplyLanguage(value: unknown): value is BotReplyLanguage {
+  return value === 'hub' || isHubReplyLanguage(value);
+}
+export function isHubLanguageReport(value: unknown): value is HubLanguageReport {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const { reply, display } = value as Record<string, unknown>;
+  // Other keys are ignored, so a later hub can add one without older cores refusing its reports.
+  return (reply === null || isReplyLanguageCode(reply)) && (display === 'en' || display === 'zh-TW');
+}
+export function sameHubLanguageReport(a: HubLanguageReport | null, b: HubLanguageReport | null): boolean {
+  return (a?.reply ?? null) === (b?.reply ?? null) && (a?.display ?? null) === (b?.display ?? null);
+}
+
+/** The hub's choice as a language: `display` is the display language in use. */
+export function resolveHubReplyLanguage(choice: HubReplyLanguage, display: Locale): ReplyLanguageCode | null {
+  if (choice === 'display') return display;
+  return choice === 'unspecified' ? null : choice;
+}
+
+/**
+ * The language a bot is told to reply in. Until the hub has reported, `hub`
+ * and `display` send no instruction.
+ */
+export function resolveBotReplyLanguage(
+  choice: BotReplyLanguage,
+  hub: HubLanguageReport | null,
+): ReplyLanguageCode | null {
+  if (choice === 'hub') return hub?.reply ?? null;
+  if (choice === 'display') return hub?.display ?? null;
+  return choice === 'unspecified' ? null : choice;
+}
+
+const REPLY_LANGUAGE_PROMPT_NAMES: Record<ReplyLanguageCode, string> = {
+  en: 'English',
+  'zh-TW': 'Traditional Chinese',
+  'zh-CN': 'Simplified Chinese',
+  ja: 'Japanese',
+  ko: 'Korean',
+  fr: 'French',
+  de: 'German',
+  es: 'Spanish',
+  'pt-BR': 'Brazilian Portuguese',
+  it: 'Italian',
+  nl: 'Dutch',
+  pl: 'Polish',
+  tr: 'Turkish',
+  id: 'Indonesian',
+  vi: 'Vietnamese',
+  th: 'Thai',
+  hi: 'Hindi',
+  ar: 'Arabic',
+};
+
+/** The session instruction for a reply language, worded as Desktop words it. */
+export function replyLanguageInstruction(code: ReplyLanguageCode | null): string | null {
+  if (!code) return null;
+  return [
+    `Reply to the user in ${REPLY_LANGUAGE_PROMPT_NAMES[code]} unless the user explicitly asks for another language.`,
+    'Keep code, paths, commands, identifiers, logs, and quoted source text unchanged unless translation is explicitly requested.',
+  ].join(' ');
+}
+
+/** A reply language's name in the page's language, for example 日文 for `ja` on a Chinese page. */
+export function replyLanguageName(code: ReplyLanguageCode, locale: Locale): string {
+  const tag = code === 'zh-TW' ? 'zh-Hant' : code === 'zh-CN' ? 'zh-Hans' : code;
+  try {
+    return new Intl.DisplayNames([locale], { type: 'language' }).of(tag) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 export const zhTW: Record<string, string> = {
-  'Boss Cat, without tools on this provider': '主控貓（這個 provider 沒有工具）',
+  'Waiting for the current turn…': '等待目前回合結束…',
+  'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.': '工作階段仍忙碌，已停止自動重試。你的訊息仍保留在這裡，請稍後再試。',
   'This provider gives the Boss Cat no tools; the role stays with the bot.': '這個 provider 不提供主控貓工具；角色仍由這個機器人保留。',
   'Remove Boss Cat': '取消主控貓',
   'Make Boss Cat': '設為主控貓',
@@ -91,6 +194,14 @@ export const zhTW: Record<string, string> = {
   'A desktop control request is waiting for you.': '有桌面控制要求等待你回覆。',
   'Follow system': '跟隨系統',
   'Display language': '顯示語言',
+  'Reply language': '回覆語言',
+  'Same as display language ({language})': '與顯示語言相同（{language}）',
+  'Unspecified': '不指定',
+  'Follow Cats Bot Settings ({language})': '跟隨 Cats Bot 設定（{language}）',
+  'Follow Cats Bot Settings': '跟隨 Cats Bot 設定',
+  'Bots reply in this language unless you ask for another one in the conversation. A bot can choose its own in its settings.':
+    '機器人預設用這個語言回覆，除非你在對話中要求其他語言。每個機器人也可以在自己的設定中另外指定。',
+  'Could not change the reply language: {value0}': '無法變更回覆語言：{value0}',
   Bot: '機器人',
   Conversations: '對話',
   'Direct message': '私訊',

@@ -158,52 +158,185 @@ test('dialog covers current, development, busy, downloaded and manual-update sta
   );
 });
 
-test('Windows/Linux tray dialogs are parentless; macOS uses a native sheet owner and always destroys it', async () => {
-  const spec = updateDialog({ ...state(), phase: 'current' }, 'en');
-  for (const platform of ['win32', 'linux', 'darwin']) {
-    const events: string[] = [];
-    const owner = {
-      show() {
-        events.push('show');
-      },
-      focus() {
-        events.push('focus');
-      },
-      isDestroyed: () => false,
-      destroy() {
-        events.push('destroy');
-      },
-    };
-    assert.equal(
-      await showDesktopUpdateMessageBox({
-        platform,
-        dialogSpec: spec,
-        createOwner: (options) => {
-          assert.equal(options.skipTaskbar, true);
-          assert.equal(options.width, 1);
-          events.push('create');
-          return owner;
-        },
-        focusApp: () => {
-          events.push('app');
-        },
-        showMessageBox: async (options, actualOwner) => {
-          assert.equal(options.message, spec.message);
-          assert.equal(actualOwner, platform === 'darwin' ? owner : undefined);
-          events.push('dialog');
-          return { response: 0, checkboxChecked: false };
-        },
-      }),
-      0,
-    );
-    assert.deepEqual(
-      events,
-      platform === 'darwin'
-        ? ['create', 'show', 'dialog', 'app', 'focus', 'destroy']
-        : ['app', 'dialog'],
-    );
-  }
+// Ported from cats-platform tests/desktop-update-dialog-presenter.test.js at 21bb92b2.
+function presenterFixture(
+  overrides: Partial<Omit<Parameters<typeof showDesktopUpdateMessageBox>[0], 'createActivationWindow'>> = {},
+) {
+  const spec = updateDialog({ ...state(), phase: 'available', version: '0.3.0' }, 'en');
+  const events: string[] = [];
+  const focusListeners = new Set<() => void>();
+  let destroyed = false;
+  const window = {
+    // Mirrors a real window: it becomes key, and emits focus, once Cats Bot is active.
+    focusesOnFocus: true,
+    show() {
+      events.push('show');
+    },
+    focus() {
+      events.push('focus-window');
+      if (window.focusesOnFocus) queueMicrotask(() => window.emitFocus());
+    },
+    once(event: 'focus', listener: () => void) {
+      assert.equal(event, 'focus');
+      focusListeners.add(listener);
+    },
+    removeListener(event: 'focus', listener: () => void) {
+      assert.equal(event, 'focus');
+      focusListeners.delete(listener);
+    },
+    emitFocus() {
+      const listeners = [...focusListeners];
+      focusListeners.clear();
+      for (const listener of listeners) listener();
+    },
+    listenerCount: () => focusListeners.size,
+    isDestroyed: () => destroyed,
+    destroy() {
+      destroyed = true;
+      events.push('destroy');
+    },
+  };
+  const input: Parameters<typeof showDesktopUpdateMessageBox<typeof window>>[0] = {
+    platform: 'darwin',
+    dialogSpec: spec,
+    createActivationWindow(options) {
+      events.push('create');
+      assert.equal(options.width, 1);
+      assert.equal(options.height, 1);
+      assert.equal(options.show, false);
+      assert.equal(options.transparent, true);
+      assert.equal(options.frame, false);
+      assert.equal(options.hasShadow, false);
+      assert.equal(options.skipTaskbar, true);
+      return window;
+    },
+    focusApp() {
+      events.push('focus-app');
+    },
+    isShuttingDown: () => false,
+    showMessageBox: async (...args: unknown[]) => {
+      events.push('dialog');
+      assert.equal(args.length, 1, 'the alert is parentless so macOS places it');
+      return { response: 1, checkboxChecked: false };
+    },
+    activationTimeoutMs: 1_000,
+    ...overrides,
+  };
+  return { spec, events, window, input };
+}
+
+test('macOS activates Cats Bot through a transient window and releases it before the standard alert', async () => {
+  const f = presenterFixture();
+  assert.equal(f.spec.buttons.length, 2);
+  f.input.showMessageBox = async (...args: unknown[]) => {
+    f.events.push('dialog');
+    const [options] = args as [import('electron').MessageBoxOptions];
+    assert.equal(args.length, 1, 'a parent would make the alert a sheet hanging from that window');
+    assert.equal(f.window.isDestroyed(), true, 'no window may stay behind the alert');
+    assert.equal(options.type, 'question');
+    assert.equal(options.message, f.spec.message);
+    assert.deepEqual(options.buttons, f.spec.buttons);
+    assert.equal(options.defaultId, 0);
+    assert.equal(options.cancelId, 1);
+    return { response: 1, checkboxChecked: false };
+  };
+  assert.equal(await showDesktopUpdateMessageBox(f.input), 1);
+  assert.deepEqual(f.events, ['create', 'show', 'focus-app', 'focus-window', 'destroy', 'dialog']);
 });
+
+test('macOS waits for the window to become key before opening the alert', async () => {
+  const f = presenterFixture();
+  f.window.focusesOnFocus = false;
+  const pending = showDesktopUpdateMessageBox(f.input);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.events, ['create', 'show', 'focus-app', 'focus-window'], 'the alert waits for activation');
+  f.window.emitFocus();
+  assert.equal(await pending, 1);
+  assert.deepEqual(f.events.slice(-2), ['destroy', 'dialog']);
+});
+
+test('macOS still opens the alert when activation never arrives', async () => {
+  const f = presenterFixture({ activationTimeoutMs: 5 });
+  f.window.focusesOnFocus = false;
+  assert.equal(await showDesktopUpdateMessageBox(f.input), 1);
+  assert.deepEqual(f.events.slice(-2), ['destroy', 'dialog']);
+  assert.equal(f.window.listenerCount(), 0, 'the timed-out focus listener is released');
+});
+
+for (const [label, phase, dismissal] of [
+  ['an offer', 'available', 1],
+  ['a single-button result', 'current', 0],
+] as const) {
+  test(`macOS answers ${label} with its dismissal when quitting begins during activation`, async () => {
+    let shuttingDown = false;
+    const f = presenterFixture({
+      dialogSpec: updateDialog({ ...state(), phase, version: '0.3.0' }, 'en'),
+      isShuttingDown: () => shuttingDown,
+    });
+    f.window.focusesOnFocus = false;
+    const pending = showDesktopUpdateMessageBox(f.input);
+    await new Promise((resolve) => setImmediate(resolve));
+    shuttingDown = true;
+    f.window.emitFocus();
+    assert.equal(await pending, dismissal);
+    assert.equal(f.events.includes('dialog'), false, 'no alert opens over a hub that is quitting');
+    assert.equal(f.events.at(-1), 'destroy');
+  });
+}
+
+test('macOS releases the activation window when focusing it fails', async () => {
+  const failure = new Error('focus failed');
+  const f = presenterFixture();
+  f.window.focus = () => {
+    throw failure;
+  };
+  await assert.rejects(showDesktopUpdateMessageBox(f.input), failure);
+  assert.equal(f.events.at(-1), 'destroy');
+  assert.equal(f.events.includes('dialog'), false);
+});
+
+for (const synchronous of [false, true]) {
+  test(`macOS propagates a failing alert after releasing the window (${synchronous ? 'throw' : 'reject'})`, async () => {
+    const failure = new Error('dialog failed');
+    const f = presenterFixture({
+      showMessageBox() {
+        f.events.push('dialog');
+        if (synchronous) throw failure;
+        return Promise.reject(failure);
+      },
+    });
+    await assert.rejects(showDesktopUpdateMessageBox(f.input), failure);
+    assert.deepEqual(f.events.slice(-2), ['destroy', 'dialog']);
+  });
+}
+
+test('a transient window closed during shutdown is not destroyed again', async () => {
+  const f = presenterFixture();
+  f.window.focus = () => {
+    f.events.push('focus-window');
+    f.window.destroy();
+    queueMicrotask(() => f.window.emitFocus());
+  };
+  assert.equal(await showDesktopUpdateMessageBox(f.input), 1);
+  assert.equal(f.events.filter((event) => event === 'destroy').length, 1);
+});
+
+for (const platform of ['win32', 'linux']) {
+  test(`${platform} keeps the parentless tray dialog and response`, async () => {
+    const f = presenterFixture({ platform, dialogSpec: updateDialog({ ...state(), phase: 'current' }, 'en') });
+    f.input.createActivationWindow = () => assert.fail('only macOS needs an activation window');
+    f.input.showMessageBox = async (...args: unknown[]) => {
+      f.events.push('dialog');
+      const [options] = args as [import('electron').MessageBoxOptions];
+      assert.equal(args.length, 1);
+      assert.equal(options.type, 'info');
+      assert.equal(options.cancelId, 0);
+      return { response: 0, checkboxChecked: false };
+    };
+    assert.equal(await showDesktopUpdateMessageBox(f.input), 0);
+    assert.deepEqual(f.events, ['focus-app', 'dialog']);
+  });
+}
 
 test('only published matching identities enable checks; portable and unsigned macOS remain manual', () => {
   assert.ok(parseBotRelease(release, '0.2.0', 'win32', 'x64'));

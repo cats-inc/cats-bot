@@ -1,5 +1,11 @@
 # Documentation Index
 
+The [0.4.4 Standard Preview release notes](releases/v0.4.4.md) describe the refreshed
+Runtime catalog, note/update fixes, exact inputs, compatibility and signing policy.
+
+[Runtime catalog validation](research/2026-11-01-runtime-catalog-consumer-validation.md)
+records the five-provider selector contract and refreshed Runtime candidate checks.
+
 The follow-on [shared Platform proposal](architecture.md#proposed-shared-platform-consumption-2026-10-29)
 links Platform's ADR-142, SPEC-134 and PLAN-127 package-consumption design.
 It proposes versioned setup/native/host reuse and requires a Desktop-derived
@@ -124,6 +130,10 @@ Standard Preview delivery and host-owned Check for Updates are defined by
 | [PLAN-001](./plans/PLAN-001-resident-bot-core-foundation.md)                                         | In progress | Phases 0 to 5 from toolchain to minimal shell; desktop presence reserved for a later ADR                                 |
 
 ## Context-Driven Development
+
+Linux floating-window compatibility is recorded in
+[ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md) and its
+[input and retry evidence](research/2026-11-01-linux-input-and-busy-retry.md).
 
 For complex features, use the spec-plan-implement workflow:
 

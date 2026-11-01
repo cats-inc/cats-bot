@@ -304,6 +304,7 @@ export class RuntimeClient {
     body: SendMessageRequest,
     onEvent: (event: RuntimeStreamEvent) => void,
     signal?: AbortSignal,
+    onAccepted?: () => void,
   ): Promise<StreamOutcome> {
     const response = await this.fetchImpl(
       joinUrl(this.baseUrl, `/sessions/${encodeURIComponent(id)}/messages`),
@@ -329,6 +330,7 @@ export class RuntimeClient {
     }
     const outcome: StreamOutcome = { completed: false, eventCount: 0, resultEvent: null, errorText: null };
     if (!response.body) return outcome;
+    onAccepted?.();
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffered = '';

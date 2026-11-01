@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { BotProfile, BotStatus, ConversationRecord, ModelCatalog, ProviderInfo } from '../../src/core/types.ts';
+import { acceptLanguage } from '../../src/renderer/localeStore.ts';
+import { REPLY_LANGUAGE_CODES } from '../../src/shared/language.ts';
 import {
   ago,
   appFacts,
   botForm,
   botPatch,
+  botReplyLanguageOptions,
+  hubReplyLanguageOptions,
   lifeForm,
   lifePatch,
   modelOptions,
@@ -40,6 +44,8 @@ const PROFILE: BotProfile = {
   idleSleepMinutes: 15,
   telegram: { enabled: false, ownerChatId: null },
   desktopControl: { enabled: false },
+  replyLanguage: 'hub',
+  hubLanguage: null,
   updatedAt: '2026-10-28T00:00:00.000Z',
 };
 
@@ -54,6 +60,10 @@ test('the five provider menus keep Runtime catalog model and effort order withou
   assert.deepEqual(
     CLI_PROVIDERS.map((provider) => provider.id),
     ['codex', 'claude', 'antigravity', 'grok', 'muse'],
+  );
+  assert.deepEqual(
+    CLI_PROVIDERS.map((provider) => provider.label),
+    ['Codex', 'Claude', 'Antigravity', 'Grok', 'Muse'],
   );
   for (const provider of CLI_PROVIDERS) {
     const catalog = readPackagedModelCatalog(provider.id);
@@ -217,4 +227,34 @@ test('life minutes must be whole positive numbers; facts never show the Telegram
   assert.deepEqual(facts, [['Token', 'stored, encrypted by the OS'], ['Polling', 'off'], ['Owner chat', 'not bound yet: send your bot a private message']]);
   const status = { id: 'nori', root: 'C:/bots/nori', runtime: { state: 'ready', pid: 42 } } as BotStatus;
   assert.deepEqual(appFacts(status, '0.1.0'), [['Bot id', 'nori'], ['Data folder', 'C:/bots/nori'], ['Runtime', 'ready (pid 42)'], ['Version', '0.1.0']]);
+});
+
+test('reply language choices: the display language first and Unspecified last, as on Desktop (SPEC-008 FR-28)', () => {
+  const hub = hubReplyLanguageOptions('en');
+  assert.deepEqual(hub.map((option) => option.value), ['display', ...REPLY_LANGUAGE_CODES, 'unspecified']);
+  assert.equal(hub[0]!.label, 'Same as display language (English)');
+  assert.equal(hub.find((option) => option.value === 'ja')!.label, 'Japanese');
+  assert.equal(hub.at(-1)!.label, 'Unspecified');
+
+  const bot = botReplyLanguageOptions('en', { reply: 'ja', display: 'en' });
+  assert.deepEqual(bot.map((option) => option.value), ['hub', 'display', ...REPLY_LANGUAGE_CODES, 'unspecified']);
+  assert.equal(bot[0]!.label, 'Follow Cats Bot Settings (Japanese)');
+  assert.equal(botReplyLanguageOptions('en', { reply: null, display: 'en' })[0]!.label, 'Follow Cats Bot Settings (Unspecified)');
+  assert.equal(botReplyLanguageOptions('en', null)[0]!.label, 'Follow Cats Bot Settings');
+
+  acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
+  try {
+    const zh = hubReplyLanguageOptions('zh-TW');
+    assert.equal(zh[0]!.label, '與顯示語言相同（繁體中文）');
+    assert.equal(zh.at(-1)!.label, '不指定');
+    assert.equal(botReplyLanguageOptions('zh-TW', { reply: 'zh-TW', display: 'zh-TW' })[0]!.label, '跟隨 Cats Bot 設定（繁體中文）');
+  } finally {
+    acceptLanguage({ preference: 'en', locale: 'en' });
+  }
+});
+
+test('the Bot tab sends a reply language only when it changed (SPEC-008 FR-28)', () => {
+  assert.equal(botForm(PROFILE).replyLanguage, 'hub');
+  assert.equal(botPatch(PROFILE, botForm(PROFILE)), null);
+  assert.deepEqual(botPatch(PROFILE, { ...botForm(PROFILE), replyLanguage: 'ko' }), { replyLanguage: 'ko' });
 });
