@@ -80,6 +80,15 @@ last step, not the first.
 
 ### Shell tests
 
+`tests/shell/setup.test.ts` drives the real first-run setup against a controllable
+Electron double: closing during a pending check cancels immediately, a late final
+recheck cannot create a bot, a delayed page load cannot show a closed window, and
+installation and bot creation finish safely. `providerSetup.test.ts` covers probe
+cancellation, idle waiters and preservation of an explicitly requested install.
+`tests/integration/providerSetupProcess.test.ts` runs a disposable packaged-helper
+fixture with a hung CLI and grandchild, and checks that all three processes have
+stopped before the provider setup becomes idle.
+
 `tests/shell/noteWindows.test.ts` runs the real note window manager against a
 controllable Electron double. It covers a close after startup selected its restore
 list, overlapping opens during page load, explicit reopening, shutdown/deletion

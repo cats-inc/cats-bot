@@ -26,8 +26,10 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     const window = createPageWindow(options, { width: 560, height: 800, title: 'Set up Cats Bot' });
     let finished = false;
     let submitting = false;
+    let creating = false;
+    const checks = new AbortController();
     window.on('close', (event) => {
-      if (options.providers.busy || submitting) event.preventDefault();
+      if (options.providers.installing || creating) event.preventDefault();
     });
     const fromSetup = (event: Electron.IpcMainInvokeEvent) =>
       event.sender.id === window.webContents.id && event.senderFrame === event.sender.mainFrame;
@@ -49,7 +51,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     });
     ipcMain.handle('setup:check', (event, provider: unknown) => {
       if (!fromSetup(event)) throw new Error('Unknown setup window');
-      return options.providers.check(provider);
+      return options.providers.check(provider, checks.signal);
     });
     ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
       if (!fromSetup(event)) throw new Error('Unknown setup window');
@@ -72,12 +74,16 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       const input = validateSetupInput(raw);
       submitting = true;
       try {
-        const checked = await options.providers.check(input.provider);
+        const checked = await options.providers.check(input.provider, checks.signal);
+        checks.signal.throwIfAborted();
         if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
+        creating = true;
         await options.create(input);
       } catch (error) {
         submitting = false;
         throw error;
+      } finally {
+        creating = false;
       }
       finished = true;
       cleanup();
@@ -86,10 +92,15 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       return null;
     });
     window.on('closed', () => {
+      checks.abort();
       if (finished) return;
       cleanup();
       resolve(false);
     });
-    void window.loadURL(pageUrl(options.rendererDir, 'settings.html', { mode: 'setup' })).then(() => window.show());
+    void window.loadURL(pageUrl(options.rendererDir, 'settings.html', { mode: 'setup' })).then(() => {
+      if (!window.isDestroyed()) window.show();
+    }).catch(() => {
+      if (!window.isDestroyed()) window.close();
+    });
   });
 }

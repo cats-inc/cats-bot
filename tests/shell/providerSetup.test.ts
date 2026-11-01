@@ -199,6 +199,8 @@ test('concurrent provider changes cannot replace an active install and shutdown 
   );
   await setup.check('claude');
   const install = setup.install('claude', 'provider');
+  assert.equal(setup.installing, true);
+  setup.cancelCheck();
   await assert.rejects(setup.check('codex'), /Wait/u);
   let idle = false;
   const drain = setup.whenIdle().then(() => {
@@ -210,8 +212,45 @@ test('concurrent provider changes cannot replace an active install and shutdown 
   await drain;
   assert.equal(idle, true);
   assert.equal(setup.busy, false);
+  assert.equal(setup.installing, false);
   await setup.check('muse');
   assert.throws(() => setup.install('claude', 'provider'), /Check this provider/u);
+});
+
+test('shutdown cancels read-only checks, releases idle waiters and skips remaining prerequisites', async () => {
+  const calls: string[] = [];
+  let aborted = false;
+  const setup = new ProviderSetup(async (helper, _apply, signal) => {
+    calls.push(helper);
+    return new Promise((_resolve, reject) => {
+      signal!.addEventListener('abort', () => {
+        aborted = true;
+        reject(signal!.reason);
+      }, { once: true });
+    });
+  });
+  const checking = assert.rejects(setup.check('codex'), { name: 'AbortError' });
+  const idle = setup.whenIdle();
+  assert.equal(setup.installing, false);
+  setup.cancelCheck();
+  await Promise.all([checking, idle]);
+  assert.equal(aborted, true);
+  assert.equal(setup.busy, false);
+  assert.deepEqual(calls, ['node']);
+});
+
+test('closing one page cannot cancel a check owned by another page', async () => {
+  const owner = new AbortController();
+  const unrelated = new AbortController();
+  let complete!: (value: HelperResult) => void;
+  const setup = new ProviderSetup(async () => new Promise(resolve => { complete = resolve; }));
+  const checking = setup.check('claude', owner.signal);
+  unrelated.abort();
+  complete(ready());
+  assert.equal((await checking).canFinish, true);
+  owner.abort();
+  await assert.rejects(setup.check('muse', owner.signal), { name: 'AbortError' });
+  assert.equal(setup.busy, false);
 });
 
 test('packaged helper invocations accept no renderer-supplied command, path or extra flags', () => {

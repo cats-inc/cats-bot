@@ -1,10 +1,59 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { join, posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
 import type { ProviderSetupState, SetupStep, SetupStepId } from '../../shared/providerSetup.ts';
 
 const execute = promisify(execFile);
+
+/** A check owns its whole process tree, including a CLI that stops answering. */
+function executeCheck(command: string, args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<{ stdout: string }> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env, windowsHide: true, detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    const output: Buffer[] = [];
+    let size = 0;
+    let failure: Error | undefined;
+    let stopping: Promise<void> | undefined;
+    const stop = () => {
+      if (stopping || !child.pid) return;
+      const pid = child.pid;
+      stopping = (async () => {
+        if (process.platform === 'win32') {
+          const taskkill = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'taskkill.exe');
+          await execute(taskkill, ['/pid', String(pid), '/t', '/f'], { windowsHide: true, timeout: 10_000 });
+        } else {
+          process.kill(-pid, 'SIGKILL');
+        }
+      })().catch(() => { child.kill('SIGKILL'); });
+    };
+    const timeout = setTimeout(() => {
+      failure = new Error('The provider check timed out.');
+      stop();
+    }, 60_000);
+    signal?.addEventListener('abort', stop, { once: true });
+    child.stdout.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > 1024 * 1024) {
+        failure = new Error('The provider check returned too much output.');
+        stop();
+      } else output.push(chunk);
+    });
+    child.on('error', error => { failure = error; });
+    child.on('close', () => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', stop);
+      void (async () => {
+        await stopping;
+        signal?.throwIfAborted();
+        if (failure) throw failure;
+        resolve({ stdout: Buffer.concat(output).toString('utf8') });
+      })().catch(reject);
+    });
+  });
+}
 const FILES: Record<string, [string, string]> = {
   node: ['Install-Node.ps1', 'install-node.sh'],
   npm: ['Setup-NodeGlobalPrefix.ps1', 'setup-node-global-prefix.sh'],
@@ -26,7 +75,7 @@ export interface HelperResult {
   restartRequired?: boolean;
   interruptions?: Array<{ kind?: string }>;
 }
-export type SetupHelperRunner = (helper: string, apply: boolean) => Promise<HelperResult>;
+export type SetupHelperRunner = (helper: string, apply: boolean, signal?: AbortSignal) => Promise<HelperResult>;
 
 export function installedCommandPath(
   result: HelperResult,
@@ -85,21 +134,23 @@ export function helperInvocation(
  * the shell can hand it to its core, which runs in another process.
  */
 export function createHelperRunner(assets: string, onCommandDirectory?: (directory: string) => void): SetupHelperRunner {
-  return async (helper, apply) => {
+  return async (helper, apply, signal) => {
+    signal?.throwIfAborted();
     const invocation = helperInvocation(assets, process.platform, helper, apply);
     // Electron's bundled Node must never pretend to be the user's Node/npm.
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
     let stdout: string;
     try {
-      ({ stdout } = await execute(invocation.command, invocation.args, {
+      ({ stdout } = await (apply ? execute(invocation.command, invocation.args, {
         windowsHide: true,
         env,
-        timeout: apply ? 15 * 60_000 : 60_000,
+        timeout: 15 * 60_000,
         maxBuffer: 1024 * 1024,
         encoding: 'utf8',
-      }));
+      }) : executeCheck(invocation.command, invocation.args, env, signal)));
     } catch (error) {
+      signal?.throwIfAborted();
       const output = (error as { stdout?: string }).stdout;
       if (!output)
         throw new Error(
@@ -107,6 +158,7 @@ export function createHelperRunner(assets: string, onCommandDirectory?: (directo
         );
       stdout = output;
     }
+    signal?.throwIfAborted();
     let result: HelperResult;
     try {
       result = JSON.parse(stdout.replace(/^\uFEFF/u, '').trim()) as HelperResult;
@@ -130,7 +182,7 @@ export function createHelperRunner(assets: string, onCommandDirectory?: (directo
 export class ProviderSetup {
   private readonly runHelper: SetupHelperRunner;
   private selected: string | null = null;
-  private active = false;
+  private active: { controller: AbortController; installing: boolean } | null = null;
   private waiters: Array<() => void> = [];
   private readonly windows: boolean;
   constructor(runHelper: SetupHelperRunner, options: { windows?: boolean } = {}) {
@@ -138,7 +190,14 @@ export class ProviderSetup {
     this.windows = options.windows ?? process.platform === 'win32';
   }
   get busy(): boolean {
-    return this.active;
+    return this.active !== null;
+  }
+  get installing(): boolean {
+    return this.active?.installing === true;
+  }
+  /** Read-only probes must never keep a closing app alive. Installs drain normally. */
+  cancelCheck(): void {
+    if (this.active && !this.active.installing) this.active.controller.abort();
   }
   whenIdle(): Promise<void> {
     return this.active
@@ -151,9 +210,9 @@ export class ProviderSetup {
   /** A GUI launch has no login-shell PATH. Re-resolve only the saved provider, without installing. */
   async prepareEnvironment(provider: string): Promise<void> {
     if (!CLI_PROVIDERS.some((item) => item.id === provider)) return;
-    await this.exclusive(async () => {
-      if (provider === 'codex') await this.runHelper('node', false);
-      await this.runHelper(provider, false);
+    await this.exclusive(async (signal) => {
+      if (provider === 'codex') await this.run('node', false, signal);
+      await this.run(provider, false, signal);
     });
   }
 
@@ -161,22 +220,31 @@ export class ProviderSetup {
     if (!CLI_PROVIDERS.some((item) => item.id === provider))
       throw new Error('Choose a supported provider');
   }
-  private async exclusive<T>(work: () => Promise<T>): Promise<T> {
+  private async run(helper: string, apply: boolean, signal: AbortSignal): Promise<HelperResult> {
+    signal.throwIfAborted();
+    const result = await this.runHelper(helper, apply, signal);
+    signal.throwIfAborted();
+    return result;
+  }
+  private async exclusive<T>(work: (signal: AbortSignal) => Promise<T>, installing = false, owner?: AbortSignal): Promise<T> {
     if (this.active) throw new Error('Wait for the current setup operation to finish');
-    this.active = true;
+    const controller = new AbortController();
+    const signal = owner ? AbortSignal.any([controller.signal, owner]) : controller.signal;
+    signal.throwIfAborted();
+    this.active = { controller, installing };
     try {
-      return await work();
+      return await work(signal);
     } finally {
-      this.active = false;
+      this.active = null;
       for (const resolve of this.waiters.splice(0)) resolve();
     }
   }
-  check(provider: unknown): Promise<ProviderSetupState> {
+  check(provider: unknown, signal?: AbortSignal): Promise<ProviderSetupState> {
     this.assertProvider(provider);
-    return this.exclusive(async () => {
+    return this.exclusive(async (signal) => {
       this.selected = provider;
-      return this.inspect(provider);
-    });
+      return this.inspect(provider, signal);
+    }, false, signal);
   }
   install(provider: unknown, step: unknown): Promise<ProviderSetupState> {
     this.assertProvider(provider);
@@ -187,9 +255,9 @@ export class ProviderSetup {
       (step === 'shell' && !this.windows)
     )
       throw new Error('This prerequisite is outside the selected provider');
-    return this.exclusive(async () => {
+    return this.exclusive(async (signal) => {
       if (provider === 'codex' && step !== 'node') {
-        const before = await this.inspect(provider);
+        const before = await this.inspect(provider, signal);
         // Each step needs the ones above it, as the page shows them.
         const order = before.steps.map((item) => item.id);
         const needed = order.slice(0, order.indexOf(step as SetupStepId));
@@ -198,8 +266,8 @@ export class ProviderSetup {
             ? 'Complete Node.js and npm setup first'
             : 'Complete the steps above first');
       }
-      const applied = await this.runHelper(step === 'provider' ? provider : (step as string), true);
-      const checked = await this.inspect(provider);
+      const applied = await this.run(step === 'provider' ? provider : (step as string), true, signal);
+      const checked = await this.inspect(provider, signal);
       const target = checked.steps.find((item) => item.id === step)!;
       // A failure or a refused elevation always stands. A restart or relaunch the helper
       // asks for stands only while the fresh probe cannot confirm the step: the runner
@@ -226,9 +294,9 @@ export class ProviderSetup {
         checked.canFinish = false;
       }
       return checked;
-    });
+    }, true);
   }
-  private async inspect(provider: string): Promise<ProviderSetupState> {
+  private async inspect(provider: string, signal: AbortSignal): Promise<ProviderSetupState> {
     const steps: SetupStep[] = [];
     const helpers: Array<[SetupStepId, string, string]> =
       provider === 'codex'
@@ -253,7 +321,7 @@ export class ProviderSetup {
         });
         continue;
       }
-      const result = await this.runHelper(helper, false);
+      const result = await this.run(helper, false, signal);
       steps.push({
         id,
         label,

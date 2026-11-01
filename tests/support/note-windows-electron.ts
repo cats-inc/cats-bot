@@ -5,6 +5,7 @@ export class BrowserWindow extends EventEmitter {
   static instances: BrowserWindow[] = [];
   readonly webContents = Object.assign(new EventEmitter(), {
     id: BrowserWindow.instances.length + 1,
+    mainFrame: {},
     setWindowOpenHandler() {},
     send() {},
     focus() {},
@@ -37,6 +38,7 @@ export class BrowserWindow extends EventEmitter {
     return handle;
   }
   setAlwaysOnTop(): void {}
+  removeMenu(): void {}
   focus(): void {}
   show(): void { this.visible = true; this.emit('show'); }
   showInactive(): void { this.show(); }
