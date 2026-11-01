@@ -253,6 +253,18 @@ async function main(): Promise<void> {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
     }
   }));
+  // First-run setup precedes the hub's normal quit handler. Drain cancelled
+  // probes here too, so their child processes are gone before Electron exits.
+  let setupQuitPending = false;
+  const quitDuringSetup = (event: Electron.Event) => {
+    if (!providerSetup.busy) return;
+    event.preventDefault();
+    if (setupQuitPending) return;
+    setupQuitPending = true;
+    providerSetup.cancelCheck();
+    void providerSetup.whenIdle().then(() => app.quit());
+  };
+  app.on('before-quit', quitDuringSetup);
 
   // SPEC-001 NFR security and SPEC-008 FR-20: the cores keep secrets encrypted with the
   // OS facility, which the hub serves them over the channel when it has one.
@@ -328,6 +340,8 @@ async function main(): Promise<void> {
     if (read.state === 'missing') {
       const created = await createRegistry();
       if (!created) {
+        providerSetup.cancelCheck();
+        await providerSetup.whenIdle();
         app.quit();
         return;
       }
@@ -575,6 +589,7 @@ async function main(): Promise<void> {
     if (quitting) return;
     quitting = true;
     for (const presenter of presented()) presenter.remember();
+    providerSetup.cancelCheck();
     void providerSetup
       .whenIdle()
       .then(stopAll)
@@ -814,6 +829,7 @@ async function main(): Promise<void> {
         for (const presenter of presented()) presenter.remember();
         // FR-22: the bots that ran start again after the update.
         saveHubState({ ...hubState, resume: presented().map((presenter) => presenter.botId) });
+        providerSetup.cancelCheck();
         await providerSetup.whenIdle();
         const processes = await Promise.all(presented().map(async (presenter) =>
           [presenter.hosted.pid, (await presenter.core.status().catch(() => null))?.runtime.pid ?? null] as const));
@@ -942,7 +958,7 @@ async function main(): Promise<void> {
     if (quitting) throw new Error('Cats Bot is stopping');
     if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
-    return providerSetup.check(provider);
+    return providerSetup.check(provider, fromCreate(event) ? createChecks?.signal : undefined);
   });
   ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
@@ -956,14 +972,20 @@ async function main(): Promise<void> {
     return readPackagedModelCatalog(provider);
   });
   let finishing = false;
+  let creating = false;
+  let createChecks: AbortController | null = null;
   ipcMain.handle('setup:finish', async (event, raw: unknown) => {
     const window = createWindow;
-    if (!ownedMainFrame(event) || !fromCreate(event) || !window || finishing) throw new Error('Setup is already finishing');
+    const checks = createChecks;
+    if (quitting || !ownedMainFrame(event) || !fromCreate(event) || !window || !checks || finishing) throw new Error('Setup is already finishing');
     const input = validateSetupInput(raw);
     finishing = true;
     try {
-      const checked = await providerSetup.check(input.provider);
+      const checked = await providerSetup.check(input.provider, checks.signal);
+      checks.signal.throwIfAborted();
+      if (quitting) throw new Error('Cats Bot is stopping');
       if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
+      creating = true;
       const id = await manager.create({
         name: input.name,
         provider: input.provider,
@@ -978,6 +1000,7 @@ async function main(): Promise<void> {
       throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
     } finally {
       finishing = false;
+      creating = false;
     }
     return null;
   });
@@ -997,16 +1020,27 @@ async function main(): Promise<void> {
     }
     const window = createPageWindow(pages, { width: 560, height: 800, title: 'New bot' });
     createWindow = window;
+    const checks = new AbortController();
+    createChecks = checks;
     window.on('close', (event) => {
-      if (providerSetup.busy || finishing) event.preventDefault();
+      if (providerSetup.installing || creating) event.preventDefault();
     });
     window.on('closed', () => {
+      checks.abort();
       if (createWindow === window) {
         createWindow = null;
+        createChecks = null;
         createPrefill = null;
       }
     });
-    void window.loadURL(pageUrl(rendererDir, 'settings.html', { mode: 'setup', purpose: 'create' })).then(() => window.show());
+    void window.loadURL(pageUrl(rendererDir, 'settings.html', { mode: 'setup', purpose: 'create' })).then(() => {
+      if (!window.isDestroyed()) window.show();
+    }).catch((error: unknown) => {
+      if (!window.isDestroyed()) {
+        log(`New bot page failed: ${errorMessage(error)}`);
+        window.close();
+      }
+    });
   };
   askOwnerToSetUp = (request) => {
     // An open New bot window holds the owner's own work; it is not replaced.
@@ -1341,6 +1375,7 @@ async function main(): Promise<void> {
     event.preventDefault();
     quit();
   });
+  app.removeListener('before-quit', quitDuringSetup);
 
   tray = new BotTray({
     assetsDir,
@@ -1369,17 +1404,21 @@ async function main(): Promise<void> {
       }
     }).filter((provider): provider is string => typeof provider === 'string'));
     for (const provider of providers) {
+      if (quitting) break;
       await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
     }
   }
+  if (quitting) return;
   for (const bot of starting) {
     if (quitting) break;
     await runnerFor(bot.id).start();
   }
   // Bots another program runs are listed, and attached to only for the hub's identity.
   for (const bot of manager.registry.bots) {
+    if (quitting) return;
     if (externalPid(bot.id) !== null) await attachExternal(bot.id).catch(() => undefined);
   }
+  if (quitting) return;
   await refreshTray();
   if (presented().length === 0) openHubSettings('bots');
 }

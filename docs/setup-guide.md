@@ -70,6 +70,10 @@ Codex, Claude, Antigravity, Grok or Muse first. The selected provider's packaged
 helper checks installation and provides an install button. Codex first requires
 Node/npm and a usable npm installation folder; native providers skip those steps.
 Installation and sign-in are reported separately. No other provider is installed.
+Closing onboarding during a provider check cancels the check and exits without
+creating a bot. The New bot window can also close during a check; the hub stays
+running. Quit cancels read-only provider checks. An explicitly requested install
+and the brief bot-creation step finish before setup closes.
 
 The model and effort lists use Runtime's catalog, matching Desktop. Model controls
 are saved for new sessions. The five supported provider names follow Desktop;
