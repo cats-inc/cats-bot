@@ -40,7 +40,7 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    the main process. Under the hub (SPEC-008 FR-4) this is the hub's first run, which also writes the
    registry; Settings → Bots opens the same page for each further bot.
 2. FR-2: Every change on the settings page goes through `updateProfile`; changes to the provider,
-   model, personality and permissions make existing conversations switch to a new session on the next
+   model, personality, reply language and permissions make existing conversations switch to a new session on the next
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
    provider changes, the runtime restarts only after the turn in progress ends.
 3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
@@ -52,8 +52,8 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
 4. FR-4: There is one settings window per bot, opened from the tray ("Bot settings…", "Manage
    notes…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
    (the floating Cat, the bot's facts and folder), and it reaches only its own bot. Cats Bot Settings,
-   the hub's own window (tray "Settings…"), has General (display language, start at login, version and
-   updates, the data folder) and Bots (SPEC-008 FR-5, FR-18; PLAN-010).
+   the hub's own window (tray "Settings…"), has General (display language, reply language, start at
+   login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).

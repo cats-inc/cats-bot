@@ -8,6 +8,7 @@ import { appFacts, lifeForm, lifePatch, nextHeartbeatText, telegramFacts, type F
 import { useToast } from './toast.ts';
 import { Updates } from './Updates.tsx';
 import { LanguageField } from '../LanguageField.tsx';
+import { ReplyLanguageField } from './ReplyLanguageField.tsx';
 
 /** SPEC-002 FR-4, FR-6: a bot's Life, Telegram and Details tabs, and Cats Bot Settings' General tab (PLAN-010). */
 
@@ -217,6 +218,7 @@ export function GeneralTab() {
       <h2>{t('General')}</h2>
       <div className="form">
         <LanguageField />
+        <ReplyLanguageField />
         <label className="check" id="app-login-row" hidden={!shell?.openAtLoginAvailable}>
           <input
             type="checkbox"

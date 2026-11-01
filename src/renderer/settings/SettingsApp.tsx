@@ -73,9 +73,14 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
     const offNavigate = api.onNavigate((next) => {
       if (isTabOf(BOT_TABS, next)) setTab(next);
     });
+    // SPEC-008 FR-28: Cats Bot Settings can change what this bot follows while
+    // the window is open; coming back to it reads the profile again.
+    const onFocus = () => void api.invoke('getProfile').then(setProfile);
+    window.addEventListener('focus', onFocus);
     return () => {
       offEvent();
       offNavigate();
+      window.removeEventListener('focus', onFocus);
     };
   }, [refreshStatus, scope, locale]);
 

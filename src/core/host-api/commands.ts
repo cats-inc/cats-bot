@@ -1,5 +1,6 @@
 import { delimiter, isAbsolute } from 'node:path';
 
+import { isHubLanguageReport, type HubLanguageReport } from '../../shared/language.ts';
 import { isTerminalWorkState } from '../queue/workItems.ts';
 import { isValidBotId } from '../store/paths.ts';
 import { isHubRecordId, MAX_CHAIN_HOPS } from '../tools/hubTools.ts';
@@ -30,7 +31,7 @@ export const CORE_COMMANDS = [
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
 export const HOST_ONLY_COMMANDS = [
   'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory',
-  'admitBotMessage', 'botDeliveries', 'setBossCat', 'quit',
+  'admitBotMessage', 'botDeliveries', 'setBossCat', 'setHubLanguage', 'quit',
 ] as const;
 
 export type CoreCommand = (typeof CORE_COMMANDS)[number] | (typeof HOST_ONLY_COMMANDS)[number];
@@ -59,6 +60,8 @@ export interface CoreCommandTarget extends BotHostApi {
   botDeliveries(deliveryIds: string[]): MaybePromise<BotDeliveryState[]>;
   /** SPEC-009 FR-3: whether the hub reports this bot as the Boss Cat. */
   setBossCat(holder: boolean): MaybePromise<void>;
+  /** SPEC-008 FR-28: the hub's resolved reply language and the display language in use. */
+  setHubLanguage(report: HubLanguageReport): MaybePromise<void>;
 }
 
 const MAX_DELIVERY_TEXT = 64 * 1024;
@@ -217,6 +220,10 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'setBossCat':
       if (typeof args[0] !== 'boolean') throw new Error('holder must be true or false');
       await target.setBossCat(args[0]);
+      return null;
+    case 'setHubLanguage':
+      if (!isHubLanguageReport(args[0])) throw new Error('report must be { reply, display } with supported languages');
+      await target.setHubLanguage(args[0]);
       return null;
     case 'useCommandDirectory': {
       const directory = asString(args[0], 'directory', 4096);

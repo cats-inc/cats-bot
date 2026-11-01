@@ -28,10 +28,13 @@ import {
   type ProviderInfo,
 } from './providers/catalog.ts';
 import {
+  applyHubLanguage,
   applyProfilePatch,
   loadProfile,
   saveProfile,
+  type ProfileChange,
 } from './profile/profile.ts';
+import type { HubLanguageReport } from '../shared/language.ts';
 import { WorkQueue } from './queue/queue.ts';
 import { TurnRunner, type TurnOutcome, type TurnRetryDelays } from './queue/turnRunner.ts';
 import { createWorkItem, isTerminalWorkState, transitionWorkItem } from './queue/workItems.ts';
@@ -216,6 +219,8 @@ export class BotCore implements BotHostApi {
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
+  /** The tail of the profile changes in progress (`changeProfile`). */
+  private profileChanges: Promise<unknown> = Promise.resolve();
   private handoffTimer: NodeJS.Timeout | null = null;
   private runtimeAttempt = 0;
   private runtimeRestartTimer: NodeJS.Timeout | null = null;
@@ -1347,6 +1352,29 @@ export class BotCore implements BotHostApi {
    * the revision and makes attachments of older revisions stale.
    */
   async updateProfile(patch: BotProfilePatch): Promise<BotProfile> {
+    return this.changeProfile(() => applyProfilePatch(this.profile, patch, this.now()), patch);
+  }
+
+  /**
+   * SPEC-008 FR-28: the hub's reply language and display language. A report
+   * that changes the language this bot replies in moves its conversations to
+   * new sessions with a handoff, like any other session setting.
+   */
+  async setHubLanguage(report: HubLanguageReport): Promise<void> {
+    await this.changeProfile(() => applyHubLanguage(this.profile, report, this.now()), {});
+  }
+
+  /**
+   * One profile change at a time. A change can wait on the runtime's session
+   * controls, and a hub report arriving meanwhile must not be saved over.
+   */
+  private changeProfile(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
+    const next = this.profileChanges.then(() => this.runProfileChange(change, patch));
+    this.profileChanges = next.catch(() => undefined);
+    return next;
+  }
+
+  private async runProfileChange(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
     if (!this.releaseLock) {
       const lock = acquireInstanceLock(this.paths);
       if (!lock.held) throw new BotInstanceRunningError(lock.owner);
@@ -1355,10 +1383,11 @@ export class BotCore implements BotHostApi {
         const loaded = loadProfile(this.paths, this.profile, true);
         if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
         this.profile = loaded.profile;
-        return await this.updateProfile(patch);
+        return await this.runProfileChange(change, patch);
       } finally { this.releaseLock(); this.releaseLock = null; }
     }
-    const result = applyProfilePatch(this.profile, patch, this.now());
+    const result = change();
+    if (!result) return structuredClone(this.profile);
     const policy = result.profile.providerPolicy;
     const client = this.client();
     // Refuse a ceiling the running provider cannot enforce now, not at the next session.
@@ -1380,7 +1409,9 @@ export class BotCore implements BotHostApi {
         configRevision: this.profile.configRevision,
         executionTarget: this.profile.executionTarget,
       });
-      this.log(`config revision ${this.profile.configRevision}: ${result.targetChanged ? 'target' : 'session settings'} changed`);
+      const languageOnly = result.replyLanguageOnly;
+      this.log(`config revision ${this.profile.configRevision}: ${
+        result.targetChanged ? 'target' : languageOnly ? 'reply language' : 'session settings'} changed`);
       for (const conversation of this.conversations.list()) {
         const { attachment } = conversation;
         if (attachment.sessionId && !attachmentIsCurrent(conversation, this.profile) && attachment.state !== 'stale') {
@@ -1388,7 +1419,7 @@ export class BotCore implements BotHostApi {
           this.conversations.append(conversation.id, {
             kind: 'system',
             origin: 'system',
-            text: staleNotice(attachment, this.profile),
+            text: staleNotice(attachment, this.profile, languageOnly),
           });
           this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversation.id) });
         }

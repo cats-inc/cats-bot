@@ -3,8 +3,10 @@ import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
 import {
+  applyHubLanguage,
   applyProfilePatch,
   createProfile,
+  effectiveReplyLanguage,
   HEARTBEAT_DEFAULTS,
   loadProfile,
   normalizeProfile,
@@ -284,4 +286,55 @@ test('desktop control is off by default, off when absent or invalid, and its pat
   const saved = loadProfile(paths, profile);
   assert.ok(saved.ok && saved.profile.desktopControl.enabled === true);
   assert.equal(saved.ok && saved.profile.schemaVersion, 2);
+});
+
+test('a bot follows the hub reply language by default, and an older writer reads as following it (SPEC-008 FR-28)', () => {
+  const profile = createProfile({ name: 'Mochi', provider: 'claude', cwd: 'C:/work' });
+  assert.equal(profile.replyLanguage, 'hub');
+  assert.equal(profile.hubLanguage, null);
+  assert.equal(effectiveReplyLanguage(profile), null);
+  const { replyLanguage: _r, hubLanguage: _h, ...older } = profile;
+  const read = normalizeProfile(older, profile);
+  assert.equal(read.replyLanguage, 'hub');
+  assert.equal(read.hubLanguage, null);
+  const odd = normalizeProfile({ ...profile, replyLanguage: 'klingon', hubLanguage: { reply: 'xx', display: 'en' } }, profile);
+  assert.equal(odd.replyLanguage, 'hub');
+  assert.equal(odd.hubLanguage, null);
+  const kept = normalizeProfile({ ...profile, replyLanguage: 'ko', hubLanguage: { reply: null, display: 'zh-TW' } }, profile);
+  assert.equal(kept.replyLanguage, 'ko');
+  assert.deepEqual(kept.hubLanguage, { reply: null, display: 'zh-TW' });
+});
+
+test('only a change in the language sessions are told bumps the revision (SPEC-008 FR-28)', () => {
+  const now = new Date('2026-11-01T00:00:00Z');
+  const base = createProfile({ name: 'Mochi', provider: 'claude', cwd: 'C:/work' });
+
+  const reported = applyHubLanguage(base, { reply: 'ja', display: 'en' }, now)!;
+  assert.equal(reported.sessionChanged, true);
+  assert.equal(reported.replyLanguageOnly, true);
+  assert.equal(reported.profile.configRevision, base.configRevision + 1);
+  assert.equal(effectiveReplyLanguage(reported.profile), 'ja');
+  assert.equal(applyHubLanguage(reported.profile, { reply: 'ja', display: 'en' }, now), null, 'the same report');
+
+  // The display language matters only to a bot that follows it.
+  const display = applyHubLanguage(reported.profile, { reply: 'ja', display: 'zh-TW' }, now)!;
+  assert.equal(display.sessionChanged, false);
+  assert.equal(display.profile.configRevision, reported.profile.configRevision);
+  const follows = applyProfilePatch(display.profile, { replyLanguage: 'display' }, now);
+  assert.equal(follows.sessionChanged, true);
+  assert.equal(follows.replyLanguageOnly, true);
+  assert.equal(effectiveReplyLanguage(follows.profile), 'zh-TW');
+
+  // Choosing what the bot already gets is not a session change.
+  const same = applyProfilePatch(reported.profile, { replyLanguage: 'ja' }, now);
+  assert.equal(same.sessionChanged, false);
+  assert.equal(same.profile.replyLanguage, 'ja');
+
+  // With other session settings in the same save, the notice is the general one.
+  const mixed = applyProfilePatch(reported.profile, { replyLanguage: 'unspecified', instructions: 'Be brief.' }, now);
+  assert.equal(mixed.sessionChanged, true);
+  assert.equal(mixed.replyLanguageOnly, false);
+  assert.equal(effectiveReplyLanguage(mixed.profile), null);
+
+  assert.throws(() => applyProfilePatch(base, { replyLanguage: 'klingon' as never }, now), /replyLanguage/u);
 });

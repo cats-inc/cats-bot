@@ -111,3 +111,20 @@ test('a host hands the core the directory of a provider CLI its setup found (ADR
     await core.stop();
   }
 });
+
+test('a host reports the hub language over the channel, checked like any command (SPEC-008 FR-28)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'hublang' });
+  await core.start();
+  const client = await HostChannelClient.connect(core.paths.root, { host });
+  try {
+    assert.equal(await client.call('setHubLanguage', { reply: 'ko', display: 'en' }), null);
+    assert.deepEqual((await core.getProfile()).hubLanguage, { reply: 'ko', display: 'en' });
+    await assert.rejects(client.call('setHubLanguage', { reply: 'klingon', display: 'en' }), /supported languages/u);
+    await assert.rejects(client.call('setHubLanguage', { reply: null, display: 'ja' }), /supported languages/u);
+    assert.equal(await client.call('setHubLanguage', { reply: null, display: 'en', extra: 1 }), null);
+    assert.deepEqual((await core.getProfile()).hubLanguage, { reply: null, display: 'en' }, 'other keys are not kept');
+  } finally {
+    client.close();
+    await core.stop();
+  }
+});

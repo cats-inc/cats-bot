@@ -4,7 +4,15 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import ts from 'typescript';
-import { LANGUAGE_OPTIONS, resolveLocale, translate, zhTW } from '../../src/shared/language.ts';
+import {
+  LANGUAGE_OPTIONS,
+  replyLanguageInstruction,
+  resolveBotReplyLanguage,
+  resolveHubReplyLanguage,
+  resolveLocale,
+  translate,
+  zhTW,
+} from '../../src/shared/language.ts';
 import { acceptLanguage, conversationTitle, t } from '../../src/renderer/localeStore.ts';
 
 test('language choices and system locale resolution match Desktop, including Traditional and Simplified Chinese', () => {
@@ -66,4 +74,22 @@ test('all literal UI translation keys have a Traditional Chinese entry', () => {
   }
   walk(root);
   assert.deepEqual([...missing], []);
+});
+
+test('reply languages resolve like Desktop, and the instruction keeps Desktop wording (SPEC-008 FR-28)', () => {
+  assert.equal(resolveHubReplyLanguage('display', 'zh-TW'), 'zh-TW');
+  assert.equal(resolveHubReplyLanguage('ja', 'zh-TW'), 'ja');
+  assert.equal(resolveHubReplyLanguage('unspecified', 'zh-TW'), null);
+  assert.equal(resolveBotReplyLanguage('hub', { reply: 'ko', display: 'en' }), 'ko');
+  assert.equal(resolveBotReplyLanguage('display', { reply: 'ko', display: 'zh-TW' }), 'zh-TW');
+  assert.equal(resolveBotReplyLanguage('hub', null), null);
+  assert.equal(resolveBotReplyLanguage('display', null), null);
+  assert.equal(resolveBotReplyLanguage('fr', null), 'fr');
+  assert.equal(resolveBotReplyLanguage('unspecified', { reply: 'ko', display: 'en' }), null);
+  assert.equal(replyLanguageInstruction(null), null);
+  assert.equal(
+    replyLanguageInstruction('zh-TW'),
+    'Reply to the user in Traditional Chinese unless the user explicitly asks for another language. '
+      + 'Keep code, paths, commands, identifiers, logs, and quoted source text unchanged unless translation is explicitly requested.',
+  );
 });

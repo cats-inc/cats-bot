@@ -168,6 +168,13 @@ export interface CatsBotBridge {
     ): Promise<import('../shared/language.ts').LanguageState>;
     onChange(listener: (state: import('../shared/language.ts').LanguageState) => void): Unsubscribe;
   };
+  /** SPEC-008 FR-28: Cats Bot Settings' reply language, shared by every bot. */
+  replyLanguage: {
+    get(): Promise<import('../shared/language.ts').HubReplyLanguage>;
+    set(
+      value: import('../shared/language.ts').HubReplyLanguage,
+    ): Promise<import('../shared/language.ts').HubReplyLanguage>;
+  };
   /** The note's conversation from `?conversation=`, `home` elsewhere. */
   conversationId: string;
   invoke<C extends HostCommandName>(command: C, ...args: HostCommands[C]['args']): Promise<HostCommands[C]['result']>;
