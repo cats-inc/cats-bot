@@ -1,7 +1,7 @@
 import { BrowserWindow, screen } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
-import { bubbleText, FLOATING_SIZE, placeFloating } from './floatingPlacement.ts';
+import { bubbleText, FLOATING_CAT, FLOATING_SIZE, floatingInputRegions, placeFloating } from './floatingPlacement.ts';
 import { guardNavigation } from './navigation.ts';
 import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { applyWindowIdentity } from './windowIdentity.ts';
@@ -113,9 +113,17 @@ export class FloatingBot {
     guardNavigation(window.webContents);
     // Above ordinary topmost windows, like a desktop pet.
     window.setAlwaysOnTop(true, 'screen-saver');
-    window.setIgnoreMouseEvents(true, { forward: true });
+    const resetInput = () => {
+      if (process.platform === 'linux') {
+        // Linux cannot forward mouse moves through an ignored window. Keep
+        // the visible regions interactive and let X11 pass the rest through.
+        window.setIgnoreMouseEvents(false);
+        window.setShape([FLOATING_CAT]);
+      } else window.setIgnoreMouseEvents(true, { forward: true });
+    };
+    resetInput();
     // Forwarded moves go to the page's own child window, which a load replaces.
-    window.webContents.on('did-finish-load', () => window.setIgnoreMouseEvents(true, { forward: true }));
+    window.webContents.on('did-finish-load', resetInput);
     window.on('move', () => this.remember());
     window.on('closed', () => {
       if (this.window === window) this.window = null;
@@ -136,10 +144,17 @@ export class FloatingBot {
   }
 
   setInteractive(interactive: boolean): void {
+    if (process.platform === 'linux') return;
     const window = this.browserWindow;
     if (!window) return;
     if (interactive) window.setIgnoreMouseEvents(false);
     else window.setIgnoreMouseEvents(true, { forward: true });
+  }
+
+  setInputRegions(value: unknown): void {
+    if (process.platform !== 'linux') return;
+    const regions = floatingInputRegions(value);
+    if (regions) this.browserWindow?.setShape(regions);
   }
 
   moveTo(x: number, y: number): void {

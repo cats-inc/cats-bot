@@ -21,6 +21,8 @@ export interface LanguageState {
 }
 
 export const zhTW: Record<string, string> = {
+  'Waiting for the current turn…': '等待目前回合結束…',
+  'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.': '工作階段仍忙碌，已停止自動重試。你的訊息仍保留在這裡，請稍後再試。',
   'Boss Cat, without tools on this provider': '主控貓（這個 provider 沒有工具）',
   'This provider gives the Boss Cat no tools; the role stays with the bot.': '這個 provider 不提供主控貓工具；角色仍由這個機器人保留。',
   'Remove Boss Cat': '取消主控貓',

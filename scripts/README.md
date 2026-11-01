@@ -15,3 +15,8 @@ scripts/
 ## Standards
 
 Follow `docs/SCRIPT-STANDARDS.md` for naming and documentation rules.
+
+`testing/bot-interaction-acceptance.mjs` exercises real Electron waiting controls
+with a fake Runtime and an isolated temporary profile. Its optional `--native-drag`
+mode uses Linux `xdotool` input for avatar dragging, click-through and bubbles;
+see [the testing guide](../docs/testing.md#shell-tests) before running it.

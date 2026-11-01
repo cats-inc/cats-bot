@@ -1,6 +1,7 @@
 import { ConversationMessage, ConversationResponse, ConversationMarkdown } from '@cats-inc/platform-ui-web';
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
+import { conversationWorkState } from './workState.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -19,6 +20,7 @@ import {
   localEntry,
   mergeTranscriptEntries,
   upsertWorkItem,
+  mergeWorkItems,
   visibleEntries,
   type DecisionItem,
   type DecisionStatus,
@@ -178,7 +180,7 @@ export function NoteApp() {
       const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems', id)]);
       for (const entry of transcript) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
       setEntries(current => mergeTranscriptEntries(current, visibleEntries(transcript)));
-      setWorkItems(work.filter((item) => item.conversationId === id));
+      setWorkItems(current => mergeWorkItems(current, work.filter((item) => item.conversationId === id)));
       setHistoryError('');
     } catch (error) {
       setHistoryError(errorText(error));
@@ -269,6 +271,8 @@ export function NoteApp() {
   }, [markSeenIfFocused, refreshHeader, reload, setRunning, refreshInteractions, refreshDesktop]);
 
   const items = useMemo(() => buildNoteItems(entries, workItems), [entries, workItems]);
+  const activity = conversationWorkState(workItems, conversation.current);
+  const busy = running || activity.active;
   const activeRequests = liveInteractions(interactions);
   const grantRequests = desktop.state?.conversation?.pendingRequests ?? [];
   const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
@@ -284,7 +288,7 @@ export function NoteApp() {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || runningRef.current) return;
+    if (!text || runningRef.current || busy) return;
     setDraft('');
     followTranscript.current = true;
     setRunning(true);
@@ -320,9 +324,11 @@ export function NoteApp() {
         <span className="note-state" id="state">
           {interactions.some((i) => i.status === 'pending') || grantRequests.length > 0
             ? t('waiting for you')
-            : running
-              ? t('thinking…')
-              : t(runtimeNote)}
+            : activity.waiting
+              ? t('Waiting for the current turn…')
+              : busy
+                ? t('thinking…')
+                : t(runtimeNote)}
         </span>
         <span className="note-spacer" />
         <button
@@ -396,13 +402,13 @@ export function NoteApp() {
           onKeyDown={onKeyDown}
         />
         <div className="note-actions">
-          <button className="note-send" id="send" disabled={running} onClick={() => void send()}>
+          <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>
             {t('Send')}
           </button>
           <button
             className="note-cancel"
             id="cancel"
-            hidden={!running}
+            hidden={!busy}
             onClick={() => void api.invoke('cancelTurn', conversation.current)}
           >
             {t('Cancel')}

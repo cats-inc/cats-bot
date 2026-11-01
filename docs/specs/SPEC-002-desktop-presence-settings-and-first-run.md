@@ -68,7 +68,9 @@ hover tooltip. Tray Check for Updates uses a native result/action dialog.
    returns to the bottom-right corner of the primary screen; the same check is made when screens are
    added or removed or the scaling changes. Unread follows focus: when a note on the desktop or
    wallpaper layer, or one covered by other windows, is open but not focused, a new reply still counts
-   as unread, and is marked as read only when it is focused.
+   as unread, and is marked as read only when it is focused. Linux uses startup-time
+   X11/XWayland selection and bounded avatar input shapes (ADR-012); native Wayland
+   does not claim global position restoration or this programmatic drag contract.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

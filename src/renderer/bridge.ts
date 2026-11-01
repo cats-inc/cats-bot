@@ -196,6 +196,7 @@ export interface CatsBotBridge {
     setNoteLayer(conversationId: string, layer: NoteLayer): Promise<NoteLayer | null>;
   };
   floating: {
+    setInputRegions(regions: Array<{ x: number; y: number; width: number; height: number }>): void;
     setInteractive(interactive: boolean): void;
     moveTo(x: number, y: number): void;
     dragEnd(): void;

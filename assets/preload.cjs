@@ -111,6 +111,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
   },
   floating: {
+    setInputRegions(regions) {
+      ipcRenderer.send('floating:regions', regions);
+    },
     setInteractive(interactive) {
       ipcRenderer.send('floating:interactive', interactive === true);
     },

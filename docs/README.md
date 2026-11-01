@@ -125,6 +125,10 @@ Standard Preview delivery and host-owned Check for Updates are defined by
 
 ## Context-Driven Development
 
+Linux floating-window compatibility is recorded in
+[ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md) and its
+[input and retry evidence](research/2026-11-01-linux-input-and-busy-retry.md).
+
 For complex features, use the spec-plan-implement workflow:
 
 1. **Spec** (`specs/SPEC-NNN-title.md`): Define what to build and why
