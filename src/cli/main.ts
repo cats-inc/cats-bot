@@ -10,6 +10,8 @@ import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
 import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
 import { callHubControl } from '../core/host-api/hubControl.ts';
 import { createFileLogger } from '../core/log.ts';
+import { boundStderrLog } from '../shared/stderrLog.ts';
+import { diagnosticError } from '../shared/diagnosticLog.ts';
 import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 
@@ -234,6 +236,10 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
 async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
   const target = resolveTarget(parsed, env);
   const json = parsed.flags.get('json') === true;
+  if (env.CATS_BOT_MANAGED_STDERR === '1') {
+    const stderr = boundStderrLog(join(botPathsFor(target.root).logs, 'core-stderr.log'));
+    process.once('exit', stderr.stop);
+  }
   const runtimeEntry = flagString(parsed.flags, 'runtime-entry');
   const helperPath = flagString(parsed.flags, 'desktop-control-helper');
   const hostCipher = flagString(parsed.flags, 'host-cipher');
@@ -248,8 +254,9 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   core.subscribe((event) => printEvent(event, json));
   // A rejection nothing handled would end this process; the core logs it and keeps running.
   const coreLog = createFileLogger(core.paths.logs);
+  process.on('uncaughtExceptionMonitor', (error, origin) => coreLog(`fatal ${origin}: ${diagnosticError(error)}`));
   process.on('unhandledRejection', (reason) => {
-    coreLog(`unhandled rejection: ${reason instanceof Error ? `${reason.name}: ${reason.message}` : typeof reason}`);
+    coreLog(`unhandled rejection: ${diagnosticError(reason)}`);
   });
   await core.start();
   const status = core.status();

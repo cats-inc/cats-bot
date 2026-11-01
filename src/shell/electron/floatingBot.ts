@@ -21,6 +21,7 @@ export interface FloatingBubble {
 }
 
 export interface FloatingBotOptions extends PageWindowOptions {
+  log?(line: string): void;
   state(): FloatingBotState;
   persist(): void;
   /** SPEC-008 FR-17: the bot's place among the hub's bots, for a cat that was never moved. */
@@ -44,6 +45,7 @@ export class FloatingBot {
     const next = placeFloating({ x, y }, screen.getAllDisplays(), screen.getPrimaryDisplay());
     if (next.x === x && next.y === y) return;
     this.moveTo(next.x, next.y);
+    this.options.log?.(`floating bot repositioned: from=${x},${y} to=${next.x},${next.y}`);
     this.remember();
   };
 

@@ -1,11 +1,12 @@
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { closeSync, mkdirSync, openSync, renameSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { ChannelError, HostChannelClient, readChannelOwner, type ChannelHostIdentity, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { remoteBotCore, type RemoteBotCore } from '../../core/host-api/remote.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor } from '../../core/store/paths.ts';
+import { rotateStderrLog } from '../../shared/stderrLog.ts';
 import { processIsAlive } from './update/installation.ts';
 
 /**
@@ -91,10 +92,11 @@ export function coreArguments(launch: CoreLaunch): string[] {
 export function coreEnvironment(launch: CoreLaunch): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [key, value] of Object.entries(launch.env ?? process.env)) {
-    if (/^CATS_RUNTIME_/iu.test(key) || /^(?:CATS_BOT_ID|CATS_BOT_HOME|ELECTRON_RUN_AS_NODE)$/iu.test(key)) continue;
+    if (/^CATS_RUNTIME_/iu.test(key) || /^(?:CATS_BOT_ID|CATS_BOT_HOME|CATS_BOT_MANAGED_STDERR|ELECTRON_RUN_AS_NODE)$/iu.test(key)) continue;
     env[key] = value;
   }
   env.CATS_BOT_HOME = launch.catsBotHome;
+  env.CATS_BOT_MANAGED_STDERR = '1';
   if (launch.runAsNode) env.ELECTRON_RUN_AS_NODE = '1';
   return env;
 }
@@ -163,10 +165,8 @@ async function startCore(root: string, launch: CoreLaunch, options: CoreHostOpti
   const logFile = coreLogFile(root);
   const errorFile = coreErrorFile(root);
   mkdirSync(join(errorFile, '..'), { recursive: true });
-  try {
-    renameSync(errorFile, join(errorFile, '..', 'core-stderr.previous.log'));
-  } catch { /* the first start */ }
-  const stderr = openSync(errorFile, 'w', 0o600);
+  const stderr = openSync(errorFile, 'a+', 0o600);
+  rotateStderrLog(errorFile, stderr, true);
   let child: ChildProcess;
   try {
     child = spawn(launch.execPath, coreArguments(launch), {

@@ -1,5 +1,8 @@
 # Documentation Index
 
+[Production host diagnostics](decisions/013-keep-bounded-production-host-diagnostics.md)
+records the host/core log retention, detached stderr maintenance and no-dump policy.
+
 The [0.4.4 Standard Preview release notes](releases/v0.4.4.md) describe the refreshed
 Runtime catalog, note/update fixes, exact inputs, compatibility and signing policy.
 

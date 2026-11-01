@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { diagnosticError } from '../../shared/diagnosticLog.ts';
 
 import {
   discoverShellHosts,
@@ -103,17 +104,17 @@ export interface DesktopWindows extends ShellWindows {
 }
 
 /** Loads the binding on Windows; null elsewhere or when koffi cannot load, so the shell offers normal and top only. */
-export function loadDesktopHost(log: (line: string) => void): DesktopHost | null {
+export function loadDesktopHost(log: (line: string, level?: 'info' | 'warn' | 'error') => void): DesktopHost | null {
   if (process.platform !== 'win32') return null;
   try {
     return createWin32DesktopHost(log);
   } catch (error) {
-    log(`desktop layers unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    log(`desktop layers unavailable: ${diagnosticError(error)}`, 'error');
     return null;
   }
 }
 
-function createWin32DesktopHost(log: (line: string) => void): DesktopHost {
+function createWin32DesktopHost(log: (line: string, level?: 'info' | 'warn' | 'error') => void): DesktopHost {
   return createDesktopHost(bindUser32(), log);
 }
 
@@ -196,7 +197,7 @@ function bindUser32(): DesktopWindows {
 }
 
 /** The desktop host's rules over any window system; `now` is the clock for the missing-host retry. */
-export function createDesktopHost(windows: DesktopWindows, log: (line: string) => void, now: () => number = Date.now): DesktopHost {
+export function createDesktopHost(windows: DesktopWindows, log: (line: string, level?: 'info' | 'warn' | 'error') => void, now: () => number = Date.now): DesktopHost {
 
   let hosts: ShellHosts = discoverShellHosts(windows);
   let discoveredAt = now();
@@ -251,7 +252,7 @@ export function createDesktopHost(windows: DesktopWindows, log: (line: string) =
       const childAwareness = windows.awareness(window);
       const hostAwareness = windows.awareness(parent);
       if (childAwareness !== hostAwareness) {
-        log(`desktop ${layer} layer refused: DPI awareness ${childAwareness} differs from the host's ${hostAwareness}`);
+        log(`desktop ${layer} layer refused: DPI awareness ${childAwareness} differs from the host's ${hostAwareness}`, 'warn');
         return false;
       }
       const current = attached.get(window);
