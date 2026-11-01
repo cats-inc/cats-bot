@@ -21,6 +21,7 @@ import {
   mergeTranscriptEntries,
   upsertWorkItem,
   mergeWorkItems,
+  noteRoleSuffix,
   visibleEntries,
   type DecisionItem,
   type DecisionStatus,
@@ -165,11 +166,7 @@ export function NoteApp() {
     conversation.current = record.id;
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     setSpeakerName(profile.name);
-    // SPEC-009 FR-10 and FR-11: the Boss Cat's note says so, and says when its provider gives it no tools.
-    const role = status.bossCat?.holder
-      ? ` · ${status.bossCat.tools ? t('Boss Cat') : t('Boss Cat, without tools on this provider')}`
-      : '';
-    setTitle(`${profile.name} · ${conversationTitle(record)}${role}`);
+    setTitle(`${profile.name} · ${conversationTitle(record)}${noteRoleSuffix(status.bossCat)}`);
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);

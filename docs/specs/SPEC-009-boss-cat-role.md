@@ -119,7 +119,8 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
 11. FR-11: A holder that is not bound to the native environment (ADR-010), or
     whose provider's sessions do not support session MCP servers (FR-3; in the
     pinned Runtime 0.6.2, Antigravity, Grok and Muse), keeps the role but gets
-    no `cats-hub` tools. Settings → Bots and the holder's note show why. The
+    no `cats-hub` tools. Settings → Bots shows why; the holder's note shows
+    only its role (owner's request, 2026-11-01). The
     role is never refused or cleared for this: first run, assignment and a
     confirmed transfer all succeed, and the tools return at the next send after
     the holder moves to a provider that supports them. With only one bot, the
@@ -169,7 +170,8 @@ holder core ──cats-hub MCP──▶ (served by the holder core, backed by th
 - [x] Strength of the refusals (2026-10-29, after review): API limits, stated
       as not a security boundary (FR-6).
 - [x] Providers without session MCP (2026-10-29, after review): the holder
-      keeps the role without tools, and the reason is shown (FR-11).
+      keeps the role without tools, and the reason is shown in Settings → Bots
+      (FR-11).
 
 ## References
 
