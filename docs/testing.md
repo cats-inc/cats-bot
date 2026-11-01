@@ -80,6 +80,10 @@ last step, not the first.
 
 ### Shell tests
 
+On macOS, the tray uses a 20pt canvas, matching Cats Desktop, with native 20px
+and 40px Retina representations. When checking a native candidate, compare the
+menu-bar footprint with Desktop and check sharpness on a Retina display.
+
 `tests/shell/linuxIcons.test.ts` runs electron-builder's icon resolver and
 desktop-entry generator against the package configuration. It checks standard
 hicolor PNG sizes and matching launcher, icon and window identities. For native
