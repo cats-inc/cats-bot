@@ -51,7 +51,7 @@ test('the core gets its home and bot from its host, never from the host\'s own v
     ...launchFor('mochi'), runAsNode: true,
     env: { PATH: 'p', CATS_BOT_ID: 'other', CATS_BOT_HOME: 'elsewhere', CATS_RUNTIME_API_KEY: 'k', cats_runtime_dir: 'd', ELECTRON_RUN_AS_NODE: '0' },
   });
-  assert.deepEqual(env, { PATH: 'p', CATS_BOT_HOME: home.root, ELECTRON_RUN_AS_NODE: '1' });
+  assert.deepEqual(env, { PATH: 'p', CATS_BOT_HOME: home.root, CATS_BOT_MANAGED_STDERR: '1', ELECTRON_RUN_AS_NODE: '1' });
 });
 
 test('snapshots for a host keep the newest history within their budget', () => {

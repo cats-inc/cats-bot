@@ -8,6 +8,7 @@ import type { TrayDesktopControl, TrayMenuModel } from './trayMenu.ts';
 import type { DesktopHost } from './win32Desktop.ts';
 import type { WindowIdentity } from './windowIdentity.ts';
 import { NoteWindows } from './windows.ts';
+import { diagnosticError } from '../../shared/diagnosticLog.ts';
 
 /**
  * PLAN-009 2.3 (SPEC-008 FR-17): one bot as the hub presents it. Its notes,
@@ -21,7 +22,7 @@ export interface PresenterHost {
   rendererDir: string;
   iconPath: string;
   desktop: DesktopHost | null;
-  log(line: string): void;
+  log(line: string, level?: 'info' | 'warn' | 'error'): void;
   isQuitting(): boolean;
   /** The hub's display language (FR-18). */
   locale(): Locale;
@@ -72,6 +73,7 @@ export class BotPresenter {
     this.settings = new SettingsWindow(pages);
     this.floating = new FloatingBot({
       ...pages,
+      log: host.log,
       state: () => this.windows.shellState.floatingBot,
       persist: () => this.windows.persist(),
       slot,
@@ -91,12 +93,12 @@ export class BotPresenter {
   }
 
   openSettings(tab?: string): void {
-    void this.settings.open(tab).catch((error: unknown) => this.host.log(`open settings failed: ${errorMessage(error)}`));
+    void this.settings.open(tab).catch((error: unknown) => this.host.log(`open settings failed: ${errorMessage(error)}`, 'error'));
   }
 
   setFloatingVisible(visible: boolean): void {
     if (visible) {
-      void this.floating.show().catch((error: unknown) => this.host.log(`floating bot failed: ${errorMessage(error)}`));
+      void this.floating.show().catch((error: unknown) => this.host.log(`floating bot failed: ${errorMessage(error)}`, 'error'));
     } else {
       this.floating.hide();
     }
@@ -178,11 +180,11 @@ export class BotPresenter {
   async start(): Promise<void> {
     this.unsubscribe = this.core.subscribe((event) => this.onEvent(event));
     // A token the CLI stored as a file is re-stored with the OS facility.
-    void this.core.protectSecretsAtRest().catch((error: unknown) => this.host.log(`secret re-store failed: ${errorMessage(error)}`));
+    void this.core.protectSecretsAtRest().catch((error: unknown) => this.host.log(`secret re-store failed: ${errorMessage(error)}`, 'error'));
     if (this.windows.shellState.floatingBot.visible) this.setFloatingVisible(true);
     for (const conversationId of this.windows.previouslyOpen()) {
       await this.windows.open(conversationId, { restore: true }).catch((error: unknown) => {
-        this.host.log(`reopen conversation failed: ${errorMessage(error)}`);
+        this.host.log(`reopen conversation failed: ${errorMessage(error)}`, 'error');
       });
     }
   }
@@ -214,10 +216,11 @@ export class BotPresenter {
   async stop(): Promise<void> {
     this.stopping = true;
     this.remember();
+    this.host.log(`bot ${this.botId}: core stop requested pid=${this.hosted.pid}`);
     await this.hosted.stop();
   }
 }
 
 function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+  return diagnosticError(error);
 }

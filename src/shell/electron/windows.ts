@@ -45,7 +45,7 @@ export interface NoteWindowsOptions {
   isQuitting(): boolean;
   /** Windows only; without it notes offer the normal and top layers. */
   desktop?: DesktopHost | null;
-  log?(line: string): void;
+  log?(line: string, level?: 'info' | 'warn' | 'error'): void;
   /** SPEC-008 FR-17: the AUMID of this bot's notes. */
   identity?: WindowIdentity;
   /** The bot's place among the hub's bots: a note never placed before opens a step further. */
@@ -96,8 +96,8 @@ export class NoteWindows {
     }
   }
 
-  private log(line: string): void {
-    this.options.log?.(line);
+  private log(line: string, level: 'info' | 'warn' | 'error' = 'info'): void {
+    this.options.log?.(line, level);
   }
 
   /** The layers this host can offer. */
@@ -326,6 +326,7 @@ export class NoteWindows {
       if (!desktop.attach(handle, view.layer)) {
         this.log(
           `conversation ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`,
+          'warn',
         );
       }
       return;

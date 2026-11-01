@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { diagnosticError } from '../../../shared/diagnosticLog.ts';
 
 import type { RemoteBotCore } from '../../../core/host-api/remote.ts';
 import { CLI_PROVIDERS } from '../../../core/providers/catalog.ts';
@@ -61,7 +62,7 @@ export interface BossCatDeps {
   setHolder(id: string | null): Promise<void>;
   /** FR-5: the owner's answer; false when declined, expired, the role moved or the hub stopped. */
   confirm(holder: string, question: string, detail: string): Promise<boolean>;
-  log(line: string): void;
+  log(line: string, level?: 'info' | 'warn' | 'error'): void;
   now?(): Date;
 }
 
@@ -129,7 +130,7 @@ export class BossCatBroker {
         const record = JSON.parse(line) as DeliveryRecord;
         if (typeof record.id === 'string') this.deliveries.set(record.id, record);
       } catch {
-        this.deps.log('Boss Cat: an unreadable delivery log line was skipped');
+        this.deps.log('Boss Cat: an unreadable delivery log line was skipped', 'warn');
       }
     }
     // A last line a crash cut short stays on its own, so the next record is not lost with it.
@@ -140,7 +141,7 @@ export class BossCatBroker {
       try {
         this.compact();
       } catch (error) {
-        this.deps.log(`Boss Cat: the delivery log was not compacted: ${error instanceof Error ? error.message : 'error'}`);
+        this.deps.log(`Boss Cat: the delivery log was not compacted: ${diagnosticError(error)}`, 'error');
       }
     }
   }
@@ -210,7 +211,7 @@ export class BossCatBroker {
         ...(target ? { target } : {}),
         ...(isHubRecordId(chain) ? { chain } : {}),
         outcome: answer.isError
-          ? `refused: ${oneLine(answer.text, 200)}`
+          ? 'refused'
           : answer.structuredContent?.setup === 'owner' ? 'sent to the owner\'s setup' : 'done',
       });
       return answer;
@@ -344,7 +345,7 @@ export class BossCatBroker {
         this.save({ ...current, state: 'sent', workItemId: item.id });
         return true;
       } catch (error) {
-        this.deps.log(`Boss Cat: delivery ${current.id} to ${current.to} waits: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
+        this.deps.log(`Boss Cat: delivery ${current.id} to ${current.to} waits: ${diagnosticError(error)}`, 'error');
         return false;
       }
     });
@@ -409,7 +410,7 @@ export class BossCatBroker {
     try {
       states = await core.botDeliveries(open.map((record) => record.id));
     } catch (error) {
-      this.deps.log(`Boss Cat: replies of ${botId} not read: ${error instanceof Error ? oneLine(error.message, 200) : 'error'}`);
+      this.deps.log(`Boss Cat: replies of ${botId} not read: ${diagnosticError(error)}`, 'error');
       return;
     }
     for (const state of states) {

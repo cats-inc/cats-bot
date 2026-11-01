@@ -122,6 +122,32 @@ closes or crashes leaves its cores running, and the next hub reattaches to
 them. A core writes its log lines to `<bot root>/logs/core.log`. The same
 `CATS_BOT_PROVIDER_*` variables apply.
 
+### Diagnostic logs
+
+The primary desktop hub writes `logs/host.log` below Electron's user-data directory
+(Windows default: `%APPDATA%\Cats Bot\logs\host.log`). It records startup/exit,
+display topology, window visibility/placement, renderer/GPU exits and core lifecycle
+metadata. No crash dumps or uploads are enabled. A program that never starts, or
+fails before the primary-instance lock, may leave no host record.
+
+Host and core logs each keep a 256 KiB current file and three backups (`.1` newest).
+Existing oversized files are bounded on first use. Records are limited to 16 KiB.
+Arbitrary exception messages, titles, URL queries, prompts and credentials are
+excluded from new host events; exception summaries retain type/code/stack locations.
+
+Each hub-managed core retains `logs/core-stderr.log` and
+`logs/core-stderr.previous.log` in its bot root. It writes independently of the hub.
+The previous snapshot holds at most 256 KiB. The core checks the current stderr
+file once per second and on orderly exit, saving a bounded tail before truncating
+it in place. Bursts or a blocked event loop can exceed this soft threshold;
+the next start also bounds stderr left by a killed core. Core stdout is never saved.
+
+Set `CATS_BOT_LOG_LEVEL=debug` in the launch environment for detailed window
+movement/resize records. Allowed levels are `trace`, `debug`, `info` (default),
+`warn`, `error`; changing it requires restarting the hub. TRACE currently includes
+the same events as DEBUG. This works in packaged builds without a debug installer.
+See [ADR-013](decisions/013-keep-bounded-production-host-diagnostics.md).
+
 The hub keeps its registry (`bots.json`), preferences (`hub-state.json`) and
 locks beside `bots/` in the Cats Bot root. Its first run creates the first bot;
 bots that `cats-bot init` made before then are taken in, up to three. While the

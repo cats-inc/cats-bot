@@ -89,6 +89,48 @@ cancellation, idle waiters and preservation of an explicitly requested install.
 fixture with a hung CLI and grandchild, and checks that all three processes have
 stopped before the provider setup becomes idle.
 
+#### Host diagnostics
+
+`tests/core/diagnosticLog.test.ts` covers rotation across restarts, bounded legacy
+files and UTF-8 records, unavailable disks/mirrors, private exception summaries,
+stderr descriptor identity and continued append after Windows-safe truncation,
+and a real Node fatal exception that still exits nonzero after synchronous logging.
+`tests/shell/hostDiagnostics.test.ts` covers production/default versus opt-in
+verbosity, explicit failure severity through CoreRunner, early second launches,
+display inventory and transient API failures, window lifecycle and renderer/GPU
+exit metadata without URL queries or titles. `bossCatSafety.test.ts` also checks
+that arbitrary refusal text does not leak into host diagnostics or its audit.
+
+After building, run `electron scripts/testing/host-diagnostics-acceptance.mjs`
+to exercise a real Electron window's show/hide and renderer crash events against
+a temporary user-data directory. It starts no Bot/provider, enables no crash
+reporter, and prints the retained evidence directory (`host.log`, `result.json`).
+Actual monitor hot-plug, resolution/DPI changes and GPU loss require a separate
+native session check; synthetic event coverage is not evidence of those OS actions.
+
+The stderr threshold is checked once per second and on orderly core exit. It is
+not a hard cap while the event loop is blocked or the process is forcibly killed.
+See [ADR-013](decisions/013-keep-bounded-production-host-diagnostics.md).
+
+Validation on 2026-11-02 (Windows x64, Node 26.13.0): locked dependencies installed; typecheck,
+production build and the full suite passed (412 passed, one platform-dependent
+Codex prerequisite test skipped). Independent review's final focused rerun passed
+31 tests with no remaining findings. A separate inherited-fd process probe wrote
+400,000 stderr bytes and confirmed a 262,144-byte previous snapshot after the
+periodic check. Real Electron 41.2.0 acceptance recorded a controlled renderer
+crash (`crashed`, exit code 2), window events and clean host exit without Crashpad.
+
+The full source candidate also wrote startup, actual display inventory and window
+events into its private `host.log`, then drained with exit code 0. Its launcher
+timed out waiting for a visible first-run window, so this is not a successful
+candidate readiness/screenshot check. The retained launch/source receipt is in
+the parent workspace's private `.diagnostics/catsbot-host-log-candidate-20261102-2`
+directory. The unchanged, clean 0.4.4 checkout at the same HEAD reproduced that
+readiness timeout under the same launcher/dependencies and also drained with exit
+code 0 (`.diagnostics/catsbot-host-log-baseline-20261102`). Thus the timeout is not
+introduced by these logging changes; no visual-readiness claim is made. No
+installed profile, provider or real monitor configuration was changed.
+
 `tests/core/busyRetry.test.ts` covers non-busy 409 failures, bounded busy retries,
 safe cancellation before HTTP admission and removal of deferred work.
 `tests/renderer/workState.test.ts` covers waiting controls and stale/equal-time

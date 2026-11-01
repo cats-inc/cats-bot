@@ -1,5 +1,5 @@
-import { appendFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
+import { createLogWriter } from '../shared/diagnosticLog.ts';
 
 /**
  * SPEC-001 NFR security: the log records what happened (kinds, states,
@@ -9,18 +9,10 @@ import { join } from 'node:path';
 export type Logger = (line: string) => void;
 
 export function createFileLogger(logsDir: string, mirror?: Logger): Logger {
-  let ready = false;
+  const write = createLogWriter(join(logsDir, 'core.log'));
   return (line: string) => {
     const stamped = `${new Date().toISOString()} ${line}`;
-    try {
-      if (!ready) {
-        mkdirSync(logsDir, { recursive: true });
-        ready = true;
-      }
-      appendFileSync(join(logsDir, 'core.log'), `${stamped}\n`, { encoding: 'utf8' });
-    } catch {
-      // Logging must never take the bot down.
-    }
-    mirror?.(stamped);
+    write(`${stamped}\n`);
+    try { mirror?.(stamped); } catch { /* a closed stderr must not stop the core */ }
   };
 }

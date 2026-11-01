@@ -51,6 +51,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [010](./010-bind-each-bot-to-an-execution-environment.md)                              | Bind Each Bot to an Execution Environment                              | Accepted | 2026-10-29 |
 | [011](./011-have-explorer-redraw-the-wallpaper-a-note-leaves.md)                       | Have Explorer Redraw the Wallpaper a Note Leaves                       | Accepted | 2026-10-31 |
 | [012](./012-use-xwayland-for-linux-floating-windows.md) | Use XWayland for Linux Floating Windows | Accepted | 2026-11-01 |
+| [013](./013-keep-bounded-production-host-diagnostics.md) | Keep Bounded Production Host Diagnostics | Accepted | 2026-11-02 |
 
 <!-- Add new ADRs above this line -->
 

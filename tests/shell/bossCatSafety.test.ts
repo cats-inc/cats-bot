@@ -9,6 +9,7 @@ import type { BotDelivery, BotDeliveryState, WorkItem } from '../../src/core/typ
 import { CONSENT_COOLDOWN_MS, BossCatBroker, type BossCatDeps } from '../../src/shell/electron/hub/bossCatBroker.ts';
 import { CoreRunner } from '../../src/shell/electron/hub/coreRunner.ts';
 import { normalizeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { createHostLogger } from '../../src/shell/electron/hostDiagnostics.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 /**
@@ -67,6 +68,23 @@ function hub(dir: string, cores: Record<string, FakeCore | null>, overrides: Par
 }
 
 const call = (tool: string, args: Record<string, unknown>, conversationId = 'home') => ({ tool, args, conversationId });
+
+test('a refused call keeps arbitrary exception text out of both diagnostics and audit', async () => {
+  const dir = join(home.root, 'diagnostic-refusal');
+  const logger = createHostLogger(dir);
+  const { bossCat } = hub(dir, { alpha: { admitted: [] }, beta: null }, {
+    confirm: async () => true, log: logger.log,
+    startBot: async () => { throw new Error('PRIVATE_CONVERSATION_TEXT'); },
+  });
+  const answer = await bossCat.handle('alpha', call('hub_start_bot', { bot: 'beta' }));
+  assert.equal(answer.isError, true);
+  assert.match(answer.text, /PRIVATE_CONVERSATION_TEXT/u, 'the caller still receives its original refusal');
+  for (const file of [logger.file, join(dir, 'logs', 'hub-audit.jsonl')]) {
+    const contents = readFileSync(file, 'utf8');
+    assert.ok(!contents.includes('PRIVATE_CONVERSATION_TEXT'));
+    assert.match(contents, /refused/u);
+  }
+});
 const doneItem = (deliveryId: string, from = 'alpha', text = `answer to ${deliveryId}`): WorkItem => ({
   id: `w-${deliveryId}`, source: 'bot', state: 'completed', result: { text, completedAt: new Date().toISOString() },
   chain: { id: 'c', hop: 1, deliveryId, kind: 'message', from, fromName: from },

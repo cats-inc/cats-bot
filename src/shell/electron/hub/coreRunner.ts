@@ -1,3 +1,5 @@
+import { diagnosticError } from '../../../shared/diagnosticLog.ts';
+
 /**
  * SPEC-008 FR-9 to FR-11: one bot's core as the hub runs it. A core that ends
  * without being asked is marked failed and started again with backoff, a
@@ -20,7 +22,7 @@ export interface CoreRunnerOptions<T> {
   changed(): void;
   /** Called once when the runner stops restarting a core that keeps failing. */
   gaveUp?(): void;
-  log(line: string): void;
+  log(line: string, level?: 'info' | 'warn' | 'error'): void;
   /** The waits before the first, second and later restarts. */
   delaysMs?: number[];
   /** At most `maxRestarts` restarts within `windowMs`. */
@@ -130,7 +132,7 @@ export class CoreRunner<T> {
           this.set('external', message);
           return null;
         }
-        this.options.log(`bot ${this.id} did not start: ${message}`);
+        this.options.log(`bot ${this.id} did not start: ${diagnosticError(error)}`, 'error');
         this.set('failed', message);
         this.scheduleRestart();
         return null;
@@ -150,7 +152,7 @@ export class CoreRunner<T> {
       this.set('stopped', null);
       return;
     }
-    this.options.log(`bot ${this.id}: the core stopped unexpectedly`);
+    this.options.log(`bot ${this.id}: the core stopped unexpectedly`, 'error');
     this.set('failed', 'The Bot core stopped unexpectedly.');
     this.scheduleRestart();
   }
@@ -160,7 +162,7 @@ export class CoreRunner<T> {
     const windowMs = this.options.windowMs ?? 10 * 60_000;
     this.restarts = this.restarts.filter((at) => now - at < windowMs);
     if (this.restarts.length >= (this.options.maxRestarts ?? 3)) {
-      this.options.log(`bot ${this.id} failed ${this.restarts.length + 1} times and is not started again until the owner starts it`);
+      this.options.log(`bot ${this.id} failed ${this.restarts.length + 1} times and is not started again until the owner starts it`, 'error');
       this.gaveUp = true;
       this.options.changed();
       this.options.gaveUp?.();

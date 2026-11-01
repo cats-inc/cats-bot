@@ -4,13 +4,14 @@ import { dirname, join } from 'node:path';
 
 import {
   BaseWindow,
+  BrowserWindow,
   Menu,
   app,
   dialog,
   ipcMain,
   safeStorage,
   shell,
-  type BrowserWindow,
+  screen,
   type MenuItemConstructorOptions,
 } from 'electron';
 
@@ -61,6 +62,8 @@ import { NOTE_LAYER_LABELS, NOTE_LAYERS, readShellState, type NoteLayer } from '
 import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
 import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
+import { createHostLogger, observeDisplays, observeHostApp, observeHostProcess, type HostLogger } from './hostDiagnostics.ts';
+import { diagnosticError } from '../../shared/diagnosticLog.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phases 2 and 3 (SPEC-008):
@@ -80,6 +83,7 @@ const require = createRequire(import.meta.url);
 
 /** The package's appId; Electron names the login item after it (SPEC-007 FR-9). */
 const APP_ID = 'io.catsinc.catsbot';
+let hostLogger: HostLogger | undefined;
 
 function parseArgs(argv: string[]): { id?: string; provider?: string; name?: string; model?: string } {
   const result: { id?: string; provider?: string; name?: string; model?: string } = {};
@@ -129,6 +133,8 @@ interface BotRow {
 }
 
 async function main(): Promise<void> {
+  app.setName('Cats Bot');
+  app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot'));
   if (relaunchForLinuxWindowing(app)) return;
   const args = parseArgs(process.argv.slice(1));
   // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
@@ -140,11 +146,9 @@ async function main(): Promise<void> {
     return;
   }
   const installation = app.isPackaged ? new BotInstallation(app.getPath('appData'), process.execPath, app.getVersion()) : null;
-  app.setName('Cats Bot');
   // SPEC-008 FR-1: one hub per account and installation, behind one Electron
   // single-instance lock on its user data. A second launch hands its
   // arguments to the running hub and exits.
-  app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot'));
   if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
 
   if (!app.requestSingleInstanceLock({ id: requested ?? null })) {
@@ -152,7 +156,21 @@ async function main(): Promise<void> {
     return;
   }
 
+  // Only the primary instance writes/rotates host.log. A second launch is recorded by it.
+  hostLogger = createHostLogger(app.getPath('userData'), {
+    level: process.env.CATS_BOT_LOG_LEVEL, mirror: (line) => process.stderr.write(line),
+  });
+  const log = hostLogger.log;
+  observeHostProcess(hostLogger);
+  observeHostApp(app, () => BrowserWindow.getAllWindows(), hostLogger);
+  hostLogger.record('start', { version: app.getVersion(), electron: process.versions.electron,
+    node: process.versions.node, platform: process.platform, arch: process.arch,
+    executable: process.execPath, userData: app.getPath('userData'), home: resolveCatsBotHome(),
+    packaged: app.isPackaged, level: hostLogger.level,
+    launch: process.env.CATS_BOT_CANDIDATE_ROOT ? 'candidate' : 'unspecified' });
+
   await app.whenReady();
+  observeDisplays(screen, () => BrowserWindow.getAllWindows(), hostLogger);
   try {
     // The hub relaunches after an update without naming a bot.
     installation?.register('');
@@ -166,12 +184,11 @@ async function main(): Promise<void> {
       app.quit(); return;
     }
   }
-  app.on('quit', () => { try { installation?.unregister(); } catch (error) { process.stderr.write(`${errorMessage(error)}\n`); } });
+  app.on('quit', () => { try { installation?.unregister(); } catch (error) { hostLogger?.error('unregister-failed', error); } });
   // ADR-001 §2: all notes closed is not quitting; the bots keep running from the tray.
   // Registered before first-run setup, whose window closes before the first note opens.
   app.on('window-all-closed', () => undefined);
 
-  const log = (line: string) => process.stderr.write(`${line}\n`);
   const home = resolveCatsBotHome();
   const hubPaths = hubPathsFor(home);
   const installationId = readOrCreateInstallationId(app.getPath('userData'));
@@ -209,7 +226,7 @@ async function main(): Promise<void> {
     try {
       writeHubState(home, hubState);
     } catch (error) {
-      log(`hub state not saved: ${errorMessage(error)}`);
+      log(`hub state not saved: ${diagnosticError(error)}`, 'error');
     }
   };
   if (!readHubState(home)) saveHubState(hubState);
@@ -238,7 +255,7 @@ async function main(): Promise<void> {
   });
   const reportHubLanguage = (presenter: BotPresenter): Promise<void> =>
     presenter.core.setHubLanguage(hubLanguageReport()).catch((error: unknown) => {
-      log(`reply language: ${errorMessage(error)}`);
+      log(`reply language: ${diagnosticError(error)}`, 'error');
     });
   const announceHubLanguage = () => {
     for (const presenter of presented()) void reportHubLanguage(presenter);
@@ -250,7 +267,7 @@ async function main(): Promise<void> {
   const providerSetup = new ProviderSetup(createHelperRunner(join(assetsDir, 'setup'), (directory) => {
     commandDirectories.add(directory);
     for (const presenter of presented()) {
-      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${diagnosticError(error)}`, 'error'));
     }
   }));
   // First-run setup precedes the hub's normal quit handler. Drain cancelled
@@ -381,7 +398,7 @@ async function main(): Promise<void> {
     for (const id of report.missing) log(`bot ${id} is registered but its directory is missing`);
     for (const name of report.skipped) log(`skipped ${name}: not a valid bot id`);
   } catch (error) {
-    log(`registry recovery failed: ${errorMessage(error)}`);
+    log(`registry recovery failed: ${diagnosticError(error)}`, 'error');
   }
 
   let quitting = false;
@@ -457,7 +474,7 @@ async function main(): Promise<void> {
       // so the request shows as a sheet on the Bots tab of Cats Bot Settings there.
       let parent: BrowserWindow | null = null;
       if (process.platform === 'darwin') {
-        await hubSettings.open('bots').catch((error: unknown) => log(`open settings failed: ${errorMessage(error)}`));
+        await hubSettings.open('bots').catch((error: unknown) => log(`open settings failed: ${diagnosticError(error)}`, 'error'));
         parent = hubSettings.browserWindow;
         // Without a window to hold the sheet the request is declined rather than blocking the hub.
         if (!parent) return false;
@@ -478,7 +495,7 @@ async function main(): Promise<void> {
     // FR-5: a request of a bot that no longer holds the role expires.
     for (const [controller, asker] of pendingConfirmations) if (asker !== holder) controller.abort();
     for (const presenter of presented()) {
-      void presenter.core.setBossCat(presenter.botId === holder).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
+      void presenter.core.setBossCat(presenter.botId === holder).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
     }
     botsChanged();
   };
@@ -556,7 +573,7 @@ async function main(): Promise<void> {
           bots.push({ model: await trayModel(presenter), actions: trayActionsFor(() => presenter) });
         } catch (error) {
           // A core may be stopping; the next event refreshes the tray again.
-          if (!quitting) log(`tray refresh for ${presenter.botId} failed: ${errorMessage(error)}`);
+          if (!quitting) log(`tray refresh for ${presenter.botId} failed: ${diagnosticError(error)}`, 'error');
         }
       }
       const model = { locale: locale(), bots, openAtLogin: hubState.openAtLogin, openAtLoginAvailable };
@@ -593,7 +610,7 @@ async function main(): Promise<void> {
     void providerSetup
       .whenIdle()
       .then(stopAll)
-      .catch((error: unknown) => log(`core stop failed: ${errorMessage(error)}`))
+      .catch((error: unknown) => log(`core stop failed: ${diagnosticError(error)}`, 'error'))
       .finally(closeAll);
   };
   const presenterHost: PresenterHost = {
@@ -608,7 +625,7 @@ async function main(): Promise<void> {
     // SPEC-009 FR-8: a bot that finished a Boss Cat's message answers it.
     event: (presenter, event) => {
       if (event.type === 'turn.completed') {
-        void bossCat.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
+        void bossCat.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
       }
     },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.
@@ -657,15 +674,16 @@ async function main(): Promise<void> {
       }, { host: hostIdentity, services: { ...services, hub: (call) => bossCat.handle(botId, call) } });
     } catch (error) {
       if (error instanceof CoreHostedElsewhereError) {
-        await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${errorMessage(attachError)}`));
+        await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${diagnosticError(attachError)}`, 'error'));
       }
       throw error;
     }
+    hostLogger?.record(hosted.started ? 'core-started' : 'core-reattached', { botId, pid: hosted.pid });
     const identity = botWindowIdentity({ appId: APP_ID, botId, botName: profile.name, executable: process.execPath, packaged: app.isPackaged });
     const slot = Math.max(0, manager.registry.bots.filter((bot) => bot.archivedAt === null).findIndex((bot) => bot.id === botId));
     const presenter = new BotPresenter(presenterHost, botId, root, hosted, identity, slot);
     for (const directory of commandDirectories) {
-      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${errorMessage(error)}`));
+      void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${diagnosticError(error)}`, 'error'));
     }
     opening.set(botId, presenter);
     try {
@@ -683,7 +701,7 @@ async function main(): Promise<void> {
     }
     // FR-12: once the runner holds it, what waits for this bot is sent and its finished replies collected.
     setImmediate(() => {
-      void bossCat.attached(botId).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
+      void bossCat.attached(botId).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
     });
     return presenter;
   };
@@ -720,7 +738,7 @@ async function main(): Promise<void> {
           if (quitting) return;
           // SPEC-009 FR-12: what waits for a bot that can no longer run returns to its sender as failed.
           void bossCat.targetGone(id, 'it kept failing and is not restarted', { archived: false })
-            .catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
+            .catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
@@ -765,7 +783,7 @@ async function main(): Promise<void> {
     try {
       app.setLoginItemSettings({ openAtLogin: enabled, args: [] });
     } catch (error) {
-      log(`login item failed: ${errorMessage(error)}`);
+      log(`login item failed: ${diagnosticError(error)}`, 'error');
     }
   };
   // SPEC-007 FR-9 and SPEC-008 FR-23: one login item starts the hub. An
@@ -868,7 +886,7 @@ async function main(): Promise<void> {
   });
   // D20: the hub's Settings: the app language, start at login, version and updates, and the Bots tab.
   const openHubSettings = (tab?: 'general' | 'bots') => {
-    void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${errorMessage(error)}`));
+    void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${diagnosticError(error)}`, 'error'));
   };
   // FR-16: one bot's items act on that bot; with one bot the menu is today's.
   const trayActionsFor = (target: () => BotPresenter | undefined): TrayMenuActions => ({
@@ -876,7 +894,7 @@ async function main(): Promise<void> {
       void target()?.windows
         .open(conversationId)
         .then(refreshTray)
-        .catch((error: unknown) => log(`open conversation failed: ${errorMessage(error)}`));
+        .catch((error: unknown) => log(`open conversation failed: ${diagnosticError(error)}`, 'error'));
     },
     onNewNote: () => {
       const presenter = target();
@@ -885,7 +903,7 @@ async function main(): Promise<void> {
     onOpenSettings: (tab) => target()?.openSettings(tab),
     onOpenHubSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
-      void trayUpdates.open().catch((error) => log(errorMessage(error)));
+      void trayUpdates.open().catch((error) => log(diagnosticError(error), 'error'));
     },
     onToggleHeartbeat: (enabled) => {
       void target()?.core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
@@ -895,7 +913,7 @@ async function main(): Promise<void> {
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
       void target()?.core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {
-        log(`stop desktop control failed: ${errorMessage(error)}`);
+        log(`stop desktop control failed: ${diagnosticError(error)}`, 'error');
       });
     },
     onQuit: quit,
@@ -903,7 +921,7 @@ async function main(): Promise<void> {
   const hubTrayActions = {
     onOpenSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
-      void trayUpdates.open().catch((error) => log(errorMessage(error)));
+      void trayUpdates.open().catch((error) => log(diagnosticError(error), 'error'));
     },
     onToggleOpenAtLogin: setOpenAtLogin,
     onQuit: quit,
@@ -1037,7 +1055,7 @@ async function main(): Promise<void> {
       if (!window.isDestroyed()) window.show();
     }).catch((error: unknown) => {
       if (!window.isDestroyed()) {
-        log(`New bot page failed: ${errorMessage(error)}`);
+        log(`New bot page failed: ${diagnosticError(error)}`, 'error');
         window.close();
       }
     });
@@ -1126,7 +1144,7 @@ async function main(): Promise<void> {
           runners.delete(id);
           announceHolder();
           // SPEC-009 FR-12: what waited for it returns to the Boss Cat as failed.
-          void bossCat.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`Boss Cat: ${errorMessage(error)}`));
+          void bossCat.targetGone(id, 'the bot was archived', { archived: true }).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
           break;
         case 'restore':
           await manager.restore(id);
@@ -1347,7 +1365,7 @@ async function main(): Promise<void> {
       botsChanged();
       return true;
     } catch (error) {
-      log(`bot ${id} was not added: ${errorMessage(error)}`);
+      log(`bot ${id} was not added: ${diagnosticError(error)}`, 'error');
       openHubSettings('bots');
       return false;
     }
@@ -1368,7 +1386,7 @@ async function main(): Promise<void> {
       const presenter = primary();
       if (presenter) await presenter.windows.open('home');
       else openHubSettings('bots');
-    })().catch((error: unknown) => log(`second launch: ${errorMessage(error)}`));
+    })().catch((error: unknown) => log(`second launch: ${diagnosticError(error)}`, 'error'));
   });
   app.on('before-quit', (event) => {
     if (quitting) return;
@@ -1385,7 +1403,7 @@ async function main(): Promise<void> {
       else openHubSettings('bots');
     },
   });
-  await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${errorMessage(error)}`));
+  await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${diagnosticError(error)}`, 'error'));
 
   if (requested) await adoptRequested(requested);
   // FR-10 and FR-22: this installation's cores that still run are taken back whatever their
@@ -1405,7 +1423,7 @@ async function main(): Promise<void> {
     }).filter((provider): provider is string => typeof provider === 'string'));
     for (const provider of providers) {
       if (quitting) break;
-      await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${errorMessage(error)}`));
+      await providerSetup.prepareEnvironment(provider).catch((error) => log(`Provider environment: ${diagnosticError(error)}`, 'error'));
     }
   }
   if (quitting) return;
@@ -1424,9 +1442,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  process.stderr.write(
-    `${error instanceof Error ? (error.stack ?? error.message) : String(error)}\n`,
-  );
+  if (hostLogger) hostLogger.error('startup-failed', error);
+  else { try { process.stderr.write(`${diagnosticError(error)}\n`); } catch { /* no console */ } }
   // The owner sees why Cats Bot did not start; this is safe before the app is ready.
   dialog.showErrorBox('Cats Bot', error instanceof Error ? error.message : String(error));
   app.exit(1);
