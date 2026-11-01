@@ -121,7 +121,8 @@ test('a host reports the hub language over the channel, checked like any command
     assert.deepEqual((await core.getProfile()).hubLanguage, { reply: 'ko', display: 'en' });
     await assert.rejects(client.call('setHubLanguage', { reply: 'klingon', display: 'en' }), /supported languages/u);
     await assert.rejects(client.call('setHubLanguage', { reply: null, display: 'ja' }), /supported languages/u);
-    await assert.rejects(client.call('setHubLanguage', { reply: null, display: 'en', extra: 1 }), /supported languages/u);
+    assert.equal(await client.call('setHubLanguage', { reply: null, display: 'en', extra: 1 }), null);
+    assert.deepEqual((await core.getProfile()).hubLanguage, { reply: null, display: 'en' }, 'other keys are not kept');
   } finally {
     client.close();
     await core.stop();

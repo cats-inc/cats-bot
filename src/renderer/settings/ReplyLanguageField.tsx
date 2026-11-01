@@ -14,19 +14,25 @@ export function ReplyLanguageField() {
   const { locale } = useI18n();
   const toast = useToast();
   const [value, setValue] = useState<HubReplyLanguage | null>(null);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    void window.catsBot.replyLanguage.get().then(setValue);
-  }, []);
+    window.catsBot.replyLanguage.get().then(setValue, (failure: unknown) => {
+      toast(t('Could not change the reply language: {value0}', { value0: errorText(failure) }));
+    });
+  }, [toast]);
 
   const change = async (next: HubReplyLanguage) => {
     const previous = value;
     setValue(next);
+    setSaving(true);
     try {
       setValue(await window.catsBot.replyLanguage.set(next));
     } catch (failure) {
       setValue(previous);
       toast(t('Could not change the reply language: {value0}', { value0: errorText(failure) }));
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -36,7 +42,7 @@ export function ReplyLanguageField() {
       <select
         id="reply-language"
         value={value ?? ''}
-        disabled={value === null}
+        disabled={value === null || saving}
         onChange={(event) => void change(event.target.value as HubReplyLanguage)}
       >
         {hubReplyLanguageOptions(locale).map((option) => (

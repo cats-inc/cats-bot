@@ -654,11 +654,11 @@ async function main(): Promise<void> {
     }
     opening.set(botId, presenter);
     try {
+      // FR-28: the core learns its reply language first; one that refuses the report still opens.
+      await reportHubLanguage(presenter);
       await presenter.start();
       // SPEC-009 FR-3: the core learns whether it holds the role before its next send.
       await presenter.core.setBossCat(manager.registry.bossCat.holder === botId);
-      // FR-28: and its reply language. A core that refuses the report still opens.
-      await reportHubLanguage(presenter);
     } catch (error) {
       presenter.close();
       await hosted.stop().catch(() => undefined);

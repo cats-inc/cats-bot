@@ -56,8 +56,8 @@ export function isBotReplyLanguage(value: unknown): value is BotReplyLanguage {
 export function isHubLanguageReport(value: unknown): value is HubLanguageReport {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const { reply, display } = value as Record<string, unknown>;
-  return (reply === null || isReplyLanguageCode(reply)) && (display === 'en' || display === 'zh-TW')
-    && Object.keys(value).length === 2;
+  // Other keys are ignored, so a later hub can add one without older cores refusing its reports.
+  return (reply === null || isReplyLanguageCode(reply)) && (display === 'en' || display === 'zh-TW');
 }
 export function sameHubLanguageReport(a: HubLanguageReport | null, b: HubLanguageReport | null): boolean {
   return (a?.reply ?? null) === (b?.reply ?? null) && (a?.display ?? null) === (b?.display ?? null);

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
 import { BotCore, BotInstanceRunningError } from '../../src/core/bot.ts';
@@ -446,7 +446,7 @@ test('tightened permissions or new instructions replace the session before the n
 });
 
 test('the reply language reaches new sessions and a change replaces the session with a handoff (SPEC-008 FR-28)', async () => {
-  const { core } = openTestBot({ botsHome: home.botsHome, id: 'polyglot', core: fastRetries });
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'polyglot', core: fastRetries });
   await core.start();
   const createdInstructions = async (): Promise<string[]> => {
     const state = await fetchFakeState(core);
@@ -489,6 +489,32 @@ test('the reply language reaches new sessions and a change replaces the session 
     assert.ok(kept.run?.sessionId);
 
     await assert.rejects(core.updateProfile({ replyLanguage: 'klingon' as never }), /replyLanguage/u);
+
+    // A restarted core reads the last report and its own choice from the profile.
+    const saved = JSON.parse(readFileSync(botPathsFor(root).profile, 'utf8')) as Record<string, unknown>;
+    assert.deepEqual(saved.hubLanguage, { reply: 'fr', display: 'zh-TW' });
+    assert.equal(saved.replyLanguage, 'display');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a hub report that arrives during a profile save is not saved over (SPEC-008 FR-28)', async () => {
+  const { core } = openTestBot({
+    botsHome: home.botsHome, id: 'overlap', core: fastRetries, runtimeEnv: { FAKE_PROVIDER_INTERACTIONS: '1' },
+  });
+  await core.start();
+  try {
+    await sendAndWait(core, 'home', 'hello');
+    // A policy change asks the running runtime for its session controls before it saves.
+    const policy = { version: 1, mode: 'provider', constraints: { maxAccess: 'workspace-write', network: false } } as const;
+    await Promise.all([
+      core.updateProfile({ providerPolicy: policy }),
+      core.setHubLanguage({ reply: 'ja', display: 'en' }),
+    ]);
+    const profile = await core.getProfile();
+    assert.deepEqual(profile.providerPolicy, policy);
+    assert.deepEqual(profile.hubLanguage, { reply: 'ja', display: 'en' });
   } finally {
     await core.stop();
   }

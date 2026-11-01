@@ -219,6 +219,8 @@ export class BotCore implements BotHostApi {
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
+  /** The tail of the profile changes in progress (`changeProfile`). */
+  private profileChanges: Promise<unknown> = Promise.resolve();
   private handoffTimer: NodeJS.Timeout | null = null;
   private runtimeAttempt = 0;
   private runtimeRestartTimer: NodeJS.Timeout | null = null;
@@ -1362,7 +1364,17 @@ export class BotCore implements BotHostApi {
     await this.changeProfile(() => applyHubLanguage(this.profile, report, this.now()), {});
   }
 
-  private async changeProfile(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
+  /**
+   * One profile change at a time. A change can wait on the runtime's session
+   * controls, and a hub report arriving meanwhile must not be saved over.
+   */
+  private changeProfile(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
+    const next = this.profileChanges.then(() => this.runProfileChange(change, patch));
+    this.profileChanges = next.catch(() => undefined);
+    return next;
+  }
+
+  private async runProfileChange(change: () => ProfileChange | null, patch: BotProfilePatch): Promise<BotProfile> {
     if (!this.releaseLock) {
       const lock = acquireInstanceLock(this.paths);
       if (!lock.held) throw new BotInstanceRunningError(lock.owner);
@@ -1371,7 +1383,7 @@ export class BotCore implements BotHostApi {
         const loaded = loadProfile(this.paths, this.profile, true);
         if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
         this.profile = loaded.profile;
-        return await this.changeProfile(change, patch);
+        return await this.runProfileChange(change, patch);
       } finally { this.releaseLock(); this.releaseLock = null; }
     }
     const result = change();
