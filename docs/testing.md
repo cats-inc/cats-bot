@@ -80,6 +80,10 @@ last step, not the first.
 
 ### Shell tests
 
+On macOS, the tray uses a 20pt canvas, matching Cats Desktop, with native 20px
+and 40px Retina representations. When checking a native candidate, compare the
+menu-bar footprint with Desktop and check sharpness on a Retina display.
+
 `tests/shell/linuxIcons.test.ts` runs electron-builder's icon resolver and
 desktop-entry generator against the package configuration. It checks standard
 hicolor PNG sizes and matching launcher, icon and window identities. For native
@@ -359,3 +363,10 @@ test verifies stale catalog revision recovery and saved effort reaching CLI argu
 ---
 
 _Last updated: 2026-10-29_
+
+Shared tooling regressions live in `tests/shell/sharedTools.test.ts`. They cover
+Bot-specific CDP defaults/file-target selection, candidate argument boundaries
+and offline source/mode provenance. The common producer tests cover handshake
+timeouts, occupied-port/active-Runtime refusal, exact Git objects, skill
+preflight and image rendering. Real private candidate acceptance additionally
+verifies readiness, screenshot and graceful drain without installed-app changes.

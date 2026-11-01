@@ -39,7 +39,11 @@
     "dist:win": "node scripts/windows-desktop-control.mjs publish && electron-builder --win nsis portable --publish never && node scripts/windows-desktop-control.mjs verify",
     "dist:dir": "node scripts/windows-desktop-control.mjs publish && electron-builder --dir --publish never && node scripts/windows-desktop-control.mjs verify",
     "dist:preview": "node scripts/build-preview.mjs",
-    "icons": "electron scripts/make-icons.mjs"
+    "icons": "electron scripts/make-icons.mjs",
+    "tools:check": "node scripts/sync-shared-tools.mjs",
+    "desktop:candidate": "node scripts/bot-candidate.mjs",
+    "cdp:restart": "bash scripts/macos/restart-bot-with-cdp.sh",
+    "cdp:info": "node scripts/testing/bot-renderer-cdp.mjs info"
   },
   "dependencies": {
     "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-487e7c96.tgz",
