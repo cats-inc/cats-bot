@@ -431,10 +431,10 @@ async function main() {
         showDesktopUpdateMessageBox({
           platform: process.platform,
           dialogSpec,
-          createOwner: (options) => new BaseWindow(options),
-          focusApp: () => app.focus(),
-          showMessageBox: (options, owner) =>
-            owner ? dialog.showMessageBox(owner, options) : dialog.showMessageBox(options),
+          createActivationWindow: (options) => new BaseWindow(options),
+          focusApp: () => app.focus({ steal: true }),
+          isShuttingDown: () => false,
+          showMessageBox: (options) => dialog.showMessageBox(options),
         }),
     });
     let opened;
