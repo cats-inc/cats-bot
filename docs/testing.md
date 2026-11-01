@@ -352,3 +352,10 @@ test verifies stale catalog revision recovery and saved effort reaching CLI argu
 ---
 
 _Last updated: 2026-10-29_
+
+Shared tooling regressions live in `tests/shell/sharedTools.test.ts`. They cover
+Bot-specific CDP defaults/file-target selection, candidate argument boundaries
+and offline source/mode provenance. The common producer tests cover handshake
+timeouts, occupied-port/active-Runtime refusal, exact Git objects, skill
+preflight and image rendering. Real private candidate acceptance additionally
+verifies readiness, screenshot and graceful drain without installed-app changes.
