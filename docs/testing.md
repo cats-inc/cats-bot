@@ -87,7 +87,8 @@ work snapshots. `tests/shell/linuxWindowing.test.ts` covers the Linux relaunch
 arguments and bounded avatar input regions.
 
 After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
-for the real renderer's waiting/polling/cancellation checks. On Linux with X11 or
+for the real renderer's waiting/polling/cancellation checks, including recovery
+with completion notifications deliberately suppressed. On Linux with X11 or
 XWayland and `xdotool`, add `--native-drag` to exercise native avatar dragging,
 fixed bounds, transparent click-through and bubble clicks. The helper creates a
 temporary Bot/Electron profile and starts only the fake Runtime. It sends pointer

@@ -23,6 +23,7 @@ let core, notes, floating, background;
 let opened = 0;
 let menus = 0;
 let quitting = false;
+let suppressCompletion = false;
 const wait = async (predicate, label) => {
   const deadline = Date.now() + 10_000;
   while (!await predicate()) {
@@ -52,7 +53,11 @@ async function main() {
   ipcMain.on('floating:dragEnd', () => floating.remember());
   ipcMain.handle('floating:activate', () => { opened++; });
   ipcMain.handle('floating:menu', () => { menus++; });
-  core.subscribe(event => { notes.broadcast(event); floating.broadcast(event); });
+  core.subscribe(event => {
+    if (suppressCompletion && (event.type === 'turn.completed' || event.type === 'conversation.updated'
+      || (event.type === 'work.updated' && ['completed', 'failed', 'cancelled'].includes(event.workItem.state)))) return;
+    notes.broadcast(event); floating.broadcast(event);
+  });
   const note = await notes.open('home');
   await wait(() => evaluate(note, `!!document.getElementById('send')`), 'note loaded');
   const item = await core.sendOwnerMessage('home', 'busy-always');
@@ -67,6 +72,12 @@ async function main() {
   await wait(() => core.listWorkItems().find(w => w.id === item.id)?.state === 'cancelled', 'cancel deferred work');
   await wait(() => evaluate(note, `!document.getElementById('send').disabled && document.getElementById('cancel').hidden`), 'cancelled controls');
   console.log('PASS: waiting controls remain stable across polling and cancellation clears deferred work');
+  suppressCompletion = true;
+  const completed = await core.sendOwnerMessage('home', 'slow:150');
+  await wait(() => core.listWorkItems().find(w => w.id === completed.id)?.state === 'completed', 'silent completion');
+  await wait(() => evaluate(note, `!document.getElementById('send').disabled && document.getElementById('cancel').hidden`), 'poll recovers a missed completion event');
+  suppressCompletion = false;
+  console.log('PASS: authoritative work polling recovers a missed completion event');
   notes.hide('home');
   await floating.show();
   await wait(() => evaluate(floating.browserWindow, `!!document.getElementById('cat')`), 'avatar loaded');

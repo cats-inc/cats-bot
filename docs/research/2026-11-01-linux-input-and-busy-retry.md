@@ -22,6 +22,8 @@ acceptance fixture passed real pointer dragging by 100×60 pixels, fixed window
 dimensions, transparent click-through and bubble clicks. The actual note renderer
 kept its waiting controls stable across the three-second poll and cancelled its
 deferred item. The fixture used only a fake Runtime and temporary state.
+With terminal work, turn-completed and conversation-updated notifications
+deliberately suppressed, authoritative work polling restored the idle controls.
 The direct-executable path without an X11 flag also passed: it relaunched once,
 selected X11, then completed the same acceptance fixture. Single-click activation
 and right-click menu requests passed with native pointer input as well.

@@ -142,9 +142,12 @@ export function NoteApp() {
   const desktop = useDesktopControl(conversation);
   const refreshDesktop = desktop.refresh;
   const refreshInteractions = useCallback(async () => {
-    const snapshot = await api.invoke('providerInteractions', conversation.current);
+    const id = conversation.current;
+    const [snapshot, status, work] = await Promise.all([
+      api.invoke('providerInteractions', id), api.invoke('status'), api.invoke('listWorkItems', id),
+    ]);
     setInteractions(snapshot.interactions);
-    const status = await api.invoke('status');
+    setWorkItems(current => mergeWorkItems(current, work.filter(item => item.conversationId === id)));
     setRunningState(status.queue.running?.conversationId === conversation.current);
     runningRef.current = status.queue.running?.conversationId === conversation.current;
   }, []);
