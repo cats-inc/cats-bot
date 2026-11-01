@@ -2,7 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { TranscriptEntry } from '../../src/core/types.ts';
-import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, localEntry, visibleEntries } from '../../src/renderer/note/transcript.ts';
+import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, localEntry, noteRoleSuffix, visibleEntries } from '../../src/renderer/note/transcript.ts';
+import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 
 /** SPEC-001 FR-33, SPEC-003: what the note shows from the transcript and the live events. */
 
@@ -43,4 +44,18 @@ test('a line the note shows by itself never collides with transcript entries', (
   const second = localEntry('error', 'again');
   assert.ok(first.seq < 0 && second.seq < first.seq);
   assert.equal(errorText(new Error("Error invoking remote method 'bot:invoke': Error: An owner message needs text")), 'An owner message needs text');
+});
+
+test('the Boss Cat note header names only the role, with or without provider tools (SPEC-009 FR-10, FR-11)', () => {
+  try {
+    for (const [locale, role] of [['en', ' · Boss Cat'], ['zh-TW', ' · 主控貓']] as const) {
+      acceptLanguage({ preference: locale, locale });
+      assert.equal(noteRoleSuffix({ holder: true, tools: true }), role);
+      assert.equal(noteRoleSuffix({ holder: true, tools: false }), role);
+      assert.equal(noteRoleSuffix({ holder: false, tools: false }), '');
+      assert.equal(noteRoleSuffix(undefined), '');
+    }
+  } finally {
+    acceptLanguage({ preference: 'en', locale: 'en' });
+  }
 });

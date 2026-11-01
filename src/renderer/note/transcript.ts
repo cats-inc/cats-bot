@@ -8,6 +8,14 @@ import { t } from '../localeStore.ts';
  * transcript is read again.
  */
 
+/**
+ * SPEC-009 FR-10: the Boss Cat's note names its role in the header. Whether its
+ * provider gives it tools is shown only in Settings → Bots (FR-11).
+ */
+export function noteRoleSuffix(bossCat: { holder: boolean; tools: boolean } | undefined): string {
+  return bossCat?.holder ? ` · ${t('Boss Cat')}` : '';
+}
+
 export interface PendingReply {
   workItemId: string;
   text: string;
