@@ -60,6 +60,8 @@ function Invoke-HiddenCommand {
             join(root, 'Install-ClaudeCode.ps1'),
             '-CheckOnly',
             '-Json',
+            // GitHub's Windows runner is elevated; this fixture never installs.
+            '-AllowAdmin',
             '-InstallState',
             'installed',
             '-NpmShimState',
