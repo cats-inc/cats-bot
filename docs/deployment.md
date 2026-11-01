@@ -33,6 +33,20 @@ source/checksums and provenance, then publishes a prerelease with
 `make_latest=false`. The tag is created only at publication. No push or tag
 trigger publishes.
 
+## Release and tag protection
+
+The repository enables GitHub immutable releases. Publish only after all assets
+are attached to the draft; publication locks the assets and their tag. The
+active `Protect release tags` ruleset also restricts updates and deletion of
+`refs/tags/v*`, with no bypass actors, matching Cats Desktop's policy. Tag creation
+remains allowed for the publication workflow.
+
+Deleting a release does not bypass the tag ruleset. Administrative cleanup needs
+explicit owner authorization and a deliberate ruleset change. A tag name used by
+an immutable release cannot be reused even after the release and tag are removed.
+Enabling release immutability applies to future releases; the tag ruleset applies
+to every matching tag.
+
 ## Artifacts and signing
 
 | Platform | Architectures and assets                                      | Standard trust                                                                       |
