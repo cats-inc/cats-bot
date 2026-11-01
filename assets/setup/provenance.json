@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "fd61bc2bb980e491f63b4035d04abee9b99c5021",
+  "commit": "7b3f94ef822860f1ceb34398d93d8245f8fd39d0",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
@@ -22,7 +22,7 @@
     },
     {
       "source": "scripts/windows/Install-ClaudeCode.ps1",
-      "sha256": "ab9ee3b25a294ba23e8373b60f6ba4ed4b1ad87ab9a9d2abeb9f2df32dabb973",
+      "sha256": "dfa68804a15d352e22b8b456146ada0cfcf9af94a07c80ace7e0e226b12d7a98",
       "path": "windows/Install-ClaudeCode.ps1",
       "executable": false
     },
