@@ -1,6 +1,7 @@
 import { renderIconVariants } from './shared/icon-pipeline.mjs';
 // Renders src/renderer/cat.svg into the PNG icons the app ships:
 //   assets/installer/icon.png (1024x1024, electron-builder makes .ico/.icns)
+//   assets/installer/linux/<size>x<size>.png (standard hicolor sizes, 16–512)
 //   assets/icon.png       (256x256, window icon at run time)
 //   assets/tray-icon.png  (32x32) and assets/tray-icon@2x.png (64x64)
 // Chromium does the rasterizing, so the repository needs no image tooling.
@@ -23,6 +24,8 @@ const targets = [
   [256, join(root, 'assets', 'icon.png')],
   [32, join(root, 'assets', 'tray-icon.png')],
   [64, join(root, 'assets', 'tray-icon@2x.png')],
+  ...[16, 24, 32, 48, 64, 128, 256, 512].map((size) =>
+    [size, join(root, 'assets', 'installer', 'linux', `${size}x${size}.png`)]),
 ];
 
 async function render() {

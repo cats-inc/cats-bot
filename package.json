@@ -1,5 +1,6 @@
 {
   "name": "@cats-inc/cats-bot",
+  "desktopName": "cats-bot.desktop",
   "version": "0.4.2",
   "private": true,
   "description": "Standalone always-alive desktop bots for the Cats ecosystem: one process per bot, wrapping an agent CLI through cats-runtime.",
@@ -150,8 +151,9 @@
       ],
       "category": "Utility",
       "executableName": "cats-bot",
+      "syncDesktopName": true,
       "artifactName": "Cats-Bot-${version}-${arch}.${ext}",
-      "icon": "assets/installer/icon.png"
+      "icon": "assets/installer/linux"
     }
   },
   "allowScripts": {

@@ -80,6 +80,13 @@ last step, not the first.
 
 ### Shell tests
 
+`tests/shell/linuxIcons.test.ts` runs electron-builder's icon resolver and
+desktop-entry generator against the package configuration. It checks standard
+hicolor PNG sizes and matching launcher, icon and window identities. For native
+Linux acceptance, inspect the built `.deb` with `dpkg-deb --contents`, then check
+that GTK resolves `cats-bot` and the running window shows the cat icon in the
+taskbar. These native checks are separate from the cross-platform test suite.
+
 `tests/shell/noteWindows.test.ts` runs the real note window manager against a
 controllable Electron double. It covers a close after startup selected its restore
 list, overlapping opens during page load, explicit reopening, shutdown/deletion
