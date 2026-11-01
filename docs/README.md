@@ -1,5 +1,8 @@
 # Documentation Index
 
+The [0.4.4 Standard Preview release notes](releases/v0.4.4.md) describe the refreshed
+Runtime catalog, note/update fixes, exact inputs, compatibility and signing policy.
+
 [Runtime catalog validation](research/2026-11-01-runtime-catalog-consumer-validation.md)
 records the five-provider selector contract and refreshed Runtime candidate checks.
 
