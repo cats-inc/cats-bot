@@ -1,5 +1,8 @@
 # Documentation Index
 
+[Runtime catalog validation](research/2026-11-01-runtime-catalog-consumer-validation.md)
+records the five-provider selector contract and refreshed Runtime candidate checks.
+
 The follow-on [shared Platform proposal](architecture.md#proposed-shared-platform-consumption-2026-10-29)
 links Platform's ADR-142, SPEC-134 and PLAN-127 package-consumption design.
 It proposes versioned setup/native/host reuse and requires a Desktop-derived

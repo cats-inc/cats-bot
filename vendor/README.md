@@ -2,11 +2,16 @@
 
 The Bot consumes a packed Runtime artifact over its process/HTTP boundary, never
 source imports from another checkout. This candidate contains Runtime source
-`487e7c9698ac4ef4b3f19dcf4baee9ee3d61ae21`, package version 0.6.2. It adds Codex's
-native MCP `tool_approval` mapping and explicit per-call prompting to the existing
-Codex and Claude Code interactions, policy and inventory. The tarball is 1,788,203
-bytes, SHA-1 `6b73f49b3192f3b4ae13e7cb4167727f53f59c0e`.
+`c6e575b672ecaf3d6113c08260720b57c7d62765`, package version 0.6.2. It refreshes the
+requested provider catalogs, adding Codex GPT-6.1 Terra and Cursor DeepSeek V4.1 Flash
+1017. Bot's menu remains Codex, Claude, Antigravity, Grok and Muse; Copilot's prior
+catalog is retained because its account feature returned HTTP 403. Existing Codex
+and Claude Code interactions, policy and inventory stay available. The tarball is
+1,790,301 bytes, SHA-256
+`b26c51765a686a9f18ffb1381bce19b3984de3a9bf0180c4439049984fbc2b12`.
 It is not an npm publication. `package-lock.json` pins the tarball integrity.
+Independent comparison of all 1,473 archive members found that only the authored
+and generated catalog files changed from the previous pinned artifact; executable bytes are unchanged.
 
 Build the exact Runtime source with its lockfile, run `npm run build`, then
 `npm pack --ignore-scripts`; name the artifact with the source commit and retain
