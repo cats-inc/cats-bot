@@ -155,7 +155,7 @@ folder-wide tools such as bulk `git pull` scripts also scan.
 | `dyu` | Read this file and own agent file, reply exactly “I am [Agent Name], and I understand.”, then await the next task |
 | `cnp` | Check secrets and scope; `git add .` and Conventional Commit; rebase onto the latest `origin/<default>` (`main` or `master`) and push straight to it, no PR (`git push origin HEAD:<default>` from a worktree branch). An explicit `cnp` authorizes this direct push whatever the change size. Never force-push; if the push is rejected, stop and report |
 | `cnr` | Check secrets and scope; `git add .` and Conventional Commit on a `<type>/<slug>` branch (create one when on the default branch); push it, `gh pr create` with a Conventional Commit title and a summary and validation body, then `gh pr merge <n> --auto --squash`. Report the PR URL; armed auto-merge is not a merge until `gh pr view` shows `MERGED`, and a PR behind the default branch must be updated to land |
-| `mbf` | Merge Bootstrap Files: merge each `*.bootstrap` into its counterpart while preserving project decisions, delete the proposal once merged, delete each `.gitkeep` whose directory has other files, and report merged and leftover files; no proposals means nothing to merge |
+| `mbf` | Merge Bootstrap Files: merge each `*.bootstrap` into its counterpart while preserving project decisions, delete the proposal once merged, delete each `.gitkeep` whose directory has other files not ignored by `.gitignore`, and report merged and leftover files; no proposals means nothing to merge |
 | `umd` | Update documentation affected by recent changes; use `update-docs` if installed |
 | `rlc` | Read-only review of the last commit; use an independent reviewer for your own code |
 
