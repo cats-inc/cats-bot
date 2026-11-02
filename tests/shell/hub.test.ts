@@ -260,12 +260,16 @@ test('review of Phase 2: a further bot\'s floating cat starts one cat to the lef
 });
 
 test('a finished first run turns Start at login on only for a copy whose path lasts (FR-23)', () => {
-  const copy = { packaged: true, portable: false, inApplicationsFolder: false };
+  const copy = { packaged: true, portable: false, inApplicationsFolder: false, customHome: false };
   assert.equal(startAtLoginByDefault({ ...copy, platform: 'win32' }), true);
   assert.equal(startAtLoginByDefault({ ...copy, platform: 'linux' }), true);
   assert.equal(startAtLoginByDefault({ ...copy, platform: 'darwin', inApplicationsFolder: true }), true);
   assert.equal(startAtLoginByDefault({ ...copy, platform: 'darwin' }), false);
   assert.equal(startAtLoginByDefault({ ...copy, platform: 'win32', portable: true }), false);
+  // An isolated check of an installed copy must not touch the owner's sign-in.
+  for (const platform of ['win32', 'linux'] as const) {
+    assert.equal(startAtLoginByDefault({ ...copy, platform, customHome: true }), false);
+  }
   for (const platform of ['win32', 'darwin', 'linux'] as const) {
     assert.equal(startAtLoginByDefault({ ...copy, platform, packaged: false, inApplicationsFolder: true }), false);
   }
@@ -275,5 +279,6 @@ test('a finished first run turns Start at login on only for a copy whose path la
   const main = readFileSync(join(import.meta.dirname, '../../src/shell/electron/main.ts'), 'utf8');
   assert.match(main, /const id = await createFirstBot\(\);\s+if \(!id\) return null;\s+ids = \[id\];\s+firstRunFinished = true;/u);
   assert.equal(main.match(/firstRunFinished = true/gu)?.length, 1);
-  assert.match(main, /if \(firstRunFinished && startAtLoginByDefault\(/u);
+  assert.match(main, /if \(firstRunFinished && startAtLoginByDefault\(\{[\s\S]*?customHome: Boolean\(process\.env\.CATS_BOT_HOME\),/u);
+  assert.match(main, /if \(!process\.env\.CATS_BOT_HOME\) refreshLinuxAutostart\(/u);
 });

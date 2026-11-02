@@ -33,11 +33,12 @@ export interface HubState {
 
 /**
  * FR-23: whether a finished first run turns Start at login on. A development
- * shell, a portable copy and a Mac app still on its disk image would register
- * a path that does not last.
+ * shell, a portable copy and a Mac app outside Applications would register a
+ * path that does not last. A copy run against another root, as an isolated check
+ * does, must not change what starts when the owner signs in.
  */
-export function startAtLoginByDefault(copy: { platform: NodeJS.Platform; packaged: boolean; portable: boolean; inApplicationsFolder: boolean }): boolean {
-  if (!copy.packaged || copy.portable) return false;
+export function startAtLoginByDefault(copy: { platform: NodeJS.Platform; packaged: boolean; portable: boolean; inApplicationsFolder: boolean; customHome: boolean }): boolean {
+  if (!copy.packaged || copy.portable || copy.customHome) return false;
   return copy.platform === 'win32' || copy.platform === 'linux' || (copy.platform === 'darwin' && copy.inApplicationsFolder);
 }
 

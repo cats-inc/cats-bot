@@ -64,7 +64,9 @@ same private compositor by reading a pixel inside the menu, over repeated right-
 Waiting for rendered frames did not help, so the cause is not simply the window's first
 frame; it was not traced further. ADR-014 shows the window 150 ms after the menu, where a
 miss leaves today's behaviour rather than an invisible menu. At 150 ms, menu items still
-worked, and a focusable owner also passed 6/6. The menu opened within 7–14 ms.
+worked, and a focusable owner also passed 6/6. The menu opened within 7–14 ms. Should a
+click ever fail to close the menu, the window would take every click on the desktop, so it
+also goes with the menu's owner and after 30 seconds.
 
 ## The implementation
 
