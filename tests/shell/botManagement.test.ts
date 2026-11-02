@@ -9,7 +9,8 @@ import { acquireInstanceLock } from '../../src/core/store/lock.ts';
 import { botPathsFor, hubPathsFor } from '../../src/core/store/paths.ts';
 import { BotManagementError, BotManager, type BotCores } from '../../src/shell/electron/hub/botManager.ts';
 import { CoreRunner } from '../../src/shell/electron/hub/coreRunner.ts';
-import { addBot, emptyRegistry, readRegistry, withHolder, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { addBot, DEFAULT_MAX_BOTS, emptyRegistry, readRegistry, withHolder, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { BOT_AVATARS } from '../../src/shared/avatars.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 // PLAN-009 Phase 3 (SPEC-008 FR-3, FR-5, FR-6, FR-9 to FR-11), apart from Electron.
@@ -78,6 +79,16 @@ test('new bots take the looks no bot uses, and the owner may still share one (FR
   await manager.archive('sixth');
   await manager.restore('second');
   assert.equal(look('second'), 'tuxedo');
+});
+
+test('there are more looks than bots, so a hub at the cap has no look in common (FR-29)', async () => {
+  assert.ok(BOT_AVATARS.length > DEFAULT_MAX_BOTS);
+  const { root, manager } = setUp();
+  const looks: unknown[] = [];
+  for (let bot = 1; bot <= DEFAULT_MAX_BOTS; bot += 1) {
+    looks.push(readBotProfile(join(root, 'bots', await manager.create({ id: `bot-${bot}`, name: `Bot ${bot}`, provider: 'claude' })))?.avatar);
+  }
+  assert.equal(new Set(looks).size, DEFAULT_MAX_BOTS);
 });
 
 test('a look that cannot be read never stops a new bot (FR-29)', async () => {

@@ -4,7 +4,10 @@
  * them in, and the first is the Cat every bot had before there was a choice.
  */
 
-export const BOT_AVATARS = ['ginger', 'tuxedo', 'siamese', 'calico', 'fold'] as const;
+export const BOT_AVATARS = [
+  'ginger', 'tuxedo', 'siamese', 'calico', 'fold',
+  'tabby', 'white-tabby', 'black', 'persian', 'bengal',
+] as const;
 export type BotAvatar = (typeof BOT_AVATARS)[number];
 export const DEFAULT_BOT_AVATAR: BotAvatar = 'ginger';
 
@@ -15,6 +18,11 @@ export const BOT_AVATAR_LABELS: Readonly<Record<BotAvatar, string>> = {
   siamese: 'Siamese',
   calico: 'Calico',
   fold: 'Gray fold',
+  tabby: 'Brown tabby',
+  'white-tabby': 'White tabby',
+  black: 'Black',
+  persian: 'Persian',
+  bengal: 'Bengal',
 };
 
 export function isBotAvatar(value: unknown): value is BotAvatar {

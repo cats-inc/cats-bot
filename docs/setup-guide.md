@@ -93,7 +93,7 @@ Closing a conversation during startup also keeps it hidden: a delayed restore or
 page load cannot reopen it. Open it explicitly from its Cat’s avatar menu or bot settings when needed.
 If the avatar is hidden, the hub tray’s Show floating cats reveals every running
 Cat. Clicking the tray icon opens Cats Bot Settings on its Bots tab.
-A Cat has one of five looks, chosen on the setup page or the Bot tab of its
+A Cat has one of ten looks, chosen on the setup page or the Bot tab of its
 settings. A new bot starts on a look no other bot uses; sharing one is allowed.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.
