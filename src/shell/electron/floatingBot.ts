@@ -11,7 +11,8 @@ import { sharedX11InputShape, x11InputRects, type InputRect, type WindowInputSha
 
 /**
  * SPEC-002 FR-7 / ADR-002 §4: the floating bot. One transparent, frameless,
- * topmost window that never takes the taskbar or the focus. It ignores the
+ * topmost window absent from the taskbar. It only takes focus while its native
+ * menu is open on Windows/macOS (popupMenu). It ignores the
  * mouse (forwarding moves, so the page still sees hover) except while the
  * pointer is over the cat or its bubble, which the page reports. Linux cannot
  * forward moves through an ignored window, so there the page reports its

@@ -6,6 +6,7 @@
 
 | Document | Date | Topic | Summary |
 |----------|------|-------|---------|
+| [Avatar menu focus](2026-11-02-avatar-menu-focus.md) | 2026-11-02 | Outside-click dismissal | Windows native reproduction, temporary menu-owner focus and the macOS validation boundary |
 | [Runtime catalog consumer validation](2026-11-01-runtime-catalog-consumer-validation.md) | 2026-11-01 | Five-provider Runtime catalog consumer | New Terra, exact shared labels/controls, isolated candidate package and 18 focused tests |
 | [Linux input and busy retry](./2026-11-01-linux-input-and-busy-retry.md) | 2026-11-01 | Linux avatar and deferred messages | XWayland/native input acceptance, bounded conflicts and HTTP admission ownership |
 | [2026-10-27-resident-bot-architecture-assessment](./2026-10-27-resident-bot-architecture-assessment.md) | 2026-10-27 | Resident bot core and Runtime boundary | Independent source-based assessment: direct Runtime dependency, global execution settings with separate conversation contexts, durable wake/work recovery, presentation isolation and proposed acceptance slices; excludes the other feasibility report from its evidence |

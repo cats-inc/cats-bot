@@ -143,6 +143,8 @@ Linux floating-window compatibility is recorded in
 [input and retry evidence](research/2026-11-01-linux-input-and-busy-retry.md). Avatar
 input is recorded in [ADR-014](decisions/014-set-linux-avatar-input-through-the-x11-input-shape.md)
 and its [findings](research/2026-11-02-linux-avatar-black-area-and-clicks.md).
+Windows/macOS popup-owner focus and its native validation boundary are recorded
+in the [avatar menu findings](research/2026-11-02-avatar-menu-focus.md).
 
 For complex features, use the spec-plan-implement workflow:
 
