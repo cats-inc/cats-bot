@@ -22,6 +22,8 @@ export interface SessionBinderDependencies {
   now(): Date;
   /** The session's MCP servers; `sessionId` is null for a session about to be created. */
   mcpServers?(conversationId: string, sessionId: string | null): RuntimeMcpServer[];
+  /** Remember the exact overlay used to create a session before its first send. */
+  sessionCreated?(sessionId: string, servers: RuntimeMcpServer[]): void;
   /** A queued or running work item: its prompt reaches the session as a message, not in the handoff pack. */
   isPendingWorkItem?(workItemId: string): boolean;
   /** Closes a replaced session once no turn runs in it (FR-27); without it the old worker is left alone. */
@@ -186,6 +188,7 @@ export class SessionBinder {
         model: profile.executionTarget.model,
         configRevision: profile.configRevision,
       });
+      this.deps.sessionCreated?.(view.id, request.mcpServers ?? []);
       if (pack.text) {
         this.deps.conversations.update(conversation.id, (record) => {
           record.checkpoint = { digest: pack.text, throughSeq: pack.throughSeq, updatedAt: this.deps.now().toISOString() };

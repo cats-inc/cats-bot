@@ -172,6 +172,36 @@ enter the transcript or the journal. Within the existing minor line the old CLI/
 kept; a breaking change needs the next minor, and versions and publishing follow later authorization
 and are not a side effect of this document's work.
 
+### B9. Antigravity, Grok and Muse work capability (2026-11-02)
+
+The owner authorized extending these three providers and requested isolated
+worktrees. Runtime SPEC-040 / PLAN-051 owns the native transport and policy
+implementation. Bot keeps the existing interaction API, serialized turn gate
+and transcript/handoff logic.
+
+- Add an explicit hosted work target for a provider policy. Existing profiles
+  with `providerPolicy: null` retain their legacy permissions; merely negotiating
+  interaction UI is not a grant to write or run commands.
+- Changing between legacy and hosted execution is a Runtime target change. Wait
+  for the admitted turn to end, regenerate the private target configuration and
+  bind the new session under the new config revision. Validate the new target,
+  not the old running target's capabilities.
+- Resolve session MCP support for the hosted/legacy target and report actual
+  authenticated tool discovery separately from configuration. Distinguish native tools, Cats tools, observed inventory
+  and verified calls. A missing official Antigravity ACP executable or incompatible
+  platform must be shown as setup/unavailability, not hidden readonly operation.
+  Antigravity local tools/approvals are implemented, but Cats MCP is gated until
+  native credential persistence and name isolation can be verified.
+- Offer a clearly labelled work policy that inherits native permissions and
+  their reviewer. These three targets initially require a full machine/network
+  ceiling; a native sandbox baseline is not a host confinement promise. Unsupported access/network/reviewer combinations
+  are rejected before a model turn, never silently replaced with full access.
+- Update the exact Runtime source/artifact pin after producer validation. No
+  profile/journal schema change or package release is part of this authorization.
+
+The new acceptance matrix is tracked in PLAN-004 P6 and Runtime PLAN-051;
+earlier Codex/Claude acceptance remains scoped to its recorded evidence.
+
 ## Acceptance Criteria
 
 | ID | Acceptance |

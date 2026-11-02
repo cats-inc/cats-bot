@@ -139,3 +139,30 @@ test('schedule_list and schedule_cancel only see schedules of the calling conver
   assert.notEqual(cancelledByA.isError, true);
   assert.equal(created.find((schedule) => schedule.id === id)?.state, 'cancelled');
 });
+
+test('a descriptor rotated during body upload cannot discover tools for the new execution', async () => {
+  const { request } = await import('node:http');
+  const tracked = new BotToolServer({ serverVersion: 'test', trackDiscovery: true,
+    handlers: { list: () => [], call: async () => ({ text: 'unused' }) } });
+  await tracked.start();
+  try {
+    const url = tracked.descriptorFor('slow')[0]!.url;
+    const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' });
+    const received = new Promise<void>(resolve => {
+      (tracked as unknown as { server: import('node:http').Server }).server.once('request', () => resolve());
+    });
+    let req!: import('node:http').ClientRequest;
+    const done = new Promise<number | undefined>((resolve, reject) => {
+      req = request(url, { method: 'POST', headers: { Authorization: `Bearer ${tracked.token}`,
+        'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) } }, response => {
+        response.resume(); response.on('end', () => resolve(response.statusCode));
+      });
+      req.on('error', reject); req.flushHeaders();
+    });
+    await received;
+    tracked.rotateDiscovery('slow');
+    req.end(body);
+    assert.equal(await done, 401);
+    assert.equal(tracked.hasDiscovered('slow'), false);
+  } finally { await tracked.stop(); }
+});

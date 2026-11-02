@@ -5,6 +5,8 @@
 // fast and deterministic. Never used outside tests.
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 
 const args = process.argv.slice(2);
 function flag(name) {
@@ -198,7 +200,10 @@ const server = createServer(async (req, res) => {
   }
   // Like cats-runtime 0.6.1: only the configured provider (claude for the fake) has a catalog.
   if (path === '/providers/config' && process.env.FAKE_PROVIDER_INTERACTIONS === '1') {
-    return json(res, 200, { providers: Object.fromEntries(['claude', 'codex'].map(provider => [provider, {
+    if (process.env.FAKE_HOSTED_INTERACTIONS_ONLY === '1' && !readFileSync(join(process.env.CATS_RUNTIME_DIR, 'config', 'providers.yaml'), 'utf8').includes('protocol: \"hosted\"')) {
+      return json(res, 200, { providers: {} });
+    }
+    return json(res, 200, { providers: Object.fromEntries(['claude', 'codex', 'muse', 'grok', 'antigravity'].map(provider => [provider, {
       defaultInstance: 'native', defaultBackend: 'cli', instances: [{ id: 'native', backend: 'cli', continuity: {
         interactions: { version: 1, kinds: ['user_input'] }, sessionCapabilities: { version: 1, executionPolicy: true, inventory: true },
       } }],

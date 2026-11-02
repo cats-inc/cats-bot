@@ -248,3 +248,9 @@ That is intentional: Node resolves the file that exists on disk, and
 ---
 
 _Last updated: 2026-10-27_
+
+
+For Muse, Grok and Antigravity work tools, see
+[native provider setup and limitations](provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
+The provider-access switch is opt-in; no existing profile gains broader access
+merely by upgrading Bot.
