@@ -16,6 +16,20 @@ export function linuxWindowingRelaunchArgs(commandLine: CommandLine, platform = 
   return [...args, '--ozone-platform=x11'];
 }
 
+/** Whether this process's windows are X11 windows. A backend nobody asked for follows the session. */
+export function linuxWindowsAreX11(commandLine: CommandLine, platform = process.platform, env = process.env): boolean {
+  if (platform !== 'linux' || !env.DISPLAY) return false;
+  const requested = commandLine.getSwitchValue('ozone-platform');
+  if (requested === 'x11') return true;
+  if (requested === 'wayland' || requested === 'auto') return false;
+  return env.XDG_SESSION_TYPE !== 'wayland';
+}
+
+/** Whether those X11 windows live on a Wayland desktop, where X11 sees none of its native windows' input. */
+export function linuxWindowsUnderWayland(commandLine: CommandLine, platform = process.platform, env = process.env): boolean {
+  return linuxWindowsAreX11(commandLine, platform, env) && Boolean(env.WAYLAND_DISPLAY);
+}
+
 export function relaunchForLinuxWindowing(app: { commandLine: CommandLine; relaunch(options: { args: string[] }): void; exit(code: number): void }): boolean {
   const args = linuxWindowingRelaunchArgs(app.commandLine);
   if (!args) return false;

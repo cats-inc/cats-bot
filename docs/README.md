@@ -140,7 +140,9 @@ Standard Preview delivery and host-owned Check for Updates are defined by
 
 Linux floating-window compatibility is recorded in
 [ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md) and its
-[input and retry evidence](research/2026-11-01-linux-input-and-busy-retry.md).
+[input and retry evidence](research/2026-11-01-linux-input-and-busy-retry.md). Avatar
+input is recorded in [ADR-014](decisions/014-set-linux-avatar-input-through-the-x11-input-shape.md)
+and its [findings](research/2026-11-02-linux-avatar-black-area-and-clicks.md).
 
 For complex features, use the spec-plan-implement workflow:
 

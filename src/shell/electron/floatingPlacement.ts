@@ -39,6 +39,19 @@ interface Display {
   workArea: Rect;
 }
 
+/** The smallest rectangle holding every display. */
+export function displaysBounds(displays: ReadonlyArray<{ bounds: Rect }>): Rect {
+  const rects = displays.map((display) => display.bounds);
+  const x = Math.min(...rects.map((rect) => rect.x));
+  const y = Math.min(...rects.map((rect) => rect.y));
+  return {
+    x,
+    y,
+    width: Math.max(...rects.map((rect) => rect.x + rect.width)) - x,
+    height: Math.max(...rects.map((rect) => rect.y + rect.height)) - y,
+  };
+}
+
 function overlap(a: Rect, b: Rect): { width: number; height: number } {
   return {
     width: Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x),

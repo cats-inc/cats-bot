@@ -105,7 +105,20 @@ or XWayland (`DISPLAY`). The installed launcher supplies `--ozone-platform=x11`;
 a direct executable launch on Wayland relaunches once with that flag before
 starting any bot. Explicit `--ozone-platform=wayland` remains an advanced override
 and does not support these floating-window features. See
-[ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md).
+[ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md) and
+[ADR-014](decisions/014-set-linux-avatar-input-through-the-x11-input-shape.md).
+
+Finishing the first run turns Start at login on, once, on every platform; a development
+shell, a portable copy and a Mac app still on its disk image stay off. An installation
+that already has a bot keeps its setting. It can be turned off from the tray or Settings.
+
+On Linux, an installed copy writes
+`$XDG_CONFIG_HOME/autostart/cats-bot.desktop` (normally under `~/.config`). That file
+decides the setting: removing or disabling it in the desktop's settings turns Start at
+login off, and Cats Bot does not register it again. A file of that name that Cats Bot
+did not write is neither replaced nor removed. Removing the package cannot reach your
+home folder, so the entry stays behind but does nothing, because its `TryExec` no longer
+finds the program.
 
 A busy conversation keeps its waiting status and Cancel button through automatic
 retries. After eight owner-message attempts, retrying stops and the message stays

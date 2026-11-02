@@ -1,17 +1,21 @@
-import { BrowserWindow, screen } from 'electron';
+import { app, BrowserWindow, screen } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
 import { bubbleText, FLOATING_CAT, FLOATING_SIZE, floatingInputRegions, placeFloating } from './floatingPlacement.ts';
+import { linuxWindowsAreX11 } from './linuxWindowing.ts';
 import { guardNavigation } from './navigation.ts';
 import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { applyWindowIdentity } from './windowIdentity.ts';
 import type { FloatingBotState } from './viewState.ts';
+import { sharedX11InputShape, x11InputRects, type InputRect, type WindowInputShape } from './x11InputShape.ts';
 
 /**
  * SPEC-002 FR-7 / ADR-002 §4: the floating bot. One transparent, frameless,
  * topmost window that never takes the taskbar or the focus. It ignores the
  * mouse (forwarding moves, so the page still sees hover) except while the
- * pointer is over the cat or its bubble, which the page reports.
+ * pointer is over the cat or its bubble, which the page reports. Linux cannot
+ * forward moves through an ignored window, so there the page reports its
+ * visible regions and they become the window's X11 input shape (ADR-014).
  */
 
 export interface FloatingBubble {
@@ -32,15 +36,29 @@ export class FloatingBot {
   private readonly options: FloatingBotOptions;
   private window: BrowserWindow | null = null;
   private watchingDisplays = false;
+  private inputShape: WindowInputShape | null | undefined;
+  private inputRegions: readonly InputRect[] = [FLOATING_CAT];
 
   constructor(options: FloatingBotOptions) {
     this.options = options;
   }
 
+  private readonly applyInputRegions = (): void => {
+    const window = this.browserWindow;
+    if (!window) return;
+    if (this.inputShape === undefined) {
+      this.inputShape = linuxWindowsAreX11(app.commandLine) ? sharedX11InputShape((line) => this.options.log?.(line)) : null;
+      if (!this.inputShape) this.options.log?.('floating bot: this display backend has no input regions');
+    }
+    const scale = screen.getDisplayMatching(window.getBounds()).scaleFactor;
+    this.inputShape?.set(window.getNativeWindowHandle().readUInt32LE(), x11InputRects(this.inputRegions, scale));
+  };
+
   /** A display removed, added or rescaled can leave the cat off every screen; bring it back. */
   private readonly keepReachable = (): void => {
     const window = this.browserWindow;
     if (!window) return;
+    if (process.platform === 'linux') this.applyInputRegions();
     const [x = 0, y = 0] = window.getPosition();
     const next = placeFloating({ x, y }, screen.getAllDisplays(), screen.getPrimaryDisplay());
     if (next.x === x && next.y === y) return;
@@ -115,17 +133,20 @@ export class FloatingBot {
     guardNavigation(window.webContents);
     // Above ordinary topmost windows, like a desktop pet.
     window.setAlwaysOnTop(true, 'screen-saver');
+    this.inputRegions = [FLOATING_CAT];
     const resetInput = () => {
-      if (process.platform === 'linux') {
-        // Linux cannot forward mouse moves through an ignored window. Keep
-        // the visible regions interactive and let X11 pass the rest through.
-        window.setIgnoreMouseEvents(false);
-        window.setShape([FLOATING_CAT]);
-      } else window.setIgnoreMouseEvents(true, { forward: true });
+      // Not setIgnoreMouseEvents on Linux: it resets the input shape over
+      // Electron's own X connection, in no fixed order with this one. Not
+      // setShape either: outside a bounding shape XWayland shows stale pixels
+      // and the compositor still sends the window every click (ADR-014).
+      if (process.platform === 'linux') this.applyInputRegions();
+      else window.setIgnoreMouseEvents(true, { forward: true });
     };
     resetInput();
     // Forwarded moves go to the page's own child window, which a load replaces.
     window.webContents.on('did-finish-load', resetInput);
+    // The first request can reach the server before the window does; showing is always after it.
+    if (process.platform === 'linux') window.on('show', this.applyInputRegions);
     window.on('move', () => this.remember());
     window.on('closed', () => {
       if (this.window === window) this.window = null;
@@ -156,7 +177,9 @@ export class FloatingBot {
   setInputRegions(value: unknown): void {
     if (process.platform !== 'linux') return;
     const regions = floatingInputRegions(value);
-    if (regions) this.browserWindow?.setShape(regions);
+    if (!regions) return;
+    this.inputRegions = regions;
+    this.applyInputRegions();
   }
 
   moveTo(x: number, y: number): void {

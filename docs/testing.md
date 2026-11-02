@@ -143,17 +143,32 @@ installed profile, provider or real monitor configuration was changed.
 safe cancellation before HTTP admission and removal of deferred work.
 `tests/renderer/workState.test.ts` covers waiting controls and stale/equal-time
 work snapshots. `tests/shell/linuxWindowing.test.ts` covers the Linux relaunch
-arguments and bounded avatar input regions.
+arguments, bounded avatar input regions and the absence of a bounding shape.
+`tests/shell/x11InputShape.test.ts` covers the X11 wire format, Xauthority parsing and
+failure handling against a fake server. `tests/shell/linuxAutostart.test.ts` covers the
+autostart entry, its quoting and the entries it must leave alone. `tests/shell/hub.test.ts`
+covers which copies a finished first run turns Start at login on for.
 
 After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
 for the real renderer's waiting/polling/cancellation checks, including recovery
-with completion notifications deliberately suppressed. On Linux with X11 or
-XWayland and `xdotool`, add `--native-drag` to exercise native avatar dragging,
-fixed bounds, transparent click-through and bubble clicks. The helper creates a
-temporary Bot/Electron profile and starts only the fake Runtime. It sends pointer
-input only to its fixture windows and leaves private screenshots and `result.json`
-in the printed evidence directory. Use `--ozone-platform=x11` at Electron startup
-to test X11 directly; omitting it on Wayland also exercises the one-time relaunch.
+with completion notifications deliberately suppressed. The helper creates a temporary
+Bot/Electron profile and starts only the fake Runtime, and leaves private screenshots
+and `result.json` in the printed evidence directory. Use `--ozone-platform=x11` at
+Electron startup to test X11 directly; omitting it on Wayland also exercises the
+one-time relaunch.
+
+On Linux, `scripts/linux/test-avatar-input.sh` runs the same helper with `--native-drag`
+inside a private headless labwc, with its own configuration, home and Xauthority. It
+needs `labwc`, `grim`, `wlrctl`, `xdotool` and `xwininfo`. A maximized native Wayland
+window sits behind the avatar, and the checks are: `grim` shows that window through the
+transparent area, real `wlrctl` pointer clicks reach the cat and bubble and pass through
+everywhere else, including where a dismissed bubble was, a click on that window closes the
+right-click menu without leaving anything in the way, and the window has no bounding
+shape. `xdotool` still drives dragging, fixed bounds, activation and the context menu. An
+X11 background or `xdotool` clicks cannot check click-through, and `capturePage` cannot
+see what surrounds the page (ADR-014). The script fails if the session's own Xauthority
+changed. `--native-drag` refuses to run without it, because it moves the pointer and
+covers the screen.
 
 On macOS, the tray uses a 20pt canvas, matching Cats Desktop, with native 20px
 and 40px Retina representations. When checking a native candidate, compare the

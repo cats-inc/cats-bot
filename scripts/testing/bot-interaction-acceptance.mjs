@@ -1,15 +1,17 @@
-// Build first. Usage: electron scripts/testing/bot-interaction-acceptance.mjs [--native-drag]
-// Only a disposable profile and fake Runtime are used. --native-drag sends
-// pointer input to this fixture's X11 windows and requires xdotool on Linux.
+// Build first. Usage: electron scripts/testing/bot-interaction-acceptance.mjs
+// Only a disposable profile and fake Runtime are used. On Linux,
+// scripts/linux/test-avatar-input.sh adds --native-drag in a private compositor:
+// real pointer input and screen pixels, behind which is a native Wayland window.
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdtempSync, openSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
-import { app, BrowserWindow, ipcMain, screen } from 'electron';
+import { app, ipcMain, Menu, screen } from 'electron';
 import { BotCore, initializeBot } from '../../dist/core/bot.js';
 import { NoteWindows } from '../../dist/shell/electron/windows.js';
 import { FloatingBot } from '../../dist/shell/electron/floatingBot.js';
+import { popupMenu } from '../../dist/shell/electron/popupMenu.js';
 import { relaunchForLinuxWindowing } from '../../dist/shell/electron/linuxWindowing.js';
 
 relaunchForLinuxWindowing(app);
@@ -22,6 +24,7 @@ app.on('window-all-closed', () => {});
 let core, notes, floating, background;
 let opened = 0;
 let menus = 0;
+let menuCloses = 0;
 let quitting = false;
 let suppressCompletion = false;
 const wait = async (predicate, label) => {
@@ -33,6 +36,43 @@ const wait = async (predicate, label) => {
 };
 const evaluate = async (window, expression) => window.webContents.executeJavaScript(expression);
 const shot = async (window, name) => writeFileSync(join(evidence, name), (await window.webContents.capturePage()).toPNG());
+const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
+const BACKGROUND_PIXEL = '173,216,230';
+/** What the compositor shows there. capturePage only ever sees the page, never what surrounds it. */
+const screenPixel = (x, y) => {
+  const ppm = execFileSync('grim', ['-t', 'ppm', '-g', `${x},${y} 1x1`, '-']);
+  return [...ppm.subarray(ppm.length - 3)].join(',');
+};
+/** A click through the compositor; xdotool's XTEST input reaches the X server without passing through it. */
+const compositorClick = async (x, y, button = 'left') => {
+  execFileSync('wlrctl', ['pointer', 'move', '-5000', '-5000']);
+  await pause(300);
+  execFileSync('wlrctl', ['pointer', 'move', String(x), String(y)]);
+  await pause(500);
+  // XWayland and Chromium need motion inside the surface before a press counts.
+  execFileSync('wlrctl', ['pointer', 'move', '1', '1']);
+  await pause(200);
+  execFileSync('wlrctl', ['pointer', 'move', '-1', '-1']);
+  await pause(500);
+  execFileSync('wlrctl', ['pointer', 'click', button]);
+};
+async function startWaylandBackground() {
+  const child = spawn(process.execPath, ['--ozone-platform=wayland', `--user-data-dir=${join(evidence, 'background')}`, join(repo, 'scripts/testing/wayland-background-fixture.mjs')],
+    { stdio: ['ignore', 'pipe', openSync(join(evidence, 'background.log'), 'a')] });
+  const state = { child, ready: false, clicks: 0 };
+  let pending = '';
+  child.stdout.setEncoding('utf8').on('data', (chunk) => {
+    pending += chunk;
+    const lines = pending.split('\n');
+    pending = lines.pop();
+    for (const line of lines) {
+      if (line.startsWith('fixture-ready')) state.ready = true;
+      if (line.startsWith('fixture-click')) state.clicks += 1;
+    }
+  });
+  await wait(() => state.ready, 'native Wayland background');
+  return state;
+}
 
 async function main() {
   await app.whenReady();
@@ -52,7 +92,12 @@ async function main() {
   ipcMain.on('floating:moveTo', (_event, x, y) => floating.moveTo(x, y));
   ipcMain.on('floating:dragEnd', () => floating.remember());
   ipcMain.handle('floating:activate', () => { opened++; });
-  ipcMain.handle('floating:menu', () => { menus++; });
+  ipcMain.handle('floating:menu', () => {
+    menus++;
+    const menu = Menu.buildFromTemplate([{ label: 'Fixture item' }]);
+    menu.once('menu-will-close', () => { menuCloses++; });
+    popupMenu(menu, floating.browserWindow);
+  });
   core.subscribe(event => {
     if (suppressCompletion && (event.type === 'turn.completed' || event.type === 'conversation.updated'
       || (event.type === 'work.updated' && ['completed', 'failed', 'cancelled'].includes(event.workItem.state)))) return;
@@ -79,45 +124,90 @@ async function main() {
   suppressCompletion = false;
   console.log('PASS: authoritative work polling recovers a missed completion event');
   notes.hide('home');
-  await floating.show();
-  await wait(() => evaluate(floating.browserWindow, `!!document.getElementById('cat')`), 'avatar loaded');
-  if (process.argv.includes('--native-drag')) {
+  const native = process.argv.includes('--native-drag');
+  if (native) {
     assert.equal(process.platform, 'linux');
     assert.equal(app.commandLine.getSwitchValue('ozone-platform'), 'x11');
-    const pointer = screen.getCursorScreenPoint();
-    try {
-      const window = floating.browserWindow;
-      const xid = String(window.getNativeWindowHandle().readUInt32LE());
-      const before = window.getBounds();
-      execFileSync('xdotool', ['mousemove', '--window', xid, '240', '174', 'mousedown', '1', 'mousemove_relative', '--sync', '--', '-100', '-60', 'mouseup', '1']);
-      await wait(() => window.getBounds().x === before.x - 100 && window.getBounds().y === before.y - 60, 'native avatar drag');
-      assert.deepEqual(window.getBounds(), { ...before, x: before.x - 100, y: before.y - 60 });
-      execFileSync('xdotool', ['mousemove', '--window', xid, '240', '174', 'click', '1']);
-      await wait(() => opened === 1, 'avatar click activation');
-      execFileSync('xdotool', ['click', '3']);
-      await wait(() => menus === 1, 'avatar context menu');
-      await shot(window, 'avatar.png');
-      background = new BrowserWindow({ ...window.getBounds(), frame: false, show: false, webPreferences: { sandbox: true } });
-      await background.loadURL('data:text/html,<body style="margin:0;background:lightblue;width:100vw;height:100vh" onclick="window.clicks=(window.clicks||0)+1">Fixture background</body>');
-      background.show();
-      background.setBounds(window.getBounds());
-      await shot(background, 'background.png');
-      const bounds = window.getBounds();
-      execFileSync('xdotool', ['mousemove', String(bounds.x + 20), String(bounds.y + 20), 'click', '1']);
-      await wait(() => evaluate(background, 'window.clicks >= 1'), 'transparent area click-through');
-      floating.bubble({ conversationId: 'home', from: 'Fixture', text: 'Bubble input check' });
-      await wait(() => evaluate(window, `!document.getElementById('bubble').hidden`), 'bubble shown');
-      const bubble = await evaluate(window, `(()=>{const r=document.getElementById('bubble').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
-      execFileSync('xdotool', ['mousemove', String(Math.round(bounds.x + bubble.x)), String(Math.round(bounds.y + bubble.y)), 'click', '1']);
-      await wait(() => opened === 2, 'bubble click');
-      console.log('PASS: native Linux avatar drag, fixed dimensions, activation, context menu, transparent click-through and bubble click');
-    } finally { execFileSync('xdotool', ['mousemove', String(pointer.x), String(pointer.y)]); }
+    assert.ok(process.env.CATS_BOT_PRIVATE_COMPOSITOR, 'Run --native-drag through scripts/linux/test-avatar-input.sh: it moves the pointer and covers the screen.');
+    assert.equal(screen.getPrimaryDisplay().scaleFactor, 1);
+    background = await startWaylandBackground();
+  }
+  await floating.show();
+  await wait(() => evaluate(floating.browserWindow, `!!document.getElementById('cat')`), 'avatar loaded');
+  if (native) {
+    const window = floating.browserWindow;
+    const xid = String(window.getNativeWindowHandle().readUInt32LE());
+    const bounds = window.getBounds();
+    const point = (x, y) => [bounds.x + Math.round(x), bounds.y + Math.round(y)];
+    const catCenter = point(240, 174);
+
+    // ADR-014: nothing clips what the window draws, and only the input shape decides who gets a click.
+    assert.match(execFileSync('xwininfo', ['-id', xid, '-shape'], { encoding: 'utf8' }), /No window shape defined/u);
+    for (const [x, y] of [[20, 20], [150, 60], [20, 200]]) {
+      await wait(() => screenPixel(...point(x, y)) === BACKGROUND_PIXEL, `transparent pixel at ${x},${y}`);
+    }
+    await wait(() => screenPixel(...catCenter) !== BACKGROUND_PIXEL, 'cat on screen');
+    execFileSync('grim', [join(evidence, 'avatar-screen.png')]);
+    console.log('PASS: the compositor shows the window behind the avatar through its transparent area');
+
+    await compositorClick(...point(20, 20));
+    await wait(() => background.clicks === 1, 'transparent click reaches the native Wayland window');
+    assert.equal(opened, 0);
+    await compositorClick(...catCenter);
+    await wait(() => opened === 1, 'real pointer click on the cat');
+    assert.equal(background.clicks, 1);
+    floating.bubble({ conversationId: 'home', from: 'Fixture', text: 'Bubble input check' });
+    await wait(() => evaluate(window, `!document.getElementById('bubble').hidden`), 'bubble shown');
+    const bubble = await evaluate(window, `(()=>{const r=document.getElementById('bubble').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()`);
+    await compositorClick(...point(bubble.x, bubble.y));
+    await wait(() => opened === 2, 'real pointer click on the bubble');
+    assert.equal(background.clicks, 1);
+    await wait(() => evaluate(window, `document.getElementById('bubble').hidden`), 'bubble dismissed');
+    await pause(300);
+    await compositorClick(...point(bubble.x, bubble.y));
+    await wait(() => background.clicks === 2, 'click where the bubble was reaches the native Wayland window');
+    assert.equal(opened, 2);
+    console.log('PASS: real pointer clicks reach the cat and bubble, and pass through everywhere else');
+
+    // A press and release this close together can land as the menu maps and close it
+    // at once. A click of human length does not, and that is not what this checks.
+    for (let attempt = 0; attempt < 3 && menus === menuCloses; attempt++) {
+      const opens = menus;
+      await compositorClick(...catCenter, 'right');
+      await wait(() => menus === opens + 1, 'real pointer right click on the cat');
+      await pause(400);
+    }
+    assert.equal(menus, menuCloses + 1, 'the menu stays open after a right click');
+    const closes = menuCloses;
+    // Beside the cat, inside the menu that opens at the pointer and turns away from a screen edge.
+    const besideCat = [-70, 70].flatMap(dx => [-15, 15].map(dy => [catCenter[0] + dx, catCenter[1] + dy]));
+    await wait(() => besideCat.some(([x, y]) => screenPixel(x, y) !== BACKGROUND_PIXEL), 'menu on screen');
+    execFileSync('grim', [join(evidence, 'menu-screen.png')]);
+    await pause(500);
+    await compositorClick(...point(20, 20));
+    await wait(() => menuCloses === closes + 1, 'click outside closes the menu');
+    assert.equal(background.clicks, 2, 'the click that closes a menu is its own');
+    await pause(300);
+    await compositorClick(...point(20, 20));
+    await wait(() => background.clicks === 3, 'the next click reaches the native Wayland window');
+    console.log('PASS: a click on a native Wayland window closes the menu, and nothing is left in the way');
+
+    execFileSync('xdotool', ['mousemove', '--window', xid, '240', '174', 'mousedown', '1', 'mousemove_relative', '--sync', '--', '-100', '-60', 'mouseup', '1']);
+    await wait(() => window.getBounds().x === bounds.x - 100 && window.getBounds().y === bounds.y - 60, 'native avatar drag');
+    assert.deepEqual(window.getBounds(), { ...bounds, x: bounds.x - 100, y: bounds.y - 60 });
+    execFileSync('xdotool', ['mousemove', '--window', xid, '240', '174', 'click', '1']);
+    await wait(() => opened === 3, 'avatar click activation');
+    const opens = menus;
+    execFileSync('xdotool', ['click', '3']);
+    await wait(() => menus === opens + 1, 'avatar context menu');
+    await shot(window, 'avatar.png');
+    console.log('PASS: native Linux avatar drag, fixed dimensions, activation and context menu');
   }
   console.log(`Evidence: ${evidence}`);
 }
 async function finish(code) {
   quitting = true;
-  background?.destroy(); floating?.destroy(); notes?.destroyAll();
+  background?.child.kill(); floating?.destroy(); notes?.destroyAll();
   await core?.stop();
   app.exit(code);
 }
@@ -126,6 +216,10 @@ app.whenReady().then(main).then(() => {
   return finish(0);
 }, error => {
   console.error(error);
+  console.error(`Evidence: ${evidence}`);
+  if (process.argv.includes('--native-drag')) {
+    try { execFileSync('grim', [join(evidence, 'failure-screen.png')]); } catch { /* The error above is what matters. */ }
+  }
   writeFileSync(join(evidence, 'result.json'), JSON.stringify({ passed: false, error: String(error) }));
   return finish(1);
 });

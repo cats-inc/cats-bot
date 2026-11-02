@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted — 2026-11-01, implementing the owner's Linux avatar drag fix.
+Accepted — 2026-11-01, implementing the owner's Linux avatar drag fix. Its input
+mechanism is amended by [ADR-014](014-set-linux-avatar-input-through-the-x11-input-shape.md):
+the shapes below are X11 input shapes, not Electron's `setShape`.
 
 ## Context
 
@@ -45,6 +47,7 @@ accepts shape updates only from that bot's floating window.
 ## References
 
 - [ADR-002](002-give-the-bot-a-desktop-presence-in-the-electron-shell.md)
+- [ADR-014](014-set-linux-avatar-input-through-the-x11-input-shape.md)
 - [Linux input and retry evidence](../research/2026-11-01-linux-input-and-busy-retry.md)
 - [Electron BrowserWindow platform notices](https://www.electronjs.org/docs/latest/api/browser-window#platform-notices)
 - [Electron ignored mouse events](https://www.electronjs.org/docs/latest/api/base-window#winsetignoremouseeventsignore-options)

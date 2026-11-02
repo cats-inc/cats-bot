@@ -7,7 +7,7 @@ import { initializeBot } from '../../src/core/bot.ts';
 import { callHubControl, HubControlRefusal, HubControlRejectedError, HubControlServer, HubNotRunningError } from '../../src/core/host-api/hubControl.ts';
 import { readBotProfile } from '../../src/core/profile/initialize.ts';
 import { hubPathsFor } from '../../src/core/store/paths.ts';
-import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState } from '../../src/shell/electron/hub/hubState.ts';
+import { acquireHubLock, readHubState, readOrCreateInstallationId, startAtLoginByDefault, writeHubState } from '../../src/shell/electron/hub/hubState.ts';
 import {
   activeBots, addBot, adoptionOrder, emptyRegistry, readRegistry, reconcileRegistry, withHolder, writeRegistry,
 } from '../../src/shell/electron/hub/registry.ts';
@@ -257,4 +257,23 @@ test('review of Phase 2: a further bot\'s floating cat starts one cat to the lef
   assert.equal(second.y, first.y);
   assert.equal(first.x - second.x, FLOATING_CAT.width + 16);
   assert.deepEqual(placeFloating({ x: 100, y: 100 }, [display], display, undefined, 2), { x: 100, y: 100 }, 'a remembered place wins');
+});
+
+test('a finished first run turns Start at login on only for a copy whose path lasts (FR-23)', () => {
+  const copy = { packaged: true, portable: false, inApplicationsFolder: false };
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'win32' }), true);
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'linux' }), true);
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'darwin', inApplicationsFolder: true }), true);
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'darwin' }), false);
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'win32', portable: true }), false);
+  for (const platform of ['win32', 'darwin', 'linux'] as const) {
+    assert.equal(startAtLoginByDefault({ ...copy, platform, packaged: false, inApplicationsFolder: true }), false);
+  }
+  assert.equal(startAtLoginByDefault({ ...copy, platform: 'freebsd' }), false);
+
+  // Only the branch that creates the first bot counts: adopted bots keep their setting.
+  const main = readFileSync(join(import.meta.dirname, '../../src/shell/electron/main.ts'), 'utf8');
+  assert.match(main, /const id = await createFirstBot\(\);\s+if \(!id\) return null;\s+ids = \[id\];\s+firstRunFinished = true;/u);
+  assert.equal(main.match(/firstRunFinished = true/gu)?.length, 1);
+  assert.match(main, /if \(firstRunFinished && startAtLoginByDefault\(/u);
 });

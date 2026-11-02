@@ -211,7 +211,11 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     refuses while an externally hosted core runs from this installation (and
     says which), installs, relaunches the hub and restarts the cores. This
     replaces the cross-shell exclusion of ADR-004 for hub-hosted bots.
-23. FR-23: One login item starts the hub; there are no per-bot login entries.
+23. FR-23: One login item starts the hub; there are no per-bot login entries. An
+    installed Linux copy uses an XDG autostart entry, which is the setting's source
+    of truth; a development shell does not offer it. Finishing the first run turns
+    it on once, except in a development shell, a portable copy or a Mac app outside
+    Applications; existing installations and adopted bots keep their setting.
 24. FR-24: Each bot profile records `environment: { kind: 'native' }`. In this
     version the registry's `environmentProfile` and every binding must be
     native, and anything else is refused (ADR-010).
