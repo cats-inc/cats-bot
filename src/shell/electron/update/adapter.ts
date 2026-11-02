@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { closeSync, createReadStream, mkdirSync, openSync, readFileSync } from 'node:fs';
 import { unlink } from 'node:fs/promises';
-import { basename, isAbsolute } from 'node:path';
+import { basename, dirname, isAbsolute } from 'node:path';
 import type { AppUpdater } from 'electron-updater';
 import { InstallHandoffTimeout, type BotUpdater } from './controller.ts';
 
@@ -19,6 +19,8 @@ export function configureUpdater(updater: AppUpdater): void {
 
 export interface UpdaterLifecycle {
   onQuit(listener: () => void): () => void;
+  /** Refuses an installation this process could not complete, before anything is stopped. */
+  assertCanInstall?: () => void;
   installDeb?: (verifiedFile: string) => Promise<void>;
   fingerprint?: (file: string) => Promise<string>;
 }
@@ -67,6 +69,7 @@ export function createUpdaterAdapter(updater: AppUpdater, lifecycle: UpdaterLife
     async download(progress) {
       return request(async () => {
         if (!checkedVersion) throw new Error('Check for updates first.');
+        lifecycle.assertCanInstall?.();
         const expected = checkedVersion;
         let completedVersion: string | null = null;
         let acceptingProgress = true;
@@ -102,6 +105,7 @@ export function createUpdaterAdapter(updater: AppUpdater, lifecycle: UpdaterLife
     },
     async prepareInstall() {
       if (pending || !downloadedVersion || downloadedVersion !== checkedVersion || !artifacts.length) throw new Error('No completed matching download is ready.');
+      lifecycle.assertCanInstall?.();
       try {
         for (const artifact of artifacts) if (await fingerprint(artifact.file) !== artifact.hash) throw new Error('Changed update file.');
       } catch {
@@ -138,20 +142,64 @@ export function createUpdaterAdapter(updater: AppUpdater, lifecycle: UpdaterLife
   };
 }
 
+const NO_NEW_PRIVILEGES = /^NoNewPrivs:\s*1\s*$/mu;
+
+/**
+ * NoNewPrivs is inherited and cannot be cleared, and pkexec cannot gain root under it. Older versions
+ * relaunched through Electron, which sets it, so a cold start is the only way out. An unreadable status
+ * proves nothing: pkexec still reports the real outcome.
+ */
+export function assertCanElevate(readStatus: () => string = () => readFileSync('/proc/self/status', 'utf8')): void {
+  let status: string;
+  try { status = readStatus(); } catch { return; }
+  if (NO_NEW_PRIVILEGES.test(status)) {
+    throw new Error('Cats Bot cannot ask for administrator rights in this session, so the update was not installed and your bots are still running. Quit Cats Bot from the tray, open it again from the applications menu, then install the update.');
+  }
+}
+
+const STDERR_TAIL_CHARACTERS = 300;
+
+/** The last output is what explains a failure; the whole dialog error is limited in length. */
+function stderrTail(file: string): string {
+  try {
+    const text = readFileSync(file, 'utf8').trim();
+    return text.length > STDERR_TAIL_CHARACTERS ? text.slice(-STDERR_TAIL_CHARACTERS) : text;
+  } catch { return ''; }
+}
+
+/**
+ * A file, not a pipe: if this host dies mid-install, apt must not lose its stderr to SIGPIPE,
+ * and the output stays readable afterwards. This is only diagnostics, so it can never block the install.
+ */
+function openStderrLog(file: string): number | 'ignore' {
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    return openSync(file, 'w', 0o600);
+  } catch { return 'ignore'; }
+}
+
 /** Only a verified electron-updater download path is accepted; never use a shell. */
-export function installDebianUpdate(file: string, quit: () => void): Promise<void> {
+export function installDebianUpdate(file: string, quit: () => void, stderrLog: string, pkexec = '/usr/bin/pkexec'): Promise<void> {
   if (!isAbsolute(file) || !file.endsWith('.deb')) return Promise.reject(new Error('Invalid verified Debian package.'));
   return new Promise((resolve, reject) => {
-    const child = spawn('/usr/bin/pkexec', ['/usr/bin/apt-get', 'install', '--yes', file], { stdio: 'ignore', shell: false });
+    const stderr = openStderrLog(stderrLog);
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(pkexec, ['/usr/bin/apt-get', 'install', '--yes', file], { stdio: ['ignore', 'ignore', stderr], shell: false });
+    } catch (error) {
+      reject(error);
+      return;
+    } finally { if (stderr !== 'ignore') closeSync(stderr); }
     child.once('error', reject);
     child.once('exit', code => {
-      if (code !== 0) {
-        const message = 'The package manager exited ' + (code ?? 'without a result') + '. Finish or close the installer before reopening Cats Bot.';
-        // pkexec 126/127 means authorization was cancelled/denied before apt ran.
-        // Any apt failure may already have changed installed files.
-        reject(code === 126 || code === 127 ? new Error(message) : new InstallHandoffTimeout(message));
-      }
-      else { quit(); resolve(); }
+      if (code === 0) { quit(); resolve(); return; }
+      const detail = stderr === 'ignore' ? '' : stderrTail(stderrLog);
+      const suffix = detail ? ' ' + detail : '';
+      // pkexec returns these before apt runs: 126 is a dismissed prompt, 127 is no authorization or no way to get it.
+      if (code === 126) reject(new Error('The administrator prompt was closed, so the update was not installed.'));
+      else if (code === 127) reject(new Error('Cats Bot could not get administrator rights, so the update was not installed.' + suffix));
+      // Any apt failure may already have changed installed files.
+      else reject(new InstallHandoffTimeout('The package manager exited ' + (code ?? 'without a result') + '. Finish or close the installer before reopening Cats Bot.' + suffix));
     });
     // A host timeout must not kill apt/dpkg while installed files are being changed.
   });

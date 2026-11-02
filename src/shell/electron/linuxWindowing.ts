@@ -30,10 +30,10 @@ export function linuxWindowsUnderWayland(commandLine: CommandLine, platform = pr
   return linuxWindowsAreX11(commandLine, platform, env) && Boolean(env.WAYLAND_DISPLAY);
 }
 
-export function relaunchForLinuxWindowing(app: { commandLine: CommandLine; relaunch(options: { args: string[] }): void; exit(code: number): void }): boolean {
+export function relaunchForLinuxWindowing(app: { commandLine: CommandLine; exit(code: number): void }, relaunch: (args: string[]) => void): boolean {
   const args = linuxWindowingRelaunchArgs(app.commandLine);
   if (!args) return false;
-  app.relaunch({ args });
+  relaunch(args);
   app.exit(0);
   return true;
 }

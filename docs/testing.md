@@ -97,6 +97,25 @@ cancellation, idle waiters and preservation of an explicitly requested install.
 fixture with a hung CLI and grandchild, and checks that all three processes have
 stopped before the provider setup becomes idle.
 
+#### Linux relaunch and update elevation
+
+`tests/shell/linuxRelaunch.test.ts` checks that a relaunch starts only after the host
+has exited, keeps its arguments and does not change `NoNewPrivs`, that a relaunch that
+cannot start is logged rather than thrown, and that no Linux path reaches Electron's
+`app.relaunch()`, which sets that flag. `tests/shell/updates.test.ts` checks that a host
+with the flag refuses before downloading or stopping any bot, and how pkexec and apt exit
+codes are reported. After `npm run build`, the same test file also runs real Electron
+relaunches. CI does this headlessly on Ubuntu; a Linux desktop also covers the switch to
+X11. They open no window and use a disposable profile:
+
+```bash
+CATS_TEST_ELECTRON_RELAUNCH=1 node --test tests/shell/linuxRelaunch.test.ts
+```
+
+An in-app update needs the administrator password, so only a manual acceptance on an
+installed build covers pkexec itself: `NoNewPrivs` in `/proc/<hub pid>/status` is 0
+before installing and after the automatic restart, and the next update can install.
+
 #### Host diagnostics
 
 `tests/core/diagnosticLog.test.ts` covers rotation across restarts, bounded legacy

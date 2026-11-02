@@ -133,6 +133,14 @@ installer has finished. Linux uses an asynchronous pkexec/apt-get handoff so the
 permission prompt does not freeze the host; it never kills an active package
 manager on timeout.
 
+On Linux every relaunch goes through `createLinuxRelaunch`, because Electron's
+`app.relaunch()` sets `NoNewPrivs` on the replacement, and pkexec cannot gain root
+under it (`pkexec must be setuid root`, exit 127). The flag is inherited and cannot
+be cleared, so a host already running with it, such as one started by an older
+version's relaunch, refuses before downloading or stopping any bot and asks the user to
+quit and reopen from the applications menu. Cats Bot does not bypass the flag. The
+last install's stderr is kept in `<userData>/logs/update-install.log`.
+
 Portable and unsigned macOS builds can check and open the official release page,
 then must be replaced manually. Development, candidate and unrecognized local
 builds explain why checks are disabled. Older artifacts with no updater require
