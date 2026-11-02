@@ -9,7 +9,8 @@
 - npm 10 or newer (bundled with Node 24).
 - For manual acceptance with a real provider: the provider CLI (for example
   Claude Code or Codex) installed and logged in on this machine. The bot never
-  reads the CLI's credential files; it only runs the CLI through cats-runtime.
+  reads the CLI's credential files; setup queries the CLI's status, and agent
+  execution runs through cats-runtime.
 - For Windows packaging only: the .NET 8 SDK or newer (`dotnet`), which
   publishes the desktop control helper. macOS and Linux never need it.
 
@@ -70,6 +71,11 @@ Codex, Claude, Antigravity, Grok or Muse first. The selected provider's packaged
 helper checks installation and provides an install button. Codex first requires
 Node/npm and a usable npm installation folder; native providers skip those steps.
 Installation and sign-in are reported separately. No other provider is installed.
+On Windows, Claude browser/subscription sign-in is checked through the CLI's
+read-only `claude auth status --json` command with a 10-second timeout; an API key
+also satisfies the existing authentication check. The helper does not read
+credential files or expose the command's authentication output. macOS/Linux
+native-provider helpers report installation readiness without probing sign-in.
 Closing onboarding during a provider check cancels the check and exits without
 creating a bot. The New bot window can also close during a check; the hub stays
 running. Quit cancels read-only provider checks. An explicitly requested install

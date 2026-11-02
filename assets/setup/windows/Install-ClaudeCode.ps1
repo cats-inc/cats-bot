@@ -248,6 +248,8 @@ function Detect-ClaudeInstall {
 }
 
 function Test-ClaudeAuthSatisfied {
+  param([string]$CommandPath)
+
   switch ($AuthState) {
     'authenticated' {
       return $true
@@ -257,7 +259,25 @@ function Test-ClaudeAuthSatisfied {
     }
   }
 
-  return -not [string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)
+  if (-not [string]::IsNullOrWhiteSpace($env:ANTHROPIC_API_KEY)) {
+    return $true
+  }
+
+  # Subscription/browser sign-in is owned by Claude, not an API-key variable.
+  # Ask the installed CLI without reading its credential files or exposing output.
+  $probePath = Resolve-HiddenVersionProbePath `
+    -PreferredPath $CommandPath `
+    -FallbackPath (Resolve-ClaudeExecutablePath)
+  if (-not $probePath) { return $false }
+  try {
+    $probe = Invoke-HiddenCommand -FileName $probePath `
+      -ArgumentList @('auth', 'status', '--json') -TimeoutMs 10000
+    if ($probe.ExitCode -ne 0) { return $false }
+    $auth = $probe.Output | ConvertFrom-Json
+    return ($auth.loggedIn -is [bool] -and $auth.loggedIn)
+  } catch {
+    return $false
+  }
 }
 
 function Invoke-ClaudeInstaller {
@@ -353,7 +373,7 @@ $appliedChanges = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()
 $manualSteps = [System.Collections.Generic.List[string]]::new()
 $usedWingetFallback = $false
-$authSatisfied = [bool]$detected.installed -and (Test-ClaudeAuthSatisfied)
+$authSatisfied = [bool]$detected.installed -and (Test-ClaudeAuthSatisfied -CommandPath $detected.commandPath)
 
 if ($Uninstall) {
   $userBinary = Resolve-ClaudeExecutablePath
@@ -566,8 +586,10 @@ if ($detected.installed -and -not $SkipInstaller -and (Test-Path -LiteralPath (R
   Add-ClaudeToUserPath
 }
 
-$manualSteps.Add('Run `claude` to complete the browser sign-in flow, or configure ANTHROPIC_API_KEY before first use.')
-$authSatisfied = [bool]$detected.installed -and (Test-ClaudeAuthSatisfied)
+$authSatisfied = [bool]$detected.installed -and (Test-ClaudeAuthSatisfied -CommandPath $detected.commandPath)
+if (-not $authSatisfied) {
+  $manualSteps.Add('Run `claude` to complete the browser sign-in flow, or configure ANTHROPIC_API_KEY before first use.')
+}
 $interruptions = [System.Collections.Generic.List[object]]::new()
 if ($shouldInstall -or $cleanedNpmShim) {
   $interruptions.Add([pscustomobject]@{
