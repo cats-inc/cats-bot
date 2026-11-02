@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import {
@@ -38,7 +39,7 @@ import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
 import { BossCatBroker } from './hub/bossCatBroker.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
-import { acquireHubLock, readHubState, readOrCreateInstallationId, writeHubState, type HubState } from './hub/hubState.ts';
+import { acquireHubLock, readHubState, readOrCreateInstallationId, startAtLoginByDefault, writeHubState, type HubState } from './hub/hubState.ts';
 import {
   addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, withHolder, writeRegistry, type BotRegistry,
   type BossCatLimits, type RegistryBot,
@@ -46,6 +47,7 @@ import {
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
 import { createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
+import { popupMenu } from './popupMenu.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
@@ -61,6 +63,7 @@ import { initialUpdateState, parseBotRelease, type BotRelease } from './update/r
 import { NOTE_LAYER_LABELS, NOTE_LAYERS, readShellState, type NoteLayer } from './viewState.ts';
 import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
+import { linuxAutostartEnabled, linuxAutostartPath, refreshLinuxAutostart, setLinuxAutostart } from './linuxAutostart.ts';
 import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
 import { createHostLogger, observeDisplays, observeHostApp, observeHostProcess, type HostLogger } from './hostDiagnostics.ts';
 import { diagnosticError } from '../../shared/diagnosticLog.ts';
@@ -296,6 +299,7 @@ async function main(): Promise<void> {
     : {};
   const hostIdentity = { pid: process.pid, executable: process.execPath, installationId };
 
+  let firstRunFinished = false;
   // FR-4: the first run creates the first bot with the provider-first flow.
   const createFirstBot = async (): Promise<string | null> => {
     if (args.provider) {
@@ -339,6 +343,7 @@ async function main(): Promise<void> {
       const id = await createFirstBot();
       if (!id) return null;
       ids = [id];
+      firstRunFinished = true;
     }
     let next = emptyRegistry();
     for (const id of ids) next = addBot(next, id);
@@ -402,7 +407,9 @@ async function main(): Promise<void> {
   }
 
   let quitting = false;
-  const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin';
+  // SPEC-008 FR-23: a development shell's executable would not start this app, so Linux offers it installed only.
+  const linuxAutostart = process.platform === 'linux' && app.isPackaged ? linuxAutostartPath(process.env, homedir()) : null;
+  const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin' || linuxAutostart !== null;
   const pages = { preloadPath, rendererDir, iconPath };
   // FR-5 and D20: Cats Bot Settings, with its General and Bots tabs, also reachable when no bot runs.
   const hubSettings = new SettingsWindow(pages, { scope: 'hub' });
@@ -790,7 +797,8 @@ async function main(): Promise<void> {
 
   const applyLoginItem = (enabled: boolean) => {
     try {
-      app.setLoginItemSettings({ openAtLogin: enabled, args: [] });
+      if (linuxAutostart) setLinuxAutostart(linuxAutostart, enabled, process.execPath);
+      else app.setLoginItemSettings({ openAtLogin: enabled, args: [] });
     } catch (error) {
       log(`login item failed: ${diagnosticError(error)}`, 'error');
     }
@@ -803,12 +811,34 @@ async function main(): Promise<void> {
   // and never registers itself.
   if (process.platform === 'win32' && app.isPackaged && !process.env.PORTABLE_EXECUTABLE_FILE
     && hubState.openAtLogin && !app.getLoginItemSettings({ args: [] }).openAtLogin) applyLoginItem(true);
+  // On Linux the entry is the setting: the owner can remove or disable it
+  // outside the app, and the choice stands rather than being registered again.
+  if (linuxAutostart) {
+    try {
+      refreshLinuxAutostart(linuxAutostart, process.execPath);
+    } catch (error) {
+      log(`login item failed: ${diagnosticError(error)}`, 'error');
+    }
+    const enabled = linuxAutostartEnabled(linuxAutostart);
+    if (enabled !== hubState.openAtLogin) saveHubState({ ...hubState, openAtLogin: enabled });
+  }
 
   const setOpenAtLogin = (enabled: boolean) => {
     saveHubState({ ...hubState, openAtLogin: enabled });
     applyLoginItem(enabled);
+    // A refused or failed Linux change leaves what the session will still read.
+    if (linuxAutostart) saveHubState({ ...hubState, openAtLogin: linuxAutostartEnabled(linuxAutostart) });
     void refreshTray();
   };
+  // SPEC-008 FR-23: a finished first run turns it on, once. Later starts keep the
+  // owner's choice, an installation that already has a hub keeps its setting, and
+  // an entry that already exists, even a disabled one, stays as it is.
+  if (firstRunFinished && startAtLoginByDefault({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+    inApplicationsFolder: process.platform === 'darwin' && app.isInApplicationsFolder(),
+  }) && !(linuxAutostart ? existsSync(linuxAutostart) : app.getLoginItemSettings({ args: [] }).openAtLogin)) setOpenAtLogin(true);
 
   let release: BotRelease | null = null;
   try {
@@ -1264,7 +1294,7 @@ async function main(): Promise<void> {
         presenter.windows.setLayer(owner.conversationId, layer);
       },
     }));
-    Menu.buildFromTemplate(template).popup({ window: owner.window });
+    popupMenu(Menu.buildFromTemplate(template), owner.window);
     return null;
   });
   ipcMain.handle('shell:noteLayers', (event) => {
@@ -1334,13 +1364,13 @@ async function main(): Promise<void> {
     const owner = presenter?.floating.browserWindow;
     if (!presenter || !owner) return null;
     const template = buildBotMenuTemplate(await trayModel(presenter), botMenuActionsFor(() => presenter)) as MenuItemConstructorOptions[];
-    Menu.buildFromTemplate(template).popup({ window: owner });
+    popupMenu(Menu.buildFromTemplate(template), owner);
     return null;
   });
   ipcMain.handle('shell:setOpenAtLogin', (event, enabled: unknown) => {
     if (!fromHubSettings(event) || typeof enabled !== 'boolean') return null;
     setOpenAtLogin(enabled);
-    return enabled;
+    return hubState.openAtLogin;
   });
   ipcMain.handle('shell:chooseFolder', async (event, current: unknown) => {
     const owner = fromSettings(event)?.settings.browserWindow;

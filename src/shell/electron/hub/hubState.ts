@@ -31,6 +31,16 @@ export interface HubState {
   resume?: string[];
 }
 
+/**
+ * FR-23: whether a finished first run turns Start at login on. A development
+ * shell, a portable copy and a Mac app still on its disk image would register
+ * a path that does not last.
+ */
+export function startAtLoginByDefault(copy: { platform: NodeJS.Platform; packaged: boolean; portable: boolean; inApplicationsFolder: boolean }): boolean {
+  if (!copy.packaged || copy.portable) return false;
+  return copy.platform === 'win32' || copy.platform === 'linux' || (copy.platform === 'darwin' && copy.inApplicationsFolder);
+}
+
 export function readHubState(home: string): HubState | null {
   const read = readJsonFile<Partial<HubState>>(hubPathsFor(home).state);
   if (!read.ok || typeof read.value !== 'object' || read.value === null) return null;

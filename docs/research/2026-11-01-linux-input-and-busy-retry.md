@@ -42,3 +42,7 @@ review and follow-up review found no remaining blocking issue after these fixes.
 This establishes this machine's XWayland behavior, not native Wayland support or
 acceptance on every Linux compositor. The private CDP session remains separate
 from the fixture and no test messages were written to the owner's Bot.
+
+Correction, 2026-11-02: the transparent click-through above used an X11 background and
+`xdotool`, so it did not exercise compositor input routing. See the
+[later findings](2026-11-02-linux-avatar-black-area-and-clicks.md) and ADR-014.

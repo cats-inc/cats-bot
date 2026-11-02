@@ -208,8 +208,8 @@ export function GeneralTab() {
   }, [load]);
 
   const setLogin = async (enabled: boolean) => {
-    await api.shell.setOpenAtLogin(enabled);
-    toast(enabled ? t('Starts at sign-in') : t('No longer starts at sign-in'));
+    const actual = await api.shell.setOpenAtLogin(enabled);
+    toast((actual ?? enabled) ? t('Starts at sign-in') : t('No longer starts at sign-in'));
     await load();
   };
 

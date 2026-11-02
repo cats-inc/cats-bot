@@ -47,8 +47,9 @@ node scripts/sync-shared-tools.mjs --refresh \
 Follow `docs/SCRIPT-STANDARDS.md` for naming and documentation rules.
 
 `testing/bot-interaction-acceptance.mjs` exercises real Electron waiting controls
-with a fake Runtime and an isolated temporary profile. Its optional `--native-drag`
-mode uses Linux `xdotool` input for avatar dragging, click-through and bubbles;
+with a fake Runtime and an isolated temporary profile. On Linux,
+`linux/test-avatar-input.sh` runs it with `--native-drag` in a private compositor for
+avatar pixels, click-through, bubbles and dragging;
 see [the testing guide](../docs/testing.md#shell-tests) before running it.
 
 Use the provider manifest separately to refresh its complete closure from Platform.

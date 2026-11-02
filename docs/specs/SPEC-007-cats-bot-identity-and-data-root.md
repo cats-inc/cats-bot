@@ -98,7 +98,8 @@ or releases.
      deletes `%APPDATA%\Cats Bot`. A per-machine install (`/allusers`) skips the
      page and removes neither.
    - The 0.2.x uninstaller has none of this (FR-8), and macOS and Linux
-     packages have no uninstaller hook.
+     packages have no uninstaller hook. Linux's autostart entry names the
+     program in `TryExec`, so one left behind does nothing (SPEC-008 FR-23).
 
 ### Non-Functional Requirements
 
