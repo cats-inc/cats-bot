@@ -20,6 +20,13 @@ function cat(parts: { defs?: string; face: string; eyesOpen: string; closedStrok
     + `${parts.front}</g></svg>`;
 }
 
+/** One spot of the Bengal's coat: a dark ring around a lighter middle. */
+function rosette(cx: number, cy: number, rx: number, ry: number, rotate: number): string {
+  const turn = ` transform="rotate(${rotate} ${cx} ${cy})"`;
+  return `<ellipse cx="${cx}" cy="${cy}" rx="${rx}" ry="${ry}" fill="#5b3a1c"${turn}/>`
+    + `<ellipse cx="${cx}" cy="${cy}" rx="${rx * 0.48}" ry="${ry * 0.48}" fill="#b98438"${turn}/>`;
+}
+
 const ART: Readonly<Record<BotAvatar, string>> = {
   // Orange tabby, the original: wide oval face, pointed ears, forehead stripes.
   ginger: cat({
@@ -140,6 +147,127 @@ const ART: Readonly<Record<BotAvatar, string>> = {
       + '<path d="M14 86 L38 89 M13 97 L38 95 M114 86 L90 89 M115 97 L90 95" stroke="#4f5a6b" stroke-width="2" stroke-linecap="round"/>'
       + '<ellipse cx="30" cy="90" rx="7" ry="4" fill="#e7a3ad" opacity="0.6"/>'
       + '<ellipse cx="98" cy="90" rx="7" ry="4" fill="#e7a3ad" opacity="0.6"/>',
+  }),
+  // The everyday brown tabby: taupe coat, a bold M on the forehead, cheek stripes, yellow-green eyes.
+  tabby: cat({
+    face: '<path d="M24 54 L27 16 Q29 10 35 14 L58 33 Z" fill="#7d6245"/>'
+      + '<path d="M104 54 L101 16 Q99 10 93 14 L70 33 Z" fill="#7d6245"/>'
+      + '<path d="M31 45 L33 24 L50 36 Z" fill="#e8bfa6"/>'
+      + '<path d="M97 45 L95 24 L78 36 Z" fill="#e8bfa6"/>'
+      + '<ellipse cx="64" cy="73" rx="47" ry="41" fill="#a98d68"/>'
+      + '<path d="M43 52 L51 39 L64 51 L77 39 L85 52" stroke="#46351f" stroke-width="4.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '<path d="M64 33 L64 44 M52 34 Q54 38 54 41 M76 34 Q74 38 74 41" stroke="#46351f" stroke-width="4" fill="none" stroke-linecap="round"/>'
+      + '<path d="M19 68 Q26 69 31 66 M19 82 Q26 82 32 79 M109 68 Q102 69 97 66 M109 82 Q102 82 96 79" stroke="#46351f" stroke-width="4" fill="none" stroke-linecap="round"/>'
+      + '<ellipse cx="64" cy="92" rx="24" ry="17" fill="#efe3cf"/>',
+    eyesOpen: '<circle cx="44" cy="70" r="10.5" fill="#bccb5e" stroke="#3a2b1c" stroke-width="1.8"/>'
+      + '<circle cx="84" cy="70" r="10.5" fill="#bccb5e" stroke="#3a2b1c" stroke-width="1.8"/>'
+      + '<ellipse cx="44" cy="70" rx="4.8" ry="8.6" fill="#1f1c17"/>'
+      + '<ellipse cx="84" cy="70" rx="4.8" ry="8.6" fill="#1f1c17"/>'
+      + '<circle cx="46.5" cy="66" r="2.6" fill="#fff"/>'
+      + '<circle cx="86.5" cy="66" r="2.6" fill="#fff"/>',
+    closedStroke: '#2c2115',
+    eyesClosed: '<path d="M34 71 Q44 78 54 71"/><path d="M74 71 Q84 78 94 71"/>',
+    front: '<path d="M59 84 L69 84 L64 90 Z" fill="#c4665b"/>'
+      + '<path d="M64 90 Q60 97 54 95 M64 90 Q68 97 74 95" stroke="#2c2115" stroke-width="2.4" fill="none" stroke-linecap="round"/>'
+      + '<path d="M18 92 L42 92 M21 102 L44 98 M110 92 L86 92 M107 102 L84 98" stroke="#3f3120" stroke-width="1.9" stroke-linecap="round"/>',
+  }),
+  // White with a tabby cap: gray-brown striped patches over the ears and eyes, a white blaze, amber eyes.
+  'white-tabby': cat({
+    defs: '<clipPath id="white-tabby-head"><ellipse cx="64" cy="72" rx="46" ry="43"/></clipPath>',
+    face: '<path d="M24 52 L26 16 Q27 9 34 13 L57 31 Z" fill="#7f7365"/>'
+      + '<path d="M104 52 L102 16 Q101 9 94 13 L71 31 Z" fill="#7f7365"/>'
+      + '<path d="M31 43 L32 23 L49 34 Z" fill="#f0c4b0"/>'
+      + '<path d="M97 43 L96 23 L79 34 Z" fill="#f0c4b0"/>'
+      + '<ellipse cx="64" cy="72" rx="46" ry="43" fill="#fbf8f1" stroke="#e6dfd2" stroke-width="1.5"/>'
+      + '<g clip-path="url(#white-tabby-head)">'
+      + '<path d="M8 18 H60 C60 40 57 54 53 62 C46 74 26 78 8 70 Z" fill="#a3978a"/>'
+      + '<path d="M120 18 H68 C68 40 71 54 75 62 C82 74 102 78 120 70 Z" fill="#a3978a"/>'
+      + '<path d="M28 34 Q34 44 32 53 M43 28 Q47 38 45 48 M17 58 Q24 61 30 60 M100 34 Q94 44 96 53 M85 28 Q81 38 83 48 M111 58 Q104 61 98 60" stroke="#51453a" stroke-width="4" fill="none" stroke-linecap="round"/>'
+      + '</g>',
+    eyesOpen: '<circle cx="44" cy="71" r="10.5" fill="#e4b64d" stroke="#3e352b" stroke-width="1.6"/>'
+      + '<circle cx="84" cy="71" r="10.5" fill="#e4b64d" stroke="#3e352b" stroke-width="1.6"/>'
+      + '<circle cx="44" cy="71" r="6.6" fill="#231f1a"/>'
+      + '<circle cx="84" cy="71" r="6.6" fill="#231f1a"/>'
+      + '<circle cx="47" cy="67.5" r="2.8" fill="#fff"/>'
+      + '<circle cx="87" cy="67.5" r="2.8" fill="#fff"/>',
+    closedStroke: '#332b22',
+    eyesClosed: '<path d="M34 72 Q44 79 54 72"/><path d="M74 72 Q84 79 94 72"/>',
+    front: '<path d="M59 85 L69 85 L64 91 Z" fill="#e0707a"/>'
+      + '<path d="M64 91 Q60 98 54 96 M64 91 Q68 98 74 96" stroke="#3e352b" stroke-width="2.4" fill="none" stroke-linecap="round"/>'
+      + '<path d="M22 88 L42 90 M22 98 L42 96 M106 88 L86 90 M106 98 L86 96" stroke="#8b8072" stroke-width="2" stroke-linecap="round"/>'
+      + '<ellipse cx="32" cy="88" rx="6.5" ry="3.6" fill="#f2a7a0" opacity="0.65"/>'
+      + '<ellipse cx="96" cy="88" rx="6.5" ry="3.6" fill="#f2a7a0" opacity="0.65"/>',
+  }),
+  // All black: tall ears and a sleek face with a rim that holds against a dark desktop, large golden eyes.
+  black: cat({
+    face: '<path d="M22 56 L20 12 Q21 6 27 10 L58 33 Z" fill="#2b2b32" stroke="#4a4a55" stroke-width="1.5" stroke-linejoin="round"/>'
+      + '<path d="M106 56 L108 12 Q107 6 101 10 L70 33 Z" fill="#2b2b32" stroke="#4a4a55" stroke-width="1.5" stroke-linejoin="round"/>'
+      + '<path d="M29 46 L27 21 L48 35 Z" fill="#54434f"/>'
+      + '<path d="M99 46 L101 21 L80 35 Z" fill="#54434f"/>'
+      + '<ellipse cx="64" cy="73" rx="45" ry="41" fill="#2b2b32" stroke="#4a4a55" stroke-width="1.5"/>',
+    eyesOpen: '<circle cx="43" cy="70" r="12.5" fill="#f4c542"/>'
+      + '<circle cx="85" cy="70" r="12.5" fill="#f4c542"/>'
+      + '<ellipse cx="43" cy="70" rx="4.2" ry="10.6" fill="#15151a"/>'
+      + '<ellipse cx="85" cy="70" rx="4.2" ry="10.6" fill="#15151a"/>'
+      + '<circle cx="46" cy="65.5" r="2.8" fill="#fff"/>'
+      + '<circle cx="88" cy="65.5" r="2.8" fill="#fff"/>',
+    closedStroke: '#f4c542',
+    eyesClosed: '<path d="M32 71 Q43 79 54 71"/><path d="M74 71 Q85 79 96 71"/>',
+    front: '<path d="M59 87 L69 87 L64 93 Z" fill="#a0727e"/>'
+      + '<path d="M64 93 Q60 100 54 98 M64 93 Q68 100 74 98" stroke="#9a9aa8" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+      + '<path d="M18 86 L40 90 M17 97 L40 96 M110 86 L88 90 M111 97 L88 96" stroke="#c4c4d0" stroke-width="1.9" stroke-linecap="round"/>',
+  }),
+  // Persian: a fluffy silver-white outline, small ears, a flat face with wide-set emerald eyes.
+  persian: cat({
+    face: '<path d="M24 50 L27 19 Q29 13 35 17 L54 36 Z" fill="#c9cdd7"/>'
+      + '<path d="M104 50 L101 19 Q99 13 93 17 L74 36 Z" fill="#c9cdd7"/>'
+      + '<path d="M30 40 L32 24 L46 35 Z" fill="#ebbcc4"/>'
+      + '<path d="M98 40 L96 24 L82 35 Z" fill="#ebbcc4"/>'
+      + '<path d="M54.8 31.7 Q64 22.2 73.2 31.7 Q85.8 25.4 90.5 36.9 Q104.9 34.6 104.6 46.7 Q119.1 48.6 113.8 60 Q126.6 65.8 117 75 Q126.6 84.2 113.8 90 Q119.1 101.4 104.6 103.3 Q104.9 115.4 90.5 113.1 Q85.8 124.6 73.2 118.3 Q64 127.8 54.8 118.3 Q42.2 124.6 37.5 113.1 Q23.1 115.4 23.4 103.3 Q8.9 101.4 14.2 90 Q1.4 84.2 11 75 Q1.4 65.8 14.2 60 Q8.9 48.6 23.4 46.7 Q23.1 34.6 37.5 36.9 Q42.2 25.4 54.8 31.7 Z" fill="#d4d8e1"/>'
+      + '<path d="M55.8 36.6 Q64 32.1 72.2 36.6 Q81.7 34.7 87.5 41.2 Q97.2 42.1 100 49.9 Q108.8 53.6 108.2 61.7 Q114.9 67.6 111 75 Q114.9 82.4 108.2 88.3 Q108.8 96.4 100 100.1 Q97.2 107.9 87.5 108.8 Q81.7 115.3 72.2 113.4 Q64 117.9 55.8 113.4 Q46.3 115.3 40.5 108.8 Q30.8 107.9 28 100.1 Q19.2 96.5 19.8 88.3 Q13.1 82.4 17 75 Q13.1 67.6 19.8 61.7 Q19.2 53.6 28 49.9 Q30.8 42.1 40.5 41.2 Q46.3 34.7 55.8 36.6 Z" fill="#f8f7f3"/>',
+    eyesOpen: '<circle cx="41" cy="72" r="12" fill="#4fb6a3" stroke="#39404c" stroke-width="2.2"/>'
+      + '<circle cx="87" cy="72" r="12" fill="#4fb6a3" stroke="#39404c" stroke-width="2.2"/>'
+      + '<circle cx="41" cy="72" r="7.6" fill="#1d2228"/>'
+      + '<circle cx="87" cy="72" r="7.6" fill="#1d2228"/>'
+      + '<circle cx="44.5" cy="68" r="3.2" fill="#fff"/>'
+      + '<circle cx="90.5" cy="68" r="3.2" fill="#fff"/>',
+    closedStroke: '#39404c',
+    eyesClosed: '<path d="M30 73 Q41 81 52 73"/><path d="M76 73 Q87 81 98 73"/>',
+    front: '<path d="M60 80 L68 80 L64 85 Z" fill="#e58a96"/>'
+      + '<path d="M64 85 Q61 90 57 89 M64 85 Q67 90 71 89" stroke="#6f7380" stroke-width="2.2" fill="none" stroke-linecap="round"/>'
+      + '<path d="M26 90 L46 88 M28 99 L47 94 M102 90 L82 88 M100 99 L81 94" stroke="#a9adb9" stroke-width="1.8" stroke-linecap="round"/>'
+      + '<ellipse cx="33" cy="87" rx="6" ry="3.4" fill="#f4b6bd" opacity="0.7"/>'
+      + '<ellipse cx="95" cy="87" rx="6" ry="3.4" fill="#f4b6bd" opacity="0.7"/>',
+  }),
+  // Bengal: golden coat with rosettes, rounded ears, pale spectacles and a white whisker pad, green eyes.
+  bengal: cat({
+    defs: '<clipPath id="bengal-head"><path d="M64 30 C90 30 110 46 110 70 C110 94 88 114 64 114 C40 114 18 94 18 70 C18 46 38 30 64 30 Z"/></clipPath>',
+    face: '<path d="M22 54 C20 36 22 20 32 16 C40 16 52 26 58 34 Z" fill="#a8742f"/>'
+      + '<path d="M106 54 C108 36 106 20 96 16 C88 16 76 26 70 34 Z" fill="#a8742f"/>'
+      + '<path d="M30 44 C29 34 31 25 35 24 C41 26 47 31 50 36 Z" fill="#f0cfa8"/>'
+      + '<path d="M98 44 C99 34 97 25 93 24 C87 26 81 31 78 36 Z" fill="#f0cfa8"/>'
+      + '<path d="M64 30 C90 30 110 46 110 70 C110 94 88 114 64 114 C40 114 18 94 18 70 C18 46 38 30 64 30 Z" fill="#dcaa5e"/>'
+      + '<g clip-path="url(#bengal-head)">'
+      + '<ellipse cx="44" cy="71" rx="16" ry="15" fill="#f6e6c6"/>'
+      + '<ellipse cx="84" cy="71" rx="16" ry="15" fill="#f6e6c6"/>'
+      + rosette(26, 56, 6, 5, -20) + rosette(102, 56, 6, 5, 20)
+      + rosette(24, 84, 6.5, 5.5, 10) + rosette(104, 84, 6.5, 5.5, -10)
+      + rosette(36, 42, 5.5, 4.5, -25) + rosette(92, 42, 5.5, 4.5, 25)
+      + rosette(38, 102, 5.5, 4.5, 20) + rosette(90, 102, 5.5, 4.5, -20)
+      + '<path d="M50 49 L56 39 L64 48 L72 39 L78 49 M64 32 L64 40" stroke="#5b3a1c" stroke-width="3.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+      + '</g>'
+      + '<ellipse cx="64" cy="93" rx="25" ry="17" fill="#fbf1df"/>',
+    eyesOpen: '<circle cx="44" cy="71" r="10" fill="#b5cf4d" stroke="#3b2613" stroke-width="2"/>'
+      + '<circle cx="84" cy="71" r="10" fill="#b5cf4d" stroke="#3b2613" stroke-width="2"/>'
+      + '<ellipse cx="44" cy="71" rx="4.4" ry="8.2" fill="#1b1610"/>'
+      + '<ellipse cx="84" cy="71" rx="4.4" ry="8.2" fill="#1b1610"/>'
+      + '<circle cx="46.4" cy="67.4" r="2.4" fill="#fff"/>'
+      + '<circle cx="86.4" cy="67.4" r="2.4" fill="#fff"/>',
+    closedStroke: '#3b2613',
+    eyesClosed: '<path d="M34 72 Q44 79 54 72"/><path d="M74 72 Q84 79 94 72"/>',
+    front: '<path d="M59 85 L69 85 L64 91 Z" fill="#b9604f"/>'
+      + '<path d="M64 91 Q60 98 54 96 M64 91 Q68 98 74 96" stroke="#3b2613" stroke-width="2.4" fill="none" stroke-linecap="round"/>'
+      + '<path d="M18 92 L42 93 M21 102 L44 99 M110 92 L86 93 M107 102 L84 99" stroke="#6b4a27" stroke-width="1.9" stroke-linecap="round"/>',
   }),
 };
 

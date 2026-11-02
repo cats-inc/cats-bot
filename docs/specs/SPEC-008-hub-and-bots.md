@@ -300,10 +300,13 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 ### Appearance
 
-29. FR-29: A bot's Cat has one of five looks: `ginger` (the original Cat, and
-    the default), `tuxedo`, `siamese`, `calico` and `fold`. They differ in
-    colour, pattern and face shape. The profile keeps the choice as `avatar`.
-    - The first-run page, the New bot page and the Bot tab offer all five. A
+29. FR-29: A bot's Cat has one of ten looks: `ginger` (the original Cat, and
+    the default), `tuxedo`, `siamese`, `calico`, `fold`, `tabby`,
+    `white-tabby`, `black`, `persian` and `bengal`. They differ in colour,
+    pattern and face shape. There are more looks than the bot cap (FR-6), so a
+    new bot always has one no active bot uses. The profile keeps the choice as
+    `avatar`.
+    - The first-run page, the New bot page and the Bot tab offer all ten. A
       bot's floating Cat, its settings window and its replies in a note show
       its look; Cats Bot Settings and the app and tray icons keep the default.
     - A bot created without a choice (the New bot page left as it opened, a
@@ -382,6 +385,6 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 ---
 
 *Created: 2026-10-29*
-*Updated: 2026-11-03 (FR-6 cap of five, FR-29 Cat looks)*
+*Updated: 2026-11-03 (FR-6 cap of five, FR-29 ten Cat looks)*
 *Author: Claude, from the owner's decisions*
 *Related Plan: [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)*

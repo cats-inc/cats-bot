@@ -8,9 +8,10 @@ import { translate, zhTW } from '../../src/shared/language.ts';
 
 // SPEC-008 FR-29.
 
-test('there are five looks, the default first, each named in both languages', () => {
-  assert.equal(BOT_AVATARS.length, 5);
-  assert.equal(new Set(BOT_AVATARS).size, 5);
+test('there are ten looks, the default first, each named in both languages', () => {
+  assert.equal(BOT_AVATARS.length, 10);
+  assert.equal(new Set(BOT_AVATARS).size, 10);
+  for (const required of ['tabby', 'white-tabby'] as const) assert.ok(BOT_AVATARS.includes(required), required);
   assert.equal(BOT_AVATARS[0], DEFAULT_BOT_AVATAR);
   for (const avatar of BOT_AVATARS) {
     assert.ok(BOT_AVATAR_LABELS[avatar]);
@@ -26,13 +27,14 @@ test('a new bot takes the first look nobody uses, then the least used', () => {
   assert.equal(nextBotAvatar(['tuxedo', 'ginger']), 'siamese');
   assert.equal(nextBotAvatar(['ginger', 'siamese']), 'tuxedo', 'a gap is filled first');
   assert.equal(nextBotAvatar(['ginger', 'tuxedo', 'siamese', 'calico']), 'fold');
-  assert.equal(nextBotAvatar(['ginger', 'tuxedo', 'siamese', 'calico', 'fold', 'ginger']), 'tuxedo', 'all used: the least used');
+  assert.equal(nextBotAvatar(['ginger', 'tuxedo', 'siamese', 'calico', 'fold']), 'tabby', 'a full hub of the first five');
+  assert.equal(nextBotAvatar([...BOT_AVATARS, 'ginger']), 'tuxedo', 'all used: the least used');
 });
 
 test('a look on an archived bot is passed over while another is free, and is used before sharing one', () => {
   assert.equal(nextBotAvatar(['ginger'], ['tuxedo']), 'siamese');
-  assert.equal(nextBotAvatar(['ginger', 'siamese', 'calico', 'fold'], ['tuxedo']), 'tuxedo');
-  assert.equal(nextBotAvatar(['ginger', 'tuxedo', 'siamese', 'calico', 'fold'], ['ginger']), 'tuxedo');
+  assert.equal(nextBotAvatar(BOT_AVATARS.filter((avatar) => avatar !== 'tuxedo'), ['tuxedo']), 'tuxedo');
+  assert.equal(nextBotAvatar([...BOT_AVATARS], ['ginger']), 'tuxedo');
 });
 
 test('what is not a look reads as the default Cat', () => {
