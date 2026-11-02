@@ -21,7 +21,7 @@ import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubCont
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
 import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
-import { PROVIDERS_WITHOUT_SESSION_MCP } from '../../core/tools/hubTools.ts';
+import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
 import {
@@ -434,7 +434,7 @@ async function main(): Promise<void> {
         bossCat: registry.bossCat.holder === bot.id,
         // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools.
         bossCatTools: registry.bossCat.holder === bot.id && profile !== null
-          ? !PROVIDERS_WITHOUT_SESSION_MCP.includes(profile.executionTarget.provider)
+          && !providerCanOfferSessionTools(profile.executionTarget.provider, profile.providerPolicy) ? false
           : null,
       };
     });
@@ -446,6 +446,16 @@ async function main(): Promise<void> {
       active: manager.activeCount(),
       limits: registry.limits,
     };
+  };
+  const listBotsWithStatus = async () => {
+    const listing = listBots();
+    await Promise.all(listing.bots.filter(bot => bot.bossCat).map(async bot => {
+      const core = runners.get(bot.id)?.handle?.core;
+      if (!core) return;
+      const status = await core.status().catch(() => null);
+      bot.bossCatTools = status?.bossCat.holder ? status.bossCat.tools : null;
+    }));
+    return listing;
   };
   // SPEC-009: the role, its confirmations and the bots it may reach.
   const pendingConfirmations = new Map<AbortController, string>();
@@ -1074,7 +1084,7 @@ async function main(): Promise<void> {
   };
   ipcMain.handle('hub:bots', (event) => {
     if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
-    return listBots();
+    return listBotsWithStatus();
   });
   // SPEC-009 FR-8: the owner's limits on Boss Cat messages.
   ipcMain.handle('hub:setLimits', async (event, limits: unknown) => {
@@ -1086,7 +1096,7 @@ async function main(): Promise<void> {
       throw new Error(error instanceof BotManagementError ? error.message : errorMessage(error));
     }
     botsChanged();
-    return listBots();
+    return listBotsWithStatus();
   });
   ipcMain.handle('hub:createBot', (event) => {
     if (!ownedMainFrame(event) || !fromHubSettings(event)) throw new Error('Bots are managed only from Cats Bot Settings');
@@ -1138,7 +1148,7 @@ async function main(): Promise<void> {
           break;
         case 'archive':
           if (!await confirm(owner, t('Archive {name}?', { name: `${name} (${id})` }),
-            t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBots();
+            t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBotsWithStatus();
           await manager.archive(id);
           runners.delete(id);
           announceHolder();
@@ -1151,7 +1161,7 @@ async function main(): Promise<void> {
         case 'delete':
           if (!await confirm(owner, t('Delete {name} permanently?', { name: `${name} (${id})` }),
             t('Its conversations, settings and stored secrets are removed. This cannot be undone. The provider CLI folders are kept.'),
-            t('Delete'))) return listBots();
+            t('Delete'))) return listBotsWithStatus();
           await manager.delete(id);
           break;
         default:
@@ -1162,7 +1172,7 @@ async function main(): Promise<void> {
     } finally {
       botsChanged();
     }
-    return listBots();
+    return listBotsWithStatus();
   });
 
   const isSettingsWindow = (id: number) => hubSettings.owns(id);

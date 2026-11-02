@@ -125,7 +125,11 @@ export function replyLanguageName(code: ReplyLanguageCode, locale: Locale): stri
 export const zhTW: Record<string, string> = {
   'Waiting for the current turn…': '等待目前回合結束…',
   'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.': '工作階段仍忙碌，已停止自動重試。你的訊息仍保留在這裡，請稍後再試。',
-  'This provider gives the Boss Cat no tools; the role stays with the bot.': '這個 provider 不提供主控貓工具；角色仍由這個機器人保留。',
+  'Boss Cat tools have not connected. Check provider access settings or start a conversation.': 'Boss Cat 工具尚未連接，請檢查 provider 存取設定或開始對話。',
+  'Boss Cat tool availability has not been checked.': '尚未確認 Boss Cat 工具是否可用。',
+  'Enable native tools with provider permissions': '啟用原生工具，沿用供應商權限',
+  'Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the Bot conversation. Bot cannot impose a smaller file or network boundary in this mode.': '原生工具可使用檔案、指令和網路。供應商會沿用自身的權限設定，需要你核准的要求會出現在 Bot 對話中。此模式下 Bot 無法額外限制檔案或網路存取範圍。',
+  'Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.': 'Antigravity 原生工具需要 Google 官方 Antigravity ACP server 並完成登入，僅安裝一般 agy CLI 並不足夠。目前此供應商尚未開放 Cats 工具。',
   'Remove Boss Cat': '取消主控貓',
   'Make Boss Cat': '設為主控貓',
   'The Boss Cat can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.': '主控貓可以把工作交給其他機器人。建立或啟動機器人、轉交角色，都要等你確認。',

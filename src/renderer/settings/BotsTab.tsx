@@ -40,8 +40,8 @@ function BotLine({ bot, first, last, act }: { bot: BotRow; first: boolean; last:
         </small>
         {bot.error && bot.state === 'failed' ? <small className="error">{bot.error}</small> : null}
         {bot.bossCat && bot.bossCatTools === false
-          ? <small>{t('This provider gives the Boss Cat no tools; the role stays with the bot.')}</small>
-          : null}
+          ? <small>{t('Boss Cat tools have not connected. Check provider access settings or start a conversation.')}</small>
+          : bot.bossCat && bot.bossCatTools === null ? <small>{t('Boss Cat tool availability has not been checked.')}</small> : null}
       </div>
       {bot.state === 'archived' ? (
         <div className="row">

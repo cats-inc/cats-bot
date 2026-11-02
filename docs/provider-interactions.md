@@ -94,3 +94,45 @@ separated MCP discovery from invocation. URL control rejects stale/unavailable,
 expired and unsafe-scheme requests; opening is not completion. The candidate was
 not signed or installed. Real Codex Chrome/computer-use acceptance is recorded
 separately when performed; these fixture checks do not establish tool parity.
+
+
+## Muse, Grok and Antigravity native work tools
+
+In Bot settings → Provider access, choose **Enable native tools with provider
+permissions** and save. Existing bots retain legacy behavior until this selection.
+Changing modes waits for the current turn, replaces the private Runtime target,
+and starts a new session with a transcript handoff; queued messages are not replayed.
+No profile or journal format migration is required.
+
+These providers initially require full machine access with network. Native
+permission settings and reviewers still decide actions; the setting does not
+switch to unconditional approval. To require human review, configure that in the
+native provider. Bot rejects smaller ceilings and explicit overrides because
+these native modes cannot prove the requested hard boundary. Existing read-only
+workspace or allowlist settings must be removed deliberately before enabling it.
+
+| Provider | Native transport | Cats tools | Approval/input support |
+| --- | --- | --- | --- |
+| Muse | `muse serve` MSP | Private session HTTP MCP; inventory is unobserved because MSP does not enumerate tools | Commands, files, network/tool approval, native questions; changing approval stages invalidate old cards |
+| Grok | `grok agent --no-leader stdio` ACP | Private session HTTP MCP; discovery reports actual connection state | One-action tool approvals, questions and implementation plans |
+| Antigravity | Google's official `agy_acp_server.par` / `.exe` ACP | Unavailable until native credential persistence and name isolation are verified | Standard ACP one-action approvals; native IO belongs to Google ACP |
+
+Antigravity requires the separate official ACP distribution and its authentication,
+not just the normal `agy` CLI or the third-party `agy-acp` package. Obtain the
+platform archive from the [official ACP registry](https://github.com/agentclientprotocol/registry/blob/main/antigravity-acp/agent.json),
+verify its SHA-256 and keep the executable's accompanying files together. Put the
+executable on the Bot process PATH, then complete the official client's sign-in.
+The checked Linux ARM64 1.4.5 build requires 4 KiB system pages and aborts on this
+machine's 16 KiB kernel; this is an upstream binary limitation, independent of X.
+No native Google authentication/tool success is claimed here.
+
+Boss Cat tool status becomes connected only after the authenticated provider
+fetches the tool list for a current live conversation. A configured policy or
+launched process alone is insufficient. Retargeting, session recreation/resume and Runtime restart rotate the descriptor
+and invalidate that observation. The current Boss Cat role also gates availability. Connected does not claim successful execution
+of every tool. Desktop control keeps its separate platform and permission gates.
+
+Verification uses disposable homes and protocol fixtures. Muse echo and Grok
+local fake-API probes cover native cold resume and MCP without paid prompts;
+Grok reasoning effort is set and read back after resume. Desktop UI acceptance
+was skipped at the owner's request while X authorization is broken.

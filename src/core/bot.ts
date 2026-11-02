@@ -46,6 +46,7 @@ import {
   type TelegramStatus,
 } from './transports/telegram.ts';
 import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
+import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
@@ -53,7 +54,7 @@ import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock 
 import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import {
-  createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, PROVIDERS_WITHOUT_SESSION_MCP, type HubCall,
+  createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, type HubCall,
 } from './tools/hubTools.ts';
 import { BotToolServer, type ToolCallResult } from './tools/server.ts';
 import type {
@@ -277,6 +278,7 @@ export class BotCore implements BotHostApi {
       ? null
       : new BotToolServer({
         name: HUB_SERVER_NAME,
+        trackDiscovery: true,
         instructions: HUB_INSTRUCTIONS,
         serverVersion: PACKAGE_VERSION,
         maxBodyBytes: 96 * 1024,
@@ -301,7 +303,8 @@ export class BotCore implements BotHostApi {
       profile: () => this.profile,
       conversations: this.conversations,
       now: this.now,
-      mcpServers: (conversationId, sessionId) => this.sessionMcpServers(conversationId, sessionId),
+      mcpServers: (conversationId, sessionId) => this.sessionMcpServers(conversationId, sessionId, true),
+      sessionCreated: (sessionId, servers) => this.rememberSessionTools(sessionId, servers),
       isPendingWorkItem: (workItemId) => {
         const state = this.workItems.get(workItemId)?.state;
         return state === 'queued' || state === 'running';
@@ -387,6 +390,7 @@ export class BotCore implements BotHostApi {
       runtimeDir: this.paths.runtime,
       providers: {
         provider: this.profile.executionTarget.provider,
+        ...(usesHostedProvider(target.provider, this.profile.providerPolicy) ? { protocol: 'hosted' as const } : {}),
         ...(options.runtime?.providerCommand ? { command: options.runtime.providerCommand } : {}),
         ...(launchArgs.length ? { launchArgs } : {}),
         ...(options.runtime?.instanceExtras ? { instanceExtras: options.runtime.instanceExtras } : {}),
@@ -438,6 +442,7 @@ export class BotCore implements BotHostApi {
    * has no snapshot, so it never starts with `cats-desktop`.
    */
   private mcpServersFor(conversationId: string, sessionId: string | null = null): RuntimeMcpServer[] {
+    if (!providerCanOfferSessionTools(this.profile.executionTarget.provider, this.profile.providerPolicy)) return [];
     return [
       ...(this.toolServer?.descriptorFor(conversationId) ?? []),
       ...this.desktop.descriptorFor(conversationId, sessionId),
@@ -451,7 +456,7 @@ export class BotCore implements BotHostApi {
    * without the tools.
    */
   private hubToolsOffered(): boolean {
-    return this.bossCatRole && !PROVIDERS_WITHOUT_SESSION_MCP.includes(this.profile.executionTarget.provider);
+    return this.bossCatRole && providerCanOfferSessionTools(this.profile.executionTarget.provider, this.profile.providerPolicy);
   }
 
   /** SPEC-009 FR-3: the hub's word on whether this bot holds the Boss Cat role. */
@@ -566,15 +571,18 @@ export class BotCore implements BotHostApi {
   }
 
   /** The set a session is given on resume or send; remembers which sessions carry `cats-desktop` and `cats-hub`. */
-  private sessionMcpServers(conversationId: string, sessionId: string | null): RuntimeMcpServer[] {
+  private sessionMcpServers(conversationId: string, sessionId: string | null, newExecution = false): RuntimeMcpServer[] {
+    if (newExecution) this.hubTools?.rotateDiscovery(conversationId);
     const servers = this.mcpServersFor(conversationId, sessionId);
-    if (sessionId) {
-      if (servers.some((server) => server.name === DESKTOP_CONTROL_SERVER_NAME)) this.desktopSessions.add(sessionId);
-      else this.desktopSessions.delete(sessionId);
-      if (servers.some((server) => server.name === HUB_SERVER_NAME)) this.hubSessions.add(sessionId);
-      else this.hubSessions.delete(sessionId);
-    }
+    if (sessionId) this.rememberSessionTools(sessionId, servers);
     return servers;
+  }
+
+  private rememberSessionTools(sessionId: string, servers: RuntimeMcpServer[]): void {
+    if (servers.some(server => server.name === DESKTOP_CONTROL_SERVER_NAME)) this.desktopSessions.add(sessionId);
+    else this.desktopSessions.delete(sessionId);
+    if (servers.some(server => server.name === HUB_SERVER_NAME)) this.hubSessions.add(sessionId);
+    else this.hubSessions.delete(sessionId);
   }
 
   /**
@@ -592,7 +600,8 @@ export class BotCore implements BotHostApi {
     // SPEC-009 FR-3: a change of role reaches the session at its next send.
     const hubChanged = this.hubSessions.has(sessionId) !== (this.hubToolsOffered() && this.hubTools !== null);
     if (!carried && !hubChanged && !this.desktop.isAttached(conversationId, sessionId) && !this.profile.desktopControl.enabled) return {};
-    return { mcpServers: this.sessionMcpServers(conversationId, sessionId) };
+    return { mcpServers: this.sessionMcpServers(conversationId, sessionId,
+      hubChanged || carried !== this.desktop.isAttached(conversationId, sessionId)) };
   }
 
   private createDesktopControl(): DesktopControlService {
@@ -918,6 +927,7 @@ export class BotCore implements BotHostApi {
         if (event.state === 'ready') this.retryRuntimeDeferred();
         break;
       case 'exit':
+        this.hubTools?.clearDiscovery();
         this.log(`runtime exited code=${event.code ?? ''} signal=${event.signal ?? ''} expected=${event.expected}`);
         this.journal({ type: 'runtime', at: this.now().toISOString(), event: 'exited', detail: `${event.code ?? event.signal}` });
         for (const conversation of this.conversations.list()) {
@@ -1061,7 +1071,9 @@ export class BotCore implements BotHostApi {
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       pendingInteractions: this.interactions.pending(),
       awaitingOwner: [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner').length,
-      bossCat: { holder: this.bossCatRole, tools: this.hubToolsOffered() && this.hubTools !== null },
+      bossCat: { holder: this.bossCatRole, tools: this.hubToolsOffered() && this.runtimeState() === 'ready'
+        && this.conversations.list().some(conversation => attachmentIsCurrent(conversation, this.profile)
+          && ['ready', 'initializing'].includes(conversation.attachment.state) && this.hubTools?.hasDiscovered(conversation.id)) },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
       heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
@@ -1389,10 +1401,13 @@ export class BotCore implements BotHostApi {
     const result = change();
     if (!result) return structuredClone(this.profile);
     const policy = result.profile.providerPolicy;
+    assertHostedProviderPolicy(result.profile.executionTarget.provider, policy);
+    const protocolChanged = usesHostedProvider(result.profile.executionTarget.provider, policy)
+      !== usesHostedProvider(this.profile.executionTarget.provider, this.profile.providerPolicy);
     const client = this.client();
     // Refuse a ceiling the running provider cannot enforce now, not at the next session.
     if (policy && JSON.stringify(policy) !== JSON.stringify(this.profile.providerPolicy) && client
-      && !result.providerChanged && this.runtimeState() === 'ready') {
+      && !result.providerChanged && !protocolChanged && this.runtimeState() === 'ready') {
       await client.sessionControls(result.profile.executionTarget.provider, policy);
     }
     const desktopWas = this.profile.desktopControl.enabled;
@@ -1403,6 +1418,8 @@ export class BotCore implements BotHostApi {
       this.desktop.profileChanged(this.profile.desktopControl.enabled);
     }
     if (result.sessionChanged) {
+      // The current turn retains its descriptor until it ends. The next bind
+      // rotates it; attachmentIsCurrent already hides stale availability.
       this.journal({
         type: 'config',
         at: this.now().toISOString(),
@@ -1424,11 +1441,11 @@ export class BotCore implements BotHostApi {
           this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(conversation.id) });
         }
       }
-      if (result.providerChanged && this.supervisor && this.supervisor.state !== 'stopped') {
+      if ((result.providerChanged || protocolChanged) && this.supervisor && this.supervisor.state !== 'stopped') {
         // The private runtime only enables one provider; it is re-created for the new one once
         // the running turn has finished under the target it was admitted with (FR-27).
         this.runtimeSwapPending = true;
-        if (this.running) this.log('provider changed: the runtime restarts once the running turn ends');
+        if (this.running) this.log('provider execution settings changed: the runtime restarts once the running turn ends');
         this.pump();
       }
     }

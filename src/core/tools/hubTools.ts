@@ -15,9 +15,6 @@ export const HUB_INSTRUCTIONS = 'You hold the Boss Cat role among the owner\'s C
 /** FR-8: the most hops the owner can allow per chain, and so the highest hop a delivery carries. */
 export const MAX_CHAIN_HOPS = 100;
 
-/** FR-11: in the pinned Runtime these providers' sessions take no session MCP servers. */
-export const PROVIDERS_WITHOUT_SESSION_MCP: readonly string[] = ['antigravity', 'grok', 'muse'];
-
 const bot = { type: 'string', description: 'The other bot\'s id, as hub_list_bots returns it.' };
 
 const DEFINITIONS: ToolDefinition[] = [
