@@ -22,7 +22,7 @@ import { resolveLocale } from '../dist/shared/language.js';
 import { BotUpdateController } from '../dist/shell/electron/update/controller.js';
 import { TrayUpdateDialog } from '../dist/shell/electron/update/dialog.js';
 import { showDesktopUpdateMessageBox } from '../dist/shell/electron/update/presenter.js';
-import { buildTrayMenuTemplate } from '../dist/shell/electron/trayMenu.js';
+import { buildHubTrayMenuTemplate } from '../dist/shell/electron/trayMenu.js';
 
 const repo = resolve(import.meta.dirname, '..');
 mkdirSync(join(repo, 'tmp'), { recursive: true });
@@ -438,23 +438,12 @@ async function main() {
         }),
     });
     let opened;
-    const menu = buildTrayMenuTemplate(
+    const menu = buildHubTrayMenuTemplate(
       {
-        botName: 'Parity',
         locale: 'zh-TW',
-        status: core.status(),
-        conversations: await core.listConversations(),
-        heartbeatEnabled: false,
+        bots: [],
         openAtLogin: false,
         openAtLoginAvailable: false,
-        awaitingOwner: 0,
-        floatingVisible: false,
-        desktopControl: {
-          enabled: false,
-          pendingRequests: 0,
-          waitingConversationId: null,
-          holding: [],
-        },
       },
       {
         onCheckForUpdates: () => {

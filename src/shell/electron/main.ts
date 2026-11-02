@@ -49,7 +49,7 @@ import { createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
-import { buildHubTrayMenuTemplate, buildHubTrayTooltip, buildTrayMenuTemplate, type TrayMenuActions, type TrayMenuModel } from './trayMenu.ts';
+import { buildHubTrayMenuTemplate, buildHubTrayTooltip, buildBotMenuTemplate, type BotMenuActions, type BotMenuModel } from './trayMenu.ts';
 import { configureUpdater, createUpdaterAdapter, installDebianUpdate } from './update/adapter.ts';
 import { BotUpdateController } from './update/controller.ts';
 import { TrayUpdateDialog } from './update/dialog.ts';
@@ -551,11 +551,9 @@ async function main(): Promise<void> {
     hubSettings.browserWindow?.webContents.send('hub:botsChanged');
   };
 
-  const trayModel = async (presenter: BotPresenter): Promise<TrayMenuModel> => ({
+  const trayModel = async (presenter: BotPresenter): Promise<BotMenuModel> => ({
     ...(await presenter.trayModel()),
     locale: locale(),
-    openAtLogin: hubState.openAtLogin,
-    openAtLoginAvailable,
   });
   let refreshing = false;
   let refreshAgain = false;
@@ -570,8 +568,9 @@ async function main(): Promise<void> {
       const bots = [];
       for (const presenter of presented()) {
         try {
-          bots.push({ model: await trayModel(presenter), actions: trayActionsFor(() => presenter) });
+          bots.push(await trayModel(presenter));
         } catch (error) {
+          bots.push(null);
           // A core may be stopping; the next event refreshes the tray again.
           if (!quitting) log(`tray refresh for ${presenter.botId} failed: ${diagnosticError(error)}`, 'error');
         }
@@ -888,8 +887,8 @@ async function main(): Promise<void> {
   const openHubSettings = (tab?: 'general' | 'bots') => {
     void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${diagnosticError(error)}`, 'error'));
   };
-  // FR-16: one bot's items act on that bot; with one bot the menu is today's.
-  const trayActionsFor = (target: () => BotPresenter | undefined): TrayMenuActions => ({
+  // The floating Cat menu can act only on its own bot.
+  const botMenuActionsFor = (target: () => BotPresenter | undefined): BotMenuActions => ({
     onOpenConversation: (conversationId) => {
       void target()?.windows
         .open(conversationId)
@@ -901,14 +900,9 @@ async function main(): Promise<void> {
       void presenter?.core.createConversation().then((record) => presenter.windows.open(record.id)).then(refreshTray);
     },
     onOpenSettings: (tab) => target()?.openSettings(tab),
-    onOpenHubSettings: () => openHubSettings(),
-    onCheckForUpdates: () => {
-      void trayUpdates.open().catch((error) => log(diagnosticError(error), 'error'));
-    },
     onToggleHeartbeat: (enabled) => {
       void target()?.core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
-    onToggleOpenAtLogin: (enabled) => setOpenAtLogin(enabled),
     onToggleFloating: (visible) => target()?.setFloatingVisible(visible),
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
@@ -916,9 +910,14 @@ async function main(): Promise<void> {
         log(`stop desktop control failed: ${diagnosticError(error)}`, 'error');
       });
     },
-    onQuit: quit,
   });
   const hubTrayActions = {
+    onShowFloatingCats: () => {
+      for (const presenter of presented()) presenter.setFloatingVisible(true);
+    },
+    onStopAllDesktopControl: () => {
+      for (const presenter of presented()) botMenuActionsFor(() => presenter).onStopDesktopControl();
+    },
     onOpenSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
       void trayUpdates.open().catch((error) => log(diagnosticError(error), 'error'));
@@ -1324,7 +1323,7 @@ async function main(): Promise<void> {
     const presenter = fromFloating(event);
     const owner = presenter?.floating.browserWindow;
     if (!presenter || !owner) return null;
-    const template = buildTrayMenuTemplate(await trayModel(presenter), trayActionsFor(() => presenter)) as MenuItemConstructorOptions[];
+    const template = buildBotMenuTemplate(await trayModel(presenter), botMenuActionsFor(() => presenter)) as MenuItemConstructorOptions[];
     Menu.buildFromTemplate(template).popup({ window: owner });
     return null;
   });
@@ -1397,11 +1396,7 @@ async function main(): Promise<void> {
 
   tray = new BotTray({
     assetsDir,
-    onClick: () => {
-      const presenter = primary();
-      if (presenter) void presenter.windows.open('home').then(refreshTray);
-      else openHubSettings('bots');
-    },
+    onClick: () => openHubSettings('bots'),
   });
   await hubControl.start().catch((error: unknown) => log(`hub control endpoint failed: ${diagnosticError(error)}`, 'error'));
 

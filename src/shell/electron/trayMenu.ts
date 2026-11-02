@@ -21,34 +21,27 @@ export interface TrayDesktopControl {
   holding: DesktopControlHolding[];
 }
 
-export interface TrayMenuModel {
+export interface BotMenuModel {
   locale?: Locale;
   botName: string;
   status: BotStatus;
   conversations: ConversationRecord[];
   heartbeatEnabled: boolean;
-  openAtLogin: boolean;
-  openAtLoginAvailable: boolean;
   awaitingOwner: number;
   /** SPEC-002 FR-7. */
   floatingVisible: boolean;
   desktopControl: TrayDesktopControl;
 }
 
-export interface TrayMenuActions {
+export interface BotMenuActions {
   onOpenConversation(conversationId: string): void;
   onNewNote(): void;
   /** SPEC-002 FR-4: opens the settings window, on a given tab when one is named. */
   onOpenSettings(tab?: string): void;
-  /** D20: Cats Bot Settings, offered in the single-bot menu. */
-  onOpenHubSettings?(): void;
-  onCheckForUpdates?(): void;
   onToggleHeartbeat(enabled: boolean): void;
-  onToggleOpenAtLogin(enabled: boolean): void;
   onToggleFloating(visible: boolean): void;
   /** SPEC-006 BDC-10: stops desktop control in every conversation. */
   onStopDesktopControl(): void;
-  onQuit(): void;
 }
 
 export interface TrayMenuItem {
@@ -95,7 +88,8 @@ export function desktopControlLabel(desktop: TrayDesktopControl, locale: Locale 
 /** What the hub shares across bots in its tray (SPEC-008 FR-16). */
 export interface HubTrayModel {
   locale?: Locale;
-  bots: Array<{ model: TrayMenuModel; actions: TrayMenuActions }>;
+  /** One entry per presented bot; null means its status could not be read. */
+  bots: Array<BotMenuModel | null>;
   openAtLogin: boolean;
   openAtLoginAvailable: boolean;
 }
@@ -103,32 +97,38 @@ export interface HubTrayModel {
 export interface HubTrayActions {
   /** D20: Cats Bot Settings, with the Bots tab. */
   onOpenSettings(): void;
+  /** Recover every running Cat, including deliberately hidden avatars. */
+  onShowFloatingCats(): void;
+  /** Resolve the current presented bots when clicked, independent of status reads. */
+  onStopAllDesktopControl(): void;
   onCheckForUpdates?(): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onQuit(): void;
 }
 
-function attention(model: TrayMenuModel): number {
-  return unreadTotal(model.conversations) + model.awaitingOwner + model.status.pendingInteractions + model.desktopControl.pendingRequests;
-}
-
 /**
- * FR-16: with one bot the menu is today's. With more, each bot's items move
- * into a submenu named after it. Either way the hub's items are shared:
- * Settings… (Cats Bot Settings, D20), Start at login, Check for Updates…, Quit.
+ * The tray always operates on the hub, even with one bot. A Cat's own
+ * conversation, heartbeat and settings actions belong to its avatar menu.
  */
 export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayActions): TrayMenuItem[] {
-  if (model.bots.length === 1) return buildTrayMenuTemplate(model.bots[0]!.model, model.bots[0]!.actions);
   const t = (text: string, values?: Record<string, unknown>) => translate(model.locale ?? 'en', text, values);
-  const template: TrayMenuItem[] = model.bots.length === 0
-    ? [{ label: t('No bot is running'), enabled: false }]
-    : model.bots.map(({ model: bot, actions: botActions }) => {
-      const waiting = attention(bot);
-      return {
-        label: waiting ? `${bot.botName} (${waiting})` : bot.botName,
-        submenu: buildTrayMenuTemplate(bot, botActions, { hubItems: false }),
-      };
-    });
+  const held = [...new Set(model.bots.flatMap((bot) => bot ? heldApps(bot.desktopControl) : []))];
+  const uncertain = model.bots.includes(null);
+  const stopAll: TrayMenuItem = {
+    label: t('Stop all desktop control') + (held.length ? ` (${held.join(', ')})` : ''),
+    click: () => actions.onStopAllDesktopControl(),
+  };
+  const template: TrayMenuItem[] = [];
+  // Keep the emergency stop first, including when the controlling Cat is hidden.
+  if (held.length || uncertain) template.push(stopAll, { type: 'separator' });
+  template.push(
+    { label: model.bots.length ? buildHubTrayTooltip(model) : t('No bot is running'), enabled: false },
+    { type: 'separator' },
+    { label: t('Show floating cats'), enabled: model.bots.length > 0, click: () => actions.onShowFloatingCats() },
+  );
+  if (!held.length && !uncertain && model.bots.some((bot) => bot && (bot.desktopControl.enabled || bot.desktopControl.pendingRequests))) {
+    template.push(stopAll);
+  }
   template.push({ type: 'separator' }, { label: t('Settings…'), click: () => actions.onOpenSettings() });
   if (model.openAtLoginAvailable) {
     template.push({
@@ -148,32 +148,31 @@ export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayAc
 
 /** FR-16: pending requests and unread replies of every bot, on the icon's tooltip. */
 export function buildHubTrayTooltip(model: HubTrayModel): string {
-  if (model.bots.length === 1) return buildTrayTooltip(model.bots[0]!.model);
   const t = (text: string, values?: Record<string, unknown>) => translate(model.locale ?? 'en', text, values);
-  const unread = model.bots.reduce((sum, bot) => sum + unreadTotal(bot.model.conversations), 0);
-  const waiting = model.bots.reduce((sum, bot) => sum + bot.model.awaitingOwner + bot.model.status.pendingInteractions
-    + bot.model.desktopControl.pendingRequests, 0);
-  return `Cats Bot (${t('{count} bots', { count: model.bots.length })})`
+  const unread = model.bots.reduce((sum, bot) => sum + (bot ? unreadTotal(bot.conversations) : 0), 0);
+  const waiting = model.bots.reduce((sum, bot) => sum + (bot ? bot.awaitingOwner + bot.status.pendingInteractions
+    + bot.desktopControl.pendingRequests : 0), 0);
+  const held = [...new Set(model.bots.flatMap((bot) => bot ? heldApps(bot.desktopControl) : []))];
+  return `Cats Bot (${t(model.bots.length === 1 ? '{count} bot' : '{count} bots', { count: model.bots.length })})`
     + (unread ? ` - ${t('{count} unread', { count: unread })}` : '')
-    + (waiting ? ` - ${t('{count} waiting for you', { count: waiting })}` : '');
+    + (waiting ? ` - ${t('{count} waiting for you', { count: waiting })}` : '')
+    + (held.length ? ` - ${t('the bot is operating {apps}', { apps: held.join(', ') })}` : '')
+    + (model.bots.includes(null) ? ` - ${t('Some Cat status is unavailable')}` : '');
 }
 
-export function buildTrayTooltip(model: TrayMenuModel): string {
+export function buildTrayTooltip(model: BotMenuModel): string {
   const unread = unreadTotal(model.conversations);
   const desktop = desktopControlLabel(model.desktopControl, model.locale);
   return `${model.botName} (${runtimeLabel(model.status, model.locale)})${unread ? ` - ${translate(model.locale ?? 'en', '{count} unread', { count: unread })}` : ''}${desktop ? ` - ${desktop}` : ''}`;
 }
 
 /**
- * One bot's menu. With `hubItems: false` it leaves out what the hub shares
- * (start at login, updates, quit), for the bot's submenu (SPEC-008 FR-16).
+ * One Cat's avatar menu. Its model and actions cannot carry hub operations.
  */
-export function buildTrayMenuTemplate(
-  model: TrayMenuModel,
-  actions: TrayMenuActions,
-  options: { hubItems?: boolean } = {},
+export function buildBotMenuTemplate(
+  model: BotMenuModel,
+  actions: BotMenuActions,
 ): TrayMenuItem[] {
-  const hubItems = options.hubItems ?? true;
   const t = (text: string, values?: Record<string, unknown>) =>
     translate(model.locale ?? 'en', text, values);
   const home = model.conversations.find((record) => record.role === 'home');
@@ -241,24 +240,7 @@ export function buildTrayMenuTemplate(
     checked: model.floatingVisible,
     click: () => actions.onToggleFloating(!model.floatingVisible),
   });
-  if (hubItems && model.openAtLoginAvailable) {
-    template.push({
-      label: 'Start at login',
-      type: 'checkbox',
-      checked: model.openAtLogin,
-      click: () => actions.onToggleOpenAtLogin(!model.openAtLogin),
-    });
-  }
   template.push({ label: 'Bot settings…', click: () => actions.onOpenSettings() });
-  if (hubItems) {
-    template.push(
-      { type: 'separator' },
-      { label: 'Settings…', click: () => actions.onOpenHubSettings?.() },
-      { label: 'Check for Updates…', click: () => actions.onCheckForUpdates?.() },
-      { type: 'separator' },
-      { label: 'Quit', click: () => actions.onQuit() },
-    );
-  }
   // Translate only product-owned labels. Conversation titles remain the owner's words.
   for (const item of template) {
     if (item.label) {

@@ -157,12 +157,20 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
 
 ### Presentation
 
-16. FR-16: One tray icon. With one bot, the menu has today's items (SPEC-002).
-    With more, each bot's conversation, heartbeat, floating Cat, request and Stop
-    items move into a submenu per bot. Hub items are shared in both shapes:
-    Settings… (Cats Bot Settings), Start at login, Check for Updates…, Quit; a
-    bot's own settings are "Bot settings…" (PLAN-010). Pending owner requests and unread
-    counts are aggregated on the icon.
+16. FR-16: One hub tray icon, with the same global menu for zero, one or several
+    running bots: Show floating cats (disabled with none), Settings… (Cats Bot
+    Settings), Start at login when supported, Check for Updates… and Quit.
+    Show floating cats reveals every running Cat, including hidden avatars. A tray
+    click opens Cats Bot Settings on Bots. The tray never copies per-Cat menus or
+    submenus; those actions belong to each floating Cat (SPEC-002 FR-7).
+    Pending owner/provider/desktop-control requests and unread counts are aggregated
+    on the icon and menu status. Stop all desktop control reaches every presented
+    bot resolved at click time, is available whenever control is enabled or a grant
+    waits, and comes first while any bot holds control or its status is unavailable (with deduplicated app names). A Cat’s own Stop
+    still affects only that Cat. This preserves the tray’s emergency recovery when
+    a controlling avatar is hidden. Failed status reads still count the presented
+    Cat and never disable recovery or hide the emergency Stop. Menu separation follows the owner’s 2026-11-02
+    correction and supersedes the earlier single-bot flattening and multi-bot submenus.
 17. FR-17: Notes, floating Cats and per-bot settings are hub windows bound to one
     bot id. A window receives only its own bot's events and can only reach its
     own bot's channel; bot management is reached only from Cats Bot Settings

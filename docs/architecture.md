@@ -48,6 +48,12 @@ provider-specific setup helpers are vendored with exact provenance. Shell-owned
 language preferences and native tray dialogs do not change core ownership. Product
 surfaces use Conversation and Direct message; older internal names remain compatible.
 
+The hub tray keeps global settings, updates, start at login, Quit and recovery for
+all floating Cats. Each floating Cat menu owns only its conversations, heartbeat,
+visibility, desktop-control Stop and bot settings. This boundary stays the same
+with zero, one or several Cats (SPEC-008 FR-16); the hub’s emergency Stop reaches
+all presented bots and remains available when avatars are hidden.
+
 One bot is one resident process tree: a Node **bot core** that owns the bot's
 profile, conversations, work journal and every timer; a private
 **cats-runtime** child it starts and supervises over loopback HTTP; and the

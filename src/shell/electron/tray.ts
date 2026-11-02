@@ -5,9 +5,8 @@ import { Menu, Tray, app, nativeImage, type MenuItemConstructorOptions } from 'e
 import type { TrayMenuItem } from './trayMenu.ts';
 
 /**
- * SPEC-001 FR-33: the tray opens the home note, lists conversations, makes a
- * new note, pauses the heartbeat and quits. Closing a note, deleting a
- * conversation and quitting the bot stay separate actions.
+ * The hub tray owns global settings, avatar recovery, updates and Quit.
+ * Cat-specific actions belong to each floating Cat's menu.
  *
  * Tray creation adapted from cats-platform `desktop/host/tray.ts` at revision
  * 595e9ca (MIT), per ADR-001 §1.
@@ -15,7 +14,7 @@ import type { TrayMenuItem } from './trayMenu.ts';
 
 export interface BotTrayOptions {
   assetsDir: string;
-  /** A click opens the direct message of the first bot (SPEC-008 FR-16). */
+  /** A click opens Cats Bot Settings on its Bots tab. */
   onClick(): void;
 }
 
