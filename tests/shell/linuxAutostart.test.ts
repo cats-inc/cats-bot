@@ -25,9 +25,10 @@ function entryPath(t: TestContext): string {
 const execLine = (executable: string): string => linuxAutostartEntry(executable).split('\n').find((line) => line.startsWith('Exec='))!;
 
 test('the entry follows XDG_CONFIG_HOME only when it is absolute', () => {
-  assert.equal(linuxAutostartPath({ XDG_CONFIG_HOME: '/config' }, '/home/me'), '/config/autostart/cats-bot.desktop');
-  assert.equal(linuxAutostartPath({ XDG_CONFIG_HOME: 'relative' }, '/home/me'), '/home/me/.config/autostart/cats-bot.desktop');
-  assert.equal(linuxAutostartPath({}, '/home/me'), '/home/me/.config/autostart/cats-bot.desktop');
+  assert.equal(linuxAutostartPath({ XDG_CONFIG_HOME: '/config' }, '/home/me'), join('/config', 'autostart', 'cats-bot.desktop'));
+  const inHome = join('/home/me', '.config', 'autostart', 'cats-bot.desktop');
+  assert.equal(linuxAutostartPath({ XDG_CONFIG_HOME: 'relative' }, '/home/me'), inHome);
+  assert.equal(linuxAutostartPath({}, '/home/me'), inHome);
 });
 
 test('the entry starts the installed launcher\'s backend and is skipped once the package is gone', () => {
@@ -59,7 +60,7 @@ test('turning it on writes an enabled entry atomically, and off removes it', (t)
   setLinuxAutostart(path, true, EXECUTABLE);
   assert.equal(linuxAutostartEnabled(path), true);
   assert.equal(readFileSync(path, 'utf8'), linuxAutostartEntry(EXECUTABLE));
-  assert.equal(statSync(path).mode & 0o022, 0, 'only its owner may change what starts at sign-in');
+  if (process.platform !== 'win32') assert.equal(statSync(path).mode & 0o022, 0, 'only its owner may change what starts at sign-in');
   assert.deepEqual(readdirSync(dirname(path)), ['cats-bot.desktop']);
   setLinuxAutostart(path, false, EXECUTABLE);
   assert.equal(linuxAutostartEnabled(path), false);

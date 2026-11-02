@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 
 import {
@@ -108,7 +108,8 @@ interface FakeServer {
 /** Just enough of an X server: answers setup, then QueryExtension, and records every request after it. */
 async function fakeServer(t: TestContext, respond: 'accept' | 'refuse' | 'no-shape' | 'silent' = 'accept'): Promise<FakeServer> {
   const directory = mkdtempSync(join(tmpdir(), 'cats-bot-x11-'));
-  const path = join(directory, 'X0');
+  // Where this also runs on Windows, a local socket has to be a named pipe.
+  const path = process.platform === 'win32' ? `\\\\.\\pipe\\${basename(directory)}` : join(directory, 'X0');
   const clients: Socket[] = [];
   const received: Buffer[] = [];
   let connections = 0;
