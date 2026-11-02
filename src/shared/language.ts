@@ -167,6 +167,7 @@ export const zhTW: Record<string, string> = {
   'Its conversations, settings and stored secrets are removed. This cannot be undone. The provider CLI folders are kept.': '它的對話、設定與儲存的密鑰都會刪除，而且無法復原。Provider CLI 的資料夾會保留。',
   'Each bot runs on its own, with its own conversations and provider. Up to {max} bots; archived bots do not count.': '每個機器人各自執行，有自己的對話與 provider。最多 {max} 個機器人；已封存的不算在內。',
   'Appearance': '外觀',
+  'This bot runs an older version that cannot change its look. Restart it and choose again.': '這個機器人仍在執行舊版本，無法變更外觀。請重新啟動後再選一次。',
   'Ginger tabby': '橘虎斑',
   'Tuxedo': '賓士貓',
   'Siamese': '暹羅貓',

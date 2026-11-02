@@ -445,7 +445,7 @@ test('tightened permissions or new instructions replace the session before the n
   }
 });
 
-test('a new look reaches the windows at once and keeps the session (SPEC-008 FR-29)', async () => {
+test('a new look is announced at once and keeps the session (SPEC-008 FR-29)', async () => {
   const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'dressy', core: fastRetries });
   const seen: BotHostEvent[] = [];
   const off = core.subscribe((event) => { if (event.type === 'profile.updated') seen.push(event); });

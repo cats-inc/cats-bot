@@ -298,6 +298,10 @@ export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProf
       ),
     );
   }
+  // A core still running the previous version keeps nothing it does not know.
+  if (patch.avatar && after.avatar !== patch.avatar) {
+    lines.push(t('This bot runs an older version that cannot change its look. Restart it and choose again.'));
+  }
   return lines.join(' ');
 }
 

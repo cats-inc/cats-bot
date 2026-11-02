@@ -207,6 +207,9 @@ test('after a save the page says when sessions are replaced and when the runtime
   assert.match(saveNotice(PROFILE, after, { instructions: 'x' }), /fresh session/u);
   assert.match(saveNotice(PROFILE, after, { executionTarget: { provider: 'codex', model: null } }), /runtime restarts for codex/u);
   assert.equal(saveNotice(PROFILE, PROFILE, { name: 'Mochi' }), '');
+  assert.equal(saveNotice(PROFILE, { ...PROFILE, avatar: 'calico' }, { avatar: 'calico' }), '', 'a new look replaces no session');
+  const { avatar: _none, ...olderCore } = PROFILE;
+  assert.match(saveNotice(PROFILE, olderCore as BotProfile, { avatar: 'calico' }), /older version/u);
 });
 
 test('notes: home first, then the most recently active; ages read like a person would say them', () => {

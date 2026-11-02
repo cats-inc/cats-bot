@@ -46,7 +46,7 @@ let botName = 'Cats Bot';
 let bubbleConversation: string | null = null;
 let bubbleTimer: ReturnType<typeof setTimeout> | undefined;
 
-// SPEC-008 FR-29: nothing is drawn until the bot's look is known, so another Cat never flashes first.
+// SPEC-008 FR-29: the shell names the stored look, so the Cat is right before its core has answered.
 const art = $('cat-art');
 let shownMarkup = '';
 function showAvatar(avatar: unknown): void {
@@ -55,6 +55,7 @@ function showAvatar(avatar: unknown): void {
   shownMarkup = markup;
   art.innerHTML = markup;
 }
+showAvatar(new URLSearchParams(location.search).get('avatar'));
 
 function render(): void {
   body.classList.toggle('offline', runtimeState === 'failed' || runtimeState === 'stopped');
@@ -193,10 +194,7 @@ api.floating.onBubble((message) => {
   reportInputRegions();
 });
 
-// A core that cannot answer yet still has a Cat on screen to grab and open.
-void refresh().catch(() => {
-  if (!shownMarkup) showAvatar(null);
-});
+void refresh();
 setInterval(() => {
   void refresh();
 }, 60000);

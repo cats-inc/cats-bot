@@ -31,7 +31,8 @@ test('a profile from before the choice of look shows the default Cat and is not 
   for (const stored of [undefined, 'dragon', 7, null]) {
     const text = JSON.stringify({ ...profile, avatar: stored });
     writeFileSync(paths.profile, text);
-    const loaded = loadProfile(paths, profile);
+    // The way a core opens its profile, which may write when it upgrades one.
+    const loaded = loadProfile(paths, profile, true);
     assert.ok(loaded.ok);
     assert.equal(loaded.profile.avatar, 'ginger');
     assert.equal(readFileSync(paths.profile, 'utf8'), text);

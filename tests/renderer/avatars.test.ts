@@ -58,9 +58,9 @@ test('every drawing is different and has what the floating Cat animates', () => 
 
 test('the default Cat is the drawing the app icons come from', () => {
   const icon = readFileSync(new URL('../../src/renderer/cat.svg', import.meta.url), 'utf8');
-  const shapes = (svg: string) => [...svg.matchAll(/<(?:path|ellipse|circle)\b[^>]*\/>/gu)].map(([shape]) => shape).sort();
+  const shapes = (svg: string) => [...svg.matchAll(/<(?:path|ellipse|circle)\b[^>]*\/>/gu)].map(([shape]) => shape);
   const drawn = shapes(avatarSvg(DEFAULT_BOT_AVATAR));
-  // The icon has open eyes only, so the closed ones are the drawing's only addition.
+  // In drawing order. The icon has open eyes only, so the closed ones are the drawing's only addition.
   const closed = shapes(/<g class="eyes-closed".*?<\/g>/u.exec(avatarSvg(DEFAULT_BOT_AVATAR))![0]);
   assert.deepEqual(drawn.filter((shape) => !closed.includes(shape)), shapes(icon));
 });

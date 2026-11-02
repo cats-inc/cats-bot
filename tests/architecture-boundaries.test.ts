@@ -197,6 +197,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
             [],
             'shared translations stay platform independent',
           );
+        if (avatars) assert.deepEqual(importSpecifiers(target), [], 'the Cat looks stay plain data');
       }
     }
   }

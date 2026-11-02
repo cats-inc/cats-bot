@@ -93,8 +93,9 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
    offered in the UI. Archived bots do not count. Creating or restoring beyond
    it is refused in the UI and in the hub's own API. Tests cover at least two
    bots and the cap. A stored 3, the value every earlier version wrote, reads as
-   5, and the next registry write records it; any other stored whole number is
-   kept, so a registry edited by hand keeps its cap. An earlier version reading
+   5, and the next registry write records it. A 3 set by hand cannot be told
+   apart from it and reads as 5 too; any other stored whole number is kept. An
+   earlier version reading
    a registry with 5 honours it, and refuses new bots while five are active.
 
 ### Cores
@@ -305,11 +306,12 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     - The first-run page, the New bot page and the Bot tab offer all five. A
       bot's floating Cat, its settings window and its replies in a note show
       its look; Cats Bot Settings and the app and tray icons keep the default.
-    - A bot created without a choice (a Boss Cat's request, `cats-bot init`)
-      gets the first look in that order that no bot uses. When it can, the
-      look is also one no archived bot would bring back; when every look is in
-      use, it is the least used. The New bot page starts on that same look. The
-      first bot of a new installation therefore starts on the default Cat.
+    - A bot created without a choice (the New bot page left as it opened, a
+      Boss Cat's request, `cats-bot init`) gets the first look in that order
+      that no bot uses when it is created. When it can, the look is also one no
+      archived bot would bring back; when every look is in use, it is the least
+      used. The New bot page opens on that look. The first bot of a new
+      installation therefore starts on the default Cat.
     - Nothing stops the owner giving several bots one look, and restoring or
       adding a bot never changes its look.
     - A profile without `avatar`, or naming a look this version lacks, reads as
@@ -319,7 +321,8 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
       profile drops the field, which reads the same way.
     - A change is not a session setting: `configRevision` stays and sessions
       continue. The core emits `profile.updated` with the name and the look,
-      and the bot's windows follow without a restart.
+      and the bot's windows follow without a restart. The floating Cat opens on
+      the look stored in the profile, so a slow core never leaves it blank.
 
 ### Non-Functional Requirements
 

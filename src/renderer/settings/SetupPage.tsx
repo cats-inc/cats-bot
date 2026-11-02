@@ -26,7 +26,10 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState('');
   const [name, setName] = useState('Mochi');
-  const [avatar, setAvatar] = useState<BotAvatar>(DEFAULT_BOT_AVATAR);
+  // SPEC-008 FR-29: the page starts on the look the bot would get; only one the owner picked is sent.
+  const [suggested, setSuggested] = useState<BotAvatar>(DEFAULT_BOT_AVATAR);
+  const [picked, setPicked] = useState<BotAvatar | null>(null);
+  const avatar = picked ?? suggested;
   const [instructions, setInstructions] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -36,8 +39,8 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const canStart = ready && setup?.provider === provider && setup.canFinish && !installing;
 
   useEffect(() => {
-    // SPEC-008 FR-29: a further bot starts on a look no bot uses yet; the first bot on the default Cat.
-    if (purpose === 'create') void api.setup.suggestedAvatar().then(setAvatar);
+    // A further bot starts on a look no bot uses yet; the first bot on the default Cat.
+    if (purpose === 'create') void api.setup.suggestedAvatar().then(setSuggested);
   }, [purpose]);
 
   useEffect(() => {
@@ -79,7 +82,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
         model,
         modelSelection: selection,
         instructions: instructions.trim(),
-        avatar,
+        ...(picked ? { avatar: picked } : {}),
       });
     } catch (failure) {
       setError(errorText(failure));
@@ -132,7 +135,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
               onChange={(event) => setName(event.target.value)}
             />
           </label>
-          <AvatarField idPrefix="setup" value={avatar} disabled={submitting} onChange={setAvatar} />
+          <AvatarField idPrefix="setup" value={avatar} disabled={submitting} onChange={setPicked} />
           <ModelField idPrefix="setup" menu={menu} onChange={setMenu} />
           <label className="field">
             <span>
