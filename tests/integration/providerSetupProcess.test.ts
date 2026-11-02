@@ -10,7 +10,20 @@ function alive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-test('cancelling a packaged check stops its helper and hung CLI descendants before idle', { timeout: 20_000 }, async t => {
+/**
+ * Below the 60 seconds a check may take. PowerShell and two Node processes can
+ * take well over 10 seconds on a busy Windows runner, which is not a failure.
+ */
+const START_DEADLINE_MS = 45_000;
+
+/**
+ * SIGKILL reaches the whole process group before idle, but a descendant still
+ * answers kill(pid, 0) until its new parent reaps it. A process that was missed
+ * keeps running, so it never passes this.
+ */
+const REAP_DEADLINE_MS = 5_000;
+
+test('cancelling a packaged check stops its helper and hung CLI descendants before idle', { timeout: 75_000 }, async t => {
   const root = mkdtempSync(join(tmpdir(), 'cats-setup-process-'));
   const childFile = join(root, 'child.pid');
   const grandchildFile = join(root, 'grandchild.pid');
@@ -39,21 +52,27 @@ test('cancelling a packaged check stops its helper and hung CLI descendants befo
   const setup = new ProviderSetup(createHelperRunner(root));
   t.after(async () => {
     setup.cancelCheck();
-    await setup.whenIdle();
+    // First: a descendant that survived keeps the check's output open, so the check would never go idle.
     for (const file of [grandchildFile, childFile, helperFile]) {
       if (existsSync(file)) {
         try { process.kill(Number(readFileSync(file, 'utf8')), 'SIGKILL'); } catch { /* already stopped */ }
       }
     }
+    await setup.whenIdle();
     rmSync(root, { recursive: true, force: true });
   });
   const checking = assert.rejects(setup.check('claude'), { name: 'AbortError' });
-  const deadline = Date.now() + 10_000;
+  const started = Date.now();
+  const deadline = started + START_DEADLINE_MS;
   while (!existsSync(grandchildFile) && Date.now() < deadline) await delay(20);
-  assert.equal(existsSync(grandchildFile), true, 'the helper must start both CLI descendants');
+  const reached = `helper ${existsSync(helperFile)}, child ${existsSync(childFile)}, grandchild ${existsSync(grandchildFile)}`;
+  t.diagnostic(`after ${Date.now() - started} ms: ${reached}`);
+  assert.equal(existsSync(grandchildFile), true, `the helper must start both CLI descendants (${reached})`);
   const pids = [helperFile, childFile, grandchildFile].map(file => Number(readFileSync(file, 'utf8')));
   assert.ok(pids.every(alive));
   setup.cancelCheck();
   await Promise.all([checking, setup.whenIdle()]);
-  for (const pid of pids) assert.equal(alive(pid), false, `owned process ${pid} stopped before idle`);
+  const reapDeadline = Date.now() + REAP_DEADLINE_MS;
+  while (pids.some(alive) && Date.now() < reapDeadline) await delay(20);
+  for (const pid of pids) assert.equal(alive(pid), false, `owned process ${pid} stopped`);
 });

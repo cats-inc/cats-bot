@@ -110,8 +110,11 @@ recheck cannot create a bot, a delayed page load cannot show a closed window, an
 installation and bot creation finish safely. `providerSetup.test.ts` covers probe
 cancellation, idle waiters and preservation of an explicitly requested install.
 `tests/integration/providerSetupProcess.test.ts` runs a disposable packaged-helper
-fixture with a hung CLI and grandchild, and checks that all three processes have
-stopped before the provider setup becomes idle.
+fixture with a hung CLI and grandchild, and checks that cancelling stops all three.
+The kill goes out before the provider setup becomes idle, and each process then has
+up to 5 seconds to be reaped, because a killed process still answers `kill(pid, 0)`
+until then. The test reports how long the processes took to start, so a slow runner
+can be told from a hang.
 
 #### Linux relaunch and update elevation
 
