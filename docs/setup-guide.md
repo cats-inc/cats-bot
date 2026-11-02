@@ -90,7 +90,9 @@ Traditional Chinese; open conversation windows and the tray update immediately.
 Closing a conversation hides it. Avatar visibility/position and conversation
 visibility/position/layer survive restart, including an entirely hidden desktop.
 Closing a conversation during startup also keeps it hidden: a delayed restore or
-page load cannot reopen it. Open it explicitly from the tray or avatar when needed.
+page load cannot reopen it. Open it explicitly from its Cat’s avatar menu or bot settings when needed.
+If the avatar is hidden, the hub tray’s Show floating cats reveals every running
+Cat. Clicking the tray icon opens Cats Bot Settings on its Bots tab.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.
 
@@ -119,8 +121,11 @@ npm run shell -- --id mochi-catsbot                # later launches, opening tha
 ```
 
 The shell is the hub (SPEC-008): one Electron process for every bot, with one
-tray icon (open direct message, conversations, new conversation, pause
-heartbeat, start at login, quit) and one frameless window per conversation.
+tray icon for global settings, start at login, updates, Quit and showing all
+floating Cats, plus one frameless window per conversation. Each Cat’s avatar menu
+owns its direct message, conversations, heartbeat, visibility and bot settings.
+The tray’s Stop all desktop control reaches every presented Cat, including a
+hidden Cat or one whose status cannot be read; an avatar’s Stop affects only itself.
 Each bot runs as a core process of its own (`cats-bot run`, started with the
 hub's executable as Node) that the hub reaches over its host channel. Closing a
 conversation hides its window; the bots keep running until Quit. A hub that

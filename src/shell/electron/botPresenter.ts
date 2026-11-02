@@ -4,7 +4,7 @@ import { translate, type LanguageState, type Locale } from '../../shared/languag
 import type { HostedCore } from './coreHost.ts';
 import { FloatingBot } from './floatingBot.ts';
 import { SettingsWindow } from './settingsWindow.ts';
-import type { TrayDesktopControl, TrayMenuModel } from './trayMenu.ts';
+import type { TrayDesktopControl, BotMenuModel } from './trayMenu.ts';
 import type { DesktopHost } from './win32Desktop.ts';
 import type { WindowIdentity } from './windowIdentity.ts';
 import { NoteWindows } from './windows.ts';
@@ -35,8 +35,8 @@ export interface PresenterHost {
 
 export type WindowRole = 'note' | 'settings' | 'floating';
 
-/** The parts of the tray model one bot supplies; the hub adds its own items. */
-export type BotTrayModel = Omit<TrayMenuModel, 'locale' | 'openAtLogin' | 'openAtLoginAvailable'>;
+/** The per-Cat menu state; the hub adds only the display locale. */
+export type BotTrayModel = Omit<BotMenuModel, 'locale'>;
 
 export class BotPresenter {
   readonly botId: string;

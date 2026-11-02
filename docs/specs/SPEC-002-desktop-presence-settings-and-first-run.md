@@ -54,8 +54,8 @@ instead of opening the alert.
    runtime package in every other case; it can always be left empty (provider default) or given
    another model id. The generated `providers.yaml` uses the provider's default command and no longer
    uses the provider name as the command.
-4. FR-4: There is one settings window per bot, opened from the tray ("Bot settings…", "Manage
-   notes…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
+4. FR-4: There is one settings window per bot, opened from the floating Cat menu ("Bot settings…", "Manage
+   conversations…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
    (the floating Cat, the bot's facts and folder), and it reaches only its own bot. Cats Bot Settings,
    the hub's own window (tray "Settings…"), has General (display language, reply language, start at
    login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
@@ -67,8 +67,10 @@ instead of opening the alert.
 7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar
    (one per running bot under the hub, each bound to its bot);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
-   opens the home note; right-click gives the same menu as the tray; a short bubble is shown on a new
-   reply; it can be hidden from the tray and from settings. The remembered position is reused only if
+   opens the home note; right-click opens only that Cat’s conversations, heartbeat, desktop-control
+   Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.
+   A short bubble is shown on a new reply; it can be hidden from its own menu and from settings.
+   The hub tray’s "Show floating cats" restores every running Cat, including hidden ones. The remembered position is reused only if
    at least half of the Cat itself (not the whole transparent window) falls on some screen, otherwise it
    returns to the bottom-right corner of the primary screen; the same check is made when screens are
    added or removed or the scaling changes. Unread follows focus: when a note on the desktop or
@@ -84,7 +86,7 @@ instead of opening the alert.
    container a little later); other platforms provide only `normal` and `top`. Dragging works on every
    layer; the wallpaper layer takes no input. A desktop-layer note temporarily becomes an ordinary
    window when clicked so that it can be typed into (including IME), and returns to its layer after it
-   loses focus. When the owner opens a desktop- or wallpaper-layer note from the tray, settings or the
+   loses focus. When the owner opens a desktop- or wallpaper-layer note from bot settings or the
    floating bot, it is likewise raised and given focus, whether or not it was attached at the time and
    whether or not a window has been created in this run; only startup restore and the reopen after an
    Explorer restart put it straight back on its layer without taking focus. An old `shell-state.json`

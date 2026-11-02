@@ -80,6 +80,14 @@ last step, not the first.
 
 ### Shell tests
 
+`tests/shell/trayMenu.test.ts` checks global-only tray menus with zero, one and
+multiple Cats, per-Cat callback isolation, hidden-avatar recovery entry points,
+localized labels and unchanged conversation titles. It verifies the emergency
+Stop’s priority, app-name deduplication and dispatch to the hub’s global action,
+while each avatar’s Stop stays scoped to that Cat. Unreadable Cat state keeps
+recovery enabled and Stop first; status read failures do not mean an empty hub. Native menu presentation is a separate
+Electron/OS acceptance check; plain-data tests alone do not prove it.
+
 `tests/shell/setup.test.ts` drives the real first-run setup against a controllable
 Electron double: closing during a pending check cancels immediately, a late final
 recheck cannot create a bot, a delayed page load cannot show a closed window, and
