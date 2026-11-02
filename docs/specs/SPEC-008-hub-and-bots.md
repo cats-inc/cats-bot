@@ -94,7 +94,7 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
    it is refused in the UI and in the hub's own API. Tests cover at least two
    bots and the cap. A stored 3, the value every earlier version wrote, reads as
    5, and the next registry write records it. A 3 set by hand cannot be told
-   apart from it and reads as 5 too; any other stored whole number is kept. An
+   apart from it and reads as 5 too; any other stored positive whole number is kept. An
    earlier version reading
    a registry with 5 honours it, and refuses new bots while five are active.
 
