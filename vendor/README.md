@@ -6,6 +6,7 @@ never source imports from another checkout. This candidate contains source
 ([Runtime PR #211](https://github.com/cats-inc/cats-runtime/pull/211)), package version 0.6.2.
 Artifact: `vendor/cats-runtime-0.6.2-f53a2058.tgz`; 1,824,365 bytes.
 SHA-256: `443fb7f8efecc5eb92756623ac99747d93623d7b02a774342a5b9e8cde5b349e`.
+`vendor/runtime-source.json` is the machine-readable source/artifact pin, and
 `package-lock.json` records the SHA-512 integrity. This is not an npm publication.
 
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
