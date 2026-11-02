@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import type { AppUpdater } from 'electron-updater';
 import type { IpcMainInvokeEvent } from 'electron';
-import { configureUpdater, createUpdaterAdapter } from '../../src/shell/electron/update/adapter.ts';
+import { assertCanElevate, configureUpdater, createUpdaterAdapter, installDebianUpdate } from '../../src/shell/electron/update/adapter.ts';
 import { BotUpdateController, InstallHandoffTimeout, type BotUpdater, type UpdateHooks } from '../../src/shell/electron/update/controller.ts';
 import { BotInstallation, InstallationRecoveryRequired } from '../../src/shell/electron/update/installation.ts';
 import { isUpdateSender, updateAction } from '../../src/shell/electron/update/ipc.ts';
@@ -441,6 +441,90 @@ test('installer that never hands off is uncertain and Linux receives only the ve
     installDeb: async file => { passed = file; } }, 15);
   await adapter.check(); await adapter.download(() => undefined);
   await assert.rejects(adapter.install(), InstallHandoffTimeout); assert.equal(passed, verified);
+});
+
+test('a host that cannot elevate refuses before downloading or stopping anything', async () => {
+  const status = (flag: number) => () => `Name:\tcats-bot\nNoNewPrivs:\t${flag}\nSeccomp:\t0\n`;
+  assert.throws(() => assertCanElevate(status(1)), /Quit Cats Bot from the tray.*applications menu/u);
+  assert.doesNotThrow(() => assertCanElevate(status(0)));
+  // Unknown is left to pkexec, which reports the real outcome.
+  assert.doesNotThrow(() => assertCanElevate(() => { throw new Error('no /proc'); }));
+
+  const native = new EventEmitter(); const verified = resolve('verified.deb');
+  let installs = 0; let downloads = 0; let restricted = true;
+  Object.assign(native, { checkForUpdates: async () => info('0.3.0', 'verified.deb'), downloadUpdate: async () => {
+    downloads++; native.emit('update-downloaded', { version: '0.3.0' }); return [verified];
+  } });
+  const adapter = createUpdaterAdapter(native as AppUpdater, { onQuit: () => () => undefined, fingerprint: async () => 'verified',
+    assertCanInstall: () => assertCanElevate(status(restricted ? 1 : 0)), installDeb: async () => { installs++; } });
+  const { controller, events } = fixture(adapter);
+  await controller.check();
+  const beforeDownload = await controller.download();
+  assert.equal(beforeDownload.phase, 'error');
+  assert.match(beforeDownload.error ?? '', /applications menu/u);
+  assert.equal(downloads, 0);
+
+  // A download finished before the flag was found is refused at install, with every bot still running.
+  restricted = false;
+  await controller.check(); await controller.download();
+  assert.equal(downloads, 1);
+  restricted = true;
+  const beforeInstall = await controller.install();
+  assert.equal(beforeInstall.phase, 'error');
+  assert.match(beforeInstall.error ?? '', /applications menu/u);
+  assert.deepEqual(events, ['acquire', 'release']);
+  assert.equal(installs, 0);
+});
+
+test('Debian install reports pkexec and apt outcomes and gives apt a regular file for stderr', { skip: process.platform === 'win32' }, async t => {
+  const root = mkdtempSync(join(tmpdir(), 'cats-update-pkexec-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const argsFile = join(root, 'args.txt');
+  const log = join(root, 'logs', 'update-install.log');
+  const fake = (code: number, stderr = '') => {
+    const path = join(root, `pkexec-${code}`);
+    writeFileSync(path, `#!/bin/sh
+printf '%s\\n' "$@" > '${argsFile}'
+if [ "$(uname)" = Linux ] && [ ! -f /dev/stderr ]; then exit 99; fi
+[ -n '${stderr}' ] && echo '${stderr}' >&2
+exit ${code}
+`);
+    chmodSync(path, 0o755);
+    return path;
+  };
+  const deb = resolve('verified.deb');
+  let quits = 0; const quit = () => { quits++; };
+
+  await assert.rejects(installDebianUpdate(deb, quit, log, fake(127, 'pkexec must be setuid root')), (error: Error) => {
+    assert.ok(!(error instanceof InstallHandoffTimeout), 'pkexec returns 127 before apt runs');
+    assert.match(error.message, /could not get administrator rights.*pkexec must be setuid root/u);
+    return true;
+  });
+  assert.equal(readFileSync(argsFile, 'utf8'), `/usr/bin/apt-get\ninstall\n--yes\n${deb}\n`);
+  assert.equal(readFileSync(log, 'utf8'), 'pkexec must be setuid root\n');
+  await assert.rejects(installDebianUpdate(deb, quit, log, fake(126)), (error: Error) => {
+    assert.ok(!(error instanceof InstallHandoffTimeout), 'pkexec returns 126 before apt runs');
+    assert.match(error.message, /prompt was closed/u);
+    return true;
+  });
+  assert.equal(readFileSync(log, 'utf8'), '', 'each install starts a new log');
+  await assert.rejects(installDebianUpdate(deb, quit, log, fake(100, 'E: dpkg was interrupted')), (error: Error) => {
+    assert.ok(error instanceof InstallHandoffTimeout, 'an apt failure may have changed installed files');
+    assert.match(error.message, /exited 100.*E: dpkg was interrupted/u);
+    return true;
+  });
+  await assert.rejects(installDebianUpdate(deb, quit, log, join(root, 'missing-pkexec')), /ENOENT/u);
+  assert.equal(quits, 0);
+  await installDebianUpdate(deb, quit, log, fake(0));
+  assert.equal(quits, 1);
+  await assert.rejects(installDebianUpdate('relative.deb', quit, log), /Invalid verified/u);
+
+  // A log that cannot be opened must not stop the update.
+  writeFileSync(join(root, 'blocker'), '');
+  const unlogged = join(root, 'pkexec-unlogged');
+  writeFileSync(unlogged, '#!/bin/sh\nexit 0\n');
+  chmodSync(unlogged, 0o755);
+  await installDebianUpdate(deb, quit, join(root, 'blocker', 'update-install.log'), unlogged);
+  assert.equal(quits, 2);
 });
 
 test('installation gate excludes existing and newly starting Bots, then preserves bot id across upgrade', t => {

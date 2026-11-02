@@ -14,7 +14,7 @@ import { FloatingBot } from '../../dist/shell/electron/floatingBot.js';
 import { popupMenu } from '../../dist/shell/electron/popupMenu.js';
 import { relaunchForLinuxWindowing } from '../../dist/shell/electron/linuxWindowing.js';
 
-relaunchForLinuxWindowing(app);
+relaunchForLinuxWindowing(app, (args) => app.relaunch({ args }));
 const repo = resolve(import.meta.dirname, '../..');
 const evidence = process.env.CATS_BOT_ACCEPTANCE_EVIDENCE || mkdtempSync(join(tmpdir(), 'cats-bot-interactions-'));
 if (!resolve(evidence).startsWith(resolve(tmpdir()) + sep)) throw new Error('Acceptance evidence must be in a temporary directory');

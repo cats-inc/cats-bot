@@ -144,6 +144,12 @@ jobs:
         if: env.SKIP == ''
         run: npm run build
 
+      - name: Test real Electron relaunch
+        if: env.SKIP == '' && matrix.os == 'ubuntu-latest'
+        env:
+          CATS_TEST_ELECTRON_RELAUNCH: '1'
+        run: node --test tests/shell/linuxRelaunch.test.ts
+
       - name: Build candidate packages (updates disabled)
         if: env.SKIP == ''
         shell: bash
