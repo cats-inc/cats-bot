@@ -56,6 +56,22 @@ last step, not the first.
 
 ### Integration tests
 
+- `tests/integration/antigravityTimeout.test.ts` starts the real packed Runtime
+  with a legacy agy stream-json fixture in a disposable home. It emits init,
+  stays silent for 31 seconds, then completes; the previous Runtime fails this
+  case at 30 seconds. The fixture uses no real provider or authentication.
+
+  Verified on Linux ARM64 with Node 26.13.0: the previous `fb0f1125` Runtime
+  artifact reproduced `Antigravity stopped responding after the initial response
+  for 30000ms`; the exact replacement pinned in `vendor/README.md` completed the
+  same 31-second case. The focused Bot run passed 22 tests (architecture, provider
+  catalogs, Runtime stop, legacy CLI create/stream/cancel/resume/history, native
+  Muse/Grok/Antigravity fixtures and this regression), plus typecheck and build.
+  Runtime's focused config/WorkerPool/WorkerProcess run passed 105 tests and its
+  build passed. Independent source and artifact review was performed separately.
+  These are isolated fixtures, not a live model or installed-profile acceptance;
+  no installed Bot/Desktop files or user conversations were changed.
+
 - **Location**: `tests/integration/runtime.test.ts`, `tools.test.ts` and
   `multinote.test.ts` with `tests/support/fixture-cli/`
 - **Scope**: the real pinned `cats-runtime` bin from `node_modules`, started

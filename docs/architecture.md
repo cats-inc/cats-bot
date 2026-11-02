@@ -137,6 +137,15 @@ does not establish browser/desktop helper availability or successful invocation.
   (NDJSON streaming), resume, cancel, close, delete, observe and history, and
   classifies HTTP errors.
 
+  Provider-event timeouts belong to the pinned Runtime, rather than a second Bot
+  timer: legacy ephemeral CLI turns default to 30 seconds before the first event
+  and 120 seconds of silence after initialization, reset by provider progress.
+  This fixes an agy turn being killed 30 seconds after init while still reasoning.
+  Desktop's HTTP byte-idle budget is also 120 seconds, but Runtime heartbeats can
+  reset that client timer; they do not reset the provider-event timer. Explicit
+  Runtime/instance timeout overrides retain their documented precedence. Bot
+  continues stripping inherited Runtime settings to preserve its private instance.
+
 ### `src/core/conversations`
 
 - **Purpose**: conversations, their transcripts and session attachments
