@@ -9,9 +9,12 @@ import { linuxWindowsUnderWayland } from './linuxWindowing.ts';
  * owns the menu. While one is open, a transparent window over every display
  * takes that click, which closes the menu like any other outside click (ADR-014).
  * It appears a moment after the menu: mapped with it or just before it, the menu
- * often never paints. If it fails, the menu only stays open as it would without it.
+ * often never paints. It takes every click on the desktop, so nothing may leave
+ * it there: it goes with the menu, with the menu's owner or after a time limit,
+ * which also closes a menu left open that long.
  */
 const CATCHER_DELAY_MS = 150;
+const CATCHER_MAX_MS = 30_000;
 
 export function popupMenu(menu: Menu, window: BrowserWindow): void {
   if (!linuxWindowsUnderWayland(app.commandLine)) {
@@ -39,11 +42,16 @@ export function popupMenu(menu: Menu, window: BrowserWindow): void {
   const showing = setTimeout(() => {
     if (!catcher.isDestroyed()) catcher.showInactive();
   }, CATCHER_DELAY_MS);
-  menu.popup({
-    window,
-    callback: () => {
-      clearTimeout(showing);
-      if (!catcher.isDestroyed()) catcher.destroy();
-    },
-  });
+  const release = (): void => {
+    clearTimeout(showing);
+    clearTimeout(expiring);
+    if (!window.isDestroyed()) window.removeListener('closed', release);
+    if (!catcher.isDestroyed()) catcher.destroy();
+  };
+  const expiring = setTimeout(() => {
+    release();
+    if (!window.isDestroyed()) menu.closePopup(window);
+  }, CATCHER_MAX_MS);
+  window.once('closed', release);
+  menu.popup({ window, callback: release });
 }

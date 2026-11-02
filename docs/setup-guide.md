@@ -109,13 +109,14 @@ and does not support these floating-window features. See
 [ADR-014](decisions/014-set-linux-avatar-input-through-the-x11-input-shape.md).
 
 Finishing the first run turns Start at login on, once, on every platform; a development
-shell, a portable copy and a Mac app still on its disk image stay off. An installation
-that already has a bot keeps its setting. It can be turned off from the tray or Settings.
+shell, a portable copy, a Mac app outside Applications and a copy run with
+`CATS_BOT_HOME` stay off. An installation that already has a bot keeps its setting. It
+can be turned off from the tray or Settings.
 
 On Linux, an installed copy writes
 `$XDG_CONFIG_HOME/autostart/cats-bot.desktop` (normally under `~/.config`). That file
 decides the setting: removing or disabling it in the desktop's settings turns Start at
-login off, and Cats Bot does not register it again. A file of that name that Cats Bot
+login off the next time the hub starts, and Cats Bot does not register it again. A file of that name that Cats Bot
 did not write is neither replaced nor removed. Removing the package cannot reach your
 home folder, so the entry stays behind but does nothing, because its `TryExec` no longer
 finds the program.

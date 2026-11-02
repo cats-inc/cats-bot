@@ -38,7 +38,11 @@ test('every shell menu opens through popupMenu, which covers all displays and sh
   // Mapped with the menu or just before it, the menu often never paints (ADR-014).
   assert.match(source, /const CATCHER_DELAY_MS = [1-9]\d+;/u);
   assert.match(source, /setTimeout\(\(\) => \{\s+if \(!catcher\.isDestroyed\(\)\) catcher\.showInactive\(\);\s+\}, CATCHER_DELAY_MS\)/u);
-  assert.match(source, /callback: \(\) => \{\s+clearTimeout\(showing\);\s+if \(!catcher\.isDestroyed\(\)\) catcher\.destroy\(\);/u);
+  // It takes every click on the desktop, so a menu, its owner or the clock must remove it.
+  assert.match(source, /const release = \(\): void => \{\s+clearTimeout\(showing\);\s+clearTimeout\(expiring\);[\s\S]*?if \(!catcher\.isDestroyed\(\)\) catcher\.destroy\(\);/u);
+  assert.match(source, /window\.once\('closed', release\);\s+menu\.popup\(\{ window, callback: release \}\);/u);
+  assert.match(source, /const CATCHER_MAX_MS = [1-9][\d_]+;/u);
+  assert.match(source, /setTimeout\(\(\) => \{\s+release\(\);\s+if \(!window\.isDestroyed\(\)\) menu\.closePopup\(window\);\s+\}, CATCHER_MAX_MS\)/u);
   assert.deepEqual(displaysBounds([{ bounds: { x: 0, y: 0, width: 1920, height: 1080 } }]), { x: 0, y: 0, width: 1920, height: 1080 });
   assert.deepEqual(displaysBounds([
     { bounds: { x: 0, y: 0, width: 1920, height: 1080 } },

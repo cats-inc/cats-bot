@@ -815,7 +815,7 @@ async function main(): Promise<void> {
   // outside the app, and the choice stands rather than being registered again.
   if (linuxAutostart) {
     try {
-      refreshLinuxAutostart(linuxAutostart, process.execPath);
+      if (!process.env.CATS_BOT_HOME) refreshLinuxAutostart(linuxAutostart, process.execPath);
     } catch (error) {
       log(`login item failed: ${diagnosticError(error)}`, 'error');
     }
@@ -832,13 +832,20 @@ async function main(): Promise<void> {
   };
   // SPEC-008 FR-23: a finished first run turns it on, once. Later starts keep the
   // owner's choice, an installation that already has a hub keeps its setting, and
-  // an entry that already exists, even a disabled one, stays as it is.
+  // an entry that already exists, even a disabled one, stays as it is. Elsewhere
+  // that entry still starts the app, so the setting says so.
   if (firstRunFinished && startAtLoginByDefault({
     platform: process.platform,
     packaged: app.isPackaged,
     portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
     inApplicationsFolder: process.platform === 'darwin' && app.isInApplicationsFolder(),
-  }) && !(linuxAutostart ? existsSync(linuxAutostart) : app.getLoginItemSettings({ args: [] }).openAtLogin)) setOpenAtLogin(true);
+    customHome: Boolean(process.env.CATS_BOT_HOME),
+  })) {
+    if (linuxAutostart) {
+      if (!existsSync(linuxAutostart)) setOpenAtLogin(true);
+    } else if (app.getLoginItemSettings({ args: [] }).openAtLogin) saveHubState({ ...hubState, openAtLogin: true });
+    else setOpenAtLogin(true);
+  }
 
   let release: BotRelease | null = null;
   try {
