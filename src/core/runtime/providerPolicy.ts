@@ -1,5 +1,15 @@
 import type { BotPermissions, InteractionHost, SessionExecutionPolicy } from '../types.ts';
 
+import { usesHostedProvider } from '../../shared/providerTools.ts';
+export { providerCanOfferSessionTools, usesHostedProvider } from '../../shared/providerTools.ts';
+/** Match the candidate Runtime's admission before replacing the private execution target. */
+export function assertHostedProviderPolicy(provider: string, policy: SessionExecutionPolicy | null): void {
+  if (!usesHostedProvider(provider, policy)) return;
+  if (policy?.mode !== 'provider' || policy.constraints.maxAccess !== 'full-access' || !policy.constraints.network) {
+    throw new Error('Native provider tools require provider configuration with full machine and network access. Approval follows the provider settings.');
+  }
+}
+
 export const INTERACTION_HOST: InteractionHost = {
   version: 1,
   kinds: ['command_approval', 'file_approval', 'tool_approval', 'permission_grant', 'user_input', 'mcp_form', 'mcp_url'],

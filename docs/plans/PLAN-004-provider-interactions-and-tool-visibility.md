@@ -103,6 +103,38 @@ into the user's existing profile are not authorized automatically by any step of
 **Exit:** The Claude bot and the Codex bot take the same interaction path; a ceiling that cannot be
 run is rejected before saving or creating a session.
 
+### P6. Native work tools for Antigravity, Grok and Muse
+
+Implemented from Bot `afad1c8` (0.4.6), 2026-11-02; isolated worktree
+`feat/provider-tools`. Producer implementation: Runtime SPEC-040 / PLAN-051.
+
+- [x] Document the accepted scope and target/policy compatibility boundary.
+- [x] Generate the explicitly selected hosted Runtime target; retain legacy
+  profiles, readonly and allowlist behavior.
+- [x] Make a protocol-mode change wait for the current turn and restart Runtime;
+  avoid pre-validating the new policy against the old legacy target.
+- [x] Derive Cats/Boss Cat tool availability from Runtime and delivery evidence.
+- [x] Present usable work policies, truthful native tool support and setup errors.
+- [x] Pin the reviewed Runtime `fb0f1125` candidate and run affected consumer tests.
+- [x] Verify approval/reconnect/cancel/restart and transcript-preserving handoff
+  in isolated fixtures; independent review before auto-merge PRs.
+
+The native Google ACP 1.4.5 probe currently fails before handshake on this
+Linux ARM64 host (16 KiB runtime pages versus its 4 KiB build). This is an
+upstream executable/platform limitation, not evidence of a working local
+Antigravity hosted target. Muse/Grok verification proceeds independently.
+
+Validation: typecheck/build and 64 affected Bot regression tests passed; all 7
+affected packed Runtime integration
+checks passed, including all three hosted protocol fixtures plus existing
+Codex/Claude and Cats tools. Independent review passed and reproduced the
+corrected descriptor-generation race, active-turn preservation and stable native
+session across three normal turns. Configuration is separate from authenticated
+discovery; old requests cannot mark a new execution connected. Required hosted
+CI and auto-merge completion remain delivery checks. Desktop acceptance was
+skipped at the owner's request because X authorization is broken.
+
+
 ## Files to Create/Modify
 
 | Area | Intended change |
@@ -138,4 +170,4 @@ of the implementation phase are in the records below.
 | 2026-10-28 | P5 real acceptance: Claude Code 2.1.312 (haiku), through the packed Runtime `e38e56bf` and a brand-new isolated test Bot (real user login, scratch cwd, explicit full-access/network/on-request, Claude in Chrome on), completed four turns in 23 seconds: a question (`user_input`, answered Blue), Write (`file_approval`, showing only the path and size, file written), the Bot's own `schedule_list` (`tool_approval`, server `cats-bot`), and a refused shell redirect (`command_approval`, file not created). Policy `verified` (reported `default`, reviewer `user`); saving workspace-write was rejected. Inventory: `cats-bot` injected, 22 `claude-in-chrome` tools, 7 claude.ai connectors, 34 built-in; browser `unknown`, computer use `unavailable`. Not tested: real Chrome browser operation (no browser was opened), a real MCP form/URL (only scripted and direct CLI probing), and the on-screen look of the `tool_approval` card on the note (it reuses the generic card). |
 | 2026-10-29 | Note fix: the installed 0.2.2 note kept the last 4 terminal receipts as full cards after the transcript. Redacted, each said only "resolved · provider resolved" (about 170 px in a 460 px note), and they buried the latest reply. The note now shows only pending and responding requests; terminal receipts remain in the core and `cats-bot interactions`. A tool name that is a whole command line (Codex) is cut with an ellipsis instead of widening the transcript to 2377 px. |
 
-*Created / last updated: 2026-10-29*
+*Created: 2026-10-28; last updated: 2026-11-02*

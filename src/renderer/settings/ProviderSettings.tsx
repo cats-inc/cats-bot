@@ -2,6 +2,7 @@ import { t, useI18n } from '../i18n.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { BotProfile, ConversationRecord, ExecutionAccess, ExecutionApproval, SessionCapabilitiesSnapshot, SessionExecutionPolicy } from '../../core/types.ts';
+import { HOSTED_TOOL_PROVIDERS } from '../../shared/providerTools.ts';
 
 const api = window.catsBot;
 export function ProviderSettings({
@@ -13,12 +14,13 @@ export function ProviderSettings({
 }) {
   useI18n();
   const saved = profile.providerPolicy;
+  const nativeTools = HOSTED_TOOL_PROVIDERS.includes(profile.executionTarget.provider);
   const [mode, setMode] = useState<'legacy' | 'provider' | 'explicit'>(saved?.mode ?? 'legacy');
   const [access, setAccess] = useState<ExecutionAccess>(
-    saved?.mode === 'explicit' ? saved.access : (saved?.constraints.maxAccess ?? 'workspace-write'),
+    saved?.mode === 'explicit' ? saved.access : (saved?.constraints.maxAccess ?? (nativeTools ? 'full-access' : 'workspace-write')),
   );
   const [network, setNetwork] = useState(
-    saved?.mode === 'explicit' ? saved.network : (saved?.constraints.network ?? false),
+    saved?.mode === 'explicit' ? saved.network : (saved?.constraints.network ?? nativeTools),
   );
   const [approval, setApproval] = useState<ExecutionApproval>(saved?.mode === 'explicit' ? saved.approval : 'on-request');
   const [notes, setNotes] = useState<ConversationRecord[]>([]);
@@ -75,10 +77,13 @@ export function ProviderSettings({
       <h3>{t('Provider access and tools')}</h3>
       <label className="field">
         <span>{t('Execution policy')}</span>
-        <select value={mode} onChange={(e) => setMode(e.target.value as typeof mode)}>
+        <select value={mode} onChange={(e) => {
+          setMode(e.target.value as typeof mode);
+          if (nativeTools) { setAccess('full-access'); setNetwork(true); }
+        }}>
           <option value="legacy">{t('Keep existing tool permission settings')}</option>
-          <option value="provider">{t('Use provider configuration within a limit')}</option>
-          <option value="explicit">{t('Choose access and approval separately')}</option>
+          <option value="provider">{nativeTools ? t('Enable native tools with provider permissions') : t('Use provider configuration within a limit')}</option>
+          {!nativeTools && <option value="explicit">{t('Choose access and approval separately')}</option>}
         </select>
       </label>
       {mode !== 'legacy' && (
@@ -87,7 +92,7 @@ export function ProviderSettings({
             <span>
               {mode === 'provider' ? t('Maximum admitted access') : t('Local file access')}
             </span>
-            <select value={access} onChange={(e) => setAccess(e.target.value as ExecutionAccess)}>
+            <select value={access} disabled={nativeTools} onChange={(e) => setAccess(e.target.value as ExecutionAccess)}>
               <option value="read-only">{t('Read only')}</option>
               <option value="workspace-write">{t('Write in the workspace')}</option>
               <option value="full-access">{t('Full machine access')}</option>
@@ -96,7 +101,7 @@ export function ProviderSettings({
           <label className="check">
             <input
               type="checkbox"
-              disabled={mode === 'explicit' && access !== 'workspace-write'}
+              disabled={nativeTools || mode === 'explicit' && access !== 'workspace-write'}
               checked={
                 mode === 'explicit' && access === 'full-access'
                   ? true
@@ -126,6 +131,12 @@ export function ProviderSettings({
               'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.',
             )}
           </p>
+          {nativeTools && <p className="hint">
+            {t('Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the Bot conversation. Bot cannot impose a smaller file or network boundary in this mode.')}
+          </p>}
+          {nativeTools && profile.executionTarget.provider === 'antigravity' && <p className="hint">
+            {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}
+          </p>}
           {profile.executionTarget.provider === 'claude' && (
             <p className="hint warn">
               {t(

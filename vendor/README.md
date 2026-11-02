@@ -1,31 +1,25 @@
 # Runtime candidate
 
-The Bot consumes a packed Runtime artifact over its process/HTTP boundary, never
-source imports from another checkout. This candidate contains Runtime source
-`c6e575b672ecaf3d6113c08260720b57c7d62765`, package version 0.6.2. It refreshes the
-requested provider catalogs, adding Codex GPT-6.1 Terra and Cursor DeepSeek V4.1 Flash
-1017. Bot's menu remains Codex, Claude, Antigravity, Grok and Muse; Copilot's prior
-catalog is retained because its account feature returned HTTP 403. Existing Codex
-and Claude Code interactions, policy and inventory stay available. The tarball is
-1,790,301 bytes, SHA-256
-`b26c51765a686a9f18ffb1381bce19b3984de3a9bf0180c4439049984fbc2b12`.
-It is not an npm publication. `package-lock.json` pins the tarball integrity.
-Independent comparison of all 1,473 archive members found that only the authored
-and generated catalog files changed from the previous pinned artifact; executable bytes are unchanged.
+Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
+never source imports from another checkout. This candidate contains source
+`fb0f1125ecad427852f0c890b36605f335945650` (Runtime PR #208), package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-fb0f1125.tgz`; 1,823,027 bytes.
+SHA-256: `8e20c1f65a636a2769fbc4e826828df3b2fdec6dcaf2497e326fc37607f3ce4c`.
+`package-lock.json` records the SHA-512 integrity. This is not an npm publication.
 
-Build the exact Runtime source with its lockfile, run `npm run build`, then
-`npm pack --ignore-scripts`; name the artifact with the source commit and retain
-its provenance here. The candidate enables interaction/policy v1. An older
-Runtime is reported as unavailable for explicit/provider policy, never silently
-used with different permissions.
+The candidate adds explicitly selected native Muse MSP and Grok/official Google
+ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
+private session MCP and live native interactions; Google ACP supports local
+work/approvals while its session MCP is gated pending verified native credential
+persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
 
-Bot profile schema 2 preserves schema 1 permissions with `providerPolicy: null`.
-The original profile is backed up before atomic upgrade; unknown versions stop.
-This persisted contract requires the next Bot minor line (0.2) before publication.
-No package version or release is changed by this implementation slice.
+Reproduce from the exact source with its lockfile: `npm ci`, `npm run build`, then
+`npm pack --ignore-scripts`. Name the artifact with the source commit and update
+this manifest, package dependency and lockfile together. A Runtime without the
+advertised policy/interaction capability is unavailable for the new mode, never
+silently used with different permissions.
 
-The Codex consent follow-up changes no public schema or persisted format and stays
-compatible within Runtime 0.6 / Bots 0.2. The existing desktop-control policy gate
-still requires explicit interactive approvals; app grants remain a separate owner
-decision. A provider plugin's app-consent request using the same native marked
-form is also answerable; other plugin/OS permission protocols are not bridged.
+No package version, profile/journal format or data migration changes in this
+slice. Existing profiles retain `providerPolicy: null` until the owner enables
+native tools. Existing Codex/Claude catalogs, interactions, policy and inventory
+are retained. Desktop control keeps its separate permission and platform gates.

@@ -13,6 +13,7 @@ import { writeFileAtomic } from '../store/atomicFile.ts';
 
 export interface ProvidersConfigInput {
   provider: string;
+  protocol?: 'hosted';
   /**
    * Overrides the CLI command; tests point it at the fixture CLI. Without it
    * the provider's own command is used (`agy` for antigravity, for example).
@@ -55,9 +56,11 @@ export function renderProvidersConfig(input: ProvidersConfigInput): string {
     '        instances:',
     '          native:',
     '            environment: native',
-    `            command: ${yamlScalar(input.command ?? defaultCommandFor(input.provider))}`,
+    `            command: ${yamlScalar(input.command ?? (input.protocol === 'hosted' && input.provider === 'antigravity'
+      ? process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par' : defaultCommandFor(input.provider)))}`,
     '            runner: auto',
   ];
+  if (input.protocol) lines.push(`            protocol: ${yamlScalar(input.protocol)}`);
   if (input.launchArgs && input.launchArgs.length > 0) {
     lines.push('            launch:', '              args:');
     for (const arg of input.launchArgs) lines.push(`                - ${yamlScalar(arg)}`);

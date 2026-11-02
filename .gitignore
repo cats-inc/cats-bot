@@ -22,7 +22,7 @@ dist/
 .npm/
 *.tgz
 !vendor/platform-ui-web-*.tgz
-!vendor/cats-runtime-0.6.2-c6e575b6.tgz
+!vendor/cats-runtime-0.6.2-fb0f1125.tgz
 
 # === Environment ===
 .env

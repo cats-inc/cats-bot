@@ -182,8 +182,13 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const target = resolve(dirname(file), specifier);
         // Translation is intentionally shared with native menus; it has no platform imports.
         const language = target === join(srcRoot, 'shared', 'language.ts');
-        if (!language && (!typeOnly || !allowed.includes(target)))
+        const providerTools = target === join(srcRoot, 'shared', 'providerTools.ts');
+        if (!language && !providerTools && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
+        if (providerTools) {
+          assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
+          assert.match(readFileSync(target, 'utf8'), /^import type /u, 'provider tool metadata imports only the erased policy type');
+        }
         if (language)
           assert.deepEqual(
             importSpecifiers(target),

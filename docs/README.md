@@ -1,5 +1,9 @@
 # Documentation Index
 
+Native work capability for Antigravity, Grok and Muse is in progress under
+[SPEC-004 B9](specs/SPEC-004-provider-interactions-and-tool-visibility.md#b9-antigravity-grok-and-muse-work-capability-2026-11-02)
+and [PLAN-004 P6](plans/PLAN-004-provider-interactions-and-tool-visibility.md#p6-native-work-tools-for-antigravity-grok-and-muse).
+
 [Production host diagnostics](decisions/013-keep-bounded-production-host-diagnostics.md)
 records the host/core log retention, detached stderr maintenance and no-dump policy.
 

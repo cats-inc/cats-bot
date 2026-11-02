@@ -57,6 +57,8 @@ export interface BotToolServerOptions {
   token?: string;
   /** Replaces the single server token: whether `token` may call tools of `conversationId`. */
   authorize?(conversationId: string, token: string): boolean;
+  /** Bind discovery to the descriptor generation of a particular native execution. */
+  trackDiscovery?: boolean;
   maxBodyBytes?: number;
 }
 
@@ -96,6 +98,16 @@ export class BotToolServer {
   private readonly options: BotToolServerOptions;
   private server: Server | null = null;
   private port = 0;
+  private readonly discovered = new Set<string>();
+  private readonly descriptorGenerations = new Map<string, string>();
+
+  /** An authenticated client actually fetched these tools; configuration is not evidence. */
+  hasDiscovered(conversationId: string): boolean { return this.discovered.has(conversationId); }
+  clearDiscovery(): void { this.discovered.clear(); this.descriptorGenerations.clear(); }
+  rotateDiscovery(conversationId: string): void {
+    this.discovered.delete(conversationId);
+    this.descriptorGenerations.set(conversationId, randomBytes(18).toString('base64url'));
+  }
 
   constructor(options: BotToolServerOptions) {
     this.options = options;
@@ -113,10 +125,12 @@ export class BotToolServer {
   /** The `mcpServers` descriptor for a session of `conversationId`. */
   descriptorFor(conversationId: string, token = this.token): RuntimeMcpServer[] {
     if (!this.url) return [];
+    if (this.options.trackDiscovery && !this.descriptorGenerations.has(conversationId)) this.rotateDiscovery(conversationId);
+    const generation = this.options.trackDiscovery ? this.descriptorGenerations.get(conversationId) : null;
     return [{
       name: this.name,
       transport: 'http',
-      url: `${this.url}/${encodeURIComponent(conversationId)}`,
+      url: `${this.url}/${encodeURIComponent(conversationId)}${generation ? `?generation=${generation}` : ''}`,
       auth: { kind: 'bearer_env', token },
     }];
   }
@@ -143,6 +157,7 @@ export class BotToolServer {
   }
 
   async stop(): Promise<void> {
+    this.clearDiscovery();
     const server = this.server;
     this.server = null;
     this.port = 0;
@@ -172,6 +187,12 @@ export class BotToolServer {
       sendJson(res, 401, { error: 'unauthorized' });
       return;
     }
+    const currentDescriptor = () => !this.options.trackDiscovery || this.descriptorGenerations.has(conversationId)
+      && url.searchParams.get('generation') === this.descriptorGenerations.get(conversationId);
+    if (!currentDescriptor()) {
+      sendJson(res, 401, { error: 'expired descriptor' });
+      return;
+    }
     if (req.method === 'DELETE') {
       res.writeHead(200);
       res.end();
@@ -199,6 +220,8 @@ export class BotToolServer {
     const requests = (batch ? parsed : [parsed]) as JsonRpcRequest[];
     const responses: unknown[] = [];
     for (const request of requests) {
+      // The descriptor may rotate while the body or a previous batch call is pending.
+      if (!currentDescriptor()) { sendJson(res, 401, { error: 'expired descriptor' }); return; }
       const response = await this.dispatch(request, { conversationId });
       if (response !== null) responses.push(response);
     }
@@ -232,6 +255,7 @@ export class BotToolServer {
       case 'ping':
         return reply({});
       case 'tools/list':
+        if (!isNotification) this.discovered.add(context.conversationId);
         return reply({ tools: this.options.handlers.list() });
       case 'tools/call': {
         const name = typeof request.params?.name === 'string' ? request.params.name : '';
