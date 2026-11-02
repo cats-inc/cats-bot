@@ -254,6 +254,9 @@ test('a start by the holder keeps the restart budget, so a bot that keeps failin
   });
   const runner = failing([5, 5, 5]);
   await runner.start();
+  // Each restart is a real timer, and a busy machine takes longer than the delays add up to.
+  for (const deadline = Date.now() + 10_000; launches < 4 && Date.now() < deadline;) await new Promise((resolve) => setTimeout(resolve, 10));
+  // Long enough for a restart beyond the budget to show.
   await new Promise((resolve) => setTimeout(resolve, 150));
   assert.equal(launches, 4, 'one start and three restarts');
   await assert.rejects(runner.startAgain(), /only the owner/u);

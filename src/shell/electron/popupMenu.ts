@@ -53,5 +53,10 @@ export function popupMenu(menu: Menu, window: BrowserWindow): void {
     if (!window.isDestroyed()) menu.closePopup(window);
   }, CATCHER_MAX_MS);
   window.once('closed', release);
-  menu.popup({ window, callback: release });
+  try {
+    menu.popup({ window, callback: release });
+  } catch (error) {
+    release();
+    throw error;
+  }
 }

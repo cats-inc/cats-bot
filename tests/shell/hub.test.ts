@@ -281,4 +281,6 @@ test('a finished first run turns Start at login on only for a copy whose path la
   assert.equal(main.match(/firstRunFinished = true/gu)?.length, 1);
   assert.match(main, /if \(firstRunFinished && startAtLoginByDefault\(\{[\s\S]*?customHome: Boolean\(process\.env\.CATS_BOT_HOME\),/u);
   assert.match(main, /if \(!process\.env\.CATS_BOT_HOME\) refreshLinuxAutostart\(/u);
+  // An existing entry is left as it is; elsewhere the setting says that it still starts the app.
+  assert.match(main, /if \(linuxAutostart\) \{\s+if \(!existsSync\(linuxAutostart\)\) setOpenAtLogin\(true\);\s+\} else if \(app\.getLoginItemSettings\(\{ args: \[\] \}\)\.openAtLogin\) saveHubState\(\{ \.\.\.hubState, openAtLogin: true \}\);\s+else setOpenAtLogin\(true\);/u);
 });

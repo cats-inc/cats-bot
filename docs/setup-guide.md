@@ -116,10 +116,10 @@ can be turned off from the tray or Settings.
 On Linux, an installed copy writes
 `$XDG_CONFIG_HOME/autostart/cats-bot.desktop` (normally under `~/.config`). That file
 decides the setting: removing or disabling it in the desktop's settings turns Start at
-login off the next time the hub starts, and Cats Bot does not register it again. A file of that name that Cats Bot
-did not write is neither replaced nor removed. Removing the package cannot reach your
-home folder, so the entry stays behind but does nothing, because its `TryExec` no longer
-finds the program.
+login off the next time the hub starts, and Cats Bot does not register it again. A file
+of that name that Cats Bot did not write is neither replaced nor removed. Removing the
+package cannot reach your home folder, so the entry stays behind but does nothing,
+because its `TryExec` no longer finds the program.
 
 A busy conversation keeps its waiting status and Cancel button through automatic
 retries. After eight owner-message attempts, retrying stops and the message stays
