@@ -38,14 +38,17 @@ See the [findings](../research/2026-11-02-linux-avatar-black-area-and-clicks.md)
   window owns the menu. While a shell menu is open, a transparent, unfocusable window over
   every display takes that click, which closes the menu like any other outside click.
   It appears 150 ms after the menu: mapped with it or just before it, the menu often
-  never paints. If it fails, the menu only stays open as it would without it.
+  never paints. Because it takes every click on the desktop, it goes with the menu, with
+  the menu's owner or after 30 seconds, which also closes a menu left open that long.
 
 ## Consequences
 
 ### Positive
 
 - The transparent area is transparent under GPU and software compositing alike.
-- Clicks outside the visible regions reach native Wayland and X11 windows.
+- Clicks outside the visible regions reach native Wayland windows, and the X server
+  routes them to X11 windows. Clicks on the cat with an X11 window under the avatar are
+  a known open question in the findings.
 - No native dependency reaches the Linux package.
 
 ### Negative

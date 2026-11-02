@@ -235,8 +235,8 @@ released explicitly, without sleeps or real profile access.
 - **Manual**: the real Electron hub in an isolated `CATS_BOT_HOME` and
   `--user-data-dir`, with the fixture CLI: first run, a second launch, a hub
   crash and reattach, two bots with a killed core, `cats-bot quit` per bot, and
-  `cats-bot hub boss-cat`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot` and
-  the provider folders before and after; nothing may change.
+  `cats-bot hub boss-cat`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot`, the
+  provider folders and the login items before and after; nothing may change.
 - **Manual, first run through the setup page**: launch without `--provider`,
   with an isolated home whose `.npmrc` names an existing global npm prefix, so
   the page's provider check runs the packaged setup helper as an owner's first
