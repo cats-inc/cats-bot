@@ -23,6 +23,36 @@ after(() => home.cleanup());
 
 const now = new Date('2026-10-27T10:00:00.000Z');
 
+test('a profile from before the choice of look shows the default Cat and is not rewritten (SPEC-008 FR-29)', () => {
+  const paths = botPathsFor(`${home.botsHome}/old-look`);
+  mkdirSync(paths.root, { recursive: true });
+  const profile = createProfile({ id: 'old-look', name: 'Bot', provider: 'claude', cwd: paths.root, now });
+  assert.equal(profile.avatar, 'ginger');
+  for (const stored of [undefined, 'dragon', 7, null]) {
+    const text = JSON.stringify({ ...profile, avatar: stored });
+    writeFileSync(paths.profile, text);
+    // The way a core opens its profile, which may write when it upgrades one.
+    const loaded = loadProfile(paths, profile, true);
+    assert.ok(loaded.ok);
+    assert.equal(loaded.profile.avatar, 'ginger');
+    assert.equal(readFileSync(paths.profile, 'utf8'), text);
+  }
+  writeFileSync(paths.profile, JSON.stringify({ ...profile, avatar: 'siamese' }));
+  const chosen = loadProfile(paths, profile);
+  assert.ok(chosen.ok);
+  assert.equal(chosen.profile.avatar, 'siamese');
+});
+
+test('changing the look replaces no session and refuses what is not a look (SPEC-008 FR-29)', () => {
+  const profile = createProfile({ id: 'look', name: 'Bot', provider: 'claude', cwd: home.root, now });
+  const changed = applyProfilePatch(profile, { avatar: 'tuxedo' }, now);
+  assert.equal(changed.profile.avatar, 'tuxedo');
+  assert.equal(changed.profile.configRevision, profile.configRevision);
+  assert.equal(changed.sessionChanged, false);
+  assert.equal(applyProfilePatch(changed.profile, { name: 'Renamed' }, now).profile.avatar, 'tuxedo', 'another change keeps it');
+  assert.throws(() => applyProfilePatch(profile, { avatar: 'dragon' as never }, now), /avatar/u);
+});
+
 test('catalog selection and controls survive restart and changing effort invalidates the session', () => {
   const paths = botPathsFor(`${home.botsHome}/selection`);
   mkdirSync(paths.root, { recursive: true });

@@ -35,6 +35,7 @@ const PROFILE: BotProfile = {
   providerPolicy: null,
   id: 'nori',
   name: 'Nori',
+  avatar: 'tuxedo',
   instructions: 'Be kind.',
   environment: { kind: 'native' },
   executionTarget: { provider: 'claude', model: 'haiku' },
@@ -175,6 +176,17 @@ test('saving sends only what changed', () => {
   assert.deepEqual(botPatch(PROFILE, { ...form, cwd: '  ' }), null, 'an emptied folder is not saved');
 });
 
+test('the look is sent only when it changed (SPEC-008 FR-29)', () => {
+  const form = botForm(PROFILE);
+  assert.equal(form.avatar, 'tuxedo');
+  assert.deepEqual(botPatch(PROFILE, { ...form, avatar: 'calico' }), { avatar: 'calico' });
+  // A core still running the previous version sends no look: the page shows the default Cat and saves nothing for it.
+  const { avatar: _none, ...older } = PROFILE;
+  const fromOlderCore = older as BotProfile;
+  assert.equal(botForm(fromOlderCore).avatar, 'ginger');
+  assert.equal(botPatch(fromOlderCore, botForm(fromOlderCore)), null);
+});
+
 test('Claude in Chrome is saved for Claude only and turned off when the provider changes', () => {
   const form = botForm(PROFILE);
   assert.equal(form.claudeInChrome, false);
@@ -195,6 +207,9 @@ test('after a save the page says when sessions are replaced and when the runtime
   assert.match(saveNotice(PROFILE, after, { instructions: 'x' }), /fresh session/u);
   assert.match(saveNotice(PROFILE, after, { executionTarget: { provider: 'codex', model: null } }), /runtime restarts for codex/u);
   assert.equal(saveNotice(PROFILE, PROFILE, { name: 'Mochi' }), '');
+  assert.equal(saveNotice(PROFILE, { ...PROFILE, avatar: 'calico' }, { avatar: 'calico' }), '', 'a new look replaces no session');
+  const { avatar: _none, ...olderCore } = PROFILE;
+  assert.match(saveNotice(PROFILE, olderCore as BotProfile, { avatar: 'calico' }), /older version/u);
 });
 
 test('notes: home first, then the most recently active; ages read like a person would say them', () => {

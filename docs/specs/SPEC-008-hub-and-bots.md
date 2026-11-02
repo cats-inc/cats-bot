@@ -13,7 +13,7 @@
 Implement [ADR-008](../decisions/008-run-every-bot-as-a-headless-core-under-one-hub.md):
 one Electron hub presents and manages several bots, each running as a headless
 core child process with its own Runtime and CLI. This applies at any product
-cap; this version ships a cap of three bots.
+cap; this version ships a cap of five bots.
 
 The bots under one hub have no collective name: shared things are "hub" files,
 settings and tools. In this repository "fleet" means desktop-work-fleet
@@ -89,10 +89,14 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
      partway finishes at the next start (FR-3), so a partly removed bot never
      reappears as archived. The provider CLIs' own folders (`~/.codex`,
      `~/.claude`, …) are not touched.
-6. FR-6: The bot cap is the hub setting `maxBots`, 3 in this version and not
+6. FR-6: The bot cap is the hub setting `maxBots`, 5 in this version and not
    offered in the UI. Archived bots do not count. Creating or restoring beyond
    it is refused in the UI and in the hub's own API. Tests cover at least two
-   bots and the cap.
+   bots and the cap. A stored 3, the value every earlier version wrote, reads as
+   5, and the next registry write records it. A 3 set by hand cannot be told
+   apart from it and reads as 5 too; any other stored whole number is kept. An
+   earlier version reading
+   a registry with 5 honours it, and refuses new bots while five are active.
 
 ### Cores
 
@@ -294,6 +298,32 @@ settings and tools. In this repository "fleet" means desktop-work-fleet
     - An older Bot that rewrites the profile drops both fields. That reads as
       following the hub, and the hub reports again on the next start.
 
+### Appearance
+
+29. FR-29: A bot's Cat has one of five looks: `ginger` (the original Cat, and
+    the default), `tuxedo`, `siamese`, `calico` and `fold`. They differ in
+    colour, pattern and face shape. The profile keeps the choice as `avatar`.
+    - The first-run page, the New bot page and the Bot tab offer all five. A
+      bot's floating Cat, its settings window and its replies in a note show
+      its look; Cats Bot Settings and the app and tray icons keep the default.
+    - A bot created without a choice (the New bot page left as it opened, a
+      Boss Cat's request, `cats-bot init`) gets the first look in that order
+      that no bot uses when it is created. When it can, the look is also one no
+      archived bot would bring back; when every look is in use, it is the least
+      used. The New bot page opens on that look. The first bot of a new
+      installation therefore starts on the default Cat.
+    - Nothing stops the owner giving several bots one look, and restoring or
+      adding a bot never changes its look.
+    - A profile without `avatar`, or naming a look this version lacks, reads as
+      the default Cat. Profiles keep schema version 2 and bots from earlier
+      versions are not reassigned, so an upgraded installation may show several
+      identical Cats until the owner chooses. An older Bot that rewrites the
+      profile drops the field, which reads the same way.
+    - A change is not a session setting: `configRevision` stays and sessions
+      continue. The core emits `profile.updated` with the name and the look,
+      and the bot's windows follow without a restart. The floating Cat opens on
+      the look stored in the profile, so a slow core never leaves it blank.
+
 ### Non-Functional Requirements
 
 - **Performance**: record working set and time to first usable note for the hub
@@ -328,7 +358,7 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 
 ## Open Questions
 
-- [x] Bot cap (2026-10-29): three bots in this version (FR-6).
+- [x] Bot cap (2026-10-29, raised 2026-11-03): five bots in this version (FR-6).
 - [x] Removing a bot (2026-10-29): archive first; only an archived bot can be
       deleted (FR-5).
 - [x] Externally hosted cores (2026-10-29): listed with their state, not
@@ -352,6 +382,6 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 ---
 
 *Created: 2026-10-29*
-*Updated: 2026-11-01 (FR-28 reply language)*
+*Updated: 2026-11-03 (FR-6 cap of five, FR-29 Cat looks)*
 *Author: Claude, from the owner's decisions*
 *Related Plan: [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)*

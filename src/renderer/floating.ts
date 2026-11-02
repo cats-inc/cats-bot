@@ -4,6 +4,7 @@
 // the window, a click opens the home note and a right click opens the tray menu.
 import type { RuntimeState } from '../core/types.ts';
 import { translate, type Locale } from '../shared/language.ts';
+import { avatarSvg } from './avatarArt.ts';
 
 const api = window.catsBot;
 const $ = (id: string): HTMLElement => {
@@ -45,6 +46,17 @@ let botName = 'Cats Bot';
 let bubbleConversation: string | null = null;
 let bubbleTimer: ReturnType<typeof setTimeout> | undefined;
 
+// SPEC-008 FR-29: the shell names the stored look, so the Cat is right before its core has answered.
+const art = $('cat-art');
+let shownMarkup = '';
+function showAvatar(avatar: unknown): void {
+  const markup = avatarSvg(avatar);
+  if (markup === shownMarkup) return;
+  shownMarkup = markup;
+  art.innerHTML = markup;
+}
+showAvatar(new URLSearchParams(location.search).get('avatar'));
+
 function render(): void {
   body.classList.toggle('offline', runtimeState === 'failed' || runtimeState === 'stopped');
   body.classList.toggle('thinking', running.size > 0);
@@ -62,6 +74,7 @@ function render(): void {
 async function refresh(): Promise<void> {
   const [status, conversations] = await Promise.all([api.invoke('status'), api.invoke('listConversations')]);
   botName = status.name;
+  showAvatar(status.avatar);
   runtimeState = status.runtime.state;
   running.clear();
   if (status.queue.running) running.add(status.queue.running.id);
@@ -97,6 +110,11 @@ api.onEvent((event) => {
       break;
     case 'conversation.updated':
       void refresh();
+      break;
+    case 'profile.updated':
+      botName = event.name;
+      showAvatar(event.avatar);
+      render();
       break;
     default:
       break;

@@ -7,6 +7,7 @@
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
 import { parseModelSelection } from '../../core/providers/selection.ts';
 import type { ModelSelection } from '../../core/types.ts';
+import { isBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 
 export interface SetupInput {
   name: string;
@@ -14,6 +15,8 @@ export interface SetupInput {
   model: string | null;
   instructions: string;
   modelSelection?: ModelSelection;
+  /** SPEC-008 FR-29: without one, the bot gets a look no bot uses yet. */
+  avatar?: BotAvatar;
 }
 
 const PROVIDER_PATTERN = /^[a-z][a-z0-9-]{0,39}$/u;
@@ -31,5 +34,13 @@ export function validateSetupInput(raw: unknown): SetupInput {
   if (model && model.length > 200) throw new Error('A model id has at most 200 characters');
   const instructions = typeof record.instructions === 'string' ? record.instructions.trim() : '';
   const modelSelection = parseModelSelection(record.modelSelection);
-  return { name, provider, model, instructions, ...(modelSelection ? { modelSelection } : {}) };
+  if (record.avatar !== undefined && !isBotAvatar(record.avatar)) throw new Error('Choose one of the Cat looks');
+  return {
+    name,
+    provider,
+    model,
+    instructions,
+    ...(modelSelection ? { modelSelection } : {}),
+    ...(record.avatar !== undefined ? { avatar: record.avatar } : {}),
+  };
 }

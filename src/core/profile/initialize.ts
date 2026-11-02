@@ -1,6 +1,8 @@
-import { mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 
-import { botPathsFor, botRootIn } from '../store/paths.ts';
+import { nextBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
+import { botPathsFor, botRootIn, hubPathsFor } from '../store/paths.ts';
 import type { BotProfile } from '../types.ts';
 import { createProfile, loadProfile, saveProfile, type CreateProfileInput } from './profile.ts';
 
@@ -22,6 +24,35 @@ export interface InitializeBotInput extends Omit<CreateProfileInput, 'cwd' | 'id
   cwd?: string;
 }
 
+/** The looks of the bots in a directory. A look is never worth failing over: what cannot be read has none. */
+function avatarsIn(dir: string): BotAvatar[] {
+  const avatars: BotAvatar[] = [];
+  try {
+    if (!existsSync(dir)) return avatars;
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      try {
+        const profile = readBotProfile(join(dir, entry.name));
+        if (profile) avatars.push(profile.avatar);
+      } catch {
+        // A corrupt profile keeps no look.
+      }
+    }
+  } catch {
+    // An unreadable directory holds no looks to avoid.
+  }
+  return avatars;
+}
+
+/**
+ * SPEC-008 FR-29: the look a new bot gets unless the owner chooses another:
+ * one no bot uses yet, and when it can, one no archived bot would bring back.
+ */
+export function suggestBotAvatar(botsHome: string): BotAvatar {
+  const { archive } = hubPathsFor(dirname(resolve(botsHome)));
+  return nextBotAvatar(avatarsIn(botsHome), avatarsIn(archive));
+}
+
 /** `cats-bot init`: writes the profile and the directory layout, never over an existing bot. */
 export function initializeBot(
   botsHome: string,
@@ -40,7 +71,7 @@ export function initializeBot(
   for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
     mkdirSync(dir, { recursive: true });
   }
-  const profile = createProfile({ ...input, cwd: input.cwd ?? paths.workspace });
+  const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
   saveProfile(paths, profile);
   return { profile, root };
 }

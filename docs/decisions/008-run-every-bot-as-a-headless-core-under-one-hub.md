@@ -82,7 +82,7 @@ precise total.
    developer's `cats-bot run`, is listed as externally hosted, without windows,
    and never started twice.
 5. **Number of bots.** The architecture supports N bots; the product cap is a
-   hub setting, three in this version (SPEC-008). Removing a bot takes two
+   hub setting (SPEC-008 FR-6 has its value). Removing a bot takes two
    steps: archive it, then delete it from the archive.
 
 ## Consequences

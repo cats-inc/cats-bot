@@ -35,6 +35,8 @@ html, body {
 
 .cat svg {
   display: block;
+  width: 96px;
+  height: 96px;
   pointer-events: none;
 }
 
@@ -43,8 +45,10 @@ html, body {
   animation: breathe 4s ease-in-out infinite;
 }
 
+/* The middle of the eyes, wherever a look draws them. */
 .eyes-open {
-  transform-origin: 64px 70px;
+  transform-box: fill-box;
+  transform-origin: center;
   animation: blink 6s infinite;
 }
 

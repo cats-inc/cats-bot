@@ -2,7 +2,8 @@ import { t, useI18n } from '../i18n.ts';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { BotProfile, BotStatus } from '../../core/types.ts';
-import catUrl from '../cat.svg';
+import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
+import { avatarUrl } from '../avatarArt.ts';
 import { BotTab } from './BotTab.tsx';
 import { BotsTab } from './BotsTab.tsx';
 import { NotesTab } from './NotesTab.tsx';
@@ -94,7 +95,13 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
       <div className="settings" id="settings">
         <nav className="tabs" aria-label={t('Settings sections')}>
           <div className="brand">
-            <img src={catUrl} alt="" width="40" height="40" />
+            {/* A bot's window shows its own look, Cats Bot Settings the app's; nothing until the profile is read. */}
+            <img
+              src={scope === 'hub' ? avatarUrl(DEFAULT_BOT_AVATAR) : profile ? avatarUrl(profile.avatar) : undefined}
+              alt=""
+              width="40"
+              height="40"
+            />
             <div>
               <strong id="brand-name">{status?.name ?? t('Cats Bot')}</strong>
               <small id="brand-state">{scope === 'hub' ? t('Settings') : status ? brandState(profile, status) : '…'}</small>

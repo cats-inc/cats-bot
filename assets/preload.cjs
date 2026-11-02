@@ -162,6 +162,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     prefill() {
       return ipcRenderer.invoke('setup:prefill');
     },
+    suggestedAvatar() {
+      return ipcRenderer.invoke('setup:suggestedAvatar');
+    },
     finish(input) {
       return ipcRenderer.invoke('setup:finish', input);
     },

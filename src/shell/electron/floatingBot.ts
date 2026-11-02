@@ -1,6 +1,7 @@
 import { app, BrowserWindow, screen } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
+import type { BotAvatar } from '../../shared/avatars.ts';
 import { bubbleText, FLOATING_CAT, FLOATING_SIZE, floatingInputRegions, placeFloating } from './floatingPlacement.ts';
 import { linuxWindowsAreX11 } from './linuxWindowing.ts';
 import { guardNavigation } from './navigation.ts';
@@ -28,6 +29,8 @@ export interface FloatingBotOptions extends PageWindowOptions {
   log?(line: string): void;
   state(): FloatingBotState;
   persist(): void;
+  /** SPEC-008 FR-29: the stored look, which the page draws before its core has answered. */
+  avatar(): BotAvatar;
   /** SPEC-008 FR-17: the bot's place among the hub's bots, for a cat that was never moved. */
   slot?: number;
 }
@@ -153,7 +156,7 @@ export class FloatingBot {
       this.watchDisplays(false);
     });
     this.watchDisplays(true);
-    await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html'));
+    await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html', { avatar: this.options.avatar() }));
     // The owner may hide the avatar while its renderer is still loading.
     if (this.options.state().visible) window.showInactive();
     this.remember();

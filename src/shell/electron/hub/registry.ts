@@ -17,7 +17,10 @@ import { MAX_CHAIN_HOPS } from '../../../core/tools/hubTools.ts';
 export const REGISTRY_SCHEMA_VERSION = 1;
 
 /** SPEC-008 FR-6: the bot cap, a hub setting not offered in the UI. */
-export const DEFAULT_MAX_BOTS = 3;
+export const DEFAULT_MAX_BOTS = 5;
+
+/** The cap written into every registry before it rose. Nobody chose it, so it reads as today's cap. */
+const PREVIOUS_DEFAULT_MAX_BOTS = 3;
 
 export interface RegistryBot {
   id: string;
@@ -116,7 +119,8 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
   const holder = typeof bossCat.holder === 'string' && seen.has(bossCat.holder) ? bossCat.holder : null;
   const how = holder && ['first-run', 'owner', 'confirmed-proposal'].includes(bossCat.how as string)
     ? bossCat.how as BossCatAssignment : null;
-  const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
+  const maxBots = Number.isSafeInteger(raw.maxBots) && (raw.maxBots as number) > 0 && raw.maxBots !== PREVIOUS_DEFAULT_MAX_BOTS
+    ? (raw.maxBots as number) : DEFAULT_MAX_BOTS;
   const limits = isRecord(raw.limits) ? raw.limits : {};
   // A whole number out of range is brought within it, so it keeps the direction the owner chose.
   const limit = (value: unknown, fallback: number, [min, max]: readonly [number, number]) =>

@@ -21,6 +21,14 @@ test('the renderer bridge knows the same note layers as the shell', () => {
   assert.deepEqual([...BRIDGE_NOTE_LAYERS], [...NOTE_LAYERS]);
 });
 
+test('every setup channel the preload invokes has a handler in the hub or the first run', () => {
+  const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
+  const handlers = read('src', 'shell', 'electron', 'main.ts') + read('src', 'shell', 'electron', 'setup.ts');
+  const channels = [...read('assets', 'preload.cjs').matchAll(/invoke\('(setup:\w+)'/gu)].map((match) => match[1]!);
+  assert.ok(channels.includes('setup:suggestedAvatar'));
+  assert.deepEqual(channels.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
+});
+
 test('every bridge namespace method exists in the preload script', () => {
   const preload = readFileSync(join(resolve(import.meta.dirname, '..', '..'), 'assets', 'preload.cjs'), 'utf8');
   const bridge = readFileSync(join(resolve(import.meta.dirname, '..', '..'), 'src', 'renderer', 'bridge.ts'), 'utf8');
