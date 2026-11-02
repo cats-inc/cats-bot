@@ -2,8 +2,10 @@ import { t, useI18n } from '../i18n.ts';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ModelCatalog, ProviderInfo } from '../../core/types.ts';
-import catUrl from '../cat.svg';
+import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
+import { avatarUrl } from '../avatarArt.ts';
 import { errorText } from '../errors.ts';
+import { AvatarField } from './AvatarField.tsx';
 import { ModelField, useModelMenu } from './ModelField.tsx';
 import { preferredProvider, providerChoices, providerHint, providerLabel } from './settingsLogic.ts';
 import type { ProviderSetupState } from '../../shared/providerSetup.ts';
@@ -24,6 +26,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [provider, setProvider] = useState('');
   const [name, setName] = useState('Mochi');
+  const [avatar, setAvatar] = useState<BotAvatar>(DEFAULT_BOT_AVATAR);
   const [instructions, setInstructions] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -31,6 +34,11 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [installing, setInstalling] = useState(false);
   const { menu, setMenu, ready, model, selection } = useModelMenu(provider, null, fetchModels);
   const canStart = ready && setup?.provider === provider && setup.canFinish && !installing;
+
+  useEffect(() => {
+    // SPEC-008 FR-29: a further bot starts on a look no bot uses yet; the first bot on the default Cat.
+    if (purpose === 'create') void api.setup.suggestedAvatar().then(setAvatar);
+  }, [purpose]);
 
   useEffect(() => {
     // SPEC-009 FR-4: a Boss Cat's request whose provider is not set up opens this page filled in.
@@ -71,6 +79,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
         model,
         modelSelection: selection,
         instructions: instructions.trim(),
+        avatar,
       });
     } catch (failure) {
       setError(errorText(failure));
@@ -83,7 +92,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
     <section className="setup" id="setup">
       <div className="setup-card">
         <div className="setup-face" aria-hidden="true">
-          <img src={catUrl} alt="" width="96" height="96" />
+          <img src={avatarUrl(avatar)} alt="" width="96" height="96" />
         </div>
         <h1>{t('Meet your bot')}</h1>
         <p className="lead">
@@ -123,6 +132,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
               onChange={(event) => setName(event.target.value)}
             />
           </label>
+          <AvatarField idPrefix="setup" value={avatar} disabled={submitting} onChange={setAvatar} />
           <ModelField idPrefix="setup" menu={menu} onChange={setMenu} />
           <label className="field">
             <span>

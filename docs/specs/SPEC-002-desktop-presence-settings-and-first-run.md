@@ -39,7 +39,7 @@ destroyed, then the standard parentless alert opens where macOS places it, not
 as a sheet. A quit that begins during that wait answers with the dismissal
 instead of opening the alert.
 
-1. FR-1: When a bot with no profile starts, it opens the first-run page (name, agent CLI, model,
+1. FR-1: When a bot with no profile starts, it opens the first-run page (name, the Cat's look (SPEC-008 FR-29), agent CLI, model,
    optional personality); after submission it creates the bot and opens the core and the home note;
    closing the page exits the program and leaves no half-built bot. The input is validated again in
    the main process. Under the hub (SPEC-008 FR-4) this is the hub's first run, which also writes the
@@ -47,7 +47,8 @@ instead of opening the alert.
 2. FR-2: Every change on the settings page goes through `updateProfile`; changes to the provider,
    model, personality, reply language and permissions make existing conversations switch to a new session on the next
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
-   provider changes, the runtime restarts only after the turn in progress ends.
+   provider changes, the runtime restarts only after the turn in progress ends. A change to the name or
+   the Cat's look (SPEC-008 FR-29) keeps every session.
 3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
    command (for example antigravity is `agy`) and whether that command is on PATH; `listModels(provider)`
    asks the running runtime for the bot's current provider and reads the catalog shipped with the
@@ -65,7 +66,7 @@ instead of opening the alert.
 6. FR-6: The Telegram tab can save or remove the token (`setTelegramToken`; the token is not returned
    to the page), toggle polling, and shows the protection method, the polling state and the owner chat.
 7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar
-   (one per running bot under the hub, each bound to its bot);
+   (one per running bot under the hub, each bound to its bot, drawn in that bot's look, SPEC-008 FR-29);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
    opens the home note; right-click opens only that Cat’s conversations, heartbeat, desktop-control
    Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.

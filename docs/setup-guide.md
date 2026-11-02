@@ -93,6 +93,8 @@ Closing a conversation during startup also keeps it hidden: a delayed restore or
 page load cannot reopen it. Open it explicitly from its Cat’s avatar menu or bot settings when needed.
 If the avatar is hidden, the hub tray’s Show floating cats reveals every running
 Cat. Clicking the tray icon opens Cats Bot Settings on its Bots tab.
+A Cat has one of five looks, chosen on the setup page or the Bot tab of its
+settings. A new bot starts on a look no other bot uses; sharing one is allowed.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.
 
@@ -175,7 +177,7 @@ See [ADR-013](decisions/013-keep-bounded-production-host-diagnostics.md).
 
 The hub keeps its registry (`bots.json`), preferences (`hub-state.json`) and
 locks beside `bots/` in the Cats Bot root. Its first run creates the first bot;
-bots that `cats-bot init` made before then are taken in, up to three. While the
+bots that `cats-bot init` made before then are taken in, up to five. While the
 hub runs, `cats-bot hub status` lists its bots.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.

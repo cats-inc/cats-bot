@@ -1066,6 +1066,7 @@ export class BotCore implements BotHostApi {
     return {
       id: this.profile.id,
       name: this.profile.name,
+      avatar: this.profile.avatar,
       root: this.paths.root,
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
@@ -1411,8 +1412,10 @@ export class BotCore implements BotHostApi {
       await client.sessionControls(result.profile.executionTarget.provider, policy);
     }
     const desktopWas = this.profile.desktopControl.enabled;
+    const presentationChanged = result.profile.name !== this.profile.name || result.profile.avatar !== this.profile.avatar;
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
+    if (presentationChanged) this.bus.emit({ type: 'profile.updated', name: this.profile.name, avatar: this.profile.avatar });
     if (this.profile.desktopControl.enabled !== desktopWas) {
       this.log(`desktop control ${this.profile.desktopControl.enabled ? 'enabled' : 'disabled'} in the profile`);
       this.desktop.profileChanged(this.profile.desktopControl.enabled);

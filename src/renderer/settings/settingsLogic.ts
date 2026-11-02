@@ -1,4 +1,5 @@
 import { t } from '../localeStore.ts';
+import { resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import {
   LANGUAGE_OPTIONS,
   REPLY_LANGUAGE_CODES,
@@ -196,6 +197,7 @@ export function botReplyLanguageOptions(
 
 export interface BotForm {
   name: string;
+  avatar: BotAvatar;
   provider: string;
   model: string | null;
   modelSelection?: ModelSelection;
@@ -212,6 +214,7 @@ export interface BotForm {
 export function botForm(profile: BotProfile): BotForm {
   return {
     name: profile.name,
+    avatar: resolveBotAvatar(profile.avatar),
     provider: profile.executionTarget.provider,
     model: profile.executionTarget.model,
     ...(profile.executionTarget.modelSelection
@@ -236,6 +239,7 @@ export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | 
   const patch: BotProfilePatch = {};
   const name = form.name.trim();
   if (name && name !== profile.name) patch.name = name;
+  if (form.avatar !== resolveBotAvatar(profile.avatar)) patch.avatar = form.avatar;
   const chrome = form.provider === 'claude' && form.claudeInChrome;
   if (
     form.provider !== profile.executionTarget.provider ||

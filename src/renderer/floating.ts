@@ -4,6 +4,7 @@
 // the window, a click opens the home note and a right click opens the tray menu.
 import type { RuntimeState } from '../core/types.ts';
 import { translate, type Locale } from '../shared/language.ts';
+import { avatarSvg } from './avatarArt.ts';
 
 const api = window.catsBot;
 const $ = (id: string): HTMLElement => {
@@ -45,6 +46,16 @@ let botName = 'Cats Bot';
 let bubbleConversation: string | null = null;
 let bubbleTimer: ReturnType<typeof setTimeout> | undefined;
 
+// SPEC-008 FR-29: nothing is drawn until the bot's look is known, so another Cat never flashes first.
+const art = $('cat-art');
+let shownMarkup = '';
+function showAvatar(avatar: unknown): void {
+  const markup = avatarSvg(avatar);
+  if (markup === shownMarkup) return;
+  shownMarkup = markup;
+  art.innerHTML = markup;
+}
+
 function render(): void {
   body.classList.toggle('offline', runtimeState === 'failed' || runtimeState === 'stopped');
   body.classList.toggle('thinking', running.size > 0);
@@ -62,6 +73,7 @@ function render(): void {
 async function refresh(): Promise<void> {
   const [status, conversations] = await Promise.all([api.invoke('status'), api.invoke('listConversations')]);
   botName = status.name;
+  showAvatar(status.avatar);
   runtimeState = status.runtime.state;
   running.clear();
   if (status.queue.running) running.add(status.queue.running.id);
@@ -97,6 +109,11 @@ api.onEvent((event) => {
       break;
     case 'conversation.updated':
       void refresh();
+      break;
+    case 'profile.updated':
+      botName = event.name;
+      showAvatar(event.avatar);
+      render();
       break;
     default:
       break;
@@ -176,7 +193,10 @@ api.floating.onBubble((message) => {
   reportInputRegions();
 });
 
-void refresh();
+// A core that cannot answer yet still has a Cat on screen to grab and open.
+void refresh().catch(() => {
+  if (!shownMarkup) showAvatar(null);
+});
 setInterval(() => {
   void refresh();
 }, 60000);

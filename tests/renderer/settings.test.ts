@@ -35,6 +35,7 @@ const PROFILE: BotProfile = {
   providerPolicy: null,
   id: 'nori',
   name: 'Nori',
+  avatar: 'tuxedo',
   instructions: 'Be kind.',
   environment: { kind: 'native' },
   executionTarget: { provider: 'claude', model: 'haiku' },
@@ -173,6 +174,17 @@ test('saving sends only what changed', () => {
   assert.deepEqual(botPatch(PROFILE, { ...form, permissionMode: 'skip', allowedTools: 'Read, WebSearch' }), { permissions: { permissionMode: 'skip' } },
     'tools only matter for the whitelist');
   assert.deepEqual(botPatch(PROFILE, { ...form, cwd: '  ' }), null, 'an emptied folder is not saved');
+});
+
+test('the look is sent only when it changed (SPEC-008 FR-29)', () => {
+  const form = botForm(PROFILE);
+  assert.equal(form.avatar, 'tuxedo');
+  assert.deepEqual(botPatch(PROFILE, { ...form, avatar: 'calico' }), { avatar: 'calico' });
+  // A core still running the previous version sends no look: the page shows the default Cat and saves nothing for it.
+  const { avatar: _none, ...older } = PROFILE;
+  const fromOlderCore = older as BotProfile;
+  assert.equal(botForm(fromOlderCore).avatar, 'ginger');
+  assert.equal(botPatch(fromOlderCore, botForm(fromOlderCore)), null);
 });
 
 test('Claude in Chrome is saved for Claude only and turned off when the provider changes', () => {

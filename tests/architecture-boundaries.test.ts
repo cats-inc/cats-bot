@@ -183,7 +183,9 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         // Translation is intentionally shared with native menus; it has no platform imports.
         const language = target === join(srcRoot, 'shared', 'language.ts');
         const providerTools = target === join(srcRoot, 'shared', 'providerTools.ts');
-        if (!language && !providerTools && (!typeOnly || !allowed.includes(target)))
+        // The Cat looks are plain data the core and the pages both read.
+        const avatars = target === join(srcRoot, 'shared', 'avatars.ts');
+        if (!language && !providerTools && !avatars && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);

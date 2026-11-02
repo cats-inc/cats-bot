@@ -2,6 +2,7 @@ import { ConversationMessage, ConversationResponse, ConversationMarkdown } from 
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
 import { conversationWorkState } from './workState.ts';
+import { avatarUrl } from '../avatarArt.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -128,6 +129,8 @@ export function NoteApp() {
 
   const [title, setTitle] = useState('Cats Bot');
   const [speakerName, setSpeakerName] = useState('Cats Bot');
+  // SPEC-008 FR-29: replies carry the bot's look; nothing until its profile is read.
+  const [speakerAvatar, setSpeakerAvatar] = useState<string | undefined>(undefined);
   const [showDetails, setShowDetails] = useState(false);
   const followTranscript = useRef(true);
   const [unread, setUnread] = useState(0);
@@ -166,6 +169,7 @@ export function NoteApp() {
     conversation.current = record.id;
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     setSpeakerName(profile.name);
+    setSpeakerAvatar(avatarUrl(profile.avatar));
     setTitle(`${profile.name} · ${conversationTitle(record)}${noteRoleSuffix(status.bossCat)}`);
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
@@ -243,6 +247,9 @@ export function NoteApp() {
           return;
         case 'runtime.status':
           setRuntimeNote(event.state === 'ready' ? '' : `runtime ${event.state}`);
+          return;
+        case 'profile.updated':
+          void refreshHeader();
           return;
         default:
           return;
@@ -364,7 +371,7 @@ export function NoteApp() {
         {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}
         {items.map((item) => {
           if (item.type === 'response' && item.entry.presentation) return <ConversationResponse key={item.key}
-            response={item.entry.presentation} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={new URL('../cat.svg', import.meta.url).href} alt="" /><strong>{speakerName}</strong></div>}
+            response={item.entry.presentation} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
             labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
             showProgressDetails={showDetails} copyLabel={t('Copy')}
             afterBubble={<span className="entry-meta">{entryMeta(item.entry)}</span>}

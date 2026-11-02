@@ -20,7 +20,8 @@ import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
-import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
+import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
+import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
 import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
@@ -332,6 +333,7 @@ async function main(): Promise<void> {
           model: input.model,
           ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
           ...(input.instructions ? { instructions: input.instructions } : {}),
+          ...(input.avatar ? { avatar: input.avatar } : {}),
         });
         created = id;
       },
@@ -1064,6 +1066,7 @@ async function main(): Promise<void> {
         model: input.model,
         ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
         ...(input.instructions ? { instructions: input.instructions } : {}),
+        ...(input.avatar ? { avatar: input.avatar } : {}),
       });
       window.destroy();
       botsChanged();
@@ -1084,6 +1087,9 @@ async function main(): Promise<void> {
     createPrefill = null;
     return request;
   });
+  // SPEC-008 FR-29: the look the New bot window starts on, so the owner sees what the bot would get.
+  ipcMain.handle('setup:suggestedAvatar', (event) =>
+    (ownedMainFrame(event) && fromCreate(event) ? suggestBotAvatar(hubPaths.bots) : DEFAULT_BOT_AVATAR));
   const openCreateWindow = () => {
     if (createWindow && !createWindow.isDestroyed()) {
       createWindow.show();

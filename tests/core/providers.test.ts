@@ -159,6 +159,9 @@ test('first-run input is checked before a bot is created', () => {
     name: 'Mochi', provider: 'claude', model: null, instructions: 'purr',
   });
   assert.equal(validateSetupInput({ name: 'Nori', provider: 'codex', model: 'gpt-6-sol' }).model, 'gpt-6-sol');
+  assert.equal(validateSetupInput({ name: 'Nori', provider: 'codex', avatar: 'calico' }).avatar, 'calico');
+  assert.equal('avatar' in validateSetupInput({ name: 'Nori', provider: 'codex' }), false, 'without a choice the hub assigns one');
+  assert.throws(() => validateSetupInput({ name: 'Nori', provider: 'codex', avatar: '../evil' }), /Cat looks/u);
   assert.throws(() => validateSetupInput({ name: '', provider: 'claude' }), /name/u);
   assert.throws(() => validateSetupInput({ name: 'x', provider: '../evil' }), /agent CLI/u);
   assert.throws(() => validateSetupInput(null), /object/u);
