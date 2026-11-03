@@ -119,8 +119,10 @@ persona get one rule wherever they enter.
     - Any script run opens it. It closes about 1.4 s after success, stays open after a
       failure, and stays open while the pointer is on it.
     - Once the owner toggles it, it stays as they set it, except that a failure opens it.
-    - "Copy all" copies it. Each entry also goes to the hub's bounded diagnostics log
-      (ADR-013). It never holds a secret.
+    - "Copy all" copies it. The log itself lasts as long as the window. The hub's bounded
+      diagnostics record each finished run in fixed words only (kind, helper, status, change
+      count, duration), because ADR-013 keeps arguments out of those files and a helper's
+      own text can hold home paths.
 
 **Page 3: sign-in and start**
 

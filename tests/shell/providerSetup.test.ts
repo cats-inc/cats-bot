@@ -7,10 +7,14 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { test } from 'node:test';
+import type { SetupLogEntry } from '../../src/shared/providerSetup.ts';
 import {
+  createScriptIdentity,
+  describeHelperRun,
   helperInvocation,
   installedCommandPath,
   ProviderSetup,
+  setupRunDiagnostic,
   type HelperResult,
 } from '../../src/shell/electron/providerSetup.ts';
 
@@ -108,7 +112,7 @@ test('provider-first setup checks native providers without probing Node/npm or a
   }
 });
 
-test('Codex requires working Node/npm, a writable npm folder, then Codex in that order', async () => {
+test('Codex reads Node.js first, then everything at once, and installs in order (SPEC-010 FR-7)', async () => {
   const installed = new Set<string>();
   const calls: string[] = [];
   const setup = new ProviderSetup(async (helper, apply) => {
@@ -122,14 +126,16 @@ test('Codex requires working Node/npm, a writable npm folder, then Codex in that
     missing.steps.map((step) => step.status),
     ['changes_required', 'prerequisite_required', 'prerequisite_required'],
   );
-  assert.deepEqual(calls, ['node:false']);
+  assert.deepEqual(calls, ['node:false'], 'what needs Node.js cannot say what it would do yet');
   await assert.rejects(setup.install('codex', 'provider'), /Complete Node.js/u);
   assert.ok(!calls.includes('codex:true'));
   const node = await setup.install('codex', 'node');
   assert.deepEqual(
     node.steps.map((step) => step.status),
-    ['ready', 'changes_required', 'prerequisite_required'],
+    ['ready', 'changes_required', 'changes_required'],
+    'with Node.js working, everything is read in one pass',
   );
+  await assert.rejects(setup.install('codex', 'provider'), /Complete Node.js/u, 'Codex still needs the npm folder');
   const npm = await setup.install('codex', 'npm');
   assert.deepEqual(
     npm.steps.map((step) => step.status),
@@ -140,6 +146,102 @@ test('Codex requires working Node/npm, a writable npm folder, then Codex in that
     calls.filter((call) => call.endsWith(':true')),
     ['node:true', 'npm:true', 'codex:true'],
   );
+});
+
+test('a step carries the helper\'s own plan and what it just did, and the script it ran (FR-10)', async () => {
+  let installed = false;
+  const script = { file: 'Install-ClaudeCode.ps1', sha256: 'abc', source: 'cats-platform 7b3f94e' };
+  const setup = new ProviderSetup(async (_helper, apply) => {
+    if (apply) {
+      installed = true;
+      return { status: 'ready', appliedChanges: ['installed native CLI'] };
+    }
+    return installed
+      ? ready()
+      : { status: 'changes_required', plannedActions: ['remove_legacy_npm_claude_shim'], plannedChanges: ['Add a folder to the user PATH'] };
+  }, { identify: () => script });
+  const before = await setup.check('claude');
+  assert.deepEqual(before.steps[0]?.planned, ['remove_legacy_npm_claude_shim', 'Add a folder to the user PATH']);
+  assert.deepEqual(before.steps[0]?.script, script);
+  const after = await setup.install('claude', 'provider');
+  assert.deepEqual(after.steps[0]?.applied, ['installed native CLI']);
+  assert.deepEqual(after.steps[0]?.planned, []);
+});
+
+test('sign-in is what the CLI reports, and unknown when it cannot say (FR-15)', async () => {
+  const stateOf = async (provider: string, result: HelperResult) => (await new ProviderSetup(async () => result).check(provider)).signIn;
+  assert.equal(await stateOf('claude', { status: 'auth_required', installed: true }), 'required');
+  assert.equal(await stateOf('claude', ready()), 'signed_in');
+  assert.equal(await stateOf('grok', ready()), 'unknown');
+  assert.equal(await stateOf('antigravity', ready()), 'unknown');
+  assert.equal(await stateOf('claude', { status: 'not_installed' }), 'unknown');
+  assert.equal((await new ProviderSetup(async () => ready(), { windows: false }).check('codex')).signIn, 'unknown');
+});
+
+test('each run is logged at its start and end, for the page and the hub (FR-14)', async () => {
+  const entries: SetupLogEntry[] = [];
+  const hub: SetupLogEntry[] = [];
+  const setup = new ProviderSetup(
+    async (_helper, apply) => (apply ? { status: 'ready', appliedChanges: ['did it'], warnings: ['careful'] } : { status: 'changes_required', plannedActions: ['do_it'], detectedVersion: '1.0' }),
+    { describe: (helper, apply) => ({ command: `run ${helper} ${apply}`, file: `${helper}.ps1` }), onRun: (entry) => hub.push(entry) },
+  );
+  await setup.check('grok', undefined, (entry) => entries.push(entry));
+  assert.deepEqual(entries.map((entry) => [entry.kind, entry.phase, entry.helper, entry.command, entry.file]), [
+    ['check', 'start', 'grok', 'run grok false', 'grok.ps1'],
+    ['check', 'end', 'grok', 'run grok false', 'grok.ps1'],
+  ]);
+  assert.equal(entries[0]!.run, entries[1]!.run);
+  assert.equal(entries[1]!.status, 'changes_required');
+  assert.equal(entries[1]!.version, '1.0');
+  assert.deepEqual(entries[1]!.planned, ['do_it']);
+  entries.length = 0;
+  await setup.install('grok', 'provider', (entry) => entries.push(entry));
+  const change = entries.find((entry) => entry.kind === 'change' && entry.phase === 'end')!;
+  assert.deepEqual(change.applied, ['did it']);
+  assert.deepEqual(change.warnings, ['careful']);
+  assert.equal(entries.filter((entry) => entry.kind === 'check').length, 2, 'the fresh check is logged too');
+  assert.equal(hub.length, 6, 'the hub hears every run');
+});
+
+test('a run that fails or is stopped still ends in the log', async () => {
+  const entries: SetupLogEntry[] = [];
+  const broken = new ProviderSetup(async () => { throw new Error('unreadable result'); });
+  await assert.rejects(broken.check('grok', undefined, (entry) => entries.push(entry)), /unreadable/u);
+  assert.equal(entries.at(-1)!.phase, 'end');
+  assert.equal(entries.at(-1)!.error, 'unreadable result');
+  const stopped: SetupLogEntry[] = [];
+  const setup = new ProviderSetup((_helper, _apply, signal) => new Promise((_resolve, reject) => {
+    signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+  }));
+  const checking = setup.check('grok', undefined, (entry) => stopped.push(entry));
+  setup.cancelCheck();
+  await assert.rejects(checking, { name: 'AbortError' });
+  assert.equal(stopped.at(-1)!.error, 'Stopped');
+});
+
+test('the hub\'s record of a run holds fixed words only (ADR-013)', () => {
+  const base = { run: 1, at: '', kind: 'change', helper: 'npm', file: 'x', command: 'C:\\Users\\you\\secret path' } as const;
+  assert.equal(setupRunDiagnostic({ ...base, phase: 'start' }), null);
+  const line = setupRunDiagnostic({ ...base, phase: 'end', status: 'ready', durationMs: 12, applied: ['Updated C:\\Users\\you PATH'], warnings: ['C:\\Users\\you'] })!;
+  assert.equal(line, 'setup change npm: ready, 1 change(s) in 12 ms');
+  assert.equal(setupRunDiagnostic({ ...base, phase: 'end', status: 'C:\\Users\\you', durationMs: 1 }), 'setup change npm: unknown in 1 ms');
+  assert.equal(setupRunDiagnostic({ ...base, phase: 'end', error: 'Failed in C:\\Users\\you', durationMs: 1 }), 'setup change npm: failed in 1 ms');
+});
+
+test('a run reads as the command it really is, and a script as its recorded copy', () => {
+  const windows = describeHelperRun('C:\\Program Files\\Cats Bot\\setup', 'win32', 'node', true);
+  assert.equal(windows.file, 'Install-Node.ps1');
+  assert.match(windows.command, /^powershell\.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ".*Invoke-SetupHelper\.ps1" -Helper node -Apply$/u);
+  const mac = describeHelperRun('/Applications/Cats Bot/setup', 'darwin', 'claude', false);
+  assert.equal(mac.file, 'install-claude-code.sh');
+  assert.match(mac.command, /^\/bin\/bash ".*install-claude-code\.sh" -CheckOnly -Json$/u);
+  const identify = createScriptIdentity(assets, 'win32');
+  const script = identify('codex')!;
+  assert.equal(script.file, 'Install-Codex.ps1');
+  assert.match(script.sha256!, /^[0-9a-f]{64}$/u);
+  assert.match(script.source!, /^cats-platform [0-9a-f]{7}$/u);
+  assert.equal(createScriptIdentity(assets, 'linux')('shell'), null, 'Windows only');
+  assert.equal(createScriptIdentity(join(assets, 'missing'), 'win32')('codex')?.sha256, null, 'a missing record costs only the hash');
 });
 
 test('installation is explicit, restricted to the checked provider, and followed by a fresh probe', async () => {
@@ -388,9 +490,10 @@ test('a declined UAC prompt shows as elevation_required, not as a step to set up
 });
 
 // On Windows, PowerShell runs npm's codex.ps1 only under a permissive execution policy, so
-// `codex login` in a fresh terminal needs the PowerShell scripts step (Setup-CliReadiness).
-test('on Windows Codex also needs the PowerShell scripts step, after npm and before Codex', async () => {
-  const installed = new Set<string>(['node', 'npm']);
+// the owner's own `codex login` in PowerShell needs this step. Nothing of Cats Bot's does:
+// helpers run with -ExecutionPolicy Bypass and Runtime resolves codex.cmd.
+test('on Windows PowerShell scripts is optional, last, and blocks nothing (SPEC-010 FR-12)', async () => {
+  const installed = new Set<string>(['npm']);
   const calls: string[] = [];
   const setup = new ProviderSetup(async (helper, apply) => {
     calls.push(`${helper}:${apply}`);
@@ -398,15 +501,27 @@ test('on Windows Codex also needs the PowerShell scripts step, after npm and bef
     return installed.has(helper) ? ready() : { status: 'changes_required', installed: false };
   }, { windows: true });
   const before = await setup.check('codex');
-  assert.deepEqual(before.steps.map((step) => [step.id, step.status]), [
-    ['node', 'ready'], ['npm', 'ready'], ['shell', 'changes_required'], ['provider', 'prerequisite_required'],
-  ]);
-  await assert.rejects(setup.install('codex', 'provider'), /Complete the steps above first/u);
+  assert.deepEqual(before.steps.map((step) => [step.id, step.status, step.optional]), [
+    ['node', 'changes_required', false],
+    ['npm', 'prerequisite_required', false],
+    ['provider', 'prerequisite_required', false],
+    ['shell', 'changes_required', true],
+  ], 'it is read even while Node.js is missing');
+  assert.deepEqual(calls, ['node:false', 'shell:false']);
+  // It can be ticked in the first round, because it needs nothing above it.
   const shell = await setup.install('codex', 'shell');
-  assert.equal(shell.steps[2]?.status, 'ready');
-  assert.equal(shell.steps[3]?.status, 'changes_required');
-  assert.equal((await setup.install('codex', 'provider')).canFinish, true);
-  assert.deepEqual(calls.filter((call) => call.endsWith(':true')), ['shell:true', 'codex:true']);
+  assert.equal(shell.steps[3]?.status, 'ready');
+  installed.delete('shell');
+  await setup.install('codex', 'node');
+  const declined = await setup.install('codex', 'provider');
+  assert.deepEqual(declined.steps.map((step) => step.status), ['ready', 'ready', 'ready', 'changes_required']);
+  assert.equal(declined.canFinish, true, 'declining it does not stop Codex or finishing');
+  // A failure in it stays on its own row.
+  const failing = new ProviderSetup(async (helper, apply) => (helper === 'shell' ? { status: apply ? 'failed' : 'changes_required' } : ready()), { windows: true });
+  await failing.check('codex');
+  const failed = await failing.install('codex', 'shell');
+  assert.equal(failed.steps[3]?.status, 'failed');
+  assert.equal(failed.canFinish, true);
   // Other providers and other systems never see the step.
   const elsewhere = new ProviderSetup(async () => ready(), { windows: false });
   await elsewhere.check('codex');

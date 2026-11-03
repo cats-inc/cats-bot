@@ -18,6 +18,8 @@ export interface SetupInput {
   modelSelection?: ModelSelection;
   /** SPEC-008 FR-29: without one, the bot gets a look no bot uses yet. */
   avatar?: BotAvatar;
+  /** SPEC-010 FR-17: a first run's choice; without one it starts at login where that is offered. */
+  startAtLogin?: boolean;
 }
 
 const PROVIDER_PATTERN = /^[a-z][a-z0-9-]{0,39}$/u;
@@ -41,5 +43,6 @@ export function validateSetupInput(raw: unknown): SetupInput {
     instructions,
     ...(modelSelection ? { modelSelection } : {}),
     ...(record.avatar !== undefined ? { avatar: record.avatar } : {}),
+    ...(typeof record.startAtLogin === 'boolean' ? { startAtLogin: record.startAtLogin } : {}),
   };
 }

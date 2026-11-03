@@ -91,6 +91,11 @@ export class BotManager {
     throw new BotManagementError('No free cat bot id is left for that name.');
   }
 
+  /** SPEC-010 FR-18: the id a new bot of this name would get right now. */
+  peekId(name: string): string {
+    return this.freeId({ name } as NewBot);
+  }
+
   /** FR-5 and FR-6: a new bot, registered and not yet started. */
   create(input: NewBot): Promise<string> {
     return this.serial(() => {

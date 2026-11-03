@@ -54,6 +54,11 @@ export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env
   return null;
 }
 
+/** SPEC-010 FR-3: the providers a page may offer before anything has been checked. */
+export function fixedProviders(): ProviderInfo[] {
+  return CLI_PROVIDERS.map((definition) => ({ ...definition, installed: null }));
+}
+
 export function listProviders(env: NodeJS.ProcessEnv = process.env): ProviderInfo[] {
   return CLI_PROVIDERS.map((definition) => ({ ...definition, installed: findOnPath(definition.command, env) !== null }));
 }
