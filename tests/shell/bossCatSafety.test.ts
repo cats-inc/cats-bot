@@ -200,6 +200,16 @@ test('what the holder wrote reaches the owner\'s dialog only as labeled single l
   assert.doesNotMatch(detail, /Cats Bot has verified/u);
 });
 
+test('a Boss Cat\'s persona follows the shared rule before the owner is asked (SPEC-010 FR-19)', async () => {
+  const f = consent('persona-rule');
+  const hidden = String.fromCodePoint(0xE0068, 0xE0069);
+  const refused = await f.bossCat.handle('alpha', call('hub_create_bot', { name: 'Tidy', persona: `Be kind.${hidden}`, provider: 'claude' }));
+  assert.match(refused.text, /do not show/u);
+  const long = await f.bossCat.handle('alpha', call('hub_create_bot', { name: 'Tidy', persona: 'x'.repeat(4_001), provider: 'claude' }));
+  assert.match(long.text, /too long/u);
+  assert.equal(f.asked.length, 0);
+});
+
 test('the owner\'s dialog names bots by name and id, so a look-alike name cannot pass for another bot (FR-5)', async () => {
   const questions: string[] = [];
   for (const bot of ['beta-2', 'beta']) {

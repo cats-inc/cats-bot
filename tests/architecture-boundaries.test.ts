@@ -185,7 +185,9 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const providerTools = target === join(srcRoot, 'shared', 'providerTools.ts');
         // The Cat looks are plain data the core and the pages both read.
         const avatars = target === join(srcRoot, 'shared', 'avatars.ts');
-        if (!language && !providerTools && !avatars && (!typeOnly || !allowed.includes(target)))
+        // SPEC-010 FR-19: one rule for a name and a persona, on the page as in the core; it has no platform imports.
+        const botText = target === join(srcRoot, 'shared', 'botText.ts');
+        if (!language && !providerTools && !avatars && !botText && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);

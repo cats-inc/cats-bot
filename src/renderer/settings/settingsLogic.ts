@@ -1,5 +1,6 @@
 import { t } from '../localeStore.ts';
 import { resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
+import { botNameMessage, botNameProblem, botPersonaMessage, botPersonaProblem, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
 import {
   LANGUAGE_OPTIONS,
   REPLY_LANGUAGE_CODES,
@@ -235,10 +236,25 @@ export function parseTools(text: string): string[] {
 }
 
 /** Only what changed, so an unchanged target or permission never bumps the configuration revision. */
+/**
+ * SPEC-010 FR-19: what is wrong with the form's text, as translation keys. A value
+ * unchanged from the profile is not judged: it predates the rule and keeps working.
+ */
+export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 'instructions'>): { name: string | null; instructions: string | null } {
+  const name = normalizeBotName(form.name);
+  const persona = normalizeBotPersona(form.instructions);
+  const nameProblem = name === normalizeBotName(profile.name) ? null : botNameProblem(name);
+  const personaProblem = persona === normalizeBotPersona(profile.instructions) ? null : botPersonaProblem(persona);
+  return {
+    name: nameProblem ? botNameMessage(nameProblem) : null,
+    instructions: personaProblem ? botPersonaMessage(personaProblem) : null,
+  };
+}
+
 export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | null {
   const patch: BotProfilePatch = {};
   const name = form.name.trim();
-  if (name && name !== profile.name) patch.name = name;
+  if (name && name !== profile.name.trim()) patch.name = name;
   if (form.avatar !== resolveBotAvatar(profile.avatar)) patch.avatar = form.avatar;
   const chrome = form.provider === 'claude' && form.claudeInChrome;
   if (

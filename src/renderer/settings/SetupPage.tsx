@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { ModelCatalog, ProviderInfo } from '../../core/types.ts';
 import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
+import { BOT_NAME_MAX, BOT_PERSONA_MAX } from '../../shared/botText.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { errorText } from '../errors.ts';
 import { AvatarField } from './AvatarField.tsx';
@@ -130,7 +131,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
             <input
               id="setup-name"
               required
-              maxLength={40}
+              maxLength={BOT_NAME_MAX}
               value={name}
               onChange={(event) => setName(event.target.value)}
             />
@@ -145,6 +146,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
             <textarea
               id="setup-instructions"
               rows={3}
+              maxLength={BOT_PERSONA_MAX}
               placeholder={t('You are a curious cat who keeps me company while I work.')}
               value={instructions}
               onChange={(event) => setInstructions(event.target.value)}

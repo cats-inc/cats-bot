@@ -1,4 +1,5 @@
 import { t, useI18n } from '../i18n.ts';
+import { BOT_NAME_MAX, BOT_PERSONA_MAX } from '../../shared/botText.ts';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { BotProfile, ModelCatalog, ProviderInfo } from '../../core/types.ts';
@@ -9,6 +10,7 @@ import { ModelField, useModelMenu } from './ModelField.tsx';
 import {
   botForm,
   botPatch,
+  botTextErrors,
   botReplyLanguageOptions,
   providerChoices,
   providerHint,
@@ -66,9 +68,10 @@ export function BotTab({
 
   const update = (patch: Partial<BotForm>) => setForm((current) => ({ ...current, ...patch }));
 
+  const textErrors = botTextErrors(profile, form);
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    if ((!ready && !keepTarget) || installing) return;
+    if ((!ready && !keepTarget) || installing || textErrors.name || textErrors.instructions) return;
     const patch = botPatch(profile, {
       ...form,
       model: keepTarget ? profile.executionTarget.model : model,
@@ -103,10 +106,12 @@ export function BotTab({
           <input
             id="bot-name"
             required
-            maxLength={40}
+            maxLength={BOT_NAME_MAX}
+            aria-invalid={Boolean(textErrors.name)}
             value={form.name}
             onChange={(event) => update({ name: event.target.value })}
           />
+          {textErrors.name && <small className="hint warn" role="alert">{t(textErrors.name)}</small>}
         </label>
         <AvatarField idPrefix="bot" value={form.avatar} onChange={(avatar) => update({ avatar })} />
         <label className="field">
@@ -159,10 +164,13 @@ export function BotTab({
           <textarea
             id="bot-instructions"
             rows={5}
+            maxLength={Math.max(BOT_PERSONA_MAX, profile.instructions.length)}
+            aria-invalid={Boolean(textErrors.instructions)}
             placeholder={t('Who the cat bot is and how it should talk to you.')}
             value={form.instructions}
             onChange={(event) => update({ instructions: event.target.value })}
           />
+          {textErrors.instructions && <small className="hint warn" role="alert">{t(textErrors.instructions)}</small>}
         </label>
         <label className="field">
           <span>{t('Reply language')}</span>
