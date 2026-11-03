@@ -353,6 +353,7 @@ export const zhTW: Record<string, string> = {
   'A name cannot hold line breaks or characters that do not show': '名字不能有換行或看不見的字元',
   'A name needs at least one letter, number or symbol': '名字至少要有一個文字、數字或符號',
   'A personality has at most 4,000 characters': '個性最多 4,000 個字元',
+  'A personality must be text': '個性必須是文字',
   'This personality holds control characters or characters that do not show, often from pasted text. Retype that part.':
     '個性裡有控制字元或看不見的字元，通常是貼上時帶進來的。請重新輸入那一段。',
   Model: '模型',

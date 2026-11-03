@@ -241,8 +241,10 @@ export function parseTools(text: string): string[] {
  * unchanged from the profile is not judged: it predates the rule and keeps working.
  */
 export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 'instructions'>): { name: string | null; instructions: string | null } {
-  const nameProblem = form.name === profile.name ? null : botNameProblem(normalizeBotName(form.name));
-  const personaProblem = form.instructions === profile.instructions ? null : botPersonaProblem(normalizeBotPersona(form.instructions));
+  const name = normalizeBotName(form.name);
+  const persona = normalizeBotPersona(form.instructions);
+  const nameProblem = name === normalizeBotName(profile.name) ? null : botNameProblem(name);
+  const personaProblem = persona === normalizeBotPersona(profile.instructions) ? null : botPersonaProblem(persona);
   return {
     name: nameProblem ? botNameMessage(nameProblem) : null,
     instructions: personaProblem ? botPersonaMessage(personaProblem) : null,
@@ -252,7 +254,7 @@ export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 
 export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | null {
   const patch: BotProfilePatch = {};
   const name = form.name.trim();
-  if (name && name !== profile.name) patch.name = name;
+  if (name && name !== profile.name.trim()) patch.name = name;
   if (form.avatar !== resolveBotAvatar(profile.avatar)) patch.avatar = form.avatar;
   const chrome = form.provider === 'claude' && form.claudeInChrome;
   if (

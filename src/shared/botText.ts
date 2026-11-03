@@ -90,16 +90,17 @@ export function botPersonaMessage(problem: BotTextProblem): string {
     : 'This personality holds control characters or characters that do not show, often from pasted text. Retype that part.';
 }
 
-/** The normalized name, or an error saying what is wrong with it. */
-export function checkedBotName(value: string): string {
-  const name = normalizeBotName(value);
+/** The normalized name, or an error saying what is wrong with it. Anything but text is no name. */
+export function checkedBotName(value: unknown): string {
+  const name = normalizeBotName(typeof value === 'string' ? value : '');
   const problem = botNameProblem(name);
   if (problem) throw new Error(botNameMessage(problem));
   return name;
 }
 
 /** The normalized persona, or an error saying what is wrong with it. */
-export function checkedBotPersona(value: string): string {
+export function checkedBotPersona(value: unknown): string {
+  if (typeof value !== 'string') throw new Error('A personality must be text');
   const persona = normalizeBotPersona(value);
   const problem = botPersonaProblem(persona);
   if (problem) throw new Error(botPersonaMessage(problem));

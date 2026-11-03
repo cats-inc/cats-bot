@@ -4,7 +4,7 @@ import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPo
 import { parseModelSelection } from '../providers/selection.ts';
 
 import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
-import { checkedBotName, checkedBotPersona } from '../../shared/botText.ts';
+import { checkedBotName, checkedBotPersona, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
 import {
   BOT_REPLY_LANGUAGE_DEFAULT,
   isBotReplyLanguage,
@@ -320,6 +320,10 @@ export interface ProfileChange {
   replyLanguageOnly: boolean;
 }
 
+function sameText(value: unknown, stored: string, normalize: (text: string) => string): boolean {
+  return typeof value === 'string' && normalize(value) === normalize(stored);
+}
+
 /**
  * SPEC-001 FR-27: a change to anything a session is created with (execution
  * target, instructions, permissions, cwd, the reply language it is told)
@@ -335,9 +339,12 @@ export function applyProfilePatch(
     ? normalizeExecutionTarget(patch.executionTarget, profile.executionTarget)
     : profile.executionTarget;
   const targetChanged = !sameExecutionTarget(nextTarget, profile.executionTarget);
-  // SPEC-010 FR-19: new or changed text follows the rule; a stored value that predates it keeps working.
-  const nextName = patch.name === undefined || patch.name === profile.name ? profile.name : checkedBotName(patch.name);
-  const nextInstructions = patch.instructions === undefined || patch.instructions === profile.instructions
+  // SPEC-010 FR-19: new or changed text follows the rule. Stored text that predates it keeps working,
+  // also when a page sends it back trimmed: that is no change.
+  const nextName = patch.name == null || sameText(patch.name, profile.name, normalizeBotName)
+    ? profile.name
+    : checkedBotName(patch.name);
+  const nextInstructions = patch.instructions == null || sameText(patch.instructions, profile.instructions, normalizeBotPersona)
     ? profile.instructions
     : checkedBotPersona(patch.instructions);
   const nextPermissions = patch.permissions
