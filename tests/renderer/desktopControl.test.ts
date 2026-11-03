@@ -60,10 +60,10 @@ test('the DC-18 status reads as a sentence with its reason', () => {
   assert.equal(at(capability('not_injected', 'policy_mismatch')), 'Not in this session: policy mismatch.', 'an unknown code stays readable');
   assert.match(
     at(capability('injected'))!,
-    /^Ready\. The bot can use it in messages you send from this conversation or cats-bot say\.$/u,
+    /^Ready\. The cat bot can use it in messages you send from this conversation or cats-bot say\.$/u,
   );
   assert.match(at(capability('injected'), { stopped: true })!, /^Stopped\./u);
-  assert.equal(at(capability('active_turn')), 'The bot can use desktop control in this turn.');
+  assert.equal(at(capability('active_turn')), 'The cat bot can use desktop control in this turn.');
   assert.equal(at(capability('unavailable', 'helper_crashed')),
     'Not available on this computer: the desktop control helper stopped too often; turn desktop control off and on in Settings to retry.');
   assert.equal(reasonText(null), '');
@@ -91,9 +91,9 @@ test('Stop appears with grants or waiting requests, and the switch can always be
 test('while the bot holds control the note shows a banner naming the app, with Stop (SPEC-006 BDC-10)', () => {
   const held = state({ capability: capability('holding'), holding: '記事本',
     grants: [{ name: '記事本', path: REQUEST.path, publisher: null, tier: 'full' }] });
-  assert.equal(holdingBanner(held.conversation), 'The bot is operating 記事本. Stop takes control back and ends its access.');
+  assert.equal(holdingBanner(held.conversation), 'The cat bot is operating 記事本. Stop takes control back and ends its access.');
   assert.equal(showStop(held.conversation), true);
-  assert.equal(noteStatus(held, held.conversation), 'The bot is operating your desktop.');
+  assert.equal(noteStatus(held, held.conversation), 'The cat bot is operating your desktop.');
   assert.equal(holdingBanner(state().conversation), null, 'no banner while nothing is held');
   assert.equal(holdingBanner(state({ capability: capability('active_turn') }).conversation), null, 'an active turn alone holds nothing');
   // Held control is never hidden, even if the profile switch went off in between.
@@ -103,15 +103,15 @@ test('while the bot holds control the note shows a banner naming the app, with S
 
 test('a grant card names the app, its path, its publisher or unsigned, the observe-only limit and the bot\'s reason', () => {
   assert.deepEqual(grantCardText(REQUEST), {
-    title: 'Let the bot see Notepad?',
+    title: 'Let the cat bot see Notepad?',
     path: 'C:\\Windows\\notepad.exe',
     publisher: 'Publisher: Microsoft Corporation',
     observeOnly: null,
-    reason: 'The bot\'s reason: Read the shopping list',
+    reason: 'The cat bot\'s reason: Read the shopping list',
   });
   const unsigned = grantCardText({ ...REQUEST, publisher: null, tier: 'observe_only' });
   assert.equal(unsigned.publisher, 'Unsigned app: no publisher could be verified');
-  assert.equal(unsigned.observeOnly, 'Observe only: the bot can never type into this app.');
+  assert.equal(unsigned.observeOnly, 'Observe only: the cat bot can never type into this app.');
 });
 
 test('the Settings switch is hidden off Windows, disabled where the helper cannot run, and can always be turned off', () => {

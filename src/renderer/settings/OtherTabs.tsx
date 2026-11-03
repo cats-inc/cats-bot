@@ -71,7 +71,7 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
             onChange={(event) => update({ heartbeat: event.target.checked })}
           />
           <span>
-            {t('Heartbeat: the bot wakes up on its own and may say something unprompted')}
+            {t('Heartbeat: the cat bot wakes up on its own and may say something unprompted')}
           </span>
         </label>
         <div className="pair">

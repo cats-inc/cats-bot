@@ -16,7 +16,7 @@ const REASONS: Record<string, string> = {
     'the desktop control helper stopped too often; turn desktop control off and on in Settings to retry',
   helper_failed: 'the desktop control helper could not start',
   server_failed: 'the desktop control server could not start',
-  closed: 'the bot is shutting down',
+  closed: 'the cat bot is shutting down',
   unavailable: 'the desktop control helper is not available',
   off: 'it is off in Settings',
   conversation_off: 'it is off for this conversation',
@@ -65,7 +65,7 @@ export function showStop(conversation: Conversation): boolean {
 /** BDC-10: the banner while this note's turn holds control (SPEC-133 DC-11), naming the app; null otherwise. */
 export function holdingBanner(conversation: Conversation): string | null {
   if (conversation.holding === null) return null;
-  return t('The bot is operating {value0}. Stop takes control back and ends its access.', {
+  return t('The cat bot is operating {value0}. Stop takes control back and ends its access.', {
     value0: conversation.holding,
   });
 }
@@ -97,14 +97,14 @@ export function noteStatus(state: DesktopControlState, conversation: Conversatio
       return t('Not in this session: {value0}.', { value0: reasonText(reason) });
     case 'injected':
       return conversation.stopped && conversation.grants.length === 0
-        ? t('Stopped. The bot has to ask again before it can see an app.')
+        ? t('Stopped. The cat bot has to ask again before it can see an app.')
         : t(
-            'Ready. The bot can use it in messages you send from this conversation or cats-bot say.',
+            'Ready. The cat bot can use it in messages you send from this conversation or cats-bot say.',
           );
     case 'active_turn':
-      return t('The bot can use desktop control in this turn.');
+      return t('The cat bot can use desktop control in this turn.');
     case 'holding':
-      return t('The bot is operating your desktop.');
+      return t('The cat bot is operating your desktop.');
     default:
       return null;
   }
@@ -131,16 +131,16 @@ export interface GrantCardText {
 /** A grant request card (SPEC-133 DC-08): the app, its path, its publisher or "unsigned", and the bot's reason. */
 export function grantCardText(request: DesktopGrantRequest): GrantCardText {
   return {
-    title: t('Let the bot see {value0}?', { value0: request.name }),
+    title: t('Let the cat bot see {value0}?', { value0: request.name }),
     path: request.path,
     publisher: request.publisher
       ? t('Publisher: {value0}', { value0: request.publisher })
       : t('Unsigned app: no publisher could be verified'),
     observeOnly:
       request.tier === 'observe_only'
-        ? t('Observe only: the bot can never type into this app.')
+        ? t('Observe only: the cat bot can never type into this app.')
         : null,
-    reason: t("The bot's reason: {value0}", { value0: request.reason }),
+    reason: t("The cat bot's reason: {value0}", { value0: request.reason }),
   };
 }
 

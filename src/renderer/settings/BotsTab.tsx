@@ -121,14 +121,14 @@ export function BotsTab() {
   return (
     <section className="panel" data-panel="bots">
       <div className="panel-head">
-        <h2>{t('Bots')}</h2>
+        <h2>{t('Cat bots')}</h2>
         <button className="primary" id="bots-new" disabled={!listing || full} onClick={() => void create()}>
-          {t('New bot')}
+          {t('New cat bot')}
         </button>
       </div>
       <p className="lead">
         {listing
-          ? t('Each bot runs on its own, with its own conversations and provider. Up to {max} bots; archived bots do not count.', { max: listing.maxBots })
+          ? t('Each cat bot runs on its own, with its own conversations and provider. Up to {max} cat bots; archived cat bots do not count.', { max: listing.maxBots })
           : '…'}
       </p>
       <ul className="notes" id="bots-list">
@@ -140,7 +140,7 @@ export function BotsTab() {
         <>
           <h3>{t('Boss Cat')}</h3>
           <p className="lead">
-            {t('The Boss Cat can hand work to the other bots. Creating or starting bots and passing the role on wait for your confirmation.')}
+            {t('The Boss Cat can hand work to the other cat bots. Creating or starting cat bots and passing the role on wait for your confirmation.')}
           </p>
           <div className="row">
             <label>

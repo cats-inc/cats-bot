@@ -357,7 +357,7 @@ export function NoteApp() {
         <button
           className="note-button"
           id="hide"
-          title={t('Hide (the bot keeps running)')}
+          title={t('Hide (the cat bot keeps running)')}
           onClick={() => void api.window.hide()}
         >
           ✕

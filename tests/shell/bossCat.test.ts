@@ -298,12 +298,12 @@ test('a provider this computer lacks goes to the owner\'s New bot window first (
   });
   const opened = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Gamma', provider: 'grok' }));
   assert.equal(opened.isError, undefined);
-  assert.match(opened.text, /grok is not set up on this computer yet\. The owner now has the New bot window, filled in for Gamma/u);
-  assert.match(details[0]!, /This computer does not have grok yet; the New bot window opens to set it up\./u);
+  assert.match(opened.text, /grok is not set up on this computer yet\. The owner now has the New cat bot window, filled in for Gamma/u);
+  assert.match(details[0]!, /This computer does not have grok yet; the New cat bot window opens to set it up\./u);
   // An open New bot window refuses before the owner is asked.
   const busy = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Delta', provider: 'grok' }));
   assert.equal(busy.isError, true);
-  assert.match(busy.text, /already has a New bot window open/u);
+  assert.match(busy.text, /already has a New cat bot window open/u);
   assert.equal(details.length, 1);
   // A window the owner opened while the dialog was up still wins.
   const late = await bossCat.handle('alpha', call('hub_create_bot', { name: 'Epsilon', provider: 'grok' }));

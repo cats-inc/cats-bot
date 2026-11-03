@@ -206,7 +206,7 @@ async function main(): Promise<void> {
   // FR-1: two installations pointed at one root never manage the same bots.
   const hubLock = acquireHubLock(home, installationId, process.execPath);
   if (!hubLock.held) {
-    dialog.showErrorBox('Cats Bot', `Another Cats Bot (${hubLock.owner.executable}, pid ${hubLock.owner.pid}) manages the bots in ${home}.\n\n`
+    dialog.showErrorBox('Cats Bot', `Another Cats Bot (${hubLock.owner.executable}, pid ${hubLock.owner.pid}) manages the cat bots in ${home}.\n\n`
       + `Quit it first. If no other Cats Bot runs, delete ${hubPaths.lock} and start again.`);
     app.quit();
     return;
@@ -364,7 +364,7 @@ async function main(): Promise<void> {
   try {
     const read = readRegistry(home);
     if (read.state === 'corrupt') {
-      dialog.showErrorBox('Cats Bot', `The bot registry ${hubPaths.registry} could not be read and was kept as it is.\n\n${read.error}`);
+      dialog.showErrorBox('Cats Bot', `The cat bot registry ${hubPaths.registry} could not be read and was kept as it is.\n\n${read.error}`);
       app.quit();
       return;
     }
@@ -555,7 +555,7 @@ async function main(): Promise<void> {
     // D26: a bot that failed is restarted by its runner within its budget, and after that only by the owner.
     startBlocked: (id) => (externalPid(id) !== null ? 'It runs in another program.' : runners.get(id)?.startAgainRefusal() ?? null),
     startBot: async (id) => {
-      if (manager.entry(id)?.archivedAt !== null) throw new Error(`Bot ${id} is not active.`);
+      if (manager.entry(id)?.archivedAt !== null) throw new Error(`Cat bot ${id} is not active.`);
       const runner = runnerFor(id);
       if (!await runner.startAgain()) {
         throw new Error(runner.state === 'external' ? 'It runs in another program.' : `It did not start: ${runner.error ?? 'unknown error'}`);
@@ -679,7 +679,7 @@ async function main(): Promise<void> {
   const startBot = async (botId: string): Promise<BotPresenter> => {
     const root = botRootIn(hubPaths.bots, botId);
     const profile = readBotProfile(root);
-    if (!profile) throw new Error(`Bot ${botId} has no profile at ${root}.`);
+    if (!profile) throw new Error(`Cat bot ${botId} has no profile at ${root}.`);
     const runtimeEntry = resolvePackagedRuntimeEntry();
     let hosted;
     try {
@@ -767,7 +767,7 @@ async function main(): Promise<void> {
           void dialog.showMessageBox({
             type: 'error',
             title: 'Cats Bot',
-            message: t('The Bot core stopped unexpectedly.'),
+            message: t('The cat bot core stopped unexpectedly.'),
             detail: `${id}: ${created.error ?? ''}\n${join(botRootIn(hubPaths.bots, id), 'logs', 'core.log')}`,
           });
         },
@@ -1096,7 +1096,7 @@ async function main(): Promise<void> {
       createWindow.focus();
       return;
     }
-    const window = createPageWindow(pages, { width: 560, height: 800, title: 'New bot' });
+    const window = createPageWindow(pages, { width: 560, height: 800, title: 'New cat bot' });
     createWindow = window;
     const checks = new AbortController();
     createChecks = checks;
@@ -1166,7 +1166,7 @@ async function main(): Promise<void> {
     try {
       switch (action) {
         case 'start':
-          if (manager.entry(id)?.archivedAt !== null) throw new BotManagementError(`Bot ${id} is not active.`);
+          if (manager.entry(id)?.archivedAt !== null) throw new BotManagementError(`Cat bot ${id} is not active.`);
           await runnerFor(id).start();
           break;
         case 'stop':
@@ -1199,7 +1199,7 @@ async function main(): Promise<void> {
           break;
         case 'archive':
           if (!await confirm(owner, t('Archive {name}?', { name: `${name} (${id})` }),
-            t('The bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBotsWithStatus();
+            t('The cat bot stops and moves to the archive with its conversations. You can restore it later.'), t('Archive'))) return listBotsWithStatus();
           await manager.archive(id);
           runners.delete(id);
           announceHolder();
@@ -1241,7 +1241,7 @@ async function main(): Promise<void> {
           await dialog.showMessageBox({
             type: 'question',
             title: t('Install Cats Bot update'),
-            message: t('Stop every bot and install the downloaded update?'),
+            message: t('Stop every cat bot and install the downloaded update?'),
             detail: t(
               'The current task will be interrupted. Quit other Cats Bot instances first. On a shared computer, all users must keep Cats Bot closed until installation finishes.',
             ),

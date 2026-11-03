@@ -54,12 +54,12 @@ test('creating bots stops at the cap, and archived bots do not count (FR-6)', as
   assert.equal(await manager.create({ name: 'Pico', provider: 'claude' }), 'pico-catsbot');
   assert.equal(await manager.create({ name: 'Tofu', provider: 'claude' }), 'tofu-catsbot');
   await assert.rejects(manager.create({ name: 'Six', provider: 'claude' }), (error: Error) =>
-    error instanceof BotManagementError && /at most 5 bots/u.test(error.message));
+    error instanceof BotManagementError && /at most 5 cat bots/u.test(error.message));
   assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['mochi', 'nori-catsbot', 'nori-catsbot-2', 'pico-catsbot', 'tofu-catsbot']);
   await manager.archive('nori-catsbot-2');
   assert.equal(await manager.create({ name: 'Six', provider: 'claude' }), 'six-catsbot');
-  await assert.rejects(manager.restore('nori-catsbot-2'), /at most 5 bots/u, 'restoring is held to the cap too');
-  await assert.rejects(manager.create({ id: '../escape', name: 'x', provider: 'claude' }), /not a valid bot id/u);
+  await assert.rejects(manager.restore('nori-catsbot-2'), /at most 5 cat bots/u, 'restoring is held to the cap too');
+  await assert.rejects(manager.create({ id: '../escape', name: 'x', provider: 'claude' }), /not a valid cat bot id/u);
 });
 
 test('new bots take the looks no bot uses, and the owner may still share one (FR-29)', async () => {
@@ -134,7 +134,7 @@ test('a bot in use by another program is neither archived nor moved', async () =
 test('only an archived bot is deleted, through trash, and nothing outside it is followed (FR-5)', async () => {
   const { root, manager } = setUp(['mochi', 'nori']);
   const paths = hubPathsFor(root);
-  await assert.rejects(manager.delete('nori'), /Only an archived bot can be deleted/u);
+  await assert.rejects(manager.delete('nori'), /Only an archived cat bot can be deleted/u);
   // A junction inside the bot must not lead the removal into its target.
   const outside = join(root, 'outside');
   mkdirSync(outside);
@@ -169,7 +169,7 @@ test('order and start-automatically are kept per bot (FR-5)', async () => {
   const { root, manager } = setUp(['a', 'b', 'c']);
   await manager.reorder(['c', 'a', 'b']);
   assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['c', 'a', 'b']);
-  await assert.rejects(manager.reorder(['a', 'b']), /every bot once/u);
+  await assert.rejects(manager.reorder(['a', 'b']), /every cat bot once/u);
   await manager.setStartAutomatically('a', false);
   assert.equal(saved(root).bots.find((bot) => bot.id === 'a')?.startAutomatically, false);
 });

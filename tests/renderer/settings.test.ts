@@ -241,7 +241,7 @@ test('life minutes must be whole positive numbers; facts never show the Telegram
   const facts = telegramFacts({ enabled: true, tokenStored: true, protection: 'os', transport: null }, PROFILE);
   assert.deepEqual(facts, [['Token', 'stored, encrypted by the OS'], ['Polling', 'off'], ['Owner chat', 'not bound yet: send your bot a private message']]);
   const status = { id: 'nori', root: 'C:/bots/nori', runtime: { state: 'ready', pid: 42 } } as BotStatus;
-  assert.deepEqual(appFacts(status, '0.1.0'), [['Bot id', 'nori'], ['Data folder', 'C:/bots/nori'], ['Runtime', 'ready (pid 42)'], ['Version', '0.1.0']]);
+  assert.deepEqual(appFacts(status, '0.1.0'), [['Cat bot id', 'nori'], ['Data folder', 'C:/bots/nori'], ['Runtime', 'ready (pid 42)'], ['Version', '0.1.0']]);
 });
 
 test('reply language choices: the display language first and Unspecified last, as on Desktop (SPEC-008 FR-28)', () => {

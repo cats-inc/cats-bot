@@ -67,7 +67,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
   }, []);
 
   useEffect(() => {
-    document.title = purpose === 'create' ? t('New bot') : t('Set up Cats Bot');
+    document.title = purpose === 'create' ? t('New cat bot') : t('Set up Cats Bot');
   }, [locale, purpose]);
 
   const submit = async (event: FormEvent) => {
@@ -97,7 +97,7 @@ export function SetupPage({ purpose }: { purpose: 'first-run' | 'create' }) {
         <div className="setup-face" aria-hidden="true">
           <img src={avatarUrl(avatar)} alt="" width="96" height="96" />
         </div>
-        <h1>{t('Meet your bot')}</h1>
+        <h1>{t('Meet your cat bot')}</h1>
         <p className="lead">
           {t(
             'Choose your provider first. We will check its installation and help you install what it needs.',

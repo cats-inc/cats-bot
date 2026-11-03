@@ -134,7 +134,7 @@ test('the Cat menu operates on its own conversations, settings and heartbeat', (
     'separator',
     'Pause heartbeat',
     'Show floating cat',
-    'Bot settings…',
+    'Cat bot settings…',
   ]);
   assert.equal(template[0]?.enabled, false);
   assert.equal(template[3]?.submenu?.[0]?.label, 'Scratch (1)');
@@ -215,7 +215,7 @@ test('while the Cat holds control its menu names the app and offers Stop first',
   assert.ok(labels.includes('Desktop control requests (1)'), 'a waiting request still opens its note');
   template[0]!.click!();
   assert.deepEqual(clicks, ['desktop-stop']);
-  assert.equal(buildTrayTooltip(holding), 'Mochi (runtime ready) - the bot is operating 記事本');
+  assert.equal(buildTrayTooltip(holding), 'Mochi (runtime ready) - the cat bot is operating 記事本');
 
   const released = { ...base, desktopControl: { enabled: true, pendingRequests: 0, waitingConversationId: null, holding: [] } };
   assert.equal(buildBotMenuTemplate(released, actions)[0]!.label, 'Mochi: runtime ready', 'the release takes the item away');
@@ -338,7 +338,7 @@ for (const count of [0, 1, 2]) {
     const model = { bots: bots.map((bot) => bot.model), openAtLogin: true, openAtLoginAvailable: true };
     const menu = buildHubTrayMenuTemplate(model, hubActions(clicks));
     assert.deepEqual(menu.map((item) => item.label ?? item.type), [
-      count ? `Cats Bot (${count} ${count === 1 ? 'bot' : 'bots'}) - ${count * 2} unread - ${count} waiting for you` : 'No bot is running',
+      count ? `Cats Bot (${count} ${count === 1 ? 'cat bot' : 'cat bots'}) - ${count * 2} unread - ${count} waiting for you` : 'No cat bot is running',
       'separator', 'Show floating cats', 'separator', 'Settings…', 'Start at login', 'Check for Updates…', 'separator', 'Quit',
     ]);
     assert.equal(menu.some((item) => item.submenu), false, 'the hub does not copy per-Cat menus');
@@ -353,7 +353,7 @@ for (const count of [0, 1, 2]) {
     for (const bot of bots) {
       const catMenu = buildBotMenuTemplate(bot.model, bot.actions);
       assert.equal(catMenu.some((item) => ['Settings…', 'Start at login', 'Check for Updates…', 'Quit', 'Show floating cats'].includes(item.label ?? '')), false);
-      catMenu.find((item) => item.label === 'Bot settings…')!.click!();
+      catMenu.find((item) => item.label === 'Cat bot settings…')!.click!();
       assert.equal(clicks.at(-1), `${bot.model.botName}:settings`);
     }
   });
@@ -377,7 +377,7 @@ test('Hub emergency stop stays first for a hidden Cat and reaches every Cat; ava
   buildBotMenuTemplate(nori.model, nori.actions).find((item) => item.label === 'Open direct message (2)')!.click!();
   buildBotMenuTemplate(mochi.model, mochi.actions)[0]!.click!();
   assert.deepEqual(clicks.slice(1), ['Nori:open:home', 'Mochi:stop']);
-  assert.equal(buildHubTrayTooltip(model), 'Cats Bot (2 bots) - 4 unread - 5 waiting for you - the bot is operating Notepad');
+  assert.equal(buildHubTrayTooltip(model), 'Cats Bot (2 cat bots) - 4 unread - 5 waiting for you - the cat bot is operating Notepad');
 });
 
 test('Hub Stop remains available for enabled control or a waiting grant, without granting access', () => {
@@ -401,7 +401,7 @@ test('both menu scopes localize product labels and preserve owner conversation t
   bot.model.locale = 'zh-TW';
   bot.model.conversations.push(conversation('custom', 'note', 1, 'Settings…'));
   const catMenu = buildBotMenuTemplate(bot.model, bot.actions);
-  assert.ok(catMenu.some((item) => item.label === '機器人設定…'));
+  assert.ok(catMenu.some((item) => item.label === '機器貓設定…'));
   assert.ok(catMenu.some((item) => item.submenu?.some((note) => note.label === 'Settings… (1)')));
   assert.equal(catMenu.some((item) => ['設定…', '檢查更新…', '結束', '登入時啟動'].includes(item.label ?? '')), false);
   const menu = buildHubTrayMenuTemplate({ locale: 'zh-TW', bots: [bot.model], openAtLogin: false, openAtLoginAvailable: true }, hubActions(clicks));
@@ -409,7 +409,7 @@ test('both menu scopes localize product labels and preserve owner conversation t
   assert.ok(menu.some((item) => item.label === '設定…'));
   assert.ok(menu.some((item) => item.label === '檢查更新…'));
   assert.ok(menu.some((item) => item.label === '結束'));
-  assert.equal(menu.some((item) => item.label === '機器人設定…'), false);
+  assert.equal(menu.some((item) => item.label === '機器貓設定…'), false);
 });
 
 
@@ -423,5 +423,5 @@ test('unreadable Cat status preserves recovery and emergency Stop without a fals
   recovery.click!();
   menu[0]!.click!();
   assert.deepEqual(clicks, ['hub:show-cats', 'hub:stop-all']);
-  assert.equal(buildHubTrayTooltip(model), 'Cats Bot (1 bot) - Some Cat status is unavailable');
+  assert.equal(buildHubTrayTooltip(model), 'Cats Bot (1 cat bot) - Some Cat status is unavailable');
 });

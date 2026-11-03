@@ -132,7 +132,7 @@ export function ProviderSettings({
             )}
           </p>
           {nativeTools && <p className="hint">
-            {t('Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the Bot conversation. Bot cannot impose a smaller file or network boundary in this mode.')}
+            {t("Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.")}
           </p>}
           {nativeTools && profile.executionTarget.provider === 'antigravity' && <p className="hint">
             {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}

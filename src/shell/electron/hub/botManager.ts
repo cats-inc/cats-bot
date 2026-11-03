@@ -71,7 +71,7 @@ export class BotManager {
 
   private assertCap(): void {
     if (this.activeCount() >= this.current.maxBots) {
-      throw new BotManagementError(`Cats Bot runs at most ${this.current.maxBots} bots. Archive one first.`);
+      throw new BotManagementError(`Cats Bot runs at most ${this.current.maxBots} cat bots. Archive one first.`);
     }
   }
 
@@ -80,15 +80,15 @@ export class BotManager {
     const paths = hubPathsFor(this.home);
     const taken = (id: string) => this.entry(id) !== undefined || existsSync(join(paths.bots, id)) || existsSync(join(paths.archive, id));
     if (input.id !== undefined) {
-      if (!isValidBotId(input.id)) throw new BotManagementError(`"${input.id}" is not a valid bot id.`);
-      if (taken(input.id)) throw new BotManagementError(`A bot with the id ${input.id} already exists.`);
+      if (!isValidBotId(input.id)) throw new BotManagementError(`"${input.id}" is not a valid cat bot id.`);
+      if (taken(input.id)) throw new BotManagementError(`A cat bot with the id ${input.id} already exists.`);
       return input.id;
     }
     for (let copy = 1; copy < 1000; copy += 1) {
       const id = deriveBotId(input.name, copy);
       if (!taken(id)) return id;
     }
-    throw new BotManagementError('No free bot id is left for that name.');
+    throw new BotManagementError('No free cat bot id is left for that name.');
   }
 
   /** FR-5 and FR-6: a new bot, registered and not yet started. */
@@ -108,7 +108,7 @@ export class BotManager {
     return this.serial(() => {
       if (this.entry(id)) return;
       const dir = join(hubPathsFor(this.home).bots, id);
-      if (!isValidBotId(id) || !existsSync(dir) || !readBotProfile(dir)) throw new BotManagementError(`There is no bot ${id} to add.`);
+      if (!isValidBotId(id) || !existsSync(dir) || !readBotProfile(dir)) throw new BotManagementError(`There is no cat bot ${id} to add.`);
       this.assertCap();
       this.save(addBot(this.current, id, this.now()));
     });
@@ -143,7 +143,7 @@ export class BotManager {
 
   setStartAutomatically(id: string, value: boolean): Promise<void> {
     return this.serial(() => {
-      if (!this.entry(id)) throw new BotManagementError(`There is no bot ${id}.`);
+      if (!this.entry(id)) throw new BotManagementError(`There is no cat bot ${id}.`);
       this.save({ ...this.current, bots: this.current.bots.map((bot) => (bot.id === id ? { ...bot, startAutomatically: value } : bot)) });
     });
   }
@@ -153,7 +153,7 @@ export class BotManager {
     return this.serial(() => {
       const active = this.current.bots.filter((bot) => bot.archivedAt === null).map((bot) => bot.id);
       if (ids.length !== active.length || ids.some((id) => !active.includes(id)) || new Set(ids).size !== ids.length) {
-        throw new BotManagementError('The new order must name every bot once.');
+        throw new BotManagementError('The new order must name every cat bot once.');
       }
       const position = new Map(ids.map((id, index) => [id, index]));
       this.save({
@@ -169,7 +169,7 @@ export class BotManager {
       const bot = this.entry(id);
       if (!bot || bot.archivedAt !== null) throw new BotManagementError(`Bot ${id} is not active.`);
       if (this.cores.hostedElsewhere(id)) {
-        throw new BotManagementError(`Bot ${id} is running in another program. Stop it there first.`);
+        throw new BotManagementError(`Cat bot ${id} is running in another program. Stop it there first.`);
       }
       await this.cores.stop(id);
       const paths = hubPathsFor(this.home);
@@ -206,7 +206,7 @@ export class BotManager {
       const bot = this.entry(id);
       const paths = hubPathsFor(this.home);
       if (!bot || bot.archivedAt === null || !existsSync(join(paths.archive, id))) {
-        throw new BotManagementError(`Only an archived bot can be deleted; archive ${id} first.`);
+        throw new BotManagementError(`Only an archived cat bot can be deleted; archive ${id} first.`);
       }
       const trashed = join(paths.trash, `${id}.${this.now().getTime()}`);
       this.move(id, join(paths.archive, id), trashed);
@@ -254,17 +254,17 @@ export class BotManager {
   /** Renames a stopped bot's directory under its instance lock, which moves with it and is released after. */
   private move(id: string, from: string, to: string): void {
     // Taking the lock would create a missing folder; a missing bot is refused instead.
-    if (!existsSync(join(from, 'profile.json'))) throw new BotManagementError(`Bot ${id}'s folder is missing; nothing was moved.`);
+    if (!existsSync(join(from, 'profile.json'))) throw new BotManagementError(`Cat bot ${id}'s folder is missing; nothing was moved.`);
     const lock = acquireInstanceLock(botPathsFor(from));
     if (!lock.held) {
-      throw new BotManagementError(`Bot ${id} is in use by another program (pid ${lock.owner.pid}); it was left as it is.`);
+      throw new BotManagementError(`Cat bot ${id} is in use by another program (pid ${lock.owner.pid}); it was left as it is.`);
     }
     try {
       mkdirSync(dirname(to), { recursive: true });
       renameSync(from, to);
     } catch (error) {
       lock.release();
-      throw new BotManagementError(`Bot ${id} could not be moved and was left as it is: ${error instanceof Error ? error.message : String(error)}`);
+      throw new BotManagementError(`Cat bot ${id} could not be moved and was left as it is: ${error instanceof Error ? error.message : String(error)}`);
     }
     const moved = botPathsFor(to).lock;
     const held = readJsonFile<{ pid?: unknown }>(moved);

@@ -39,7 +39,7 @@ cats-bot desktop home --grant <requestId> allow --id <bot>   # or deny
 cats-bot desktop home --stop --id <bot>                 # --stop --all: every conversation
 ```
 
-The profile switch is in Settings > Bot. `capabilities` shows a `desktopControl`
+The profile switch is in Settings > Cat bot. `capabilities` shows a `desktopControl`
 entry ("Cats desktop control") beside Runtime's observation.
 
 BotHostApi exposes `providerInteractions`, `respondProviderInteraction`, and
@@ -71,7 +71,7 @@ Claude Code bots use the same control (Runtime SPEC-039 R8). Questions arrive as
 other tool, including Claude in Chrome, as `tool_approval`; MCP forms and URL
 requests work as for Codex. Claude Code has no native-Windows sandbox, so only the
 full-access-with-network policy can be selected for it, and a narrower one is
-refused when it is saved while the runtime is ready. The Bot tab's Claude in Chrome
+refused when it is saved while the runtime is ready. The Cat bot tab's Claude in Chrome
 option adds `--chrome` to the CLI launch and restarts the runtime after the
 current turn. Computer use is not available to headless Claude Code.
 
@@ -80,7 +80,7 @@ Only pending and responding requests are shown; a finished request leaves the no
 and its redacted receipt stays available through `cats-bot interactions`.
 Closing/reloading a note leaves the core request alive. The tray's pending-request
 entry opens the waiting note; floating/Telegram notifications contain no prompt.
-Bot settings separate access, network and approval, and can inspect each note's
+Cat bot settings separate access, network and approval, and can inspect each note's
 current policy and top-level tools. Legacy tool controls are inactive while an
 explicit/provider policy is selected. Inventory refresh never starts a model turn.
 
@@ -98,7 +98,7 @@ separately when performed; these fixture checks do not establish tool parity.
 
 ## Muse, Grok and Antigravity native work tools
 
-In Bot settings → Provider access, choose **Enable native tools with provider
+In Cat bot settings → Provider access, choose **Enable native tools with provider
 permissions** and save. Existing bots retain legacy behavior until this selection.
 Changing modes waits for the current turn, replaces the private Runtime target,
 and starts a new session with a transcript handoff; queued messages are not replayed.

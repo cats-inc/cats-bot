@@ -19,6 +19,10 @@ The bots under one hub have no collective name: shared things are "hub" files,
 settings and tools. In this repository "fleet" means desktop-work-fleet
 (ADR-001), so it is not used for bots.
 
+Product text calls a bot a cat bot, and 機器貓 in Traditional Chinese, counted with
+隻. A Telegram bot keeps its own name (機器人). Code, ids, file names, the CLI, tool
+descriptions for the model and this documentation say "bot".
+
 ## Goals
 
 - Every bot is an independent process; a UI failure never stops a bot.

@@ -25,13 +25,13 @@ const BOT_TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
 const HUB_TABS = ['general', 'bots'] as const;
 type Tab = (typeof BOT_TABS)[number] | (typeof HUB_TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
-  bot: 'Bot',
+  bot: 'Cat bot',
   notes: 'Conversations',
   life: 'Life',
   telegram: 'Telegram',
   app: 'Details',
   general: 'General',
-  bots: 'Bots',
+  bots: 'Cat bots',
 };
 
 function isTabOf(tabs: readonly Tab[], value: string | null): value is Tab {
