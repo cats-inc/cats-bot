@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -25,7 +25,7 @@ async function fixture(t: TestContext) {
   await git('init', '-q', '-b', 'main');
   await write('package.json', { name, version, scripts: { build: 'node build.mjs' }, files: ['build'] });
   await write('package-lock.json', { name, version, lockfileVersion: 3, requires: true, packages: { '': { name, version } } });
-  await writeFile(join(source, 'build.mjs'), "import { mkdirSync, writeFileSync } from 'node:fs';\nmkdirSync('build', { recursive: true });\nwriteFileSync('build/index.js', 'export {};\\n');\n");
+  await writeFile(join(source, 'build.mjs'), "import { mkdirSync, writeFileSync } from 'node:fs';\nmkdirSync('build', { recursive: true });\nwriteFileSync('build/index.js', 'export const build = ' + JSON.stringify(process.env.CATS_FIXTURE_BUILD ?? '') + ';\\n');\n");
   await writeFile(join(source, '.gitignore'), 'build/\nnode_modules/\n*.tgz\n');
   const commit = async (subject: string, file: string) => {
     await writeFile(join(source, file), `${subject}\n`);
@@ -95,14 +95,50 @@ test('a Bot without the record or the old dependency is refused before anything 
   await access(join(f.root, oldArtifact));
 });
 
+test('rebuilding the pinned commit changes nothing, and different bytes are refused before any write', async t => {
+  const f = await fixture(t);
+  t.after(() => { delete process.env.CATS_FIXTURE_BUILD; });
+  const pin = await refreshRuntimePin({ root: f.root, source: f.source });
+  const read = async () => Promise.all(['vendor/runtime-source.json', 'package.json', 'package-lock.json', 'vendor/README.md', pin.artifact].map(file => readFile(join(f.root, file), 'latin1')));
+  const before = await read();
+  await refreshRuntimePin({ root: f.root, source: f.source });
+  assert.deepEqual(await read(), before);
+  process.env.CATS_FIXTURE_BUILD = 'different';
+  await assert.rejects(refreshRuntimePin({ root: f.root, source: f.source }), /gave different bytes/u);
+  assert.deepEqual(await read(), before);
+});
+
+test('a failure after the first write leaves the Bot exactly as it was', async t => {
+  const f = await fixture(t);
+  const packagePath = join(f.root, 'package.json');
+  const pkg = JSON.parse(await readFile(packagePath, 'utf8'));
+  await writeFile(packagePath, `${JSON.stringify({ ...pkg, dependencies: { ...pkg.dependencies, other: 'file:vendor/missing.tgz' } }, null, 2)}\n`);
+  const files = ['vendor/runtime-source.json', 'package.json', 'package-lock.json', 'vendor/README.md', oldArtifact];
+  const read = () => Promise.all(files.map(file => readFile(join(f.root, file), 'latin1')));
+  const before = await read();
+  const listed = await readdir(join(f.root, 'vendor'));
+  await assert.rejects(refreshRuntimePin({ root: f.root, source: f.source }));
+  assert.deepEqual(await read(), before);
+  assert.deepEqual(await readdir(join(f.root, 'vendor')), listed);
+});
+
+test('a tag named like the branch does not change what the default selects', async t => {
+  const f = await fixture(t);
+  const head = await f.commit('fix: second (#2)', 'second.txt');
+  await f.git('tag', 'origin/main', f.first);
+  const pin = await refreshRuntimePin({ root: f.root, source: f.source });
+  assert.equal(pin.commit, head);
+});
+
 test('Git tracks whichever Runtime tarball a refresh writes', async () => {
   const repository = new URL('../../', import.meta.url);
   await assert.rejects(exec('git', ['check-ignore', '--quiet', '--no-index', 'vendor/cats-runtime-9.9.9-abcdef12.tgz'], { cwd: repository }), (error: { code?: number }) => error.code === 1);
 });
 
 test('the command line accepts only its own options', () => {
-  assert.deepEqual(parseArgs(['--ref', 'abc', '--source', 'path']), { help: false, ref: 'abc', source: 'path' });
+  assert.deepEqual(parseArgs(['--ref', 'abc']), { help: false, ref: 'abc' });
   assert.equal(parseArgs(['--help']).help, true);
   assert.throws(() => parseArgs(['--ref']), /needs a value/u);
   assert.throws(() => parseArgs(['--other']), /Unknown option/u);
+  assert.throws(() => parseArgs(['--source', 'path']), /Unknown option/u, 'the manifest records GitHub as the source, so a local checkout must not stand in for it');
 });

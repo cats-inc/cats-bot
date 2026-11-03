@@ -123,7 +123,10 @@ test('the preview refuses a Runtime pin off main, or one leaving out changes its
   const runtime = steps.find(step => step.with?.repository === 'cats-inc/cats-runtime');
   assert.deepEqual([runtime?.with?.ref, runtime?.with?.['fetch-depth'], runtime?.with?.path], ['main', 0, 'runtime-source']);
   assert.ok(steps.indexOf(runtime!) < steps.length - 1, 'Runtime must be checked out before the identity step');
-  assert.match(String(steps.at(-1)?.with?.script), /requireCurrentRuntime\(/u);
+  const identity = steps.at(-1) as { if?: unknown; 'continue-on-error'?: unknown; with?: Record<string, unknown> };
+  assert.ok(String(identity.with?.script).split('\n').some(line => line.trim() === 'await requireCurrentRuntime({ runtimeRoot: `${process.env.GITHUB_WORKSPACE}/runtime-source`, commit: input.runtime.commit, notes: input.notes });'),
+    'the identity step must await the check on the pinned commit, against the checked out Runtime, with these notes');
+  assert.deepEqual([identity.if, identity['continue-on-error']], [undefined, undefined], 'nothing may let the identity step be skipped or fail quietly');
   for (const job of ['draft', 'build', 'publish']) assert.doesNotMatch(JSON.stringify(workflow.jobs[job] ?? {}), /requireCurrentRuntime/u, `Runtime merging during a build must not fail ${job}`);
 });
 

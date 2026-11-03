@@ -28,12 +28,13 @@ private session MCP and live native interactions; Google ACP supports local
 work/approvals while its session MCP is gated pending verified native credential
 persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
 
-`node scripts/refresh-runtime-pin.mjs` rebuilds this from a clean clone of Runtime
-`main`: `npm ci`, `npm run build`, then `npm pack --ignore-scripts`. It names the
-artifact with the source commit and updates the record above, the manifest, package
-dependency and lockfile together. A Runtime without the
-advertised policy/interaction capability is unavailable for the new mode, never
-silently used with different permissions.
+Reproduce an artifact from its exact source with its lockfile: `npm ci`, `npm run
+build`, then `npm pack --ignore-scripts`. `node scripts/refresh-runtime-pin.mjs` does
+this from a clean clone for any commit on Runtime `main`. It names the artifact with
+the source commit and updates the record above, the manifest, package dependency and
+lockfile together. It does not change the description in this file, so update that by
+hand. A Runtime without the advertised policy/interaction capability is unavailable
+for the new mode, never silently used with different permissions.
 
 No package version, profile/journal format or data migration changes in this
 slice. Existing profiles retain `providerPolicy: null` until the owner enables

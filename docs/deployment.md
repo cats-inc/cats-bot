@@ -17,7 +17,8 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    back. It keeps `vendor/runtime-source.json`, the vendored tarball and lockfile
    exact, and CI then tests that exact combination. The manifest records the Runtime
    repository, full source SHA, package version, tarball path and SHA-256. The workflow
-   also checks lockfile SHA-512 integrity.
+   also checks lockfile SHA-512 integrity. The script updates only the marked record in
+   `vendor/README.md`, so update its description by hand.
 
    The preview guard runs the same check as Cats Desktop, from the shared
    `scripts/shared/source-selection.mjs`. It refuses a Runtime commit that is not on
@@ -196,10 +197,14 @@ on their own OS. Local builds default to candidate identity; `--release` is
 restricted to the exact manual workflow/repository/source context. These checks
 establish provenance conventions, not a defense against a locally modified app.
 
-A failed build leaves a draft. Re-run from the same commit and tag; only a draft
-whose recorded source matches may be replaced. Existing tags, another source's
-draft and published releases are rejected. Do not edit a published release to
-repair it; prepare a new version and obtain publication authorization.
+A failed build leaves a draft. Prefer **Re-run failed jobs** on that run, which keeps
+its guard result. A new dispatch from the same commit and tag also resumes the draft,
+because only a draft whose recorded source matches may be replaced, but it repeats the
+Runtime check. If Runtime has merged another change since, that dispatch is refused and
+a new commit cannot reuse the draft: re-run the failed jobs, or delete the unpublished
+draft and dispatch the new commit. Existing tags, another source's draft and published
+releases are rejected. Do not edit a published release to repair it; prepare a new
+version and obtain publication authorization.
 
 After publication verify the Actions result, public prerelease/tag SHA and complete
 asset names/digests. Installed upgrade acceptance must separately exercise Windows
