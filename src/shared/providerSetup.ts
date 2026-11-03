@@ -38,6 +38,8 @@ export interface ProviderSetupState {
   steps: SetupStep[];
   canFinish: boolean;
   signIn: SetupSignIn;
+  /** FR-15: the fixed command that signs in to this provider. */
+  signInCommand: string | null;
 }
 
 /** FR-14: one run of a helper, or one terminal opened, as the page's log shows it. */

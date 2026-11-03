@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { join, posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
+import { signInCommand } from './setupTerminal.ts';
 import type {
   ProviderSetupState,
   SetupLogEntry,
@@ -465,7 +466,13 @@ export class ProviderSetup {
         script,
       });
     }
-    return { provider, steps, canFinish: steps.every((step) => step.optional || stepDone(step)), signIn: signInState(provider, steps) };
+    return {
+      provider,
+      steps,
+      canFinish: steps.every((step) => step.optional || stepDone(step)),
+      signIn: signInState(provider, steps),
+      signInCommand: signInCommand(provider),
+    };
   }
 }
 
