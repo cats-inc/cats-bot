@@ -1,3 +1,4 @@
+import { oneLine } from '../../shared/botText.ts';
 import type { HeartbeatKind, HeartbeatPolicy } from '../types.ts';
 
 /**
@@ -67,7 +68,7 @@ export function buildHeartbeatPrompt(input: HeartbeatPromptInput): string {
       : 'Your owner has not written to you yet in this conversation.',
     'If you feel like saying something to your owner right now (a greeting, a passing thought,',
     'something you noticed, a reminder you promised), reply with only that message, in your own',
-    `voice as ${input.botName}, one to three short sentences. It is sent to your owner exactly as you write it.`,
+    `voice as ${oneLine(input.botName, 80)}, one to three short sentences. It is sent to your owner exactly as you write it.`,
     'To remind yourself of something later, use your schedule tools; a promise in words alone does not schedule anything.',
     `If you would rather stay quiet, reply with exactly ${HEARTBEAT_QUIET_TOKEN} and nothing else.`,
   ].join('\n');

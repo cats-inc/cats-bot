@@ -1,5 +1,6 @@
 import { t } from '../localeStore.ts';
 import { resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
+import { botNameMessage, botNameProblem, botPersonaMessage, botPersonaProblem, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
 import {
   LANGUAGE_OPTIONS,
   REPLY_LANGUAGE_CODES,
@@ -235,6 +236,19 @@ export function parseTools(text: string): string[] {
 }
 
 /** Only what changed, so an unchanged target or permission never bumps the configuration revision. */
+/**
+ * SPEC-010 FR-19: what is wrong with the form's text, as translation keys. A value
+ * unchanged from the profile is not judged: it predates the rule and keeps working.
+ */
+export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 'instructions'>): { name: string | null; instructions: string | null } {
+  const nameProblem = form.name === profile.name ? null : botNameProblem(normalizeBotName(form.name));
+  const personaProblem = form.instructions === profile.instructions ? null : botPersonaProblem(normalizeBotPersona(form.instructions));
+  return {
+    name: nameProblem ? botNameMessage(nameProblem) : null,
+    instructions: personaProblem ? botPersonaMessage(personaProblem) : null,
+  };
+}
+
 export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | null {
   const patch: BotProfilePatch = {};
   const name = form.name.trim();

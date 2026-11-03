@@ -348,6 +348,13 @@ export const zhTW: Record<string, string> = {
   'Local file access': '本機檔案存取',
   'Maximum admitted access': '允許的最大存取範圍',
   'Meet your cat bot': '認識你的機器貓',
+  'Give the cat bot a name': '幫機器貓取個名字',
+  'A name has at most 40 characters': '名字最多 40 個字元',
+  'A name cannot hold line breaks or characters that do not show': '名字不能有換行或看不見的字元',
+  'A name needs at least one letter, number or symbol': '名字至少要有一個文字、數字或符號',
+  'A personality has at most 4,000 characters': '個性最多 4,000 個字元',
+  'This personality holds control characters or characters that do not show, often from pasted text. Retype that part.':
+    '個性裡有控制字元或看不見的字元，通常是貼上時帶進來的。請重新輸入那一段。',
   Model: '模型',
   Name: '名稱',
   'Network access': '網路存取',

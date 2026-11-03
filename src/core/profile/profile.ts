@@ -4,6 +4,7 @@ import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPo
 import { parseModelSelection } from '../providers/selection.ts';
 
 import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
+import { checkedBotName, checkedBotPersona } from '../../shared/botText.ts';
 import {
   BOT_REPLY_LANGUAGE_DEFAULT,
   isBotReplyLanguage,
@@ -66,9 +67,9 @@ export function createProfile(input: CreateProfileInput): BotProfile {
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
-    name: input.name,
+    name: checkedBotName(input.name),
     avatar: input.avatar ?? DEFAULT_BOT_AVATAR,
-    instructions: input.instructions ?? '',
+    instructions: checkedBotPersona(input.instructions ?? ''),
     environment: { kind: 'native' },
     executionTarget: {
       provider: input.provider,
@@ -334,7 +335,11 @@ export function applyProfilePatch(
     ? normalizeExecutionTarget(patch.executionTarget, profile.executionTarget)
     : profile.executionTarget;
   const targetChanged = !sameExecutionTarget(nextTarget, profile.executionTarget);
-  const nextInstructions = patch.instructions ?? profile.instructions;
+  // SPEC-010 FR-19: new or changed text follows the rule; a stored value that predates it keeps working.
+  const nextName = patch.name === undefined || patch.name === profile.name ? profile.name : checkedBotName(patch.name);
+  const nextInstructions = patch.instructions === undefined || patch.instructions === profile.instructions
+    ? profile.instructions
+    : checkedBotPersona(patch.instructions);
   const nextPermissions = patch.permissions
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
@@ -354,7 +359,7 @@ export function applyProfilePatch(
   const sessionChanged = otherSessionChange || replyLanguageChanged;
   const next: BotProfile = {
     ...profile,
-    name: patch.name ?? profile.name,
+    name: nextName,
     // Not a session setting: no session is told how its Cat looks, so no revision bump (SPEC-008 FR-29).
     avatar: patch.avatar ?? profile.avatar,
     instructions: nextInstructions,

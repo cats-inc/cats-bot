@@ -7,7 +7,8 @@ import type { RemoteBotCore } from '../../../core/host-api/remote.ts';
 import { CLI_PROVIDERS } from '../../../core/providers/catalog.ts';
 import { writeFileAtomic } from '../../../core/store/atomicFile.ts';
 import { isValidBotId } from '../../../core/store/paths.ts';
-import { isHubRecordId, isPlainLine, oneLine } from '../../../core/tools/hubTools.ts';
+import { botNameProblem, botPersonaProblem, normalizeBotName, normalizeBotPersona } from '../../../shared/botText.ts';
+import { isHubRecordId, oneLine } from '../../../core/tools/hubTools.ts';
 import type { BotDeliveryState, WorkItem, WorkItemState } from '../../../core/types.ts';
 import type { BossCatLimits } from './registry.ts';
 
@@ -444,14 +445,16 @@ export class BossCatBroker {
   }
 
   private async create(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {
-    const name = typeof args.name === 'string' ? args.name.trim() : '';
-    const persona = typeof args.persona === 'string' ? args.persona.trim() : '';
+    const name = normalizeBotName(typeof args.name === 'string' ? args.name : '');
+    const persona = normalizeBotPersona(typeof args.persona === 'string' ? args.persona : '');
     const provider = typeof args.provider === 'string' ? args.provider : '';
-    // The New bot window and the Bot tab take 40 characters, as the first run does.
-    if (!name || name.length > NAME_LENGTH || !isPlainLine(name)) {
+    // SPEC-010 FR-19: the same rule as the New cat bot window and the Bot tab.
+    if (botNameProblem(name)) {
       return refuse('The new bot needs a name of one line, at most 40 characters, whose every character shows.');
     }
-    if (persona.length > 4_000) return refuse('The persona is too long.');
+    const personaProblem = botPersonaProblem(persona);
+    if (personaProblem === 'too_long') return refuse('The persona is too long.');
+    if (personaProblem) return refuse('The persona holds control characters or characters that do not show.');
     if (!CLI_PROVIDERS.some((entry) => entry.id === provider)) {
       return refuse(`Choose one of these providers: ${CLI_PROVIDERS.map((entry) => entry.id).join(', ')}.`);
     }
