@@ -16,6 +16,7 @@ import {
   queueOf,
   requiredPending,
   requiredTickable,
+  retryQueue,
   rowKind,
   runFacts,
   runFailed,
@@ -66,6 +67,17 @@ test('the row that stopped the queue is the one the page speaks to', () => {
   assert.equal(stoppedStep(state(step('node', 'elevation_required'), step('npm', 'prerequisite_required')))?.id, 'node');
   assert.equal(stoppedStep(state(step('node', 'ready'), step('npm', 'relaunch_required')))?.id, 'npm');
   assert.equal(stoppedStep(null), null);
+});
+
+test('only a row the owner already ran can be tried again (FR-9)', () => {
+  const ran = new Set<SetupStepId>(['node']);
+  const none = new Set<SetupStepId>();
+  assert.deepEqual(retryQueue(step('node', 'elevation_required'), ran, ['npm', 'node']), ['node', 'npm'], 'it goes first, then what is still ticked');
+  assert.deepEqual(retryQueue(step('node', 'failed'), ran, []), ['node']);
+  assert.deepEqual(retryQueue(step('node', 'failed'), none, ['npm']), [], 'a row that failed a check was never ticked');
+  assert.deepEqual(retryQueue(step('node', 'elevation_required'), none, []), []);
+  assert.deepEqual(retryQueue(step('node', 'relaunch_required'), ran, []), [], 'a restart is not a retry');
+  assert.deepEqual(retryQueue(null, ran, ['npm']), []);
 });
 
 test('rows before the check follow the shell\'s order, and the hint counts them (FR-3, FR-8)', () => {

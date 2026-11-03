@@ -13,6 +13,21 @@ import {
 
 /** Printable ASCII "hi", spelled in the Unicode tag characters a model can read and a person cannot see. */
 const HIDDEN_TAGS = String.fromCodePoint(0xE0068, 0xE0069);
+/** The same idea in the supplementary variation selectors, which are marks rather than format characters. */
+const HIDDEN_SELECTORS = String.fromCodePoint(0xE0168, 0xE0169);
+/** Bits spelled by the joiners and emoji selectors, each of which is allowed alone. */
+const JOINER_BITS = String.fromCodePoint(0x200C, 0x200D, 0x200C, 0x200C);
+const SELECTOR_BITS = String.fromCodePoint(0xFE0E, 0xFE0F, 0xFE0E);
+/** Each stays out of a name or persona, and none of them is a format character. */
+const NEVER_SHOWN: Record<string, number> = {
+  'combining grapheme joiner': 0x34F,
+  'Khmer inherent vowel': 0x17B4,
+  'Mongolian variation selector': 0x180B,
+  'Hangul filler': 0x3164,
+  'halfwidth Hangul filler': 0xFFA0,
+  'variation selector 1': 0xFE00,
+  'supplementary variation selector': 0xE0100,
+};
 
 test('a name is 1 to 40 units on one line, with something that shows (SPEC-010 FR-19)', () => {
   for (const name of ['Mochi', '麻糬', 'R2-D2', 'A&B <script>', '🐈', 'x'.repeat(BOT_NAME_MAX)]) {
@@ -45,6 +60,11 @@ test('a name refuses each kind of character that would forge a line or hide', ()
   for (const [label, name] of Object.entries(refused)) {
     assert.equal(botNameProblem(name), 'hidden', label);
   }
+  for (const [label, point] of Object.entries(NEVER_SHOWN)) {
+    assert.equal(botNameProblem(`a${String.fromCodePoint(point)}b`), 'hidden', label);
+  }
+  assert.equal(botNameProblem(`a${SELECTOR_BITS}`), 'hidden', 'selectors strung together');
+  assert.equal(botNameProblem(`a${String.fromCodePoint(0x2764, 0xFE0F)}`), null, 'an emoji keeps its selector');
 });
 
 test('a persona is at most 4,000 units and may have lines and tabs', () => {
@@ -59,7 +79,11 @@ test('a persona is at most 4,000 units and may have lines and tabs', () => {
 test('a persona keeps the joiners emoji and some scripts need', () => {
   assert.equal(botPersonaProblem('👩\u200D💻 likes tea'), null, 'zero width joiner');
   assert.equal(botPersonaProblem('می\u200Cخواهم'), null, 'zero width non-joiner');
-  assert.equal(botPersonaProblem('❤️'), null, 'a variation selector is not a format character');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x2764, 0xFE0F)), null, 'an emoji selector');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x263A, 0xFE0E)), null, 'a text selector');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x1F3F3, 0xFE0F, 0x200D, 0x1F308)), null, 'a selector then a joiner, as a rainbow flag has');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x1F469, 0x200D, 0x2764, 0xFE0F, 0x200D, 0x1F468)), null, 'a couple');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x31, 0xFE0F, 0x20E3)), null, 'a keycap');
 });
 
 test('a persona refuses text its owner cannot see', () => {
@@ -79,6 +103,13 @@ test('a persona refuses text its owner cannot see', () => {
   for (const [label, persona] of Object.entries(refused)) {
     assert.equal(botPersonaProblem(persona), 'hidden', label);
   }
+  for (const [label, point] of Object.entries(NEVER_SHOWN)) {
+    assert.equal(botPersonaProblem(`a${String.fromCodePoint(point)}b`), 'hidden', label);
+  }
+  assert.equal(botPersonaProblem(`Be kind.${HIDDEN_SELECTORS}`), 'hidden', 'text in variation selectors');
+  assert.equal(botPersonaProblem(`Be kind.${JOINER_BITS}`), 'hidden', 'joiners strung together');
+  assert.equal(botPersonaProblem(`Be kind.${SELECTOR_BITS}`), 'hidden', 'selectors strung together');
+  assert.equal(botPersonaProblem(`Be kind.${String.fromCodePoint(0x200D, 0xFE0F)}`), 'hidden', 'a joiner then a selector');
 });
 
 test('line endings are normalized and surrounding space goes before the rule applies', () => {
@@ -98,4 +129,6 @@ test('the checked forms refuse with a message that says why', () => {
 test('one line removes what does not show and shortens by characters', () => {
   assert.equal(oneLine(`  a\n\tb${HIDDEN_TAGS}  c\u200B `, 80), 'a b c');
   assert.equal(oneLine('🐈🐈🐈🐈', 3), '🐈🐈…');
+  assert.equal(oneLine(`a${HIDDEN_SELECTORS}${String.fromCodePoint(0x34F, 0x3164)}b`, 80), 'ab', 'an older profile can hold these');
+  assert.equal(oneLine(String.fromCodePoint(0x2764, 0xFE0F), 80), String.fromCodePoint(0x2764, 0xFE0F), 'an emoji keeps its selector');
 });

@@ -87,7 +87,10 @@ persona get one rule wherever they enter.
 9. FR-9: Every script that changes anything runs only if ticked, and all are unticked by
    default. "Tick all required" closes the list after the last tickable row, ticks required
    rows only, and turns into its undo when all are ticked. It appears from two required
-   tickable rows. A declined UAC prompt's "Try again" needs no new tick.
+   tickable rows. A declined UAC prompt's "Try again" needs no new tick. "Try again" appears
+   only for a row the owner already ran. A row that failed its read-only check was never
+   ticked, so it offers "Check again" and the command for doing it by hand, and leaves other
+   ticked rows free to apply.
 10. FR-10: A row shows a plain summary, tags for its consequences, and details that are
     collapsed by default; only a failed row's details open by themselves. The details hold:
     - what the helper reports it would do (`plannedActions`, `plannedChanges`), verbatim;
@@ -117,7 +120,8 @@ persona get one rule wherever they enter.
       helper's reported status, version, plan, changes and warnings; a stopped or failed run
       says so in red. A run in progress shows a timer.
     - Any script run opens it. It closes about 1.4 s after success, stays open after a
-      failure, and waits while the pointer is on it.
+      failure, including a check that fails or a terminal that cannot open, and waits while the
+      pointer is on it.
     - Once the owner toggles it, it stays as they set it, except that a failure opens it.
     - "Copy all" copies it. The log itself lasts as long as the window. The hub's bounded
       diagnostics record each finished run in fixed words only (kind, helper, status, change
@@ -150,12 +154,17 @@ persona get one rule wherever they enter.
 19. FR-19: One browser-safe rule, used by the page, `validateSetupInput`, `createProfile`,
     `applyProfilePatch` and the Boss Cat tool:
     - **Name:** trimmed; 1 to 40 UTF-16 units; well formed; at least one letter, number,
-      symbol or punctuation mark; no control or format characters, line breaks or blank
-      fillers.
+      symbol or punctuation mark; no control or format characters, line breaks, the Braille
+      blank or other Default_Ignorable_Code_Point characters. U+FE0E and U+FE0F stay allowed
+      one at a time, because emoji need them.
     - **Persona:** trimmed, line endings normalized to LF; at most 4,000 UTF-16 units; well
       formed; line feed and tab allowed; no other control characters, no bidirectional or
-      tag characters, line or paragraph separators or other format characters. Zero-width
-      joiner and non-joiner stay allowed, because emoji and some scripts need them.
+      tag characters, line or paragraph separators, other format characters or other
+      Default_Ignorable_Code_Point characters, which include the other variation selectors.
+      Zero-width joiner and non-joiner, and U+FE0E and U+FE0F, stay allowed because emoji and
+      some scripts need them, one at a time or as a selector then a joiner. Strung together
+      they can spell out hidden text. One after each visible character is still possible, so
+      the rule narrows hidden text and does not rule it out.
     - A value that breaks the rule is refused with a message saying why. It is never
       silently changed, because silently stripped text is how a hidden instruction would go
       unnoticed.

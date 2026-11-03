@@ -5,8 +5,9 @@
  * A name reaches window titles, dialogs, logs and a heartbeat prompt, so it is
  * one line whose every character shows. A persona is the owner's own instruction
  * to their cat bot, so what it asks for is not judged. It only must not carry
- * text the owner cannot see, as pasted text can: tag characters spell out a hidden
- * instruction a model still reads, and direction marks reorder what the owner reads.
+ * text the owner cannot see, as pasted text can: tag characters and variation
+ * selectors spell out a hidden instruction a model still reads, and direction marks
+ * reorder what the owner reads.
  *
  * A value that breaks the rule is refused, never quietly changed: stripping
  * hidden text would also hide that it was there.
@@ -19,17 +20,22 @@ export type BotTextProblem = 'empty' | 'too_long' | 'malformed' | 'hidden' | 'no
 
 /** A surrogate with no partner: valid in a JS string, not in UTF-8. */
 const MALFORMED = /\p{Cs}/u;
-/** Controls, format characters, line and paragraph separators, and blank fillers. */
-const NOT_PLAIN = /[\p{Cc}\p{Cf}\u2028\u2029\u115F\u1160\u2800\u3164\uFFA0]/u;
+/**
+ * Controls, format characters, line and paragraph separators, blank fillers and what never shows:
+ * Default_Ignorable_Code_Point. U+FE0E and U+FE0F stay out of that, one at a time, because they choose
+ * how one character shows and emoji need them.
+ */
+const NOT_PLAIN = /[\p{Cc}\p{Cf}\u2028\u2029\u2800]|[^\P{DI}\uFE0E\uFE0F]|[\uFE0E\uFE0F]{2}/u;
 const VISIBLE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 /**
- * Controls but line feed and tab, separators, and format characters but the
- * joiners that emoji and some scripts need: U+200C and U+200D.
+ * Controls but line feed and tab, separators, and format characters and what never shows, but the
+ * joiners that emoji and some scripts need (U+200C, U+200D) and the emoji selectors. Those appear
+ * one at a time, or as a selector then a joiner: strung together, they spell out text as well.
  */
-const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]/u;
+const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]|[^\P{DI}\u200C\u200D\uFE0E\uFE0F]|[\u200C\u200D]{2}|[\uFE0E\uFE0F]{2}|[\u200C\u200D][\uFE0E\uFE0F]/u;
 
-/** Characters that do not show: format characters (zero-width, direction marks, tags) and blank fillers. */
-const UNSEEN = /[\p{Cf}\u115F\u1160\u2800\u3164\uFFA0]/gu;
+/** Characters that do not show: format characters, what never shows, and the Braille blank. */
+const UNSEEN = /[\p{Cf}\u2800]|[^\P{DI}\uFE0E\uFE0F]/gu;
 const LINE_BREAKS = /[\p{Cc}\u2028\u2029]+/gu;
 
 /** Whether `value` is one line whose every character shows, as a name the owner reads in a dialog must be. */
