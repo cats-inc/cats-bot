@@ -2,6 +2,7 @@ import { app, BrowserWindow, screen, type Menu } from 'electron';
 
 import { displaysBounds } from './floatingPlacement.ts';
 import { linuxWindowsUnderWayland } from './linuxWindowing.ts';
+import { popupMenuWithFocus } from './popupMenuFocus.ts';
 
 /**
  * A menu learns of a click elsewhere through its X grab, but under XWayland a
@@ -17,6 +18,10 @@ const CATCHER_DELAY_MS = 150;
 const CATCHER_MAX_MS = 30_000;
 
 export function popupMenu(menu: Menu, window: BrowserWindow): void {
+  if (process.platform === 'win32' || process.platform === 'darwin') {
+    popupMenuWithFocus(menu, window);
+    return;
+  }
   if (!linuxWindowsUnderWayland(app.commandLine)) {
     menu.popup({ window });
     return;

@@ -70,6 +70,8 @@ instead of opening the alert.
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
    opens the home note; right-click opens only that Cat’s conversations, heartbeat, desktop-control
    Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.
+   On Windows/macOS the Cat takes focus only while its native menu is open, so an
+   outside click can dismiss it; closing the menu restores the unfocusable avatar.
    A short bubble is shown on a new reply; it can be hidden from its own menu and from settings.
    The hub tray’s "Show floating cats" restores every running Cat, including hidden ones. The remembered position is reused only if
    at least half of the Cat itself (not the whole transparent window) falls on some screen, otherwise it

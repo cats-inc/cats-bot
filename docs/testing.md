@@ -187,6 +187,27 @@ failure handling against a fake server. `tests/shell/linuxAutostart.test.ts` cov
 autostart entry, its quoting and the entries it must leave alone. `tests/shell/hub.test.ts`
 covers which copies a finished first run turns Start at login on for.
 
+`tests/shell/popupMenuFocus.test.ts` covers temporary menu-owner focus, restoring
+the unfocusable avatar after a menu event or callback, popup failure, hidden or
+destroyed owners, and replacement menus with delayed callbacks. On Windows/macOS
+`popupMenu` applies this only to normally unfocusable owners; ordinary note menus
+keep their existing behavior. Native acceptance must use an actual outside click,
+Escape and item selection, checking that the menu disappears, the action still
+runs and the avatar returns to being unfocusable. CDP input into a page alone does
+not prove native menu dismissal. See the [focus findings](research/2026-11-02-avatar-menu-focus.md)
+for the Windows reproduction and the macOS validation boundary.
+
+Windows native acceptance on 2026-11-02 passed with Electron 41.2.0 and isolated
+Bot/Electron storage, using the worktree's real `FloatingBot` and `popupMenu`:
+outside left-click, keyboard Escape, item invocation (with its action observed),
+replacement popup, hide/cancel, and normal avatar left-click activation after
+showing it again. All six opened menus closed, and the avatar finished unfocusable
+and unfocused. CDP telemetry, native UI Automation and screen captures agreed.
+The full Node 24.14.0 suite passed 467 tests with one existing skip (468 total);
+typecheck and build passed. Independent code/documentation review found no blocker.
+The native fixture used a diagnostic menu and no real Bot records. It was not a
+packaged-app or native macOS/Linux acceptance run.
+
 After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
 for the real renderer's waiting/polling/cancellation checks, including recovery
 with completion notifications deliberately suppressed. The helper creates a temporary
