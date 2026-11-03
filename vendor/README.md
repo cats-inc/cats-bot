@@ -22,7 +22,8 @@ The artifact also carries the Copilot catalog refresh (GPT-6.1 Terra and the
 Copilot Fusion / Standard mapping), which does not add a Bot provider or change its
 provider selection. It carries cats-inc/cats-runtime#212 too: Runtime waits for
 Grok's exact session ID instead of matching its session files by working directory,
-so a Grok bot's next message no longer fails with `skill_content_profile_conflict`.
+so a new Grok session's next message no longer fails with
+`skill_content_profile_conflict`.
 
 It retains explicitly selected native Muse MSP and Grok/official Google
 ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
