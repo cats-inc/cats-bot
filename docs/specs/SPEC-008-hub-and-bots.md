@@ -7,6 +7,7 @@
 | **Status** | Implemented on 2026-10-30 (PLAN-009); the release is 0.3.0 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
+| **Pending change** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011) |
 
 ## Summary
 
