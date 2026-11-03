@@ -2,6 +2,7 @@ import { t, useI18n } from '../i18n.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { ModelCatalog, ModelSelection } from '../../core/types.ts';
 import {
+  controlChoices,
   controlOptions,
   modelControls,
   modelOptions,
@@ -137,7 +138,8 @@ export function ModelField({
       </label>
       {controls.map((control) => (
         <label className="field" key={control.key}>
-          <span>{t(control.label)}</span>
+          {/* Catalog text is shown as the catalog wrote it, as in Cats Chat (SPEC-010 FR-16). */}
+          <span>{control.label}</span>
           {control.kind === 'enum' ? (
             <select
               id={`${idPrefix}-${control.key}`}
@@ -156,7 +158,7 @@ export function ModelField({
                   });
               }}
             >
-              {controlOptions(control).map((option) => (
+              {controlChoices(catalog!, menu.select, control).map((option) => (
                 <option key={String(option.value)} value={String(option.value)}>
                   {option.label}
                 </option>

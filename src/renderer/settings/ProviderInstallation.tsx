@@ -45,13 +45,14 @@ export function ProviderInstallation({
     },
     [provider],
   );
+  // SPEC-010 FR-21: looking at a provider starts nothing. A check runs only when asked.
   useEffect(() => {
     setState(null);
-    void run();
+    setError('');
     return () => {
       generation.current++;
     };
-  }, [run]);
+  }, [provider]);
   const current = state?.provider === provider ? state : null;
   return (
     <section className="provider-installation" aria-busy={busy}>
@@ -60,7 +61,7 @@ export function ProviderInstallation({
       {current?.steps.map((step) => (
         <div className="setup-step" key={step.id}>
           <div>
-            <strong>{t(step.label)}</strong>
+            <strong>{t(step.label)}{step.optional ? t('(optional step)') : ''}</strong>
             <p>
               {t(step.status)}
               {step.version ? ` · ${step.version}` : ''}
@@ -105,7 +106,7 @@ export function ProviderInstallation({
         </p>
       )}
       <button type="button" disabled={busy || !provider} onClick={() => void run()}>
-        {t('Check again')}
+        {current ? t('Check again') : t('Check this computer')}
       </button>
     </section>
   );

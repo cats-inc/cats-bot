@@ -519,3 +519,7 @@ and offline source/mode provenance. The common producer tests cover handshake
 timeouts, occupied-port/active-Runtime refusal, exact Git objects, skill
 preflight and image rendering. Real private candidate acceptance additionally
 verifies readiness, screenshot and graceful drain without installed-app changes.
+
+## Setup wizard
+
+`electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).

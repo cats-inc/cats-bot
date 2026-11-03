@@ -76,6 +76,13 @@ read-only `claude auth status --json` command with a 10-second timeout; an API k
 also satisfies the existing authentication check. The helper does not read
 credential files or expose the command's authentication output. macOS/Linux
 native-provider helpers report installation readiness without probing sign-in.
+Creating a cat bot takes three pages (SPEC-010). The first runs nothing. "Check this computer"
+reads the selected provider's state, with a log that opens while it runs. Then each script that
+changes something runs only if you tick it, and the row says what it does, with the exact command
+and a way to do it by hand. On Windows, PowerShell scripts is optional. The last page signs in
+through a real terminal, picks the model and creates the cat bot. Cats Bot itself should not need
+a restart after an install; terminals that were already open do, to see the new PATH.
+
 Closing onboarding during a provider check cancels the check and exits without
 creating a bot. The New cat bot window can also close during a check; the hub stays
 running. Quit cancels read-only provider checks. An explicitly requested install

@@ -73,7 +73,7 @@ FR-22).
 |------|--------|-------------|
 | `src/shared/botText.ts` | Create | The FR-19 rule |
 | `src/shared/providerSetup.ts` | Modify | Step and log contracts |
-| `src/shared/setupFacts.ts` | Create | Summary, tags and manual command per step and OS |
+| `src/renderer/settings/setup/setupFacts.ts` | Create | Summary, tags and manual command per step and OS |
 | `src/shared/language.ts` | Modify | New strings; drop the catalog label's translation |
 | `src/core/profile/profile.ts` | Modify | Enforce the rule on new or changed values |
 | `src/core/life/heartbeat.ts` | Modify | One-line profile text in the prompt |
@@ -123,3 +123,5 @@ FR-22).
 | Date | Update |
 |------|--------|
 | 2026-11-04 | Plan created after the owner approved the mock |
+| 2026-11-04 | Phase 1 merged (#116). Independent review found a stored name could not survive an unrelated save; fixed before merge |
+| 2026-11-04 | Phase 2 reviewed: a throwing log listener, a repeatable restart, an unremovable draft and an early-exit terminal, all fixed before merge |

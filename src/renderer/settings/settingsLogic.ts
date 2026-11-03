@@ -77,8 +77,13 @@ export interface MenuOption {
   text: string;
 }
 
+/** SPEC-010 FR-16: as Cats Chat's formatDefaultLabel marks the catalog's own default. */
+function withDefault(label: string, isDefault: boolean): string {
+  return isDefault ? `${label} (default)` : label;
+}
+
 export function modelOptions(catalog: ModelCatalog): MenuOption[] {
-  return catalog.models.map((model) => ({ value: model.id, text: model.label }));
+  return catalog.models.map((model) => ({ value: model.id, text: withDefault(model.label, model.default === true) }));
 }
 
 /** New choices use catalog order; unknown saved IDs remain outside the selectable menu. */
@@ -97,8 +102,9 @@ export function modelControls(catalog: ModelCatalog, entryId: string): ModelCont
   if (entry.controls?.length === 0) return [];
   const controls = new Map((catalog.controls ?? []).map((control) => [control.key, control]));
   for (const control of entry.controls ?? []) controls.set(control.key, control);
+  // A request-scoped control is set per message, so it is not a saved setting (listPersistentControlOptions).
   return [...controls.values()].filter(
-    (control) => !control.applicableEntryIds || control.applicableEntryIds.includes(entryId),
+    (control) => control.scope !== 'request' && (!control.applicableEntryIds || control.applicableEntryIds.includes(entryId)),
   );
 }
 
@@ -108,6 +114,16 @@ export function controlOptions(
   return (control.values ?? []).map((value) =>
     typeof value === 'object' ? value : { value, label: String(value) },
   );
+}
+
+/** A control's choices for this model, with the catalog's default marked. */
+export function controlChoices(
+  catalog: ModelCatalog,
+  entryId: string,
+  control: ModelControl,
+): Array<{ value: ModelControlValue; label: string }> {
+  const fallback = catalog.models.find((model) => model.id === entryId)?.controlDefaults?.[control.key] ?? control.default;
+  return controlOptions(control).map((option) => ({ value: option.value, label: withDefault(option.label, option.value === fallback) }));
 }
 
 export function selectedModel(

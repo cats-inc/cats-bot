@@ -70,7 +70,8 @@ test('the five provider menus keep Runtime catalog model and effort order withou
     const catalog = readPackagedModelCatalog(provider.id);
     assert.deepEqual(
       modelOptions(catalog),
-      catalog.models.map((model) => ({ value: model.id, text: model.label })),
+      // SPEC-010 FR-16: the catalog's own default is marked, as Cats Chat marks it; nothing is added.
+      catalog.models.map((model) => ({ value: model.id, text: model.default ? `${model.label} (default)` : model.label })),
     );
     for (const model of catalog.models) {
       const selection = selectedModel(catalog, model.id);
@@ -134,7 +135,7 @@ test('only the newest model request may fill the menu (2026-10-28 review)', () =
 test('the model menu contains exactly catalog entries; legacy custom models are retained outside the menu', () => {
   assert.deepEqual(
     modelOptions(CLAUDE).map((option) => option.text),
-    ['Opus 5.5', 'Haiku 5.5', 'raw'],
+    ['Opus 5.5 (default)', 'Haiku 5.5', 'raw'],
   );
   assert.deepEqual(modelSelection(CLAUDE, null), { select: 'opus', custom: '' });
   assert.deepEqual(modelSelection(CLAUDE, 'haiku'), { select: 'haiku', custom: '' });

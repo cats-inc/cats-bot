@@ -376,11 +376,18 @@ export class ProviderSetup {
     return this.exclusive(async (signal) => {
       // FR-12: PowerShell scripts is optional and needs nothing above it.
       if (provider === 'codex' && step !== 'node' && step !== 'shell') {
-        const before = await this.inspect(provider, signal, listener);
-        // Each step needs the ones above it, as the page shows them.
-        const order = before.steps.map((item) => item.id);
-        const needed = order.slice(0, order.indexOf(step as SetupStepId));
-        if (before.steps.some((item) => needed.includes(item.id) && item.status !== 'ready'))
+        // Each step needs the ones above it, as the page shows them. Only those are read here:
+        // each helper is a process of its own, and the fresh check below reads them all.
+        const chain = this.chain(provider);
+        const needed = chain.slice(0, chain.findIndex((link) => link.id === step));
+        let unmet = false;
+        for (const link of needed) {
+          if ((await this.run(link.helper, false, signal, listener)).status !== 'ready') {
+            unmet = true;
+            break;
+          }
+        }
+        if (unmet)
           throw new Error(step === 'npm' || (step === 'provider' && !this.windows)
             ? 'Complete Node.js and npm setup first'
             : 'Complete the steps above first');

@@ -183,40 +183,37 @@ async function main() {
     });
     await wait(() => BrowserWindow.getAllWindows().length === 1, 'setup window');
     const ui = await renderer(BrowserWindow.getAllWindows()[0]);
-    await ui.wait(
-      "document.querySelector('#setup-provider')?.value === 'codex' && !document.querySelector('.provider-installation')?.getAttribute('aria-busy').includes('true')",
-    );
+    // SPEC-010: opening the page runs nothing, and no provider is chosen for the owner.
+    await ui.wait("document.querySelectorAll('input[name=setup-provider]').length === 5");
     assert.deepEqual(
-      await ui.evaluate(
-        "Array.from(document.querySelector('#setup-provider').options).map(o=>o.value)",
-      ),
+      await ui.evaluate("Array.from(document.querySelectorAll('input[name=setup-provider]')).map(o=>o.value)"),
       CLI_PROVIDERS.map((p) => p.id),
     );
-    assert.equal(await ui.evaluate("document.querySelector('#setup-submit').disabled"), true);
-    assert.deepEqual(calls, ['node:false']);
+    assert.equal(await ui.evaluate("document.querySelector('#setup-check').disabled"), true);
+    assert.deepEqual(calls, []);
     await ui.select('#display-language', 'zh-TW');
     await ui.wait(
-      "document.documentElement.lang === 'zh-TW' && document.querySelector('h1')?.textContent === '認識你的機器人'",
+      "document.documentElement.lang === 'zh-TW' && document.querySelector('h1')?.textContent === '認識你的機器貓'",
     );
     await ui.screenshot('onboarding-zh-TW.png');
-    for (let index = 0; index < 3; index++) {
-      await ui.click('.setup-step button:not(:disabled)');
-      await ui.wait(
-        "document.querySelector('.provider-installation').getAttribute('aria-busy') === 'false'",
-      );
+    await ui.click('input[name=setup-provider][value=codex]');
+    assert.deepEqual(calls, []);
+    await ui.click('#setup-check');
+    for (let index = 0; index < 2; index++) {
+      await ui.wait("document.querySelector('.setup-rows input[type=checkbox]') && document.querySelector('#setup-recheck')");
+      await ui.evaluate("Array.from(document.querySelectorAll('.setup-rows input[type=checkbox]')).filter(n => !n.closest('[data-row=shell]')).forEach(n => n.click())");
+      await ui.wait("document.querySelector('#setup-apply')");
+      await ui.click('#setup-apply');
+      await ui.wait("document.querySelector('#setup-recheck') && !document.querySelector('.setup-rows').getAttribute('aria-busy').includes('true')");
     }
     assert.deepEqual(
       calls.filter((call) => call.endsWith(':true')),
       ['node:true', 'npm:true', 'codex:true'],
     );
-    await ui.wait("!document.querySelector('#setup-submit').disabled");
-    const beforeNative = calls.length;
-    await ui.select('#setup-provider', 'claude');
-    await ui.wait(
-      "document.querySelector('#setup-provider').value === 'claude' && !document.querySelector('#setup-submit').disabled && document.querySelector('#setup-model').value === 'opus'",
-    );
-    assert.deepEqual(calls.slice(beforeNative), ['claude:false']);
-    await ui.screenshot('onboarding-claude.png');
+    await ui.wait("!document.querySelector('#setup-next').disabled");
+    await ui.click('#setup-next');
+    await ui.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled");
+    await ui.screenshot('onboarding-page-three.png');
     await ui.click('#setup-submit');
     await done;
     makeWindows();

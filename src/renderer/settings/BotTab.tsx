@@ -1,5 +1,5 @@
 import { t, useI18n } from '../i18n.ts';
-import { BOT_NAME_MAX, BOT_PERSONA_MAX } from '../../shared/botText.ts';
+import { BOT_NAME_MAX } from '../../shared/botText.ts';
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
 
 import type { BotProfile, ModelCatalog, ProviderInfo } from '../../core/types.ts';
@@ -164,7 +164,6 @@ export function BotTab({
           <textarea
             id="bot-instructions"
             rows={5}
-            maxLength={Math.max(BOT_PERSONA_MAX, profile.instructions.length)}
             aria-invalid={Boolean(textErrors.instructions)}
             placeholder={t('Who the cat bot is and how it should talk to you.')}
             value={form.instructions}
