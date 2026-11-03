@@ -22,7 +22,7 @@ import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubCont
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
 import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
-import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
+import { fixedProviders, listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
@@ -46,10 +46,14 @@ import {
   type BossCatLimits, type RegistryBot,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
-import { createHelperRunner, ProviderSetup } from './providerSetup.ts';
-import { createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
+import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
+import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
+import { openSignInTerminal } from './setupTerminal.ts';
+import type { SetupEnvironment, SetupLogEntry } from '../../shared/providerSetup.ts';
+import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
+import { SETUP_WINDOW_SIZE, createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { popupMenu } from './popupMenu.ts';
-import { runFirstRunSetup } from './setup.ts';
+import { logTerminal, runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
 import { buildHubTrayMenuTemplate, buildHubTrayTooltip, buildBotMenuTemplate, type BotMenuActions, type BotMenuModel } from './trayMenu.ts';
@@ -280,7 +284,24 @@ async function main(): Promise<void> {
     for (const presenter of presented()) {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${diagnosticError(error)}`, 'error'));
     }
-  }));
+  }), {
+    describe: (helper, apply) => describeHelperRun(join(assetsDir, 'setup'), process.platform, helper, apply),
+    identify: createScriptIdentity(join(assetsDir, 'setup'), process.platform),
+    onRun: (entry) => {
+      const line = setupRunDiagnostic(entry);
+      if (line) log(line);
+    },
+  });
+  // SPEC-010 FR-13: a restart for a CLI the fresh check cannot find keeps what the owner typed.
+  let restartingForSetup = false;
+  const restartForSetup = (draft: unknown): boolean => {
+    if (restartingForSetup) return true;
+    if (!writeSetupDraft(home, draft)) return false;
+    restartingForSetup = true;
+    relaunchHost(process.argv.slice(1));
+    app.quit();
+    return true;
+  };
   // First-run setup precedes the hub's normal quit handler. Drain cancelled
   // probes here too, so their child processes are gone before Electron exits.
   let setupQuitPending = false;
@@ -308,6 +329,15 @@ async function main(): Promise<void> {
   const hostIdentity = { pid: process.pid, executable: process.execPath, installationId };
 
   let firstRunFinished = false;
+  // SPEC-010 FR-17: the owner's choice on the page. Without a page it stays as FR-23 has it.
+  let firstRunStartAtLogin = true;
+  const startAtLoginOffered = () => startAtLoginByDefault({
+    platform: process.platform,
+    packaged: app.isPackaged,
+    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
+    inApplicationsFolder: process.platform === 'darwin' && app.isInApplicationsFolder(),
+    customHome: Boolean(process.env.CATS_BOT_HOME),
+  });
   // FR-4: the first run creates the first bot with the provider-first flow.
   const createFirstBot = async (): Promise<string | null> => {
     if (args.provider) {
@@ -321,11 +351,16 @@ async function main(): Promise<void> {
       language: { read: () => hubState.language, write: (value) => saveHubState({ ...hubState, language: value }) },
       systemLocale: app.getLocale(),
       providers: providerSetup,
+      startAtLoginOffered: startAtLoginOffered(),
+      botFolder: (name) => join(hubPaths.bots, requested ?? deriveBotId(name)),
+      takeDraft: () => takeSetupDraft(home),
+      restart: restartForSetup,
       preloadPath,
       rendererDir,
       iconPath,
       create: async (input) => {
         const id = requested ?? deriveBotId(input.name);
+        firstRunStartAtLogin = input.startAtLogin !== false;
         initializeBot(hubPaths.bots, {
           id,
           name: input.name,
@@ -843,17 +878,11 @@ async function main(): Promise<void> {
   // owner's choice, an installation that already has a hub keeps its setting, and
   // an entry that already exists, even a disabled one, stays as it is. Elsewhere
   // that entry still starts the app, so the setting says so.
-  if (firstRunFinished && startAtLoginByDefault({
-    platform: process.platform,
-    packaged: app.isPackaged,
-    portable: Boolean(process.env.PORTABLE_EXECUTABLE_FILE),
-    inApplicationsFolder: process.platform === 'darwin' && app.isInApplicationsFolder(),
-    customHome: Boolean(process.env.CATS_BOT_HOME),
-  })) {
+  if (firstRunFinished && startAtLoginOffered()) {
     if (linuxAutostart) {
-      if (!existsSync(linuxAutostart)) setOpenAtLogin(true);
+      if (!existsSync(linuxAutostart) && firstRunStartAtLogin) setOpenAtLogin(true);
     } else if (app.getLoginItemSettings({ args: [] }).openAtLogin) saveHubState({ ...hubState, openAtLogin: true });
-    else setOpenAtLogin(true);
+    else if (firstRunStartAtLogin) setOpenAtLogin(true);
   }
 
   let release: BotRelease | null = null;
@@ -1028,19 +1057,57 @@ async function main(): Promise<void> {
     announceHubLanguage();
     return hubState.replyLanguage;
   });
+  const setupLogTo = (event: Electron.IpcMainInvokeEvent) => (entry: SetupLogEntry) => {
+    if (!event.sender.isDestroyed()) event.sender.send('setup:log', entry);
+  };
   ipcMain.handle('setup:check', (event, provider: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
     if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
-    return providerSetup.check(provider, fromCreate(event) ? createChecks?.signal : undefined);
+    return providerSetup.check(provider, fromCreate(event) ? createChecks?.signal : undefined, setupLogTo(event));
   });
   ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
     if (quitting) throw new Error('Cats Bot is stopping');
     if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
-    return providerSetup.install(provider, step);
+    return providerSetup.install(provider, step, setupLogTo(event));
   });
-  ipcMain.handle('setup:providers', (event) => (ownedMainFrame(event) && fromCreate(event) ? listProviders() : []));
+  ipcMain.handle('setup:cancel', (event) => {
+    if (ownedMainFrame(event) && fromCreate(event)) providerSetup.cancelCheck();
+  });
+  ipcMain.handle('setup:openTerminal', async (event, provider: unknown) => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');
+    const result = await openSignInTerminal(provider);
+    if (result.command) logTerminal(setupLogTo(event), result.command, result.opened);
+    return result;
+  });
+  ipcMain.handle('setup:environment', (event): SetupEnvironment => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');
+    return { platform: process.platform, startAtLoginOffered: false };
+  });
+  ipcMain.handle('setup:folder', (event, name: unknown) => {
+    if (!ownedMainFrame(event) || !fromCreate(event) || typeof name !== 'string') return null;
+    const normalized = normalizeBotName(name);
+    if (botNameProblem(normalized)) return null;
+    try {
+      return join(hubPaths.bots, manager.peekId(normalized));
+    } catch {
+      return null;
+    }
+  });
+  // SPEC-010 FR-13: what a restart from the New cat bot window kept, read once at this start.
+  let keptDraft = takeSetupDraft(home);
+  ipcMain.handle('setup:draft', (event) => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) return null;
+    const draft = keptDraft;
+    keptDraft = null;
+    return draft;
+  });
+  ipcMain.handle('setup:restart', (event, draft: unknown) => {
+    if (!ownedMainFrame(event) || !fromCreate(event) || quitting || finishing || creating || providerSetup.busy) throw new Error('Wait for the current setup operation to finish');
+    return restartForSetup(draft);
+  });
+  ipcMain.handle('setup:providers', (event) => (ownedMainFrame(event) && fromCreate(event) ? fixedProviders() : []));
   ipcMain.handle('setup:models', (event, provider: unknown) => {
     if (!ownedMainFrame(event) || !fromCreate(event) || typeof provider !== 'string') return { provider: '', defaultModel: null, models: [], source: 'none' };
     return readPackagedModelCatalog(provider);
@@ -1055,7 +1122,7 @@ async function main(): Promise<void> {
     const input = validateSetupInput(raw);
     finishing = true;
     try {
-      const checked = await providerSetup.check(input.provider, checks.signal);
+      const checked = await providerSetup.check(input.provider, checks.signal, setupLogTo(event));
       checks.signal.throwIfAborted();
       if (quitting) throw new Error('Cats Bot is stopping');
       if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
@@ -1096,7 +1163,7 @@ async function main(): Promise<void> {
       createWindow.focus();
       return;
     }
-    const window = createPageWindow(pages, { width: 560, height: 800, title: 'New cat bot' });
+    const window = createPageWindow(pages, { ...SETUP_WINDOW_SIZE, title: 'New cat bot' });
     createWindow = window;
     const checks = new AbortController();
     createChecks = checks;
@@ -1120,6 +1187,8 @@ async function main(): Promise<void> {
       }
     });
   };
+  // A restart from the New cat bot window comes back to it, with what the owner typed.
+  if (keptDraft) openCreateWindow();
   askOwnerToSetUp = (request) => {
     // An open New bot window holds the owner's own work; it is not replaced.
     if (createWindow && !createWindow.isDestroyed()) return 'busy';

@@ -168,6 +168,31 @@ contextBridge.exposeInMainWorld('catsBot', {
     finish(input) {
       return ipcRenderer.invoke('setup:finish', input);
     },
+    cancel() {
+      return ipcRenderer.invoke('setup:cancel');
+    },
+    openTerminal(provider) {
+      return ipcRenderer.invoke('setup:openTerminal', provider);
+    },
+    environment() {
+      return ipcRenderer.invoke('setup:environment');
+    },
+    folder(name) {
+      return ipcRenderer.invoke('setup:folder', name);
+    },
+    draft() {
+      return ipcRenderer.invoke('setup:draft');
+    },
+    restart(draft) {
+      return ipcRenderer.invoke('setup:restart', draft);
+    },
+    onLog(listener) {
+      const wrapped = (_event, entry) => listener(entry);
+      ipcRenderer.on('setup:log', wrapped);
+      return () => {
+        ipcRenderer.removeListener('setup:log', wrapped);
+      };
+    },
   },
   // SPEC-008 FR-5: Settings → Bots; the hub asks before archiving or deleting.
   hub: {

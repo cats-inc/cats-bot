@@ -28,12 +28,15 @@ export function pageUrl(rendererDir: string, page: string, query: Record<string,
   return url.href;
 }
 
-export function createPageWindow(options: PageWindowOptions, init: { width: number; height: number; title: string }): BrowserWindow {
+/** SPEC-010 FR-2: the setup wizard's window: Settings' size, and small enough for its first page to fit. */
+export const SETUP_WINDOW_SIZE = { width: 860, height: 640, minWidth: 800, minHeight: 600 } as const;
+
+export function createPageWindow(options: PageWindowOptions, init: { width: number; height: number; title: string; minWidth?: number; minHeight?: number }): BrowserWindow {
   const window = new BrowserWindow({
     width: init.width,
     height: init.height,
-    minWidth: 600,
-    minHeight: 460,
+    minWidth: init.minWidth ?? 600,
+    minHeight: init.minHeight ?? 460,
     show: false,
     autoHideMenuBar: true,
     title: init.title,

@@ -1,8 +1,17 @@
 import { execFile, spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join, posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
-import type { ProviderSetupState, SetupStep, SetupStepId } from '../../shared/providerSetup.ts';
+import { signInCommand } from './setupTerminal.ts';
+import type {
+  ProviderSetupState,
+  SetupLogEntry,
+  SetupScript,
+  SetupSignIn,
+  SetupStep,
+  SetupStepId,
+} from '../../shared/providerSetup.ts';
 
 const execute = promisify(execFile);
 
@@ -57,7 +66,7 @@ function executeCheck(command: string, args: string[], env: NodeJS.ProcessEnv, s
 const FILES: Record<string, [string, string]> = {
   node: ['Install-Node.ps1', 'install-node.sh'],
   npm: ['Setup-NodeGlobalPrefix.ps1', 'setup-node-global-prefix.sh'],
-  // Windows only: PowerShell may run npm's .ps1 shims, so `codex login` works there.
+  // Windows only and optional: PowerShell may run npm's .ps1 shims, so `codex login` works there.
   shell: ['Setup-CliReadiness.ps1', ''],
   codex: ['Install-Codex.ps1', 'install-codex.sh'],
   claude: ['Install-ClaudeCode.ps1', 'install-claude-code.sh'],
@@ -74,6 +83,10 @@ export interface HelperResult {
   warnings?: string[];
   restartRequired?: boolean;
   interruptions?: Array<{ kind?: string }>;
+  /** What the helper would do. Each helper uses one of these two names. */
+  plannedActions?: string[];
+  plannedChanges?: string[];
+  appliedChanges?: string[];
 }
 export type SetupHelperRunner = (helper: string, apply: boolean, signal?: AbortSignal) => Promise<HelperResult>;
 
@@ -129,6 +142,56 @@ export function helperInvocation(
   };
 }
 
+function argumentForDisplay(value: string): string {
+  return /\s/u.test(value) ? `"${value}"` : value;
+}
+
+/** SPEC-010 FR-14: the command a helper runs under, as the page's log shows it. */
+export function describeHelperRun(assets: string, platform: NodeJS.Platform, helper: string, apply: boolean): { command: string; file: string } {
+  const invocation = helperInvocation(assets, platform, helper, apply);
+  const names = FILES[helper]!;
+  return {
+    command: [invocation.command, ...invocation.args].map(argumentForDisplay).join(' '),
+    file: (platform === 'win32' ? names[0] : names[1]) || helper,
+  };
+}
+
+interface ProvenanceFile {
+  path?: unknown;
+  sha256?: unknown;
+}
+
+/** SPEC-010 FR-10: which copy of a script this is, from the record the sync tool keeps beside them. */
+export function createScriptIdentity(assets: string, platform: NodeJS.Platform): (helper: string) => SetupScript | null {
+  let provenance: { repository?: unknown; commit?: unknown; files?: ProvenanceFile[] } = {};
+  try {
+    provenance = JSON.parse(readFileSync(join(assets, 'provenance.json'), 'utf8')) as typeof provenance;
+  } catch {
+    // Without the record a row still names its script, only without a hash.
+  }
+  const folder = platform === 'win32' ? 'windows' : platform === 'darwin' ? 'macos' : 'linux';
+  const repository = typeof provenance.repository === 'string' ? provenance.repository.split('/').at(-1) : null;
+  const source = repository && typeof provenance.commit === 'string' ? `${repository} ${provenance.commit.slice(0, 7)}` : null;
+  return (helper) => {
+    const names = FILES[helper];
+    const file = names && (platform === 'win32' ? names[0] : names[1]);
+    if (!file) return null;
+    const record = provenance.files?.find((item) => item.path === `${folder}/${file}`);
+    return { file, sha256: typeof record?.sha256 === 'string' ? record.sha256 : null, source: record ? source : null };
+  };
+}
+
+/**
+ * SPEC-010 FR-14: a run as the hub's diagnostics record it. Fixed words only: ADR-013
+ * keeps arguments out of those files, and a helper's own text can hold home paths.
+ */
+export function setupRunDiagnostic(entry: SetupLogEntry): string | null {
+  if (entry.phase !== 'end') return null;
+  const status = entry.error ? 'failed' : /^[a-z_]{1,40}$/u.test(entry.status ?? '') ? entry.status : 'unknown';
+  const changes = entry.applied?.length ? `, ${entry.applied.length} change(s)` : '';
+  return `setup ${entry.kind} ${entry.helper}: ${status}${changes} in ${entry.durationMs ?? 0} ms`;
+}
+
 /**
  * `onCommandDirectory` hears of each provider CLI directory a helper found, so
  * the shell can hand it to its core, which runs in another process.
@@ -178,6 +241,27 @@ export function createHelperRunner(assets: string, onCommandDirectory?: (directo
   };
 }
 
+export interface ProviderSetupOptions {
+  windows?: boolean;
+  /** How a helper's run reads in the log. */
+  describe?(helper: string, apply: boolean): { command: string; file: string };
+  /** Which copy of a helper's script this is. */
+  identify?(helper: string): SetupScript | null;
+  /** Hears every run, for the hub's diagnostics. */
+  onRun?(entry: SetupLogEntry): void;
+}
+
+export type SetupLogListener = (entry: SetupLogEntry) => void;
+
+interface SetupLink {
+  id: SetupStepId;
+  helper: string;
+  label: string;
+  /** Its plan cannot be known until Node.js works. */
+  needsNode: boolean;
+  optional: boolean;
+}
+
 /** Provider-first setup. No helper path or shell argument crosses renderer IPC. */
 export class ProviderSetup {
   private readonly runHelper: SetupHelperRunner;
@@ -185,9 +269,12 @@ export class ProviderSetup {
   private active: { controller: AbortController; installing: boolean } | null = null;
   private waiters: Array<() => void> = [];
   private readonly windows: boolean;
-  constructor(runHelper: SetupHelperRunner, options: { windows?: boolean } = {}) {
+  private readonly options: ProviderSetupOptions;
+  private runs = 0;
+  constructor(runHelper: SetupHelperRunner, options: ProviderSetupOptions = {}) {
     this.runHelper = runHelper;
     this.windows = options.windows ?? process.platform === 'win32';
+    this.options = options;
   }
   get busy(): boolean {
     return this.active !== null;
@@ -220,9 +307,40 @@ export class ProviderSetup {
     if (!CLI_PROVIDERS.some((item) => item.id === provider))
       throw new Error('Choose a supported provider');
   }
-  private async run(helper: string, apply: boolean, signal: AbortSignal): Promise<HelperResult> {
+  private async run(helper: string, apply: boolean, signal: AbortSignal, listener?: SetupLogListener): Promise<HelperResult> {
     signal.throwIfAborted();
-    const result = await this.runHelper(helper, apply, signal);
+    const described = this.options.describe?.(helper, apply) ?? { command: `${helper}${apply ? ' apply' : ' check'}`, file: helper };
+    const run = ++this.runs;
+    const started = Date.now();
+    const base = { run, kind: apply ? 'change' : 'check', helper, ...described } as const;
+    // Telling a page about a run never changes how the run goes: a helper may already have changed the computer.
+    const emit = (entry: SetupLogEntry) => {
+      for (const hear of [listener, this.options.onRun]) {
+        try {
+          hear?.(entry);
+        } catch {
+          // A window that is going away.
+        }
+      }
+    };
+    emit({ ...base, phase: 'start', at: new Date(started).toISOString() });
+    const finished = (extra: Partial<SetupLogEntry>) =>
+      emit({ ...base, phase: 'end', at: new Date().toISOString(), durationMs: Date.now() - started, ...extra });
+    let result: HelperResult;
+    try {
+      result = await this.runHelper(helper, apply, signal);
+    } catch (error) {
+      finished({ error: signal.aborted ? 'Stopped' : error instanceof Error ? error.message : 'The helper could not complete' });
+      throw error;
+    }
+    finished({
+      status: result.status,
+      ...(result.detectedVersion ? { version: result.detectedVersion } : {}),
+      ...(plannedBy(result).length ? { planned: plannedBy(result) } : {}),
+      ...(result.appliedChanges?.length ? { applied: result.appliedChanges } : {}),
+      ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+      ...(result.manualSteps?.length ? { manualSteps: result.manualSteps } : {}),
+    });
     signal.throwIfAborted();
     return result;
   }
@@ -239,14 +357,14 @@ export class ProviderSetup {
       for (const resolve of this.waiters.splice(0)) resolve();
     }
   }
-  check(provider: unknown, signal?: AbortSignal): Promise<ProviderSetupState> {
+  check(provider: unknown, signal?: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
     this.assertProvider(provider);
     return this.exclusive(async (signal) => {
       this.selected = provider;
-      return this.inspect(provider, signal);
+      return this.inspect(provider, signal, listener);
     }, false, signal);
   }
-  install(provider: unknown, step: unknown): Promise<ProviderSetupState> {
+  install(provider: unknown, step: unknown, listener?: SetupLogListener): Promise<ProviderSetupState> {
     this.assertProvider(provider);
     if (provider !== this.selected) throw new Error('Check this provider before installing it');
     if (
@@ -256,8 +374,9 @@ export class ProviderSetup {
     )
       throw new Error('This prerequisite is outside the selected provider');
     return this.exclusive(async (signal) => {
-      if (provider === 'codex' && step !== 'node') {
-        const before = await this.inspect(provider, signal);
+      // FR-12: PowerShell scripts is optional and needs nothing above it.
+      if (provider === 'codex' && step !== 'node' && step !== 'shell') {
+        const before = await this.inspect(provider, signal, listener);
         // Each step needs the ones above it, as the page shows them.
         const order = before.steps.map((item) => item.id);
         const needed = order.slice(0, order.indexOf(step as SetupStepId));
@@ -266,8 +385,8 @@ export class ProviderSetup {
             ? 'Complete Node.js and npm setup first'
             : 'Complete the steps above first');
       }
-      const applied = await this.run(step === 'provider' ? provider : (step as string), true, signal);
-      const checked = await this.inspect(provider, signal);
+      const applied = await this.run(step === 'provider' ? provider : (step as string), true, signal, listener);
+      const checked = await this.inspect(provider, signal, listener);
       const target = checked.steps.find((item) => item.id === step)!;
       // A failure or a refused elevation always stands. A restart or relaunch the helper
       // asks for stands only while the fresh probe cannot confirm the step: the runner
@@ -284,6 +403,7 @@ export class ProviderSetup {
         (!done &&
           (applied.restartRequired === true ||
             ['restart_required', 'relaunch_required'].includes(status)));
+      target.applied = applied.appliedChanges ?? [];
       target.manualSteps = distinctLines([...target.manualSteps, ...(applied.manualSteps ?? [])]);
       // An installer's diagnostics explain a step that is not done; a finished step drops them.
       if (interrupted || !done)
@@ -291,50 +411,86 @@ export class ProviderSetup {
       if (interrupted) {
         target.status = status;
         target.restartRequired = applied.restartRequired === true;
-        checked.canFinish = false;
+        if (!target.optional) checked.canFinish = false;
       }
       return checked;
     }, true);
   }
-  private async inspect(provider: string, signal: AbortSignal): Promise<ProviderSetupState> {
+  private chain(provider: string): SetupLink[] {
+    const label = CLI_PROVIDERS.find((item) => item.id === provider)!.label;
+    if (provider !== 'codex') return [{ id: 'provider', helper: provider, label, needsNode: false, optional: false }];
+    return [
+      { id: 'node', helper: 'node', label: 'Node.js and npm', needsNode: false, optional: false },
+      { id: 'npm', helper: 'npm', label: 'npm installation folder', needsNode: true, optional: false },
+      { id: 'provider', helper: provider, label: 'Codex', needsNode: true, optional: false },
+      ...(this.windows
+        ? [{ id: 'shell', helper: 'shell', label: 'PowerShell scripts', needsNode: false, optional: true } satisfies SetupLink]
+        : []),
+    ];
+  }
+  /**
+   * SPEC-010 FR-7: until Node.js works, what needs it cannot say what it would do, so it
+   * waits unread. Once it works, everything is read in one pass, because a check only
+   * reads: a clean machine then asks the owner twice rather than once per step.
+   */
+  private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
     const steps: SetupStep[] = [];
-    const helpers: Array<[SetupStepId, string, string]> =
-      provider === 'codex'
-        ? [
-            ['node', 'node', 'Node.js and npm'],
-            ['npm', 'npm', 'npm installation folder'],
-            ...(this.windows ? [['shell', 'shell', 'PowerShell scripts'] as [SetupStepId, string, string]] : []),
-            ['provider', provider, 'Codex'],
-          ]
-        : [['provider', provider, CLI_PROVIDERS.find((item) => item.id === provider)!.label]];
-    for (const [id, helper, label] of helpers) {
-      if (id !== 'node' && steps.some((step) => step.status !== 'ready')) {
+    let nodeReady = true;
+    for (const link of this.chain(provider)) {
+      const script = this.options.identify?.(link.helper) ?? null;
+      if (link.needsNode && !nodeReady) {
         steps.push({
-          id,
-          label,
+          id: link.id,
+          label: link.label,
           status: 'prerequisite_required',
           installed: false,
           version: null,
           warnings: [],
           manualSteps: [],
           restartRequired: false,
+          optional: link.optional,
+          planned: [],
+          applied: [],
+          script,
         });
         continue;
       }
-      const result = await this.run(helper, false, signal);
+      const result = await this.run(link.helper, false, signal, listener);
+      if (link.id === 'node') nodeReady = result.status === 'ready';
       steps.push({
-        id,
-        label,
+        id: link.id,
+        label: link.label,
         status: result.status,
         installed: result.installed === true || result.status === 'ready',
         version: result.detectedVersion ?? null,
         warnings: result.warnings ?? [],
         manualSteps: result.manualSteps ?? [],
         restartRequired: result.restartRequired === true,
+        optional: link.optional,
+        planned: plannedBy(result),
+        applied: [],
+        script,
       });
     }
-    return { provider, steps, canFinish: steps.every(stepDone) };
+    return {
+      provider,
+      steps,
+      canFinish: steps.every((step) => step.optional || stepDone(step)),
+      signIn: signInState(provider, steps),
+      signInCommand: signInCommand(provider),
+    };
   }
+}
+
+function plannedBy(result: HelperResult): string[] {
+  return [...(result.plannedActions ?? []), ...(result.plannedChanges ?? [])];
+}
+
+/** FR-15: only Claude's helper asks its CLI, so only Claude can say either way. */
+function signInState(provider: string, steps: SetupStep[]): SetupSignIn {
+  const status = steps.find((step) => step.id === 'provider')?.status;
+  if (status === 'auth_required') return 'required';
+  return provider === 'claude' && status === 'ready' ? 'signed_in' : 'unknown';
 }
 
 /** Ready, or a provider that is installed and waits only for the owner's sign-in. */

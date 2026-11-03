@@ -157,6 +157,7 @@ export interface SetupInput {
   instructions: string;
   modelSelection?: import('../core/types.ts').ModelSelection;
   avatar?: import('../shared/avatars.ts').BotAvatar;
+  startAtLogin?: boolean;
 }
 
 type Unsubscribe = () => void;
@@ -234,6 +235,18 @@ export interface CatsBotBridge {
     /** New bot window only: the look the page starts on (SPEC-008 FR-29). */
     suggestedAvatar(): Promise<import('../shared/avatars.ts').BotAvatar>;
     finish(input: SetupInput): Promise<null>;
+    /** SPEC-010 FR-6: Back stops a check that is running. */
+    cancel(): Promise<void>;
+    /** FR-15: a new terminal with the provider's fixed sign-in command. */
+    openTerminal(provider: string): Promise<{ opened: boolean; command: string | null }>;
+    environment(): Promise<import('../shared/providerSetup.ts').SetupEnvironment>;
+    /** FR-18: the folder a cat bot of this name would get; null for a name the rule refuses. */
+    folder(name: string): Promise<string | null>;
+    /** FR-13: the input a restart kept, once. */
+    draft(): Promise<import('../shared/providerSetup.ts').SetupDraft | null>;
+    /** FR-13: keeps the input and restarts Cats Bot. */
+    restart(draft: import('../shared/providerSetup.ts').SetupDraft): Promise<boolean>;
+    onLog(listener: (entry: import('../shared/providerSetup.ts').SetupLogEntry) => void): Unsubscribe;
   };
 }
 

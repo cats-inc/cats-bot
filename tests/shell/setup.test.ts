@@ -108,3 +108,93 @@ test('a successful setup completes the bot creation before closing', async t => 
   assert.equal(f.window.isDestroyed(), true);
   assert.equal(ipcMain.handlers.size, 0);
 });
+
+test('opening the page runs nothing: the provider list is fixed and no helper starts (SPEC-010 FR-3)', async t => {
+  const calls: string[] = [];
+  const f = fixture(t, async (helper) => {
+    calls.push(helper);
+    return ready();
+  });
+  f.window.loaded();
+  const list = await ipcMain.invoke(f.window, 'setup:providers') as Array<{ id: string; installed: unknown }>;
+  assert.deepEqual(list.map((item) => item.id), ['codex', 'claude', 'antigravity', 'grok', 'muse']);
+  assert.ok(list.every((item) => item.installed === null), 'nothing looked at PATH');
+  await ipcMain.invoke(f.window, 'setup:models', 'claude');
+  await ipcMain.invoke(f.window, 'setup:environment');
+  assert.deepEqual(calls, []);
+  f.window.destroy();
+});
+
+test('Back stops a running check, which ends in the page\'s log (FR-6, FR-14)', async t => {
+  const sent: Array<{ channel: string; entry: { phase: string; error?: string } }> = [];
+  const f = fixture(t, (_helper, _apply, signal) => new Promise((_resolve, reject) => {
+    signal!.addEventListener('abort', () => reject(signal!.reason), { once: true });
+  }));
+  (f.window.webContents as { send(channel: string, entry: never): void }).send = (channel: string, entry: never) => { sent.push({ channel, entry }); };
+  const checking = assert.rejects(ipcMain.invoke(f.window, 'setup:check', 'claude'), { name: 'AbortError' });
+  await ipcMain.invoke(f.window, 'setup:cancel');
+  await checking;
+  assert.equal(f.providers.busy, false);
+  assert.deepEqual(sent.map((item) => [item.channel, item.entry.phase]), [['setup:log', 'start'], ['setup:log', 'end']]);
+  assert.equal(sent[1]!.entry.error, 'Stopped');
+  f.window.destroy();
+});
+
+test('the page cannot open a terminal for anything but a known provider (FR-15)', async t => {
+  const f = fixture(t, async () => ready());
+  assert.deepEqual(await ipcMain.invoke(f.window, 'setup:openTerminal', 'calc.exe & calc'), { opened: false, command: null });
+  assert.deepEqual(await ipcMain.invoke(f.window, 'setup:openTerminal', 'constructor'), { opened: false, command: null });
+  f.window.destroy();
+});
+
+test('the page learns whether start at login is offered, and a name\'s folder only for a valid name (FR-17, FR-18)', async t => {
+  BrowserWindow.instances = [];
+  ipcMain.handlers.clear();
+  const providers = new ProviderSetup(async () => ready());
+  const done = runFirstRunSetup({
+    providers, create: async () => {}, preloadPath: '', rendererDir: '', iconPath: '', systemLocale: 'en',
+    language: { read: () => 'system', write: () => {} },
+    startAtLoginOffered: true,
+    botFolder: (name) => `bots/${name.toLowerCase()}-catsbot`,
+  });
+  const window = BrowserWindow.instances[0]! as BrowserWindow;
+  t.after(() => { if (!window.isDestroyed()) window.destroy(); });
+  assert.equal((await ipcMain.invoke(window, 'setup:environment') as { startAtLoginOffered: boolean }).startAtLoginOffered, true);
+  assert.equal(await ipcMain.invoke(window, 'setup:folder', ' Mochi '), 'bots/mochi-catsbot');
+  assert.equal(await ipcMain.invoke(window, 'setup:folder', 'a\nb'), null);
+  assert.equal(await ipcMain.invoke(window, 'setup:folder', 42), null);
+  window.destroy();
+  assert.equal(await done, false);
+});
+
+test('a restart keeps the page\'s input and is refused while something runs (FR-13)', async t => {
+  const helper = deferred<HelperResult>();
+  BrowserWindow.instances = [];
+  ipcMain.handlers.clear();
+  const kept: unknown[] = [];
+  const providers = new ProviderSetup(() => helper.promise);
+  void runFirstRunSetup({
+    providers, create: async () => {}, preloadPath: '', rendererDir: '', iconPath: '', systemLocale: 'en',
+    language: { read: () => 'system', write: () => {} },
+    takeDraft: () => ({ name: 'Mochi', instructions: '', provider: 'claude' }),
+    restart: (draft) => { kept.push(draft); return true; },
+  });
+  const window = BrowserWindow.instances[0]! as BrowserWindow;
+  t.after(() => { if (!window.isDestroyed()) window.destroy(); });
+  assert.deepEqual(await ipcMain.invoke(window, 'setup:draft'), { name: 'Mochi', instructions: '', provider: 'claude' });
+  const checking = ipcMain.invoke(window, 'setup:check', 'claude');
+  await assert.rejects(ipcMain.invoke(window, 'setup:restart', { name: 'Mochi' }), /Wait/u);
+  assert.deepEqual(kept, []);
+  helper.resolve(ready());
+  await checking;
+  assert.equal(await ipcMain.invoke(window, 'setup:restart', { name: 'Mochi' }), true);
+  assert.deepEqual(kept, [{ name: 'Mochi' }]);
+  window.destroy();
+});
+
+test('a closed window leaves no setup handler behind', async t => {
+  const f = fixture(t, async () => ready());
+  f.window.destroy();
+  await f.done;
+  assert.equal(ipcMain.handlers.size, 0);
+});
