@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { promisify } from 'node:util';
 import { parse } from 'yaml';
 
 import { parseBotRelease, UPDATE_REPOSITORY } from '../../src/shell/electron/update/release.ts';
 
 // CI scripts are intentionally plain JavaScript, also loaded by github-script.
 const contract = await import(new URL('../../scripts/release-contract.mjs', import.meta.url).href);
-const { guardRelease, requireTestedSource } = await import(new URL('../../scripts/release-github.mjs', import.meta.url).href);
+const { guardRelease, requireCurrentRuntime, requireTestedSource } = await import(new URL('../../scripts/release-github.mjs', import.meta.url).href);
 const sourceCommit = 'a'.repeat(40);
 async function inputs(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'cats-release-')); t.after(() => rm(root, { recursive: true, force: true }));
@@ -91,6 +93,38 @@ test('the preview needs main CI to have passed on its commit and does not rerun 
   const commands = workflow.jobs.build.steps.map((step: { run?: string }) => step.run ?? '');
   assert.ok(commands.includes('npm run build'));
   assert.ok(!commands.some((run: string) => /npm (test|run typecheck)/u.test(run)));
+});
+
+test('the preview refuses a Runtime pin off main, or one leaving out changes its notes do not list', async t => {
+  const runtimeRoot = await mkdtemp(join(tmpdir(), 'cats-release-runtime-')); t.after(() => rm(runtimeRoot, { recursive: true, force: true }));
+  const exec = promisify(execFile);
+  const git = async (...args: string[]) => (await exec('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', '-c', 'commit.gpgsign=false', '-c', 'core.autocrlf=false', ...args], { cwd: runtimeRoot })).stdout.trim();
+  const commit = async (subject: string, file: string) => {
+    await mkdir(join(runtimeRoot, file, '..'), { recursive: true });
+    await writeFile(join(runtimeRoot, file), `${subject}\n`); await git('add', '.'); await git('commit', '-q', '-m', subject);
+    return git('rev-parse', 'HEAD');
+  };
+  await git('init', '-q', '-b', 'main');
+  const pin = await commit('feat: base (#1)', 'src/a.ts');
+  await commit('docs: only docs (#2)', 'docs/a.md');
+  const check = (notes: string, at = pin) => requireCurrentRuntime({ runtimeRoot, commit: at, notes });
+  await git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  assert.deepEqual(await check(''), []);
+  await commit('fix: Grok (#212)', 'src/b.ts');
+  await git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  await assert.rejects(check('Bot #212 is unrelated.'), /cats-runtime#212 fix: Grok/u);
+  await assert.rejects(check('This release carries cats-runtime#212.'), /cats-runtime#212 fix: Grok/u);
+  assert.equal((await check('- **Left out of this release:** cats-runtime#212, until it has more testing.')).length, 1);
+  await git('switch', '-q', '-c', 'fix/branch');
+  await assert.rejects(check('', await commit('fix: on a branch', 'src/c.ts')), /is not on origin\/main/u);
+
+  const workflow = parse(await readFile(new URL('../../.github/workflows/bot-preview.yml', import.meta.url), 'utf8'));
+  const steps = workflow.jobs.guard.steps as { uses?: string; with?: Record<string, unknown> }[];
+  const runtime = steps.find(step => step.with?.repository === 'cats-inc/cats-runtime');
+  assert.deepEqual([runtime?.with?.ref, runtime?.with?.['fetch-depth'], runtime?.with?.path], ['main', 0, 'runtime-source']);
+  assert.ok(steps.indexOf(runtime!) < steps.length - 1, 'Runtime must be checked out before the identity step');
+  assert.match(String(steps.at(-1)?.with?.script), /requireCurrentRuntime\(/u);
+  for (const job of ['draft', 'build', 'publish']) assert.doesNotMatch(JSON.stringify(workflow.jobs[job] ?? {}), /requireCurrentRuntime/u, `Runtime merging during a build must not fail ${job}`);
 });
 
 test('complete assets verify bytes, architecture metadata, source bundle and packaged identity', async t => {

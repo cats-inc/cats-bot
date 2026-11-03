@@ -12,9 +12,32 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    The existing profile schema-2 migration requires the first release to be
    **0.2.0 or later**. Each release must exceed every published plain version,
    because preview discovery follows GitHub feed order.
-2. Keep `vendor/runtime-source.json`, the vendored tarball and lockfile exact.
-   The manifest records the Runtime repository, full source SHA, package version,
-   tarball path and SHA-256. The workflow also checks lockfile SHA-512 integrity.
+2. Select the Runtime here, in the bump. Run `node scripts/refresh-runtime-pin.mjs`,
+   which builds Runtime `main` from a clean clone, or add `--ref SHA` to hold changes
+   back. It keeps `vendor/runtime-source.json`, the vendored tarball and lockfile
+   exact, and CI then tests that exact combination. The manifest records the Runtime
+   repository, full source SHA, package version, tarball path and SHA-256. The workflow
+   also checks lockfile SHA-512 integrity.
+
+   The preview guard runs the same check as Cats Desktop, from the shared
+   `scripts/shared/source-selection.mjs`. It refuses a Runtime commit that is not on
+   Runtime `main`. It also refuses one that lacks other changes on `main`, unless the
+   release notes list each one on a `Left out of this release:` line:
+
+   ```md
+   - **Left out of this release:** cats-runtime#208, because it needs more testing.
+   ```
+
+   Name a change as `cats-runtime#N`, or by the first 8 characters of its SHA when its
+   subject has no pull request number. The refusal and the refresh script both print the
+   name to use. The list may wrap or use nested bullets, and it ends at a blank line, a
+   heading or the next list item at its own level. Only commits changing nothing outside
+   `docs/` and `.github/` are exempt, because those do not reach the package or the
+   installers. A mention elsewhere in the notes does not count, because notes also cite
+   what they include, and a bare `#N` does not count, because pull request numbers
+   collide between repositories. The guard checks the names, so review checks that the
+   line gives a reason. If Runtime merges another change after the bump, the dispatch
+   fails: refresh the pin or list the change, in a new commit.
 3. Prepare `docs/releases/vX.Y.Z.md` in the original bump PR: changes, supported
    OS/architectures, signing policy, exact Bot/Runtime source identity and artifact
    pins, compatibility, upgrade/backup/failure recovery. Use the release commit
