@@ -7,7 +7,7 @@
 | **Status** | Implemented on 2026-10-30 (PLAN-009); the release is 0.3.0 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
-| **Pending change** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011) |
+| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011) |
 
 ## Summary
 
@@ -198,11 +198,12 @@ descriptions for the model and this documentation say "bot".
     CLI's folder to Runtime and every core; a failure or a refused elevation
     always stands, a declined UAC prompt included. An install's diagnostics
     show only for a step that is not done, and a help line the check and the
-    install both give shows once. On Windows, Codex has a PowerShell scripts
-    step after the npm folder. PowerShell runs npm's `codex.ps1` only under a
+    install both give shows once. On Windows, Codex has an optional PowerShell
+    scripts step, listed last. PowerShell runs npm's `codex.ps1` only under a
     permissive execution policy, and a clean Windows has Restricted. The step
     sets the user's own policy to RemoteSigned, so `codex login` works in a
-    PowerShell terminal; Cats Bot itself runs `codex.cmd`.
+    PowerShell terminal; Cats Bot itself runs `codex.cmd`, so it blocks nothing
+    and sign-in opens in Command Prompt without it (SPEC-010 FR-12).
 
 ### Host services
 
@@ -224,10 +225,11 @@ descriptions for the model and this documentation say "bot".
     the installation before stopping any core.
 23. FR-23: One login item starts the hub; there are no per-bot login entries. An
     installed Linux copy uses an XDG autostart entry, which is the setting's source
-    of truth; a development shell does not offer it. Finishing the first run turns
-    it on once, except in a development shell, a portable copy, a Mac app outside
-    Applications or a copy run with `CATS_BOT_HOME`; existing installations and adopted
-    bots keep their setting.
+    of truth; a development shell does not offer it. The first run offers it as a
+    ticked checkbox and turns it on once if it stays ticked (SPEC-010 FR-17), except
+    in a development shell, a portable copy, a Mac app outside Applications or a copy
+    run with `CATS_BOT_HOME`, which are not offered it; existing installations and
+    adopted bots keep their setting.
 24. FR-24: Each bot profile records `environment: { kind: 'native' }`. In this
     version the registry's `environmentProfile` and every binding must be
     native, and anything else is refused (ADR-010).

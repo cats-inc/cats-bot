@@ -10,7 +10,7 @@
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 | **Pending change**   | [SPEC-008](SPEC-008-hub-and-bots.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
-| **Pending change**   | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` stops scanning PATH (FR-3) (PLAN-011) |
+| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011) |
 
 ## Summary
 

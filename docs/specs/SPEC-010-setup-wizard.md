@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-04 after an interactive mock |
+| **Status** | Implemented on 2026-11-04 (PLAN-011), approved by the owner after an interactive mock. Installs on clean machines are not yet accepted: see PLAN-011 Phase 4 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before each merge |
 | **Related decision** | [ADR-015](../decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md) |
@@ -91,7 +91,7 @@ persona get one rule wherever they enter.
 10. FR-10: A row shows a plain summary, tags for its consequences, and details that are
     collapsed by default; only a failed row's details open by themselves. The details hold:
     - what the helper reports it would do (`plannedActions`, `plannedChanges`), verbatim;
-    - the helper command;
+    - the command that really runs;
     - the script's SHA-256 and source commit, from `assets/setup/provenance.json`;
     - a command for doing it by hand, with a copy button.
 
@@ -113,11 +113,11 @@ persona get one rule wherever they enter.
 
 14. FR-14: The log is a read-only text area in the product's ink, across the window's foot,
     with a one-line bar when closed.
-    - Each run adds its time, kind (check, change, stop or terminal), full command and the
-      helper's reported status, version, plan, changes and warnings. A run in progress shows
-      a timer.
+    - Each run adds its time, kind (check, change or terminal), full command and the
+      helper's reported status, version, plan, changes and warnings; a stopped or failed run
+      says so in red. A run in progress shows a timer.
     - Any script run opens it. It closes about 1.4 s after success, stays open after a
-      failure, and stays open while the pointer is on it.
+      failure, and waits while the pointer is on it.
     - Once the owner toggles it, it stays as they set it, except that a failure opens it.
     - "Copy all" copies it. The log itself lasts as long as the window. The hub's bounded
       diagnostics record each finished run in fixed words only (kind, helper, status, change

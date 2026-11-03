@@ -28,6 +28,8 @@ export interface SetupStep {
   /** What the helper reports it just did. */
   applied: string[];
   script: SetupScript | null;
+  /** FR-10: the command applying this step really runs. */
+  applyCommand: string | null;
 }
 
 /** FR-15: only what a CLI itself reports. Most give no signal, and that is said rather than guessed. */
