@@ -63,7 +63,7 @@ last step, not the first.
 
   Verified on Linux ARM64 with Node 26.13.0: the previous `fb0f1125` Runtime
   artifact reproduced `Antigravity stopped responding after the initial response
-  for 30000ms`; the exact replacement pinned in `vendor/README.md` completed the
+  for 30000ms`; the `f53a2058` replacement completed the
   same 31-second case. The focused Bot run passed 22 tests (architecture, provider
   catalogs, Runtime stop, legacy CLI create/stream/cancel/resume/history, native
   Muse/Grok/Antigravity fixtures and this regression), plus typecheck and build.
