@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `f53a2058a4a81f23d8d7b010865e0d80a9d6d868`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-f53a2058.tgz`; 1,824,365 bytes.
-SHA-256: `443fb7f8efecc5eb92756623ac99747d93623d7b02a774342a5b9e8cde5b349e`.
+Source `c1d0111dd8d2bd4668e0d6d4f93afc20af9bd77b`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-c1d0111d.tgz`; 1,824,430 bytes.
+SHA-256: `0a66ac17326047261baefd8f9fe4cc7e972659fc3560720873cc609968d88936`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -18,9 +18,11 @@ at the startup deadline. Provider progress resets the latter; Runtime HTTP
 heartbeats do not. Explicit legacy global/instance timeout overrides, including
 zero, retain their existing meaning. No new Bot-local timeout is introduced.
 
-The source base is Runtime main `f9dd13ea`, so this artifact also carries its
-already merged Copilot catalog refresh (GPT-6.1 Terra and the Copilot Fusion /
-Standard mapping). It does not add a Bot provider or change its provider selection.
+The artifact also carries the Copilot catalog refresh (GPT-6.1 Terra and the
+Copilot Fusion / Standard mapping), which does not add a Bot provider or change its
+provider selection. It carries cats-inc/cats-runtime#212 too: Runtime waits for
+Grok's exact session ID instead of matching its session files by working directory,
+so a Grok bot's next message no longer fails with `skill_content_profile_conflict`.
 
 It retains explicitly selected native Muse MSP and Grok/official Google
 ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
