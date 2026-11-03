@@ -21,7 +21,7 @@ export function updateDialog(state: BotUpdateState, locale: Locale): UpdateDialo
     action: 'none',
   };
   const installDetail = t(
-    'Cats Bot will download the update, stop this bot and install it. The current task will be interrupted. Quit other Cats Bot instances first.',
+    'Cats Bot will download the update, stop this cat bot and install it. The current task will be interrupted. Quit other Cats Bot instances first.',
   );
   switch (state.phase) {
     case 'available':

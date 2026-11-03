@@ -82,7 +82,7 @@ export function DesktopControlBar({ model }: { model: DesktopControlModel }) {
       <div className="desktop-row">
         <label
           className="desktop-switch"
-          title={t('Let the bot see apps you grant, in messages you send from this computer')}
+          title={t('Let the cat bot see apps you grant, in messages you send from this computer')}
         >
           <input
             type="checkbox"

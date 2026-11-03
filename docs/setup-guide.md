@@ -77,7 +77,7 @@ also satisfies the existing authentication check. The helper does not read
 credential files or expose the command's authentication output. macOS/Linux
 native-provider helpers report installation readiness without probing sign-in.
 Closing onboarding during a provider check cancels the check and exits without
-creating a bot. The New bot window can also close during a check; the hub stays
+creating a bot. The New cat bot window can also close during a check; the hub stays
 running. Quit cancels read-only provider checks. An explicitly requested install
 and the brief bot-creation step finish before setup closes.
 
@@ -92,8 +92,8 @@ visibility/position/layer survive restart, including an entirely hidden desktop.
 Closing a conversation during startup also keeps it hidden: a delayed restore or
 page load cannot reopen it. Open it explicitly from its Cat’s avatar menu or bot settings when needed.
 If the avatar is hidden, the hub tray’s Show floating cats reveals every running
-Cat. Clicking the tray icon opens Cats Bot Settings on its Bots tab.
-A Cat has one of ten looks, chosen on the setup page or the Bot tab of its
+Cat. Clicking the tray icon opens Cats Bot Settings on its Cat bots tab.
+A Cat has one of ten looks, chosen on the setup page or the Cat bot tab of its
 settings. A new bot starts on a look no other bot uses; sharing one is allowed.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.

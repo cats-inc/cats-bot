@@ -340,7 +340,7 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   (`CATS_BOT_PROVIDER_COMMAND=node`, `CATS_BOT_PROVIDER_LAUNCH_ARGS=<fixture>`),
   fill the setup page through CDP, then drive `settings.html` the same way.
   With that override every provider counts as installed, so `hub_create_bot`
-  creates the bot at once instead of opening the New bot window
+  creates the bot at once instead of opening the New cat bot window
   (SPEC-009 FR-4).
 - Clean machine (PLAN-010 Phase 3). Run this only when the owner asks; it is
   not part of CI.

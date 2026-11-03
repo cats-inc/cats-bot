@@ -22,7 +22,7 @@ export class CoreBusyError extends Error {
   readonly pid: number;
 
   constructor(pid: number) {
-    super(`The bot is in use by another process (pid ${pid}); it starts once that ends.`);
+    super(`The cat bot is in use by another process (pid ${pid}); it starts once that ends.`);
     this.name = 'CoreBusyError';
     this.pid = pid;
   }
@@ -35,7 +35,7 @@ export class CoreHostedElsewhereError extends Error {
   readonly pid: number;
 
   constructor(pid: number) {
-    super(`Another instance of this bot is running (pid ${pid}).`);
+    super(`Another instance of this cat bot is running (pid ${pid}).`);
     this.name = 'CoreHostedElsewhereError';
     this.pid = pid;
   }
@@ -190,7 +190,7 @@ async function startCore(root: string, launch: CoreLaunch, options: CoreHostOpti
   }, options.startTimeoutMs ?? 60_000);
   if (published !== 'published') {
     if (pid && !ended) killTree(pid);
-    throw new Error(`The Bot core did not start (${ended ?? 'timed out'}). See ${errorFile} and ${logFile}.`);
+    throw new Error(`The cat bot core did not start (${ended ?? 'timed out'}). See ${errorFile} and ${logFile}.`);
   }
   return hosted(await connect(root, options), pid!, true, logFile);
 }

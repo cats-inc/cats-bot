@@ -96,7 +96,7 @@ export function BotTab({
   const hint = providerHint(providers, form.provider);
   return (
     <section className="panel" data-panel="bot">
-      <h2>{t('Bot')}</h2>
+      <h2>{t('Cat bot')}</h2>
       <form id="bot-form" className="form" onSubmit={(event) => void save(event)}>
         <label className="field">
           <span>{t('Name')}</span>
@@ -150,7 +150,7 @@ export function BotTab({
               checked={form.claudeInChrome}
               onChange={(event) => update({ claudeInChrome: event.target.checked })}
             />{' '}
-            {t('Claude in Chrome: let the bot use Chrome or Edge through the Claude extension')}
+            {t('Claude in Chrome: let the cat bot use Chrome or Edge through the Claude extension')}
           </label>
         )}
         <ModelField idPrefix="bot" menu={menu} onChange={setMenu} showSource />
@@ -159,7 +159,7 @@ export function BotTab({
           <textarea
             id="bot-instructions"
             rows={5}
-            placeholder={t('Who the bot is and how it should talk to you.')}
+            placeholder={t('Who the cat bot is and how it should talk to you.')}
             value={form.instructions}
             onChange={(event) => update({ instructions: event.target.value })}
           />

@@ -52,7 +52,7 @@ export function ReplyLanguageField() {
         ))}
       </select>
       <small className="hint">
-        {t('Bots reply in this language unless you ask for another one in the conversation. A bot can choose its own in its settings.')}
+        {t('Cat bots reply in this language unless you ask for another one in the conversation. A cat bot can choose its own in its settings.')}
       </small>
     </label>
   );

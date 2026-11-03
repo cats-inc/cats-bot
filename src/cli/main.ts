@@ -187,7 +187,7 @@ function freeDerivedId(name: string, env: NodeJS.ProcessEnv): string {
 
 function assertNotArchived(id: string, env: NodeJS.ProcessEnv): void {
   if (isValidBotId(id) && existsSync(join(hubPathsFor(resolveCatsBotHome(env)).archive, id))) {
-    throw new Error(`Bot ${id} is archived. Restore it in Settings → Bots before using it.`);
+    throw new Error(`Bot ${id} is archived. Restore it in Settings → Cat bots before using it.`);
   }
 }
 
@@ -624,7 +624,7 @@ async function commandDesktop(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promi
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (enable && (result as { enabled?: boolean }).enabled === false) {
-    process.stderr.write('The profile switch is off: turn on desktop control in Settings > Bot before the conversation can use it.\n');
+    process.stderr.write('The profile switch is off: turn on desktop control in Settings > Cat bot before the conversation can use it.\n');
   }
   return 0;
 }

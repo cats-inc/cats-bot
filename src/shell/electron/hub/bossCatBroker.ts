@@ -89,7 +89,7 @@ const MAX_TEXT = 64 * 1024;
 const NAME_LENGTH = 40;
 const RECORD_NAME_LENGTH = 80;
 const PERSONA_PREVIEW = 300;
-const BUSY_WINDOW = 'The owner already has a New bot window open. Ask again after it closes.';
+const BUSY_WINDOW = 'The owner already has a New cat bot window open. Ask again after it closes.';
 /** FR-5: a declined or expired request is not asked again for this long. */
 export const CONSENT_COOLDOWN_MS = 60_000;
 /** FR-12: settled deliveries stay in the log this long, for the hourly limit and the chains they belong to. */
@@ -461,10 +461,10 @@ export class BossCatBroker {
     if (setup === 'busy') return refuse(BUSY_WINDOW);
     // FR-5: the owner decides. What the holder wrote stays in the detail, quoted and marked as the holder's.
     const holder = this.label(caller);
-    const refusal = await this.ownerAllows(caller, `${holder} asks to create a new bot.`, [
+    const refusal = await this.ownerAllows(caller, `${holder} asks to create a new cat bot.`, [
       `Name: ${oneLine(name, NAME_LENGTH)}`,
       `Provider: ${provider}`,
-      ...(setup === 'window' ? [`This computer does not have ${provider} yet; the New bot window opens to set it up.`] : []),
+      ...(setup === 'window' ? [`This computer does not have ${provider} yet; the New cat bot window opens to set it up.`] : []),
       ...(persona ? [`Persona, as ${holder} wrote it: "${oneLine(persona, PERSONA_PREVIEW)}"`] : []),
     ].join('\n'));
     if (refusal) return refusal;
@@ -472,7 +472,7 @@ export class BossCatBroker {
     const created = await this.deps.createBot({ name, persona, provider });
     if ('setup' in created) {
       return created.setup === 'opened'
-        ? ok(`${provider} is not set up on this computer yet. The owner now has the New bot window, filled in for ${oneLine(name, NAME_LENGTH)}; the bot is created when the owner finishes its setup there.`, { setup: 'owner' })
+        ? ok(`${provider} is not set up on this computer yet. The owner now has the New cat bot window, filled in for ${oneLine(name, NAME_LENGTH)}; the bot is created when the owner finishes its setup there.`, { setup: 'owner' })
         : refuse(BUSY_WINDOW);
     }
     return ok(`Created ${oneLine(name, NAME_LENGTH)} (${created.id}). It runs with desktop control and Telegram off.`, { bot: created.id });
@@ -510,7 +510,7 @@ export class BossCatBroker {
     const proposed = args.bot === null ? null : this.other(caller, args);
     const question = proposed
       ? `${this.label(caller)} proposes that ${this.label(proposed)} take over the Boss Cat role.`
-      : `${this.label(caller)} proposes that no bot hold the Boss Cat role.`;
+      : `${this.label(caller)} proposes that no cat bot hold the Boss Cat role.`;
     const refusal = await this.ownerAllows(caller, question, '');
     if (refusal) return refusal;
     await this.deps.setHolder(proposed);

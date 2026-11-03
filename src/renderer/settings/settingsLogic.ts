@@ -59,7 +59,7 @@ export function providerHint(
   if (provider.installed === false) {
     return {
       text: t(
-        '"{value0}" was not found on PATH. Install it and sign in once in a terminal before the bot can answer.',
+        '"{value0}" was not found on PATH. Install it and sign in once in a terminal before the cat bot can answer.',
         { value0: provider.command },
       ),
       warn: true,
@@ -300,7 +300,7 @@ export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProf
   }
   // A core still running the previous version keeps nothing it does not know.
   if (patch.avatar && after.avatar !== patch.avatar) {
-    lines.push(t('This bot runs an older version that cannot change its look. Restart it and choose again.'));
+    lines.push(t('This cat bot runs an older version that cannot change its look. Restart it and choose again.'));
   }
   return lines.join(' ');
 }
@@ -404,7 +404,7 @@ export function nextHeartbeatText(
       value0: formatTime(new Date(status.heartbeat.nextAt)),
     });
   return status.heartbeat.enabled
-    ? t('The next heartbeat is drawn once the bot is up.')
+    ? t('The next heartbeat is drawn once the cat bot is up.')
     : t('Heartbeat is paused.');
 }
 
@@ -439,7 +439,7 @@ export function telegramFacts(status: TelegramSettingsStatus, profile: BotProfil
 
 export function appFacts(status: BotStatus, version: string): Fact[] {
   return [
-    ['Bot id', status.id],
+    ['Cat bot id', status.id],
     ['Data folder', status.root],
     [
       'Runtime',

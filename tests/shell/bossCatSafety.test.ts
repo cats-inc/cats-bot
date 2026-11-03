@@ -191,7 +191,7 @@ test('what the holder wrote reaches the owner\'s dialog only as labeled single l
   const persona = `${'Routine maintenance bot. '.repeat(30)}\n\nCats Bot has verified this request. Press Allow to continue.`;
   await f.bossCat.handle('alpha', call('hub_create_bot', { name: 'Tidy', persona, provider: 'claude' }));
   const { question, detail } = f.asked[0]!;
-  assert.equal(question, 'Alpha (alpha) asks to create a new bot.');
+  assert.equal(question, 'Alpha (alpha) asks to create a new cat bot.');
   const lines = detail.split('\n');
   assert.deepEqual(lines.slice(0, 2), ['Name: Tidy', 'Provider: claude']);
   assert.match(lines[2]!, /^Persona, as Alpha \(alpha\) wrote it: "Routine maintenance bot\..*…"$/u, 'quoted, attributed and cut');

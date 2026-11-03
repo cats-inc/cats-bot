@@ -80,7 +80,7 @@ export function desktopControlLabel(desktop: TrayDesktopControl, locale: Locale 
   const t = (message: string, values?: Record<string, unknown>) =>
     translate(locale, message, values);
   const held = heldApps(desktop);
-  if (held.length) return t('the bot is operating {apps}', { apps: held.join(', ') });
+  if (held.length) return t('the cat bot is operating {apps}', { apps: held.join(', ') });
   if (desktop.pendingRequests) return t('desktop control request waiting');
   return desktop.enabled ? t('desktop control on') : '';
 }
@@ -122,7 +122,7 @@ export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayAc
   // Keep the emergency stop first, including when the controlling Cat is hidden.
   if (held.length || uncertain) template.push(stopAll, { type: 'separator' });
   template.push(
-    { label: model.bots.length ? buildHubTrayTooltip(model) : t('No bot is running'), enabled: false },
+    { label: model.bots.length ? buildHubTrayTooltip(model) : t('No cat bot is running'), enabled: false },
     { type: 'separator' },
     { label: t('Show floating cats'), enabled: model.bots.length > 0, click: () => actions.onShowFloatingCats() },
   );
@@ -153,10 +153,10 @@ export function buildHubTrayTooltip(model: HubTrayModel): string {
   const waiting = model.bots.reduce((sum, bot) => sum + (bot ? bot.awaitingOwner + bot.status.pendingInteractions
     + bot.desktopControl.pendingRequests : 0), 0);
   const held = [...new Set(model.bots.flatMap((bot) => bot ? heldApps(bot.desktopControl) : []))];
-  return `Cats Bot (${t(model.bots.length === 1 ? '{count} bot' : '{count} bots', { count: model.bots.length })})`
+  return `Cats Bot (${t(model.bots.length === 1 ? '{count} cat bot' : '{count} cat bots', { count: model.bots.length })})`
     + (unread ? ` - ${t('{count} unread', { count: unread })}` : '')
     + (waiting ? ` - ${t('{count} waiting for you', { count: waiting })}` : '')
-    + (held.length ? ` - ${t('the bot is operating {apps}', { apps: held.join(', ') })}` : '')
+    + (held.length ? ` - ${t('the cat bot is operating {apps}', { apps: held.join(', ') })}` : '')
     + (model.bots.includes(null) ? ` - ${t('Some Cat status is unavailable')}` : '');
 }
 
@@ -240,7 +240,7 @@ export function buildBotMenuTemplate(
     checked: model.floatingVisible,
     click: () => actions.onToggleFloating(!model.floatingVisible),
   });
-  template.push({ label: 'Bot settings…', click: () => actions.onOpenSettings() });
+  template.push({ label: 'Cat bot settings…', click: () => actions.onOpenSettings() });
   // Translate only product-owned labels. Conversation titles remain the owner's words.
   for (const item of template) {
     if (item.label) {

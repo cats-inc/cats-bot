@@ -58,7 +58,7 @@ export function DesktopControlSettings({ onSaved }: { onSaved(profile: BotProfil
       <h3>{t('Desktop control')}</h3>
       <p className="hint">
         {t(
-          'Lets the bot see the Windows apps you grant, only in conversations where you turn it on and only in messages you send from this computer (the conversation or cats-bot say). Each tool call asks for your approval, so choose "Choose access and approval separately" above with "Ask when requested by the agent" or "Ask for untrusted commands". The bot never sees other windows.',
+          'Lets the cat bot see the Windows apps you grant, only in conversations where you turn it on and only in messages you send from this computer (the conversation or cats-bot say). Each tool call asks for your approval, so choose "Choose access and approval separately" above with "Ask when requested by the agent" or "Ask for untrusted commands". The cat bot never sees other windows.',
         )}
       </p>
       <label className="check">

@@ -153,7 +153,7 @@ export class CoreRunner<T> {
       return;
     }
     this.options.log(`bot ${this.id}: the core stopped unexpectedly`, 'error');
-    this.set('failed', 'The Bot core stopped unexpectedly.');
+    this.set('failed', 'The cat bot core stopped unexpectedly.');
     this.scheduleRestart();
   }
 

@@ -92,19 +92,19 @@ export function emptyRegistry(): BotRegistry {
 /** Field by field: defaults for what is missing, a refusal for what cannot be read safely. */
 export function normalizeRegistry(raw: unknown): BotRegistry {
   if (!isRecord(raw) || raw.schemaVersion !== REGISTRY_SCHEMA_VERSION) {
-    throw new RegistryCorruptError('Unsupported bot registry schema; restore a compatible backup or use a newer Cats Bot.');
+    throw new RegistryCorruptError('Unsupported cat bot registry schema; restore a compatible backup or use a newer Cats Bot.');
   }
   const profile = raw.environmentProfile;
   if (profile !== undefined && (!isRecord(profile) || profile.kind !== 'native')) {
     // ADR-010: a non-native profile is never run natively instead.
-    throw new RegistryCorruptError('The bot registry names an execution environment this version cannot run; only native is supported.');
+    throw new RegistryCorruptError('The cat bot registry names an execution environment this version cannot run; only native is supported.');
   }
-  if (raw.bots !== undefined && !Array.isArray(raw.bots)) throw new RegistryCorruptError('The bot registry has no readable bot list.');
+  if (raw.bots !== undefined && !Array.isArray(raw.bots)) throw new RegistryCorruptError('The cat bot registry has no readable cat bot list.');
   const bots: RegistryBot[] = [];
   const seen = new Set<string>();
   for (const [index, entry] of ((raw.bots as unknown[] | undefined) ?? []).entries()) {
     if (!isRecord(entry) || typeof entry.id !== 'string' || !isValidBotId(entry.id) || seen.has(entry.id)) {
-      throw new RegistryCorruptError(`The bot registry has an unreadable entry at position ${index + 1}.`);
+      throw new RegistryCorruptError(`The cat bot registry has an unreadable entry at position ${index + 1}.`);
     }
     seen.add(entry.id);
     bots.push({
@@ -163,7 +163,7 @@ export function readRegistry(home: string): RegistryRead {
 export function writeRegistry(home: string, registry: BotRegistry): void {
   const paths = hubPathsFor(home);
   const lock = acquireLockFile(paths.registryLock, { pid: process.pid, host: hostname(), startedAt: new Date().toISOString() });
-  if (!lock.held) throw new Error(`The bot registry is being written by another process (pid ${lock.owner.pid}).`);
+  if (!lock.held) throw new Error(`The cat bot registry is being written by another process (pid ${lock.owner.pid}).`);
   try {
     const current = readRegistry(home);
     if (current.state === 'corrupt') throw new RegistryCorruptError(`The bot registry is unreadable and was kept: ${current.error}`);
