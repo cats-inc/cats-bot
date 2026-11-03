@@ -203,6 +203,20 @@ test('each run is logged at its start and end, for the page and the hub (FR-14)'
   assert.equal(hub.length, 6, 'the hub hears every run');
 });
 
+test('a page that goes away cannot break an install that has already changed the computer', async () => {
+  let installed = false;
+  const setup = new ProviderSetup(async (_helper, apply) => {
+    if (apply) installed = true;
+    return installed ? ready() : { status: 'changes_required' };
+  }, { onRun: () => { throw new Error('hub log failed'); } });
+  const throwing = () => { throw new Error('Object has been destroyed'); };
+  await setup.check('grok', undefined, throwing);
+  const state = await setup.install('grok', 'provider', throwing);
+  assert.equal(installed, true);
+  assert.equal(state.canFinish, true, 'the fresh check still ran');
+  assert.equal(setup.busy, false);
+});
+
 test('a run that fails or is stopped still ends in the log', async () => {
   const entries: SetupLogEntry[] = [];
   const broken = new ProviderSetup(async () => { throw new Error('unreadable result'); });

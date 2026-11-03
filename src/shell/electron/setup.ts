@@ -99,7 +99,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
     });
     ipcMain.handle('setup:draft', (event) => (fromSetup(event) ? options.takeDraft?.() ?? null : null));
     ipcMain.handle('setup:restart', (event, draft: unknown) => {
-      if (!fromSetup(event) || options.providers.busy) throw new Error('Wait for the current setup operation to finish');
+      if (!fromSetup(event) || submitting || options.providers.busy) throw new Error('Wait for the current setup operation to finish');
       return options.restart?.(draft) ?? false;
     });
     ipcMain.handle('ui:language', (event) => {

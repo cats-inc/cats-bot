@@ -18,7 +18,7 @@ test('each provider has one fixed sign-in command, and nothing else has any (SPE
 test('Windows opens Command Prompt in a window of its own, which needs no PowerShell policy', () => {
   const invocation = terminalInvocation('win32', 'codex login', { ComSpec: 'C:\\Windows\\system32\\cmd.exe', Path: 'C:\\bin' })!;
   assert.equal(invocation.command, 'C:\\Windows\\system32\\cmd.exe');
-  assert.deepEqual(invocation.args, ['/c', 'start', 'Cats Bot', 'cmd.exe', '/k', 'codex login']);
+  assert.deepEqual(invocation.args, ['/c', 'start', 'Cats Bot', 'C:\\Windows\\system32\\cmd.exe', '/k', 'codex login']);
   assert.equal(invocation.script, undefined);
   assert.equal(terminalInvocation('win32', 'claude', {})!.command, 'cmd.exe');
 });
@@ -41,7 +41,7 @@ test('Linux tries known terminals in order, and says when there is none', () => 
 });
 
 test('the script quotes PATH, so a folder name cannot run anything', () => {
-  assert.equal(signInScript('claude', "/a'b;rm -rf ~"), `#!/bin/sh\nexport PATH='/a'\\''b;rm -rf ~'\nclaude\nexec "\${SHELL:-/bin/sh}"\n`);
+  assert.equal(signInScript('claude', "/a'b;rm -rf ~"), `#!/bin/sh\nrm -f -- "$0"\nexport PATH='/a'\\''b;rm -rf ~'\nclaude\nexec "\${SHELL:-/bin/sh}"\n`);
 });
 
 function fakeLaunch(result: 'spawn' | 'error') {
@@ -62,6 +62,18 @@ test('opening is detached from the app and reports what happened', async () => {
   assert.equal(opened.calls[0]!.options.stdio, 'ignore');
   const missing = fakeLaunch('error');
   assert.deepEqual(await openSignInTerminal('codex', { platform: 'win32', env: {}, launch: missing.launch }), { opened: false, command: 'codex login' });
+});
+
+test('a launcher that exits with an error right away did not open anything', async () => {
+  const launch = ((_command: string) => {
+    const child = Object.assign(new EventEmitter(), { unref() {} });
+    queueMicrotask(() => {
+      child.emit('spawn');
+      child.emit('exit', 1);
+    });
+    return child;
+  }) as never;
+  assert.deepEqual(await openSignInTerminal('codex', { platform: 'win32', env: {}, launch }), { opened: false, command: 'codex login' });
 });
 
 test('a provider outside the table starts nothing', async () => {

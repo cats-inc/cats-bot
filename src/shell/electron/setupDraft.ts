@@ -34,19 +34,18 @@ export function writeSetupDraft(home: string, raw: unknown): boolean {
   return true;
 }
 
-export function hasSetupDraft(home: string): boolean {
-  return existsSync(fileIn(home));
-}
-
-/** Reads the draft and removes the file, whatever it held. */
+/**
+ * Reads the draft and removes the file, whatever it held. A file that cannot be removed
+ * counts as no draft: a window opened for it would open again at every start.
+ */
 export function takeSetupDraft(home: string): SetupDraft | null {
   const path = fileIn(home);
   if (!existsSync(path)) return null;
   const read = readJsonFile<unknown>(path);
   try {
-    rmSync(path, { force: true });
+    rmSync(path, { force: true, recursive: true });
   } catch {
-    // A file that stays is read again next time and is harmless.
+    return null;
   }
   return read.ok ? parseSetupDraft(read.value) : null;
 }

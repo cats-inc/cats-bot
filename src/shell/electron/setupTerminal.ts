@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findOnPath } from '../../core/providers/catalog.ts';
 
@@ -40,6 +40,8 @@ const LINUX_TERMINALS: ReadonlyArray<[string, string[]]> = [
   ['xterm', ['-e', '{script}']],
 ];
 
+const EARLY_EXIT_MS = 400;
+
 function quoted(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`;
 }
@@ -50,7 +52,7 @@ function quoted(value: string): string {
  * the owner can read the result.
  */
 export function signInScript(command: string, path: string): string {
-  return `#!/bin/sh\nexport PATH=${quoted(path)}\n${command}\nexec "\${SHELL:-/bin/sh}"\n`;
+  return `#!/bin/sh\nrm -f -- "$0"\nexport PATH=${quoted(path)}\n${command}\nexec "\${SHELL:-/bin/sh}"\n`;
 }
 
 /** How to open a terminal on this OS, or null when none is known to be installed. */
@@ -62,9 +64,11 @@ export function terminalInvocation(
 ): TerminalInvocation | null {
   const path = env.PATH ?? env.Path ?? '';
   if (platform === 'win32') {
-    // `start` opens a window of its own. Its first quoted argument is the window's title.
+    // `start` opens a window of its own. Its first quoted argument is the window's title, and
+    // it looks in the current folder first, so it gets the full path where there is one.
     // Command Prompt runs npm's .cmd shims, so this needs no PowerShell policy.
-    return { command: env.ComSpec || 'cmd.exe', args: ['/c', 'start', 'Cats Bot', 'cmd.exe', '/k', command] };
+    const shell = env.ComSpec || 'cmd.exe';
+    return { command: shell, args: ['/c', 'start', 'Cats Bot', shell, '/k', command] };
   }
   if (platform === 'darwin') {
     return { command: 'open', args: ['-a', 'Terminal', '{script}'], script: signInScript(command, path) };
@@ -101,11 +105,13 @@ export function openSignInTerminal(
     try {
       const script = invocation.script ? writeScript(invocation.script, platform) : '';
       const args = invocation.args.map((arg) => (arg === '{script}' ? script : arg));
-      const child = launch(invocation.command, args, { detached: true, stdio: 'ignore', env, windowsHide: false });
+      const child = launch(invocation.command, args, { detached: true, stdio: 'ignore', env, cwd: homedir(), windowsHide: false });
       child.once('error', () => resolve({ opened: false, command }));
+      // A launcher with no display to open on starts, then exits with an error right away.
+      child.once('exit', (code) => resolve({ opened: code === 0, command }));
       child.once('spawn', () => {
         child.unref();
-        resolve({ opened: true, command });
+        setTimeout(() => resolve({ opened: true, command }), EARLY_EXIT_MS);
       });
     } catch {
       resolve({ opened: false, command });

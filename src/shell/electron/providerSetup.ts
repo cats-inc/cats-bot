@@ -313,9 +313,15 @@ export class ProviderSetup {
     const run = ++this.runs;
     const started = Date.now();
     const base = { run, kind: apply ? 'change' : 'check', helper, ...described } as const;
+    // Telling a page about a run never changes how the run goes: a helper may already have changed the computer.
     const emit = (entry: SetupLogEntry) => {
-      listener?.(entry);
-      this.options.onRun?.(entry);
+      for (const hear of [listener, this.options.onRun]) {
+        try {
+          hear?.(entry);
+        } catch {
+          // A window that is going away.
+        }
+      }
     };
     emit({ ...base, phase: 'start', at: new Date(started).toISOString() });
     const finished = (extra: Partial<SetupLogEntry>) =>

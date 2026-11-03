@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { hasSetupDraft, parseSetupDraft, takeSetupDraft, writeSetupDraft } from '../../src/shell/electron/setupDraft.ts';
+import { parseSetupDraft, takeSetupDraft, writeSetupDraft } from '../../src/shell/electron/setupDraft.ts';
 
 function home(t: TestContext): string {
   const dir = mkdtempSync(join(tmpdir(), 'cats-bot-draft-'));
@@ -15,12 +15,10 @@ const draft = { name: 'Mochi', instructions: 'Be kind.', provider: 'claude', ava
 
 test('a draft survives until it is read, once (SPEC-010 FR-13)', (t) => {
   const root = home(t);
-  assert.equal(hasSetupDraft(root), false);
   assert.equal(takeSetupDraft(root), null);
   assert.equal(writeSetupDraft(root, draft), true);
-  assert.equal(hasSetupDraft(root), true);
   assert.deepEqual(takeSetupDraft(root), draft);
-  assert.equal(hasSetupDraft(root), false, 'read once and removed');
+  assert.equal(existsSync(join(root, 'setup-draft.json')), false, 'read once and removed');
   assert.equal(takeSetupDraft(root), null);
 });
 
@@ -41,7 +39,7 @@ test('a draft follows the same rule as the page, on the way in and on the way ou
     assert.equal(parseSetupDraft(bad), null, JSON.stringify(bad));
     assert.equal(writeSetupDraft(root, bad), false);
   }
-  assert.equal(hasSetupDraft(root), false, 'nothing was written');
+  assert.equal(existsSync(join(root, 'setup-draft.json')), false, 'nothing was written');
   // A look it does not know is dropped alone; the rest of the input is still the owner's.
   assert.deepEqual(parseSetupDraft({ ...draft, avatar: '../evil' }), { name: 'Mochi', instructions: 'Be kind.', provider: 'claude' });
   // A file edited outside the app is held to the rule, and does not come back.
@@ -49,6 +47,10 @@ test('a draft follows the same rule as the page, on the way in and on the way ou
   assert.equal(takeSetupDraft(root), null);
   assert.equal(existsSync(join(root, 'setup-draft.json')), false);
   writeFileSync(join(root, 'setup-draft.json'), '{not json');
+  assert.equal(takeSetupDraft(root), null);
+  assert.equal(existsSync(join(root, 'setup-draft.json')), false);
+  // A folder in its place is cleared too, so it cannot come back at every start.
+  mkdirSync(join(root, 'setup-draft.json'));
   assert.equal(takeSetupDraft(root), null);
   assert.equal(existsSync(join(root, 'setup-draft.json')), false);
 });

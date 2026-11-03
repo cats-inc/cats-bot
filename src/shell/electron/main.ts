@@ -47,7 +47,7 @@ import {
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
-import { hasSetupDraft, takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
+import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
 import { openSignInTerminal } from './setupTerminal.ts';
 import type { SetupEnvironment, SetupLogEntry } from '../../shared/providerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
@@ -293,8 +293,11 @@ async function main(): Promise<void> {
     },
   });
   // SPEC-010 FR-13: a restart for a CLI the fresh check cannot find keeps what the owner typed.
+  let restartingForSetup = false;
   const restartForSetup = (draft: unknown): boolean => {
+    if (restartingForSetup) return true;
     if (!writeSetupDraft(home, draft)) return false;
+    restartingForSetup = true;
     relaunchHost(process.argv.slice(1));
     app.quit();
     return true;
@@ -1092,9 +1095,16 @@ async function main(): Promise<void> {
       return null;
     }
   });
-  ipcMain.handle('setup:draft', (event) => (ownedMainFrame(event) && fromCreate(event) ? takeSetupDraft(home) : null));
+  // SPEC-010 FR-13: what a restart from the New cat bot window kept, read once at this start.
+  let keptDraft = takeSetupDraft(home);
+  ipcMain.handle('setup:draft', (event) => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) return null;
+    const draft = keptDraft;
+    keptDraft = null;
+    return draft;
+  });
   ipcMain.handle('setup:restart', (event, draft: unknown) => {
-    if (!ownedMainFrame(event) || !fromCreate(event) || providerSetup.busy) throw new Error('Wait for the current setup operation to finish');
+    if (!ownedMainFrame(event) || !fromCreate(event) || quitting || finishing || creating || providerSetup.busy) throw new Error('Wait for the current setup operation to finish');
     return restartForSetup(draft);
   });
   ipcMain.handle('setup:providers', (event) => (ownedMainFrame(event) && fromCreate(event) ? fixedProviders() : []));
@@ -1177,8 +1187,8 @@ async function main(): Promise<void> {
       }
     });
   };
-  // SPEC-010 FR-13: a restart from the New cat bot window comes back to it, with what the owner typed.
-  if (hasSetupDraft(home)) openCreateWindow();
+  // A restart from the New cat bot window comes back to it, with what the owner typed.
+  if (keptDraft) openCreateWindow();
   askOwnerToSetUp = (request) => {
     // An open New bot window holds the owner's own work; it is not replaced.
     if (createWindow && !createWindow.isDestroyed()) return 'busy';
