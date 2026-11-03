@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain } from 'electron';
 import { ProviderSetup } from '../dist/shell/electron/providerSetup.js';
 import { runFirstRunSetup } from '../dist/shell/electron/setup.js';
 
@@ -157,6 +157,18 @@ await app.whenReady();
   await w.type('#setup-instructions', '');
   check('clearing keeps the placeholder', (await w.js("document.querySelector('#setup-instructions').placeholder")) === hint);
   check('clearing unpresses', await w.js("[...document.querySelectorAll('.setup-chip')].every((c) => c.getAttribute('aria-pressed') === 'false')"));
+  // FR-5: Ctrl+Z, sent to this page alone, brings back what a preset replaced.
+  await w.js("document.querySelector('#setup-instructions').focus(); document.execCommand('insertText', false, 'my own words')");
+  await w.click('#setup-persona-1');
+  await w.wait("document.querySelector('#setup-instructions').value.startsWith('You are a calm')", 'preset replaced the words');
+  check('a preset leaves the focus on its button', await w.js("document.activeElement?.id === 'setup-persona-1'"));
+  w.window.webContents.focus();
+  w.window.webContents.sendInputEvent({ type: 'rawKeyDown', keyCode: 'Z', modifiers: ['control'] });
+  w.window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Z', modifiers: ['control'] });
+  await sleep(200);
+  const undone = await w.js("document.querySelector('#setup-instructions').value");
+  check('Ctrl+Z restores what a preset replaced', undone === 'my own words', undone.slice(0, 60));
+  await w.type('#setup-instructions', '');
 
   // The rule, on the page.
   await w.click('input[name=setup-provider][value=codex]');
@@ -170,6 +182,9 @@ await app.whenReady();
   await w.type('#setup-instructions', `Be kind.${String.fromCodePoint(0xE0068, 0xE0069)}`);
   await w.wait("document.querySelector('#setup-persona-error')", 'persona error');
   check('hidden text in the persona blocks the button', await w.js("document.querySelector('#setup-check').disabled"));
+  await w.type('#setup-instructions', `Be kind.${String.fromCodePoint(0xE0168, 0xE0169)}`);
+  await w.wait("document.querySelector('#setup-persona-error')", 'persona error for variation selectors');
+  check('hidden text in variation selectors blocks the button', await w.js("document.querySelector('#setup-check').disabled"));
   await w.type('#setup-instructions', 'x'.repeat(4001));
   await w.wait("/4,000/.test(document.querySelector('#setup-persona-error')?.textContent ?? '')", 'length error');
   await w.type('#setup-instructions', '');
@@ -330,6 +345,69 @@ await app.whenReady();
   w.window.destroy();
   await w.done;
   check('no page error, recovery path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
+/* ---- A check that fails: nothing offers to run what was never ticked ---- */
+{
+  const world = { state: { grok: 'failed' } };
+  const w = await open(world);
+  await w.type('#setup-name', 'Mochi');
+  await w.click('input[name=setup-provider][value=grok]');
+  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-failed')", 'failed row');
+  await sleep(1700);
+  check('a failed check keeps the log open', await w.logOpen());
+  check('a failed check opens its details', await w.js("!!document.querySelector('.setup-row[data-row=provider] .setup-details')"));
+  check('a row that failed a check cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  check('it offers checking again', await w.js("!!document.querySelector('#setup-recheck')"));
+  check('the title says the check failed', /Cannot check/u.test(await w.js("document.querySelector('.setup-pane h1').textContent")));
+  check('no script that changes anything ran', !w.calls.some((call) => call.endsWith(':true')), w.calls.join(' '));
+  await w.shot('8-check-failed');
+  world.state.grok = 'ready';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready')", 'recovered');
+  await w.click('#setup-next');
+  await w.wait("document.querySelector('#setup-open-terminal')", 'sign-in row');
+  // The real handler would open a real terminal, so this one answers that none was found.
+  ipcMain.removeHandler('setup:openTerminal');
+  ipcMain.handle('setup:openTerminal', () => ({ opened: false, command: 'grok' }));
+  await w.wait("!document.querySelector('.setup-log').classList.contains('is-open')", 'log closes after the good check');
+  await w.click('#setup-open-terminal');
+  await w.wait("document.querySelector('.setup-log').classList.contains('is-open')", 'log opens for a missing terminal');
+  await sleep(1700);
+  check('a terminal that cannot open opens the log and it stays', await w.logOpen());
+  w.window.destroy();
+  await w.done;
+  check('no page error, failed check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
+/* ---- A change whose fresh check shows the next row failing ---- */
+{
+  const world = { state: { node: 'changes_required', npm: 'failed', codex: 'changes_required', shell: 'ready' } };
+  const w = await open(world);
+  await w.type('#setup-name', 'Mochi');
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-tick-node')", 'node row');
+  await w.click('#setup-tick-node');
+  await w.wait("document.querySelector('#setup-apply')", 'apply');
+  await w.click('#setup-apply');
+  await w.wait("document.querySelector('.setup-row[data-row=npm]')?.classList.contains('is-failed')", 'npm failed');
+  await w.wait("document.querySelector('#setup-recheck') && !document.querySelector('#setup-recheck').disabled", 'apply finished');
+  await sleep(1700);
+  check('a fresh check that shows a failure keeps the log open', await w.logOpen());
+  check('that row\'s details open', await w.js("!!document.querySelector('.setup-row[data-row=npm] .setup-details')"));
+  check('that row cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  check('only the ticked script ran', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true', w.calls.join(' '));
+  world.state.node = 'failed';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-failed')", 'node failed its check');
+  check('a finished row that later fails a check cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  w.window.destroy();
+  await w.done;
+  check('no page error, fresh check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
 console.log(results.join('\n'));

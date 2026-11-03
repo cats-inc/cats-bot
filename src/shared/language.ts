@@ -380,6 +380,8 @@ export const zhTW: Record<string, string> = {
   'Cannot find {label} yet': '還找不到 {label}',
   'Check again first. What you typed stays if Cats Bot has to restart.': '先重新檢查看看。如果要重新啟動 Cats Bot，這頁填的資料會留著。',
   '{label} did not finish': '{label} 沒有裝好',
+  'Cannot check {label}': '無法檢查 {label}',
+  'Its script did not run. The log below says why. Set it up yourself, then check again.': '它的腳本沒有執行。原因在下方的紀錄。請自行設定好，再檢查一次。',
   'What comes after it did not run. Try again, or set it up yourself and check again.': '後面的項目沒有執行。可以再試一次，或自己裝好後按「重新檢查」。',
   '{count} more before you can use {provider}': '還差 {count} 項才能用 {provider}',
   'Tick what Cats Bot should do. Nothing unticked runs. You can also set it up yourself, then check again.': '勾選要由 Cats Bot 處理的項目，沒勾的不會執行。想自己裝也可以，裝好按「重新檢查」。',

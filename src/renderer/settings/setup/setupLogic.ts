@@ -43,13 +43,26 @@ export const requiredPending = (state: ProviderSetupState | null): SetupStep[] =
 /** FR-11: ticked rows in the order they run, top down. */
 export function queueOf(state: ProviderSetupState | null, ticked: ReadonlySet<SetupStepId>): SetupStepId[] {
   return (state?.steps ?? [])
-    .filter((step) => ticked.has(step.id) && ['needs', 'failed', 'declined'].includes(rowKind(step)))
+    .filter((step) => ticked.has(step.id) && rowKind(step) === 'needs')
     .map((step) => step.id);
 }
 
 /** A row that stopped the queue, which the page's title and footer speak to. */
 export function stoppedStep(state: ProviderSetupState | null): SetupStep | null {
   return (state?.steps ?? []).find((step) => ['failed', 'declined', 'restart'].includes(rowKind(step))) ?? null;
+}
+
+/**
+ * FR-9: what "Try again" runs: the stopped row, then whatever is still ticked. Only a row the owner
+ * already ran can be retried. One that failed a read-only check was never ticked, so nothing runs it.
+ */
+export function retryQueue(
+  stopped: SetupStep | null,
+  attempted: ReadonlySet<SetupStepId>,
+  queued: readonly SetupStepId[],
+): SetupStepId[] {
+  if (!stopped || rowKind(stopped) === 'restart' || !attempted.has(stopped.id)) return [];
+  return [stopped.id, ...queued.filter((id) => id !== stopped.id)];
 }
 
 export interface PendingStep {
