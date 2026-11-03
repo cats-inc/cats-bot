@@ -43,7 +43,7 @@ export const requiredPending = (state: ProviderSetupState | null): SetupStep[] =
 /** FR-11: ticked rows in the order they run, top down. */
 export function queueOf(state: ProviderSetupState | null, ticked: ReadonlySet<SetupStepId>): SetupStepId[] {
   return (state?.steps ?? [])
-    .filter((step) => ticked.has(step.id) && ['needs', 'failed', 'declined'].includes(rowKind(step)))
+    .filter((step) => ticked.has(step.id) && rowKind(step) === 'needs')
     .map((step) => step.id);
 }
 

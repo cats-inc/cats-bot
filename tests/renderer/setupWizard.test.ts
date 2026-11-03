@@ -60,6 +60,7 @@ test('the shortcut, the queue and what is left leave optional and waiting rows a
   assert.deepEqual(queueOf(waiting, new Set<SetupStepId>(['npm', 'node'])), ['node'], 'a waiting row cannot have been ticked into the queue');
   assert.deepEqual(requiredPending(waiting).map((item) => item.id), ['node', 'npm', 'provider']);
   assert.deepEqual(queueOf(null, new Set<SetupStepId>(['node'])), []);
+  assert.deepEqual(queueOf(state(step('node', 'failed')), new Set<SetupStepId>(['node'])), [], 'a failed row has no tick box to undo the tick');
 });
 
 test('the row that stopped the queue is the one the page speaks to', () => {

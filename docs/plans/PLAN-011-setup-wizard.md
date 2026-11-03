@@ -130,5 +130,5 @@ FR-22).
 | 2026-11-04 | Phase 1 merged (#116). Independent review found a stored name could not survive an unrelated save; fixed before merge |
 | 2026-11-04 | Phase 2 reviewed: a throwing log listener, a repeatable restart, an unremovable draft and an early-exit terminal, all fixed before merge |
 | 2026-11-04 | Phase 3: `scripts/test-setup-wizard-renderer.mjs` passes 66 of 66 with fake helpers |
-| 2026-11-04 | Review of the 0.5.0 bump: variation selectors and strung-together joiners could hide text, "Try again" could run a row that only failed its check, and a failed check or terminal left the log closed, all fixed before dispatch. The script passes 78 of 78, now including Ctrl+Z after a preset |
+| 2026-11-04 | Review of the 0.5.0 bump: variation selectors and strung-together joiners could hide text, "Try again" could run a row that only failed its check, and a failed check or terminal left the log closed, all fixed before dispatch. The script passes 84 of 84, now including Ctrl+Z after a preset |
 | 2026-11-04 | Phase 4: the real main process, preload, page and read-only helpers, hidden and in an isolated home, on Codex, Claude and Grok: nothing ran before the button, each check reported this machine's real state, and nothing changed. Installs were not run |

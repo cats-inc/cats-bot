@@ -223,6 +223,15 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     });
   };
 
+  /** FR-10, FR-14: a check can fail too, and then that row's details and the log stay open. */
+  const showBroken = useCallback((next: ProviderSetupState): boolean => {
+    const broken = next.steps.filter((item) => ['failed', 'declined'].includes(rowKind(item))).map((item) => item.id);
+    if (broken.length === 0) return false;
+    setDetails((current) => new Set([...current, ...broken]));
+    setLogOpen(true);
+    return true;
+  }, []);
+
   const runCheck = useCallback(async (): Promise<void> => {
     const mine = ++ticket.current;
     setPhase('checking');
@@ -239,13 +248,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       setState(next);
       // What is still open keeps its tick; what got done or stopped applying loses it.
       setTicked((current) => new Set([...current].filter((id) => next.steps.some((item) => item.id === id && rowKind(item) === 'needs'))));
-      // FR-10, FR-14: a check can fail too, and then its details and the log stay open.
-      const broken = next.steps.filter((item) => ['failed', 'declined'].includes(rowKind(item))).map((item) => item.id);
-      if (broken.length > 0) {
-        failed = true;
-        setDetails((current) => new Set([...current, ...broken]));
-        setLogOpen(true);
-      }
+      failed = showBroken(next);
     } catch (failure) {
       if (mine !== ticket.current) return;
       failed = true;
@@ -255,7 +258,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     setPhase('idle');
     setRunStart(null);
     if (!failed) settleLog();
-  }, [openLogForRun, provider, settleLog]);
+  }, [openLogForRun, provider, settleLog, showBroken]);
 
   const startCheck = () => {
     if (state?.provider !== provider) {
@@ -299,6 +302,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     setQueue(ids);
     openLogForRun();
     let stopped = false;
+    let latest: ProviderSetupState | null = null;
     try {
       for (const id of ids) {
         if (stopRequested.current) break;
@@ -307,6 +311,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
         setAttempted((current) => new Set(current).add(id));
         const next = await api.setup.install(provider, id);
         if (mine !== ticket.current) return;
+        latest = next;
         setState(next);
         setTicked((current) => {
           const rest = new Set(current);
@@ -318,6 +323,12 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
         const kind = done ? rowKind(done) : 'failed';
         if (kind === 'ready') {
           setApplied((current) => new Set(current).add(id));
+          // It is done, so a check that fails on it later has nothing to try again.
+          setAttempted((current) => {
+            const rest = new Set(current);
+            rest.delete(id);
+            return rest;
+          });
         } else if (kind === 'failed' || kind === 'declined' || kind === 'restart') {
           // FR-13: a failure stops the queue, and only then do the details open by themselves.
           stopped = true;
@@ -341,7 +352,9 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     setRunStart(null);
     setQueue([]);
     setPhase('idle');
-    if (!stopped) settleLog();
+    // A row's fresh check can show another row failing, which is a failure too.
+    const broken = latest ? showBroken(latest) : false;
+    if (!stopped && !broken) settleLog();
   };
 
   const stopped = stoppedStep(state);
@@ -519,7 +532,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     lead = t('What comes after it did not run. Try again, or set it up yourself and check again.');
   } else if (stopped) {
     title = t('Cannot check {label}', { label: t(stopped.label) });
-    lead = t('Nothing ran but the check. The log below says why. Set it up yourself, then check again.');
+    lead = t('Its script did not run. The log below says why. Set it up yourself, then check again.');
   } else if (state && pending.length > 0) {
     title = t('{count} more before you can use {provider}', { count: pending.length, provider: label });
     lead = t('Tick what Cats Bot should do. Nothing unticked runs. You can also set it up yourself, then check again.');

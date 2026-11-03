@@ -64,6 +64,7 @@ test('a name refuses each kind of character that would forge a line or hide', ()
     assert.equal(botNameProblem(`a${String.fromCodePoint(point)}b`), 'hidden', label);
   }
   assert.equal(botNameProblem(`a${SELECTOR_BITS}`), 'hidden', 'selectors strung together');
+  assert.equal(botNameProblem(`a${String.fromCodePoint(0xFE0F)}b`), 'hidden', 'a selector after a letter');
   assert.equal(botNameProblem(`a${String.fromCodePoint(0x2764, 0xFE0F)}`), null, 'an emoji keeps its selector');
 });
 
@@ -84,6 +85,10 @@ test('a persona keeps the joiners emoji and some scripts need', () => {
   assert.equal(botPersonaProblem(String.fromCodePoint(0x1F3F3, 0xFE0F, 0x200D, 0x1F308)), null, 'a selector then a joiner, as a rainbow flag has');
   assert.equal(botPersonaProblem(String.fromCodePoint(0x1F469, 0x200D, 0x2764, 0xFE0F, 0x200D, 0x1F468)), null, 'a couple');
   assert.equal(botPersonaProblem(String.fromCodePoint(0x31, 0xFE0F, 0x20E3)), null, 'a keycap');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x203C, 0xFE0F)), null, 'punctuation that is also an emoji');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x2139, 0xFE0F)), null, 'a letter that is also an emoji');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x1F44D, 0x1F3FD, 0x200D, 0x1F4BB)), null, 'a skin tone then a joiner');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0xDA4, 0xDCA, 0x200D, 0xDBB)), null, 'a joiner after a mark, in Sinhala');
 });
 
 test('a persona refuses text its owner cannot see', () => {
@@ -110,6 +115,9 @@ test('a persona refuses text its owner cannot see', () => {
   assert.equal(botPersonaProblem(`Be kind.${JOINER_BITS}`), 'hidden', 'joiners strung together');
   assert.equal(botPersonaProblem(`Be kind.${SELECTOR_BITS}`), 'hidden', 'selectors strung together');
   assert.equal(botPersonaProblem(`Be kind.${String.fromCodePoint(0x200D, 0xFE0F)}`), 'hidden', 'a joiner then a selector');
+  assert.equal(botPersonaProblem(`a${String.fromCodePoint(0xFE0F)}b`), 'hidden', 'a selector after a letter');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0xFE0E, 0x20, 0xFE0F, 0x20, 0xFE0E)), 'hidden', 'selectors between spaces');
+  assert.equal(botPersonaProblem(`a b${String.fromCodePoint(0x20, 0x200C, 0x0A, 0x200D)}`), 'hidden', 'joiners after a space and a line feed');
 });
 
 test('line endings are normalized and surrounding space goes before the rule applies', () => {

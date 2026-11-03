@@ -21,18 +21,18 @@ export type BotTextProblem = 'empty' | 'too_long' | 'malformed' | 'hidden' | 'no
 /** A surrogate with no partner: valid in a JS string, not in UTF-8. */
 const MALFORMED = /\p{Cs}/u;
 /**
- * Controls, format characters, line and paragraph separators, blank fillers and what never shows:
- * Default_Ignorable_Code_Point. U+FE0E and U+FE0F stay out of that, one at a time, because they choose
- * how one character shows and emoji need them.
+ * Controls, format characters, line and paragraph separators, the Braille blank and what never shows:
+ * Default_Ignorable_Code_Point. U+FE0E and U+FE0F stay out of that right after an emoji or symbol,
+ * because they choose how it shows. Anywhere else they spell out text a model still reads.
  */
-const NOT_PLAIN = /[\p{Cc}\p{Cf}\u2028\u2029\u2800]|[^\P{DI}\uFE0E\uFE0F]|[\uFE0E\uFE0F]{2}/u;
+const NOT_PLAIN = /[\p{Cc}\p{Cf}\u2028\u2029\u2800]|[^\P{DI}\uFE0E\uFE0F]|(?<![\p{Emoji}\p{S}])[\uFE0E\uFE0F]/u;
 const VISIBLE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 /**
  * Controls but line feed and tab, separators, and format characters and what never shows, but the
- * joiners that emoji and some scripts need (U+200C, U+200D) and the emoji selectors. Those appear
- * one at a time, or as a selector then a joiner: strung together, they spell out text as well.
+ * emoji selectors above and the joiners that emoji and some scripts need (U+200C, U+200D), right
+ * after a letter, mark, emoji or symbol. A selector is a mark, so an emoji sequence can join after it.
  */
-const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]|[^\P{DI}\u200C\u200D\uFE0E\uFE0F]|[\u200C\u200D]{2}|[\uFE0E\uFE0F]{2}|[\u200C\u200D][\uFE0E\uFE0F]/u;
+const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]|[^\P{DI}\u200C\u200D\uFE0E\uFE0F]|(?<![\p{Emoji}\p{S}])[\uFE0E\uFE0F]|(?<![\p{L}\p{M}\p{Emoji}\p{S}])[\u200C\u200D]/u;
 
 /** Characters that do not show: format characters, what never shows, and the Braille blank. */
 const UNSEEN = /[\p{Cf}\u2800]|[^\P{DI}\uFE0E\uFE0F]/gu;

@@ -382,6 +382,34 @@ await app.whenReady();
   check('no page error, failed check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
+/* ---- A change whose fresh check shows the next row failing ---- */
+{
+  const world = { state: { node: 'changes_required', npm: 'failed', codex: 'changes_required', shell: 'ready' } };
+  const w = await open(world);
+  await w.type('#setup-name', 'Mochi');
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-tick-node')", 'node row');
+  await w.click('#setup-tick-node');
+  await w.wait("document.querySelector('#setup-apply')", 'apply');
+  await w.click('#setup-apply');
+  await w.wait("document.querySelector('.setup-row[data-row=npm]')?.classList.contains('is-failed')", 'npm failed');
+  await w.wait("document.querySelector('#setup-recheck') && !document.querySelector('#setup-recheck').disabled", 'apply finished');
+  await sleep(1700);
+  check('a fresh check that shows a failure keeps the log open', await w.logOpen());
+  check('that row\'s details open', await w.js("!!document.querySelector('.setup-row[data-row=npm] .setup-details')"));
+  check('that row cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  check('only the ticked script ran', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true', w.calls.join(' '));
+  world.state.node = 'failed';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-failed')", 'node failed its check');
+  check('a finished row that later fails a check cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  w.window.destroy();
+  await w.done;
+  check('no page error, fresh check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
 console.log(results.join('\n'));
 const failed = results.filter((line) => line.startsWith('FAIL')).length;
 console.log(`passed ${results.length - failed} of ${results.length}; screenshots in ${evidence}`);

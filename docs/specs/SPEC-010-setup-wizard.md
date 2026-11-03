@@ -23,7 +23,8 @@ persona get one rule wherever they enter.
 - Choosing or looking at a provider starts no process.
 - The owner can see, before and after, each change setup makes to their environment.
 - A clean machine reaches a working cat bot without a relaunch.
-- A name or persona cannot break the program or carry hidden text into a session.
+- A name or persona cannot break the program, and the usual ways of hiding text in one are
+  refused before it reaches a session.
 
 ## Non-Goals
 
@@ -156,15 +157,16 @@ persona get one rule wherever they enter.
     - **Name:** trimmed; 1 to 40 UTF-16 units; well formed; at least one letter, number,
       symbol or punctuation mark; no control or format characters, line breaks, the Braille
       blank or other Default_Ignorable_Code_Point characters. U+FE0E and U+FE0F stay allowed
-      one at a time, because emoji need them.
+      right after an emoji or symbol, because emoji need them.
     - **Persona:** trimmed, line endings normalized to LF; at most 4,000 UTF-16 units; well
       formed; line feed and tab allowed; no other control characters, no bidirectional or
       tag characters, line or paragraph separators, other format characters or other
       Default_Ignorable_Code_Point characters, which include the other variation selectors.
-      Zero-width joiner and non-joiner, and U+FE0E and U+FE0F, stay allowed because emoji and
-      some scripts need them, one at a time or as a selector then a joiner. Strung together
-      they can spell out hidden text. One after each visible character is still possible, so
-      the rule narrows hidden text and does not rule it out.
+      U+FE0E and U+FE0F stay allowed right after an emoji or symbol, and zero-width joiner and
+      non-joiner right after a letter, mark, emoji or symbol, because emoji and some scripts
+      need them. Anywhere else they can spell out hidden text. A joiner after each letter is
+      still possible, and spaces, the Braille blank, private-use and unassigned characters are
+      not refused, so the rule narrows hidden text and does not rule it out.
     - A value that breaks the rule is refused with a message saying why. It is never
       silently changed, because silently stripped text is how a hidden instruction would go
       unnoticed.
