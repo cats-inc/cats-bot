@@ -16,6 +16,7 @@ Each checkout remains independently runnable.
 | Candidate status/screenshot/stop | `npm run desktop:candidate -- status --root /absolute/directory` (replace status with screenshot or stop) |
 | Verify shared source hashes | `npm run tools:check` |
 | Verify provider helper hashes | `node scripts/sync-shared-tools.mjs --manifest assets/setup/provenance.json` |
+| Update the Runtime pin for a release | `node scripts/refresh-runtime-pin.mjs`, or add `--ref SHA` to hold changes back |
 | Skill sync preview | `./scripts/macos/sync-agent-skills.sh --dry-run` |
 | Merged-branch preview | `./scripts/macos/remove-merged-branches.sh --dry-run` |
 

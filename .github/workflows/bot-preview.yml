@@ -35,15 +35,23 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
+      # Full history, because the identity step compares the pin with all of Runtime main.
+      - uses: actions/checkout@v4
+        with:
+          repository: cats-inc/cats-runtime
+          ref: main
+          fetch-depth: 0
+          path: runtime-source
       - id: identity
         uses: actions/github-script@v7
         env:
           RELEASE_TAG: ${{ inputs.tag }}
         with:
           script: |
-            const { guardRelease, requireTestedSource } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
+            const { guardRelease, requireCurrentRuntime, requireTestedSource } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
             const input = await guardRelease({ github, root: process.env.GITHUB_WORKSPACE, tag: process.env.RELEASE_TAG, sourceCommit: context.sha });
             await requireTestedSource({ github, owner: input.owner, repo: input.repo, sourceCommit: context.sha });
+            await requireCurrentRuntime({ runtimeRoot: `${process.env.GITHUB_WORKSPACE}/runtime-source`, commit: input.runtime.commit, notes: input.notes });
             core.setOutput('tag', input.tag);
             core.setOutput('source', context.sha);
             core.setOutput('runtime', input.runtime.commit);

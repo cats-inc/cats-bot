@@ -8,6 +8,8 @@ Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-ho
 1. A manually dispatched workflow creates a GitHub prerelease from the selected
    immutable commit; exact version/tag/lockfile/Runtime artifact identity gates
    publication. Reject existing published tags and drafts from another source.
+   Before any build, reject a Runtime pin that is not on Runtime main, or one lacking
+   changes there that the release notes do not list as left out.
    Serialize all releases and reject versions below or equal to any published
    plain version, including versions published between build and finalization.
 2. Windows x64/arm64 installer + portable, macOS universal DMG + ZIP, and Linux

@@ -1,11 +1,14 @@
 # Runtime candidate
 
 Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
-never source imports from another checkout. This candidate contains source
-`f53a2058a4a81f23d8d7b010865e0d80a9d6d868`
-([Runtime PR #211](https://github.com/cats-inc/cats-runtime/pull/211)), package version 0.6.2.
+never source imports from another checkout.
+
+<!-- runtime-pin:start -->
+Source `f53a2058a4a81f23d8d7b010865e0d80a9d6d868`, package version 0.6.2.
 Artifact: `vendor/cats-runtime-0.6.2-f53a2058.tgz`; 1,824,365 bytes.
 SHA-256: `443fb7f8efecc5eb92756623ac99747d93623d7b02a774342a5b9e8cde5b349e`.
+<!-- runtime-pin:end -->
+
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
 `package-lock.json` records the SHA-512 integrity. This is not an npm publication.
 
@@ -25,11 +28,13 @@ private session MCP and live native interactions; Google ACP supports local
 work/approvals while its session MCP is gated pending verified native credential
 persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
 
-Reproduce from the exact source with its lockfile: `npm ci`, `npm run build`, then
-`npm pack --ignore-scripts`. Name the artifact with the source commit and update
-this manifest, package dependency and lockfile together. A Runtime without the
-advertised policy/interaction capability is unavailable for the new mode, never
-silently used with different permissions.
+Reproduce an artifact from its exact source with its lockfile: `npm ci`, `npm run
+build`, then `npm pack --ignore-scripts`. `node scripts/refresh-runtime-pin.mjs` does
+this from a clean clone for any commit on Runtime `main`. It names the artifact with
+the source commit and updates the record above, the manifest, package dependency and
+lockfile together. It does not change the description in this file, so update that by
+hand. A Runtime without the advertised policy/interaction capability is unavailable
+for the new mode, never silently used with different permissions.
 
 No package version, profile/journal format or data migration changes in this
 slice. Existing profiles retain `providerPolicy: null` until the owner enables
