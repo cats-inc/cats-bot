@@ -27,7 +27,7 @@ test('macOS runs a script in Terminal, carrying the PATH a GUI launch lacks', ()
   const invocation = terminalInvocation('darwin', 'grok login', { PATH: '/Users/cat/.grok/bin:/usr/bin' })!;
   assert.equal(invocation.command, 'open');
   assert.deepEqual(invocation.args, ['-a', 'Terminal', '{script}']);
-  assert.match(invocation.script!, /^#!\/bin\/sh\nexport PATH='\/Users\/cat\/\.grok\/bin:\/usr\/bin'\ngrok login\n/u);
+  assert.match(invocation.script!, /^#!\/bin\/sh\nrm -f -- "\$0"\nexport PATH='\/Users\/cat\/\.grok\/bin:\/usr\/bin'\ngrok login\n/u);
 });
 
 test('Linux tries known terminals in order, and says when there is none', () => {
