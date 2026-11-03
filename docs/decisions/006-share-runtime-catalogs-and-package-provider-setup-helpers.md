@@ -11,6 +11,9 @@ core's PATH. Display language is a hub preference in `<CATS_BOT_HOME>/hub-state.
 Updated 2026-11-01: the reply language is a hub preference there too, with Desktop's choices. Each bot
 can override it in its profile, and the hub reports its resolved choice to every core, which keeps the
 last report in its profile (SPEC-008 FR-28).
+Updated 2026-11-04: [ADR-015](015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md)
+replaces the onboarding bullet: nothing is checked before the owner asks, each install is
+ticked, and the PowerShell scripts step is optional. The rest of this record stands.
 
 ## Context
 
