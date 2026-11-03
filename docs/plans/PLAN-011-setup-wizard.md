@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | In Progress |
+| **Status** | Implemented; clean-machine acceptance pending |
 | **Owner** | Product owner |
 | **Assigned To** | Claude |
 | **Reviewer** | Independent agent before each merge |
@@ -26,46 +26,50 @@ running on the new backend until Phase 3 replaces it.
 
 **Goal:** a name and a persona follow one rule everywhere (SPEC-010 FR-19, FR-20).
 
-- [ ] `src/shared/botText.ts` with the rule, its messages and their translations.
-- [ ] Enforce it in `validateSetupInput`, `createProfile`, `applyProfilePatch` and the Boss
+- [x] `src/shared/botText.ts` with the rule, its messages and their translations.
+- [x] Enforce it in `validateSetupInput`, `createProfile`, `applyProfilePatch` and the Boss
       Cat tool. Keep unchanged stored values working.
-- [ ] Make profile text one line in the heartbeat prompt.
-- [ ] Show the problem in the Bot tab and block saving.
+- [x] Make profile text one line in the heartbeat prompt.
+- [x] Show the problem in the Bot tab and block saving.
 
 ### Phase 2: The setup backend
 
 **Goal:** the page's new contract, with the old page still working (FR-6 to FR-15, FR-17,
 FR-22).
 
-- [ ] `setup:providers` returns the fixed list with no PATH scan.
-- [ ] Reading order, row order, the optional step and its removal from `canFinish` and from
+- [x] `setup:providers` returns the fixed list with no PATH scan.
+- [x] Reading order, row order, the optional step and its removal from `canFinish` and from
       install prerequisites.
-- [ ] Steps carry the plan, applied changes, script identity and sign-in state.
-- [ ] Log events for each run, sent to the asking window and to the hub's diagnostics.
-- [ ] `setup:cancel`, `setup:openTerminal`, `setup:environment`, `setup:restart`, `setup:draft`.
-- [ ] `startAtLogin` in `SetupInput`; the window's size and minimum.
+- [x] Steps carry the plan, applied changes, script identity and sign-in state.
+- [x] Log events for each run, sent to the asking window and to the hub's diagnostics.
+- [x] `setup:cancel`, `setup:openTerminal`, `setup:environment`, `setup:restart`, `setup:draft`.
+- [x] `startAtLogin` in `SetupInput`; the window's size and minimum.
 
 ### Phase 3: The wizard
 
 **Goal:** the three pages and the log (FR-1 to FR-5, FR-8 to FR-18, FR-21).
 
-- [ ] `src/renderer/settings/setup/`, replacing `SetupPage.tsx`, with its strings translated.
-- [ ] `ModelField` follows Cats Chat (FR-16).
-- [ ] The Bot tab checks only when asked (FR-21).
-- [ ] The color tokens from the mock, in `settings.css`.
-- [ ] `scripts/test-setup-wizard-renderer.mjs`: hidden, isolated, with fake helpers. Update
+- [x] `src/renderer/settings/setup/`, replacing `SetupPage.tsx`, with its strings translated.
+- [x] `ModelField` follows Cats Chat (FR-16).
+- [x] The Bot tab checks only when asked (FR-21).
+- [x] The color tokens from the mock, in `settings.css`.
+- [x] `scripts/test-setup-wizard-renderer.mjs`: hidden, isolated, with fake helpers. Update
       `scripts/test-desktop-parity.mjs`.
 
 ### Phase 4: Acceptance and documents
 
 **Goal:** what can be shown on real machines, and documents that match.
 
-- [ ] Drive the real main process, preload and helpers in an isolated `CATS_BOT_HOME`, on the
+- [x] Drive the real main process, preload and helpers in an isolated `CATS_BOT_HOME`, on the
       read-only path. No script that changes this machine runs.
-- [ ] `docs/setup-guide.md`, `docs/testing.md`, and the pending notes in SPEC-002, SPEC-008,
+- [x] `docs/setup-guide.md`, `docs/testing.md`, and the pending notes in SPEC-002, SPEC-008,
       SPEC-009 and ADR-006.
-- [ ] List what still needs a person or a clean machine: installs on a clean Windows 11 VM,
-      macOS and Linux first runs, opening a terminal on each OS, Windows' UAC decline path.
+- [ ] Still needs a person or a clean machine. None of this has been run:
+  - installs through the wizard on a clean Windows 11 VM, including declining UAC;
+  - first runs on macOS and Linux, which have no clean-machine acceptance on record;
+  - opening a real terminal on each OS, and signing in through it;
+  - start at login left unticked on an installed copy;
+  - restarting Cats Bot from the wizard, on an installed copy.
 
 ## Files to Create/Modify
 
@@ -125,3 +129,5 @@ FR-22).
 | 2026-11-04 | Plan created after the owner approved the mock |
 | 2026-11-04 | Phase 1 merged (#116). Independent review found a stored name could not survive an unrelated save; fixed before merge |
 | 2026-11-04 | Phase 2 reviewed: a throwing log listener, a repeatable restart, an unremovable draft and an early-exit terminal, all fixed before merge |
+| 2026-11-04 | Phase 3: `scripts/test-setup-wizard-renderer.mjs` passes 66 of 66 with fake helpers |
+| 2026-11-04 | Phase 4: the real main process, preload, page and read-only helpers, hidden and in an isolated home, on Codex, Claude and Grok: nothing ran before the button, each check reported this machine's real state, and nothing changed. Installs were not run |

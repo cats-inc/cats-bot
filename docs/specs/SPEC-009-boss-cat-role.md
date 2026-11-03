@@ -8,7 +8,7 @@
 | **Owner** | Product owner |
 | **Reviewer** | Independent security review before implementation |
 | **Terminology** | Called the coordinator role until 2026-10-30. Renamed Boss Cat (主控貓) because cats-platform's Coordinator is a conversation's routing participant, while its Boss Cat is the admin cat that acts beyond a conversation, as this role does ([PLAN-010](../plans/PLAN-010-boss-cat-derived-ids-and-hub-settings.md)). Unlike Platform, one bot holds the role at a time. |
-| **Pending change** | [SPEC-010](SPEC-010-setup-wizard.md) FR-4 and FR-19: a request fills in the wizard's first page, and its name and persona follow one shared rule (PLAN-011) |
+| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) FR-4 and FR-19: a request fills in the wizard's first page, and its name and persona follow one shared rule (PLAN-011) |
 
 ## Summary
 

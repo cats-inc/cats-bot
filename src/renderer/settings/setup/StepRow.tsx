@@ -70,16 +70,20 @@ function Details({ step, provider, platform }: { step: SetupStep; provider: stri
             <dd>{step.planned.map((line, index) => <div key={index}>{line}</div>)}</dd>
           </>
         )}
-        {step.script && (
+        {step.applyCommand && (
           <>
             <dt>{t('Runs')}</dt>
-            <dd><CommandSnippet command={`${step.script.file} -Apply -Json`} /></dd>
-            {step.script.sha256 && (
-              <>
-                <dt>{t('Script')}</dt>
-                <dd>{t('SHA-256 {hash}…, from {source}', { hash: step.script.sha256.slice(0, 8), source: step.script.source ?? '' })}</dd>
-              </>
-            )}
+            <dd><CommandSnippet command={step.applyCommand} /></dd>
+          </>
+        )}
+        {step.script && (
+          <>
+            <dt>{t('Script')}</dt>
+            <dd>
+              {step.script.sha256
+                ? t('{file}, SHA-256 {hash}…, from {source}', { file: step.script.file, hash: step.script.sha256.slice(0, 8), source: step.script.source ?? '' })
+                : step.script.file}
+            </dd>
           </>
         )}
         {facts.manual && (

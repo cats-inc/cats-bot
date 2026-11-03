@@ -445,6 +445,7 @@ export class ProviderSetup {
     let nodeReady = true;
     for (const link of this.chain(provider)) {
       const script = this.options.identify?.(link.helper) ?? null;
+      const applyCommand = this.options.describe?.(link.helper, true).command ?? null;
       if (link.needsNode && !nodeReady) {
         steps.push({
           id: link.id,
@@ -459,6 +460,7 @@ export class ProviderSetup {
           planned: [],
           applied: [],
           script,
+          applyCommand,
         });
         continue;
       }
@@ -477,6 +479,7 @@ export class ProviderSetup {
         planned: plannedBy(result),
         applied: [],
         script,
+        applyCommand,
       });
     }
     return {

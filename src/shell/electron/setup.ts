@@ -79,8 +79,10 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       if (!fromSetup(event)) throw new Error('Unknown setup window');
       return options.providers.install(provider, step, sendLog);
     });
-    ipcMain.handle('setup:cancel', (event) => {
-      if (fromSetup(event)) options.providers.cancelCheck();
+    ipcMain.handle('setup:cancel', async (event) => {
+      if (!fromSetup(event)) return;
+      options.providers.cancelCheck();
+      await options.providers.whenIdle();
     });
     ipcMain.handle('setup:openTerminal', async (event, provider: unknown) => {
       if (!fromSetup(event)) throw new Error('Unknown setup window');

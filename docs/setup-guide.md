@@ -66,11 +66,10 @@ root directly (a schedule added that way fires on the next run).
 
 ## The tray and conversation windows
 
-Starting without an existing profile or `--provider` opens onboarding. Choose
-Codex, Claude, Antigravity, Grok or Muse first. The selected provider's packaged
-helper checks installation and provides an install button. Codex first requires
-Node/npm and a usable npm installation folder; native providers skip those steps.
-Installation and sign-in are reported separately. No other provider is installed.
+Starting without an existing profile or `--provider` opens onboarding. No provider
+is chosen for you, and only the one you choose is checked or installed. Codex first
+requires Node/npm and a usable npm installation folder; native providers skip those
+steps. Installation and sign-in are reported separately.
 On Windows, Claude browser/subscription sign-in is checked through the CLI's
 read-only `claude auth status --json` command with a 10-second timeout; an API key
 also satisfies the existing authentication check. The helper does not read

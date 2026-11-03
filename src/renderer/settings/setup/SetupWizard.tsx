@@ -113,6 +113,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [stopAfter, setStopAfter] = useState(false);
   const stopRequested = useRef(false);
   const ticket = useRef(0);
+  const stopping = useRef<Promise<void>>(Promise.resolve());
   const [error, setError] = useState<string | null>(null);
 
   // The log
@@ -122,6 +123,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [logOpen, setLogOpen] = useState(false);
   const logChoice = useRef<'open' | 'closed' | null>(null);
   const hovering = useRef(false);
+  const closeOnLeave = useRef(false);
   const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Page 3
@@ -130,6 +132,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [startAtLogin, setStartAtLogin] = useState(true);
   const [folder, setFolder] = useState<string | null>(null);
   const [terminal, setTerminal] = useState<'opened' | 'missing' | null>(null);
+  const [openingTerminal, setOpeningTerminal] = useState(false);
 
   const heading = useRef<HTMLHeadingElement>(null);
   const elapsed = useElapsed(runStart);
@@ -190,6 +193,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const openLogForRun = useCallback(() => {
     if (settleTimer.current) clearTimeout(settleTimer.current);
     settleTimer.current = null;
+    closeOnLeave.current = false;
     setLogOpen(logChoice.current !== 'closed');
   }, []);
   const settleLog = useCallback(() => {
@@ -198,7 +202,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       settleTimer.current = null;
       if (logChoice.current) return;
       if (hovering.current) {
-        logChoice.current = 'open';
+        closeOnLeave.current = true;
         return;
       }
       setLogOpen(false);
@@ -210,6 +214,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const toggleLog = () => {
     if (settleTimer.current) clearTimeout(settleTimer.current);
     settleTimer.current = null;
+    closeOnLeave.current = false;
     setLogOpen((open) => {
       logChoice.current = open ? 'closed' : 'open';
       return !open;
@@ -225,6 +230,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     openLogForRun();
     let failed = false;
     try {
+      await stopping.current;
+      if (mine !== ticket.current) return;
       const next = await api.setup.check(provider);
       if (mine !== ticket.current) return;
       setState(next);
@@ -248,6 +255,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       setDetails(new Set());
       setApplied(new Set());
     }
+    setTerminal(null);
     setStep(2);
     void runCheck();
   };
@@ -256,12 +264,14 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const goTo = (target: 1 | 2 | 3) => {
     if (phase === 'checking') {
       ticket.current += 1;
-      void api.setup.cancel();
+      stopping.current = api.setup.cancel();
       setPhase('idle');
       setRunStart(null);
       settleLog();
     }
+    setError(null);
     if (target === 3) {
+      setTerminal(null);
       setModelProvider(provider);
       void api.setup.folder(name).then(setFolder);
     }
@@ -303,6 +313,12 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
           if (kind !== 'restart') setDetails((current) => new Set(current).add(id));
           setLogOpen(true);
           break;
+        } else if (done) {
+          stopped = true;
+          setError(t('{label} ran, but it is not done yet. The log below has its result.', { label: t(done.label) }));
+          setDetails((current) => new Set(current).add(id));
+          setLogOpen(true);
+          break;
         }
       }
     } catch (failure) {
@@ -330,8 +346,14 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const displayName = name.trim() || t('Cat bot');
 
   const openTerminal = async () => {
-    const result = await api.setup.openTerminal(provider);
-    setTerminal(result.opened ? 'opened' : 'missing');
+    setOpeningTerminal(true);
+    try {
+      const result = await api.setup.openTerminal(provider);
+      setTerminal(result.opened ? 'opened' : 'missing');
+    } catch {
+      setTerminal('missing');
+    }
+    setOpeningTerminal(false);
   };
 
   const create = async () => {
@@ -492,6 +514,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   }
 
   const showLive = phase === 'checking' || !state;
+  const lastTickable = (state?.steps ?? []).map((item) => rowKind(item)).lastIndexOf('needs');
   const pageTwo = (
     <>
       <h1 ref={heading} tabIndex={-1}>{title}</h1>
@@ -512,7 +535,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
                 />
               );
             })
-          : state!.steps.map((item) => {
+          : state!.steps.flatMap((item, index) => {
+              const row = (() => {
               if (item.id === runningStep) {
                 const adminPrompt = item.id === 'node' && windows;
                 return (
@@ -556,26 +580,30 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
                   })}
                 />
               );
+              })();
+              // FR-9: the shortcut closes the rows it can tick, whatever comes after them.
+              return !busy && shortcut.length >= 2 && index === lastTickable
+                ? [row, (
+                    <li className="setup-row setup-row-shortcut" key="shortcut">
+                      <button
+                        type="button"
+                        className="setup-more"
+                        id="setup-tick-required"
+                        onClick={() => setTicked((current) => {
+                          const next = new Set(current);
+                          for (const required of shortcut) {
+                            if (allRequiredTicked) next.delete(required.id);
+                            else next.add(required.id);
+                          }
+                          return next;
+                        })}
+                      >
+                        {allRequiredTicked ? t('Untick all required') : t('Tick all required')}
+                      </button>
+                    </li>
+                  )]
+                : [row];
             })}
-        {!busy && shortcut.length >= 2 && (
-          <li className="setup-row setup-row-shortcut">
-            <button
-              type="button"
-              className="setup-more"
-              id="setup-tick-required"
-              onClick={() => setTicked((current) => {
-                const next = new Set(current);
-                for (const item of shortcut) {
-                  if (allRequiredTicked) next.delete(item.id);
-                  else next.add(item.id);
-                }
-                return next;
-              })}
-            >
-              {allRequiredTicked ? t('Untick all required') : t('Tick all required')}
-            </button>
-          </li>
-        )}
       </ul>
     </>
   );
@@ -656,7 +684,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
           {signIn !== 'signed_in' && (
             <div className="setup-row-actions">
               {state?.signInCommand && <CommandSnippet command={state.signInCommand} copyable />}
-              <button type="button" id="setup-open-terminal" disabled={busy} onClick={() => void openTerminal()}>{t('Open terminal and run')}</button>
+              <button type="button" id="setup-open-terminal" disabled={busy || openingTerminal} onClick={() => void openTerminal()}>{t('Open terminal and run')}</button>
               {terminal === 'opened' && <span className="hint">{t('Terminal opened.')}</span>}
               {terminal === 'missing' && <span className="hint warn" role="alert">{t('No terminal was found. Copy the command and run it in yours.')}</span>}
             </div>
@@ -753,7 +781,13 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
         running={runningLine}
         elapsed={elapsed}
         onToggle={toggleLog}
-        onHover={(value) => { hovering.current = value; }}
+        onHover={(value) => {
+          hovering.current = value;
+          if (!value && closeOnLeave.current) {
+            closeOnLeave.current = false;
+            settleLog();
+          }
+        }}
       />
     </div>
   );

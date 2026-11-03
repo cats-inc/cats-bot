@@ -1072,8 +1072,10 @@ async function main(): Promise<void> {
       throw new Error('Provider setup is available only from Settings');
     return providerSetup.install(provider, step, setupLogTo(event));
   });
-  ipcMain.handle('setup:cancel', (event) => {
-    if (ownedMainFrame(event) && fromCreate(event)) providerSetup.cancelCheck();
+  ipcMain.handle('setup:cancel', async (event) => {
+    if (!ownedMainFrame(event) || !fromCreate(event)) return;
+    providerSetup.cancelCheck();
+    await providerSetup.whenIdle();
   });
   ipcMain.handle('setup:openTerminal', async (event, provider: unknown) => {
     if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');

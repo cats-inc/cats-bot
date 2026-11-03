@@ -308,7 +308,12 @@ await app.whenReady();
   await w.click('#setup-more-provider');
   await w.wait("document.querySelector('.setup-details')", 'details');
   check('details show the helper\'s own words', /grok:plan/u.test(await w.js("document.querySelector('.setup-details').textContent")));
-  world.applies = { grok: [{ status: 'relaunch_required', installed: false }] };
+  // A script that runs and leaves its row unfinished stops and says so.
+  world.applies = { grok: [{ status: 'changes_required', installed: false }, { status: 'relaunch_required', installed: false }] };
+  await w.click('#setup-tick-provider');
+  await w.click('#setup-apply');
+  await w.wait("document.querySelector('#setup-error')", 'not done');
+  check('a script that ran without finishing says so', /not done yet/u.test(await w.js("document.querySelector('#setup-error').textContent")));
   await w.click('#setup-tick-provider');
   await w.click('#setup-apply');
   await w.wait("document.querySelector('#setup-restart')", 'fallback');

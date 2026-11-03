@@ -146,7 +146,7 @@ and its [findings](research/2026-11-02-linux-avatar-black-area-and-clicks.md).
 Windows/macOS popup-owner focus and its native validation boundary are recorded
 in the [avatar menu findings](research/2026-11-02-avatar-menu-focus.md).
 
-Creating a cat bot is becoming a three-page wizard: nothing runs until asked, and every
+Creating a cat bot is a three-page wizard: nothing runs until asked, and every
 script that changes the computer is ticked by the owner
 ([ADR-015](decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md),
 [SPEC-010](specs/SPEC-010-setup-wizard.md),
