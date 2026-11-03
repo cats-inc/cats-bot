@@ -89,6 +89,8 @@ test('a persona keeps the joiners emoji and some scripts need', () => {
   assert.equal(botPersonaProblem(String.fromCodePoint(0x2139, 0xFE0F)), null, 'a letter that is also an emoji');
   assert.equal(botPersonaProblem(String.fromCodePoint(0x1F44D, 0x1F3FD, 0x200D, 0x1F4BB)), null, 'a skin tone then a joiner');
   assert.equal(botPersonaProblem(String.fromCodePoint(0xDA4, 0xDCA, 0x200D, 0xDBB)), null, 'a joiner after a mark, in Sinhala');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0x6F2, 0x6F0, 0x200C, 0x633)), null, 'a non-joiner after a Persian digit');
+  assert.equal(botPersonaProblem(String.fromCodePoint(0xBB, 0x200C, 0x647)), null, 'a non-joiner after punctuation');
 });
 
 test('a persona refuses text its owner cannot see', () => {

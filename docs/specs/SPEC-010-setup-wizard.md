@@ -163,10 +163,11 @@ persona get one rule wherever they enter.
       tag characters, line or paragraph separators, other format characters or other
       Default_Ignorable_Code_Point characters, which include the other variation selectors.
       U+FE0E and U+FE0F stay allowed right after an emoji or symbol, and zero-width joiner and
-      non-joiner right after a letter, mark, emoji or symbol, because emoji and some scripts
-      need them. Anywhere else they can spell out hidden text. A joiner after each letter is
-      still possible, and spaces, the Braille blank, private-use and unassigned characters are
-      not refused, so the rule narrows hidden text and does not rule it out.
+      non-joiner right after a letter, mark, number, punctuation mark or symbol, because emoji
+      and some scripts need them. Anywhere else they can spell out hidden text. A joiner after
+      each visible character is still possible, and spaces, the Braille blank, private-use and
+      unassigned characters are not refused, so the rule narrows hidden text and does not rule
+      it out.
     - A value that breaks the rule is refused with a message saying why. It is never
       silently changed, because silently stripped text is how a hidden instruction would go
       unnoticed.

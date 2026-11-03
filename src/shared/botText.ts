@@ -30,9 +30,9 @@ const VISIBLE = /[\p{L}\p{N}\p{P}\p{S}]/u;
 /**
  * Controls but line feed and tab, separators, and format characters and what never shows, but the
  * emoji selectors above and the joiners that emoji and some scripts need (U+200C, U+200D), right
- * after a letter, mark, emoji or symbol. A selector is a mark, so an emoji sequence can join after it.
+ * after something that shows or a mark. A selector is a mark, so an emoji sequence can join after it.
  */
-const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]|[^\P{DI}\u200C\u200D\uFE0E\uFE0F]|(?<![\p{Emoji}\p{S}])[\uFE0E\uFE0F]|(?<![\p{L}\p{M}\p{Emoji}\p{S}])[\u200C\u200D]/u;
+const PERSONA_HIDDEN = /[^\P{Cc}\n\t]|[^\P{Cf}\u200C\u200D]|[\u2028\u2029]|[^\P{DI}\u200C\u200D\uFE0E\uFE0F]|(?<![\p{Emoji}\p{S}])[\uFE0E\uFE0F]|(?<![\p{L}\p{M}\p{N}\p{P}\p{S}])[\u200C\u200D]/u;
 
 /** Characters that do not show: format characters, what never shows, and the Braille blank. */
 const UNSEEN = /[\p{Cf}\u2800]|[^\P{DI}\uFE0E\uFE0F]/gu;
