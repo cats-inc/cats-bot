@@ -156,6 +156,7 @@ export interface SetupInput {
   model: string | null;
   instructions: string;
   modelSelection?: import('../core/types.ts').ModelSelection;
+  avatar?: import('../shared/avatars.ts').BotAvatar;
 }
 
 type Unsubscribe = () => void;
@@ -230,6 +231,8 @@ export interface CatsBotBridge {
     models(provider: string): Promise<ModelCatalog>;
     /** New bot window only: a Boss Cat's request waiting for its provider's setup, once. */
     prefill(): Promise<{ name: string; persona: string; provider: string } | null>;
+    /** New bot window only: the look the page starts on (SPEC-008 FR-29). */
+    suggestedAvatar(): Promise<import('../shared/avatars.ts').BotAvatar>;
     finish(input: SetupInput): Promise<null>;
   };
 }

@@ -4,6 +4,7 @@
  * in-memory view of those files plus the `BotHostApi` the shell speaks.
  */
 
+import type { BotAvatar } from '../shared/avatars.ts';
 import type { BotReplyLanguage, HubLanguageReport } from '../shared/language.ts';
 
 /** SPEC-001 FR-1: the one global provider/model of a bot. */
@@ -57,6 +58,8 @@ export interface BotProfile {
   schemaVersion: 2;
   id: string;
   name: string;
+  /** SPEC-008 FR-29: the look of this bot's Cat; absent or unknown reads as the default Cat. */
+  avatar: BotAvatar;
   instructions: string;
   environment: BotEnvironment;
   executionTarget: ExecutionTarget;
@@ -351,6 +354,7 @@ export type ApprovalDecision = 'approve' | 'deny';
 
 export interface BotProfilePatch {
   name?: string;
+  avatar?: BotAvatar;
   instructions?: string;
   executionTarget?: ExecutionTarget;
   heartbeat?: Partial<HeartbeatPolicy>;
@@ -373,6 +377,8 @@ export type BotHostEvent =
   | { type: 'work.awaitingOwner'; workItem: WorkItem }
   | { type: 'presence.changed'; conversationId: string; presence: PresenceState; reason: PresenceReason }
   | { type: 'runtime.status'; state: RuntimeState; detail?: string }
+  /** The name or look changed, so every window showing this bot can follow without a restart (SPEC-008 FR-29). */
+  | { type: 'profile.updated'; name: string; avatar: BotAvatar }
   | { type: 'host.handoff'; message: HandoffMessage }
   /**
    * SPEC-006: desktop control changed; `pendingRequests` counts grant requests waiting in the conversation,
@@ -395,6 +401,7 @@ export interface InstanceLock {
 export interface BotStatus {
   id: string;
   name: string;
+  avatar: BotAvatar;
   root: string;
   runtime: { state: RuntimeState; pid: number | null };
   queue: { queued: number; running: WorkItem | null };

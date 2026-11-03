@@ -4,12 +4,13 @@ import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
-import { initializeBot } from '../../src/core/bot.ts';
+import { initializeBot, readBotProfile } from '../../src/core/bot.ts';
 import { acquireInstanceLock } from '../../src/core/store/lock.ts';
 import { botPathsFor, hubPathsFor } from '../../src/core/store/paths.ts';
 import { BotManagementError, BotManager, type BotCores } from '../../src/shell/electron/hub/botManager.ts';
 import { CoreRunner } from '../../src/shell/electron/hub/coreRunner.ts';
-import { addBot, emptyRegistry, readRegistry, withHolder, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { addBot, DEFAULT_MAX_BOTS, emptyRegistry, readRegistry, withHolder, writeRegistry } from '../../src/shell/electron/hub/registry.ts';
+import { BOT_AVATARS } from '../../src/shared/avatars.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
 // PLAN-009 Phase 3 (SPEC-008 FR-3, FR-5, FR-6, FR-9 to FR-11), apart from Electron.
@@ -50,13 +51,50 @@ test('creating bots stops at the cap, and archived bots do not count (FR-6)', as
   const { root, manager } = setUp(['mochi']);
   assert.equal(await manager.create({ name: 'Nori', provider: 'claude' }), 'nori-catsbot');
   assert.equal(await manager.create({ name: 'Nori', provider: 'codex' }), 'nori-catsbot-2', 'a taken id gets a number');
-  await assert.rejects(manager.create({ name: 'Four', provider: 'claude' }), (error: Error) =>
-    error instanceof BotManagementError && /at most 3 bots/u.test(error.message));
-  assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['mochi', 'nori-catsbot', 'nori-catsbot-2']);
+  assert.equal(await manager.create({ name: 'Pico', provider: 'claude' }), 'pico-catsbot');
+  assert.equal(await manager.create({ name: 'Tofu', provider: 'claude' }), 'tofu-catsbot');
+  await assert.rejects(manager.create({ name: 'Six', provider: 'claude' }), (error: Error) =>
+    error instanceof BotManagementError && /at most 5 bots/u.test(error.message));
+  assert.deepEqual(saved(root).bots.map((bot) => bot.id), ['mochi', 'nori-catsbot', 'nori-catsbot-2', 'pico-catsbot', 'tofu-catsbot']);
   await manager.archive('nori-catsbot-2');
-  assert.equal(await manager.create({ name: 'Four', provider: 'claude' }), 'four-catsbot');
-  await assert.rejects(manager.restore('nori-catsbot-2'), /at most 3 bots/u, 'restoring is held to the cap too');
+  assert.equal(await manager.create({ name: 'Six', provider: 'claude' }), 'six-catsbot');
+  await assert.rejects(manager.restore('nori-catsbot-2'), /at most 5 bots/u, 'restoring is held to the cap too');
   await assert.rejects(manager.create({ id: '../escape', name: 'x', provider: 'claude' }), /not a valid bot id/u);
+});
+
+test('new bots take the looks no bot uses, and the owner may still share one (FR-29)', async () => {
+  const { root, manager } = setUp();
+  const look = (id: string, dir = 'bots') => readBotProfile(join(root, dir, id))?.avatar;
+
+  assert.equal(look(await manager.create({ id: 'first', name: 'First', provider: 'claude' })), 'ginger', 'the first bot is the default Cat');
+  assert.equal(look(await manager.create({ id: 'second', name: 'Second', provider: 'claude' })), 'tuxedo');
+  assert.equal(look(await manager.create({ id: 'chosen', name: 'Chosen', provider: 'claude', avatar: 'fold' })), 'fold', 'a choice is kept');
+  assert.equal(look(await manager.create({ id: 'fourth', name: 'Fourth', provider: 'claude' })), 'siamese', 'a look already chosen is skipped');
+  assert.equal(look(await manager.create({ id: 'same', name: 'Same', provider: 'claude', avatar: 'ginger' })), 'ginger', 'sharing a look is allowed');
+
+  // A look only an archived bot has is passed over while another is free, and the bot keeps its look when restored.
+  await manager.archive('second');
+  assert.equal(look('second', 'archive'), 'tuxedo');
+  assert.equal(look(await manager.create({ id: 'sixth', name: 'Sixth', provider: 'claude' })), 'calico');
+  await manager.archive('sixth');
+  await manager.restore('second');
+  assert.equal(look('second'), 'tuxedo');
+});
+
+test('there are more looks than bots, so a hub at the cap has no look in common (FR-29)', async () => {
+  assert.ok(BOT_AVATARS.length > DEFAULT_MAX_BOTS);
+  const { root, manager } = setUp();
+  const looks: unknown[] = [];
+  for (let bot = 1; bot <= DEFAULT_MAX_BOTS; bot += 1) {
+    looks.push(readBotProfile(join(root, 'bots', await manager.create({ id: `bot-${bot}`, name: `Bot ${bot}`, provider: 'claude' })))?.avatar);
+  }
+  assert.equal(new Set(looks).size, DEFAULT_MAX_BOTS);
+});
+
+test('a look that cannot be read never stops a new bot (FR-29)', async () => {
+  const { root, manager } = setUp(['mochi']);
+  writeFileSync(join(root, 'bots', 'mochi', 'profile.json'), '{not json');
+  assert.equal(readBotProfile(join(root, 'bots', await manager.create({ name: 'Nori', provider: 'claude' })))?.avatar, 'ginger');
 });
 
 test('archive stops the bot, moves it under its lock and clears the Boss Cat role (FR-5)', async () => {

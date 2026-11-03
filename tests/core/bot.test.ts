@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
-import { BotCore, BotInstanceRunningError } from '../../src/core/bot.ts';
+import { BotCore, BotInstanceRunningError, readBotProfile } from '../../src/core/bot.ts';
 import { appendJournal, readJournal } from '../../src/core/store/journal.ts';
 import { writeHandoff } from '../../src/core/store/lock.ts';
 import { botPathsFor, conversationFile, transcriptFile } from '../../src/core/store/paths.ts';
@@ -441,6 +441,33 @@ test('tightened permissions or new instructions replace the session before the n
     const fourth = await sendAndWait(core, 'home', 'still here?');
     assert.equal(fourth.run?.sessionId, third.run?.sessionId, 'a name or heartbeat change keeps the session');
   } finally {
+    await core.stop();
+  }
+});
+
+test('a new look is announced at once and keeps the session (SPEC-008 FR-29)', async () => {
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'dressy', core: fastRetries });
+  const seen: BotHostEvent[] = [];
+  const off = core.subscribe((event) => { if (event.type === 'profile.updated') seen.push(event); });
+  try {
+    await core.start();
+    const first = await sendAndWait(core, 'home', 'hello');
+    const revision = (await core.getProfile()).configRevision;
+
+    assert.equal((await core.updateProfile({ avatar: 'calico' })).avatar, 'calico');
+    assert.equal(core.status().avatar, 'calico');
+    assert.deepEqual(seen, [{ type: 'profile.updated', name: 'Test Bot', avatar: 'calico' }]);
+    assert.equal(readBotProfile(root)?.avatar, 'calico', 'it is on disk');
+    assert.equal((await core.getProfile()).configRevision, revision);
+    assert.equal((await sendAndWait(core, 'home', 'still here?')).run?.sessionId, first.run?.sessionId);
+
+    await core.updateProfile({ avatar: 'calico' });
+    await core.updateProfile({ idleSleepMinutes: 30 });
+    assert.equal(seen.length, 1, 'nothing to show, nothing sent');
+    await core.updateProfile({ name: 'Dressy' });
+    assert.deepEqual(seen.at(-1), { type: 'profile.updated', name: 'Dressy', avatar: 'calico' });
+  } finally {
+    off();
     await core.stop();
   }
 });

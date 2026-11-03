@@ -3,7 +3,7 @@
   "sources": [
     {
       "repository": "cats-inc/cats-one",
-      "commit": "f17ae5f488b774116b82f04ff2781576a3460b12",
+      "commit": "d86fd8057b3868039116370256ab7be92dd326ba",
       "files": [
         {
           "source": "scripts/shared/sync-agent-skills.mjs",
@@ -63,7 +63,7 @@
     },
     {
       "repository": "cats-inc/cats-platform",
-      "commit": "fd61bc2bb980e491f63b4035d04abee9b99c5021",
+      "commit": "9e54a28286cea0c962e4d0f98643d9676f2a5d08",
       "files": [
         {
           "source": "scripts/shared/renderer-cdp.mjs",
@@ -123,6 +123,12 @@
           "source": "scripts/shared/release-primitives.mjs",
           "path": "scripts/shared/release-primitives.mjs",
           "sha256": "214223c5b4c79a48366954ca0b2ec89ab3654676b5c0e88141a514628638c087",
+          "executable": false
+        },
+        {
+          "source": "scripts/shared/source-selection.mjs",
+          "path": "scripts/shared/source-selection.mjs",
+          "sha256": "690b5593eb6862413c5b01164dcea7b7272937b12d525075c3e9341ecc76af2f",
           "executable": false
         }
       ]

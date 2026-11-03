@@ -56,6 +56,22 @@ last step, not the first.
 
 ### Integration tests
 
+- `tests/integration/antigravityTimeout.test.ts` starts the real packed Runtime
+  with a legacy agy stream-json fixture in a disposable home. It emits init,
+  stays silent for 31 seconds, then completes; the previous Runtime fails this
+  case at 30 seconds. The fixture uses no real provider or authentication.
+
+  Verified on Linux ARM64 with Node 26.13.0: the previous `fb0f1125` Runtime
+  artifact reproduced `Antigravity stopped responding after the initial response
+  for 30000ms`; the `f53a2058` replacement completed the
+  same 31-second case. The focused Bot run passed 22 tests (architecture, provider
+  catalogs, Runtime stop, legacy CLI create/stream/cancel/resume/history, native
+  Muse/Grok/Antigravity fixtures and this regression), plus typecheck and build.
+  Runtime's focused config/WorkerPool/WorkerProcess run passed 105 tests and its
+  build passed. Independent source and artifact review was performed separately.
+  These are isolated fixtures, not a live model or installed-profile acceptance;
+  no installed Bot/Desktop files or user conversations were changed.
+
 - **Location**: `tests/integration/runtime.test.ts`, `tools.test.ts` and
   `multinote.test.ts` with `tests/support/fixture-cli/`
 - **Scope**: the real pinned `cats-runtime` bin from `node_modules`, started
@@ -94,8 +110,30 @@ recheck cannot create a bot, a delayed page load cannot show a closed window, an
 installation and bot creation finish safely. `providerSetup.test.ts` covers probe
 cancellation, idle waiters and preservation of an explicitly requested install.
 `tests/integration/providerSetupProcess.test.ts` runs a disposable packaged-helper
-fixture with a hung CLI and grandchild, and checks that all three processes have
-stopped before the provider setup becomes idle.
+fixture with a hung CLI and grandchild, and checks that cancelling stops all three.
+The kill goes out before the provider setup becomes idle, and each process then has
+up to 5 seconds to be reaped, because a killed process still answers `kill(pid, 0)`
+until then. The test reports how long the processes took to start, so a slow runner
+can be told from a hang.
+
+#### Linux relaunch and update elevation
+
+`tests/shell/linuxRelaunch.test.ts` checks that a relaunch starts only after the host
+has exited, keeps its arguments and does not change `NoNewPrivs`, that a relaunch that
+cannot start is logged rather than thrown, and that no Linux path reaches Electron's
+`app.relaunch()`, which sets that flag. `tests/shell/updates.test.ts` checks that a host
+with the flag refuses before downloading or stopping any bot, and how pkexec and apt exit
+codes are reported. After `npm run build`, the same test file also runs real Electron
+relaunches. CI does this headlessly on Ubuntu; a Linux desktop also covers the switch to
+X11. They open no window and use a disposable profile:
+
+```bash
+CATS_TEST_ELECTRON_RELAUNCH=1 node --test tests/shell/linuxRelaunch.test.ts
+```
+
+An in-app update needs the administrator password, so only a manual acceptance on an
+installed build covers pkexec itself: `NoNewPrivs` in `/proc/<hub pid>/status` is 0
+before installing and after the automatic restart, and the next update can install.
 
 #### Host diagnostics
 

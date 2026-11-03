@@ -3,6 +3,7 @@ import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
 import { parseModelSelection } from '../providers/selection.ts';
 
+import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import {
   BOT_REPLY_LANGUAGE_DEFAULT,
   isBotReplyLanguage,
@@ -48,6 +49,7 @@ export const PROFILE_SCHEMA_VERSION = 2 as const;
 export interface CreateProfileInput {
   id?: string;
   name: string;
+  avatar?: BotAvatar;
   instructions?: string;
   provider: string;
   model?: string | null;
@@ -65,6 +67,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
     name: input.name,
+    avatar: input.avatar ?? DEFAULT_BOT_AVATAR,
     instructions: input.instructions ?? '',
     environment: { kind: 'native' },
     executionTarget: {
@@ -208,6 +211,8 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: stringOr(raw.id, fallback.id),
     name: stringOr(raw.name, fallback.name),
+    // SPEC-008 FR-29: every bot made before the choice is the default Cat, and an older writer drops the field.
+    avatar: resolveBotAvatar(raw.avatar),
     instructions: stringOr(raw.instructions, fallback.instructions),
     environment: normalizeEnvironment(raw.environment),
     executionTarget: normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget),
@@ -338,6 +343,7 @@ export function applyProfilePatch(
   if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
   }
+  if (patch.avatar !== undefined && !isBotAvatar(patch.avatar)) throw new Error('avatar must be one of the Cat looks');
   const nextReplyLanguage = patch.replyLanguage ?? profile.replyLanguage;
   const replyLanguageChanged = effectiveReplyLanguage({ replyLanguage: nextReplyLanguage, hubLanguage: profile.hubLanguage })
     !== effectiveReplyLanguage(profile);
@@ -349,6 +355,8 @@ export function applyProfilePatch(
   const next: BotProfile = {
     ...profile,
     name: patch.name ?? profile.name,
+    // Not a session setting: no session is told how its Cat looks, so no revision bump (SPEC-008 FR-29).
+    avatar: patch.avatar ?? profile.avatar,
     instructions: nextInstructions,
     executionTarget: nextTarget,
     configRevision: sessionChanged ? profile.configRevision + 1 : profile.configRevision,

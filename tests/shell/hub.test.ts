@@ -43,7 +43,7 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
     [['mochi', 0, true, null], ['nori', 1, true, null]]);
   assert.equal(read.registry.bossCat.holder, 'mochi');
   assert.deepEqual(read.registry.environmentProfile, { kind: 'native' });
-  assert.equal(read.registry.maxBots, 3);
+  assert.equal(read.registry.maxBots, 5);
 
   // Missing fields get defaults; a holder that names no bot is cleared.
   writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], bossCat: { holder: 'ghost' } }));
@@ -60,6 +60,31 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
     assert.equal(readRegistry(root).state, 'corrupt', corrupt);
     assert.throws(() => writeRegistry(root, registry), /kept/u, 'a corrupt registry is never overwritten');
     assert.equal(readFileSync(hubPathsFor(root).registry, 'utf8'), corrupt);
+  }
+});
+
+test('a registry written with the old cap of 3 opens at 5; any other stored cap stays (FR-6)', () => {
+  const root = freshHome();
+  const write = (maxBots: unknown) => writeFileSync(hubPathsFor(root).registry, JSON.stringify({ schemaVersion: 1, bots: [{ id: 'mochi' }], maxBots }));
+  const stored = () => {
+    const read = readRegistry(root);
+    assert.equal(read.state, 'ok');
+    return read.state === 'ok' ? read.registry : emptyRegistry();
+  };
+  write(3);
+  const upgraded = stored();
+  assert.equal(upgraded.maxBots, 5);
+  // Every read gives 5, and the next write of the registry records it.
+  assert.equal(JSON.parse(readFileSync(hubPathsFor(root).registry, 'utf8')).maxBots, 3);
+  writeRegistry(root, upgraded);
+  assert.equal(JSON.parse(readFileSync(hubPathsFor(root).registry, 'utf8')).maxBots, 5);
+  for (const kept of [1, 2, 4, 5, 8]) {
+    write(kept);
+    assert.equal(stored().maxBots, kept);
+  }
+  for (const unusable of [0, -1, 2.5, '5', null]) {
+    write(unusable);
+    assert.equal(stored().maxBots, 5, String(unusable));
   }
 });
 

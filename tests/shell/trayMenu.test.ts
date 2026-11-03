@@ -90,6 +90,7 @@ const DESKTOP_OFF = { enabled: false, pendingRequests: 0, waitingConversationId:
 const status: BotStatus = {
   id: 'mochi',
   name: 'Mochi',
+  avatar: 'ginger',
   root: 'C:/tmp/mochi',
   runtime: { state: 'ready', pid: 1 },
   queue: { queued: 0, running: null },

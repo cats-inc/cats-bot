@@ -12,9 +12,33 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    The existing profile schema-2 migration requires the first release to be
    **0.2.0 or later**. Each release must exceed every published plain version,
    because preview discovery follows GitHub feed order.
-2. Keep `vendor/runtime-source.json`, the vendored tarball and lockfile exact.
-   The manifest records the Runtime repository, full source SHA, package version,
-   tarball path and SHA-256. The workflow also checks lockfile SHA-512 integrity.
+2. Select the Runtime here, in the bump. Run `node scripts/refresh-runtime-pin.mjs`,
+   which builds Runtime `main` from a clean clone, or add `--ref SHA` to hold changes
+   back. It keeps `vendor/runtime-source.json`, the vendored tarball and lockfile
+   exact, and CI then tests that exact combination. The manifest records the Runtime
+   repository, full source SHA, package version, tarball path and SHA-256. The workflow
+   also checks lockfile SHA-512 integrity. The script updates only the marked record in
+   `vendor/README.md`, so update its description by hand.
+
+   The preview guard runs the same check as Cats Desktop, from the shared
+   `scripts/shared/source-selection.mjs`. It refuses a Runtime commit that is not on
+   Runtime `main`. It also refuses one that lacks other changes on `main`, unless the
+   release notes list each one on a `Left out of this release:` line:
+
+   ```md
+   - **Left out of this release:** cats-runtime#208, because it needs more testing.
+   ```
+
+   Name a change as `cats-runtime#N`, or by the first 8 characters of its SHA when its
+   subject has no pull request number. The refusal and the refresh script both print the
+   name to use. The list may wrap or use nested bullets, and it ends at a blank line, a
+   heading or the next list item at its own level. Only commits changing nothing outside
+   `docs/` and `.github/` are exempt, because those do not reach the package or the
+   installers. A mention elsewhere in the notes does not count, because notes also cite
+   what they include, and a bare `#N` does not count, because pull request numbers
+   collide between repositories. The guard checks the names, so review checks that the
+   line gives a reason. If Runtime merges another change after the bump, the dispatch
+   fails: refresh the pin or list the change, in a new commit.
 3. Prepare `docs/releases/vX.Y.Z.md` in the original bump PR: changes, supported
    OS/architectures, signing policy, exact Bot/Runtime source identity and artifact
    pins, compatibility, upgrade/backup/failure recovery. Use the release commit
@@ -133,6 +157,14 @@ installer has finished. Linux uses an asynchronous pkexec/apt-get handoff so the
 permission prompt does not freeze the host; it never kills an active package
 manager on timeout.
 
+On Linux every relaunch goes through `createLinuxRelaunch`, because Electron's
+`app.relaunch()` sets `NoNewPrivs` on the replacement, and pkexec cannot gain root
+under it (`pkexec must be setuid root`, exit 127). The flag is inherited and cannot
+be cleared, so a host already running with it, such as one started by an older
+version's relaunch, refuses before downloading or stopping any bot and asks the user to
+quit and reopen from the applications menu. Cats Bot does not bypass the flag. The
+last install's stderr is kept in `<userData>/logs/update-install.log`.
+
 Portable and unsigned macOS builds can check and open the official release page,
 then must be replaced manually. Development, candidate and unrecognized local
 builds explain why checks are disabled. Older artifacts with no updater require
@@ -165,10 +197,14 @@ on their own OS. Local builds default to candidate identity; `--release` is
 restricted to the exact manual workflow/repository/source context. These checks
 establish provenance conventions, not a defense against a locally modified app.
 
-A failed build leaves a draft. Re-run from the same commit and tag; only a draft
-whose recorded source matches may be replaced. Existing tags, another source's
-draft and published releases are rejected. Do not edit a published release to
-repair it; prepare a new version and obtain publication authorization.
+A failed build leaves a draft. Prefer **Re-run failed jobs** on that run, which keeps
+its guard result. A new dispatch from the same commit and tag also resumes the draft,
+because only a draft whose recorded source matches may be replaced, but it repeats the
+Runtime check. If Runtime has merged another change since, that dispatch is refused and
+a new commit cannot reuse the draft: re-run the failed jobs, or delete the unpublished
+draft and dispatch the new commit. Existing tags, another source's draft and published
+releases are rejected. Do not edit a published release to repair it; prepare a new
+version and obtain publication authorization.
 
 After publication verify the Actions result, public prerelease/tag SHA and complete
 asset names/digests. Installed upgrade acceptance must separately exercise Windows

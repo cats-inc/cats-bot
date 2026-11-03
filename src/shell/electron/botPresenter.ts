@@ -1,5 +1,7 @@
 import type { RemoteBotCore } from '../../core/host-api/remote.ts';
+import { readBotProfile } from '../../core/profile/initialize.ts';
 import type { BotHostEvent } from '../../core/types.ts';
+import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
 import { translate, type LanguageState, type Locale } from '../../shared/language.ts';
 import type { HostedCore } from './coreHost.ts';
 import { FloatingBot } from './floatingBot.ts';
@@ -76,8 +78,18 @@ export class BotPresenter {
       log: host.log,
       state: () => this.windows.shellState.floatingBot,
       persist: () => this.windows.persist(),
+      avatar: () => this.storedAvatar(),
       slot,
     });
+  }
+
+  /** The look on disk; a profile that cannot be read shows the default Cat until the core says otherwise. */
+  private storedAvatar(): BotAvatar {
+    try {
+      return readBotProfile(this.root)?.avatar ?? DEFAULT_BOT_AVATAR;
+    } catch {
+      return DEFAULT_BOT_AVATAR;
+    }
   }
 
   /** Which of this bot's windows a renderer belongs to, if any. */

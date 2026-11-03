@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { BotProfile, ModelCatalog, ProviderInfo } from '../../core/types.ts';
 import type { ProviderSetupState } from '../../shared/providerSetup.ts';
 import { errorText } from '../errors.ts';
+import { AvatarField } from './AvatarField.tsx';
 import { ModelField, useModelMenu } from './ModelField.tsx';
 import {
   botForm,
@@ -107,6 +108,7 @@ export function BotTab({
             onChange={(event) => update({ name: event.target.value })}
           />
         </label>
+        <AvatarField idPrefix="bot" value={form.avatar} onChange={(avatar) => update({ avatar })} />
         <label className="field">
           <span>{t('Agent CLI')}</span>
           <select

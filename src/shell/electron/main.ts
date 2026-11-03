@@ -20,7 +20,8 @@ import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
-import { initializeBot, readBotProfile } from '../../core/profile/initialize.ts';
+import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
+import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
 import { listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
@@ -52,7 +53,7 @@ import { runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
 import { buildHubTrayMenuTemplate, buildHubTrayTooltip, buildBotMenuTemplate, type BotMenuActions, type BotMenuModel } from './trayMenu.ts';
-import { configureUpdater, createUpdaterAdapter, installDebianUpdate } from './update/adapter.ts';
+import { configureUpdater, createUpdaterAdapter, assertCanElevate, installDebianUpdate } from './update/adapter.ts';
 import { BotUpdateController } from './update/controller.ts';
 import { TrayUpdateDialog } from './update/dialog.ts';
 import { BotInstallation, InstallationRecoveryRequired, processIsAlive } from './update/installation.ts';
@@ -65,6 +66,7 @@ import { loadDesktopHost } from './win32Desktop.ts';
 import { botWindowIdentity } from './windowIdentity.ts';
 import { linuxAutostartEnabled, linuxAutostartPath, refreshLinuxAutostart, setLinuxAutostart } from './linuxAutostart.ts';
 import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
+import { createLinuxRelaunch } from './linuxRelaunch.ts';
 import { createHostLogger, observeDisplays, observeHostApp, observeHostProcess, type HostLogger } from './hostDiagnostics.ts';
 import { diagnosticError } from '../../shared/diagnosticLog.ts';
 
@@ -87,6 +89,12 @@ const require = createRequire(import.meta.url);
 /** The package's appId; Electron names the login item after it (SPEC-007 FR-9). */
 const APP_ID = 'io.catsinc.catsbot';
 let hostLogger: HostLogger | undefined;
+const relaunchHost = process.platform === 'linux'
+  ? createLinuxRelaunch({
+      executable: process.execPath,
+      logger: (message) => { if (hostLogger) hostLogger.log(message, 'error'); else process.stderr.write(`${message}\n`); },
+    })
+  : (args: string[]) => app.relaunch({ args });
 
 function parseArgs(argv: string[]): { id?: string; provider?: string; name?: string; model?: string } {
   const result: { id?: string; provider?: string; name?: string; model?: string } = {};
@@ -138,7 +146,7 @@ interface BotRow {
 async function main(): Promise<void> {
   app.setName('Cats Bot');
   app.setPath('userData', app.commandLine.getSwitchValue('user-data-dir') || join(app.getPath('appData'), 'Cats Bot'));
-  if (relaunchForLinuxWindowing(app)) return;
+  if (relaunchForLinuxWindowing(app, relaunchHost)) return;
   const args = parseArgs(process.argv.slice(1));
   // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
   // invalid id before it reaches any path.
@@ -325,6 +333,7 @@ async function main(): Promise<void> {
           model: input.model,
           ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
           ...(input.instructions ? { instructions: input.instructions } : {}),
+          ...(input.avatar ? { avatar: input.avatar } : {}),
         });
         created = id;
       },
@@ -866,11 +875,12 @@ async function main(): Promise<void> {
           },
           ...(process.platform === 'linux'
             ? {
+                assertCanInstall: assertCanElevate,
                 installDeb: (file: string) =>
                   installDebianUpdate(file, () => {
-                    app.relaunch({ args: process.argv.slice(1) });
+                    relaunchHost(process.argv.slice(1));
                     app.quit();
-                  }),
+                  }, join(app.getPath('userData'), 'logs', 'update-install.log')),
               }
             : {}),
         })
@@ -906,7 +916,7 @@ async function main(): Promise<void> {
       recover: async (uncertain, error) => {
         dialog.showErrorBox('Cats Bot update', `${error.message}\n\n${uncertain
         ? 'Check the installer before reopening Cats Bot.' : 'Cats Bot will restart the current installation.'}`);
-        if (!uncertain) app.relaunch({ args: process.argv.slice(1) });
+        if (!uncertain) relaunchHost(process.argv.slice(1));
         app.quit();
       },
       openRelease: (url) => shell.openExternal(url),
@@ -1056,6 +1066,7 @@ async function main(): Promise<void> {
         model: input.model,
         ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
         ...(input.instructions ? { instructions: input.instructions } : {}),
+        ...(input.avatar ? { avatar: input.avatar } : {}),
       });
       window.destroy();
       botsChanged();
@@ -1076,6 +1087,9 @@ async function main(): Promise<void> {
     createPrefill = null;
     return request;
   });
+  // SPEC-008 FR-29: the look the New bot window starts on, so the owner sees what the bot would get.
+  ipcMain.handle('setup:suggestedAvatar', (event) =>
+    (ownedMainFrame(event) && fromCreate(event) ? suggestBotAvatar(hubPaths.bots) : DEFAULT_BOT_AVATAR));
   const openCreateWindow = () => {
     if (createWindow && !createWindow.isDestroyed()) {
       createWindow.show();
