@@ -3,7 +3,7 @@
   "sources": [
     {
       "repository": "cats-inc/cats-one",
-      "commit": "d86fd8057b3868039116370256ab7be92dd326ba",
+      "commit": "0ddce6621b4f0b60b93bfee7c617ee5ecab01eb9",
       "files": [
         {
           "source": "scripts/shared/sync-agent-skills.mjs",
