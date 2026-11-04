@@ -223,7 +223,9 @@ if (-not $isAdmin -and -not $SkipElevation) {
   $relayPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(),
     "cats-helper-relay-$([System.Guid]::NewGuid().ToString('N')).json")
 
-  $relayArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
+  # Start-Process joins ArgumentList with spaces; retain quotes around both
+  # file paths, including the default "Cats Bot" installation directory.
+  $relayArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath))
   if ($CheckOnly) { $relayArgs += '-CheckOnly' }
   if ($Apply) { $relayArgs += '-Apply' }
   if ($Upgrade) { $relayArgs += '-Upgrade' }
@@ -234,7 +236,7 @@ if (-not $isAdmin -and -not $SkipElevation) {
   if ($PSBoundParameters.ContainsKey('DetectedVersion')) { $relayArgs += @('-DetectedVersion', $DetectedVersion) }
   if ($SkipNodeProbe) { $relayArgs += '-SkipNodeProbe' }
   $relayArgs += '-SkipElevation'
-  $relayArgs += @('-ResultRelayPath', $relayPath)
+  $relayArgs += @('-ResultRelayPath', ('"{0}"' -f $relayPath))
 
   try {
     $process = Start-Process -FilePath 'powershell.exe' `
@@ -242,27 +244,11 @@ if (-not $isAdmin -and -not $SkipElevation) {
       -Verb RunAs `
       -Wait `
       -PassThru
-    if ([System.IO.File]::Exists($relayPath)) {
-      $relayed = [System.IO.File]::ReadAllText($relayPath)
-      [System.IO.File]::Delete($relayPath)
-      if ($Json -and -not [string]::IsNullOrWhiteSpace($relayed)) {
-        Write-Output $relayed
-      } elseif (-not $Json -and -not [string]::IsNullOrWhiteSpace($relayed)) {
-        try {
-          $relayedResult = $relayed | ConvertFrom-Json
-          Write-Host "Helper: $($relayedResult.helper)"
-          Write-Host "Mode: $($relayedResult.mode)"
-          Write-Host "Status: $($relayedResult.status)"
-        } catch {
-          # If the child crashed before writing, fall through to the synthesized failure result below.
-        }
-      }
-    }
-    exit $process.ExitCode
   } catch {
-    if ([System.IO.File]::Exists($relayPath)) {
-      [System.IO.File]::Delete($relayPath)
-    }
+    $launchFailure = $_.Exception.Message
+    try {
+      if ([System.IO.File]::Exists($relayPath)) { [System.IO.File]::Delete($relayPath) }
+    } catch { } # Cleanup must not replace the structured elevation result.
     Write-StructuredResult -Result (New-Result `
       -Mode $mode `
       -Status 'changes_required' `
@@ -270,9 +256,49 @@ if (-not $isAdmin -and -not $SkipElevation) {
       -DetectedVersion $detected `
       -CommandPath $commandPath `
       -Warnings @('Administrator elevation was cancelled or failed.') `
-      -Interruptions @([pscustomobject]@{ kind = 'elevation_required'; reason = $_.Exception.Message }) `
+      -Interruptions @([pscustomobject]@{ kind = 'elevation_required'; reason = $launchFailure }) `
     ) -ExitCode 1
   }
+
+  $relayedResult = $null
+  try {
+    if ([System.IO.File]::Exists($relayPath)) {
+      $relayed = [System.IO.File]::ReadAllText($relayPath)
+      if (-not [string]::IsNullOrWhiteSpace($relayed)) {
+        $relayedResult = $relayed | ConvertFrom-Json
+        if ($relayedResult.status -isnot [string] -or [string]::IsNullOrWhiteSpace($relayedResult.status)) {
+          $relayedResult = $null
+        }
+      }
+    }
+  } catch {
+    $relayedResult = $null
+  } finally {
+    try {
+      if ([System.IO.File]::Exists($relayPath)) { [System.IO.File]::Delete($relayPath) }
+    } catch { } # A locked relay must not suppress its result or the failure below.
+  }
+  if ($null -ne $relayedResult) {
+    if ($Json) {
+      Write-Output $relayed
+    } else {
+      Write-Host "Helper: $($relayedResult.helper)"
+      Write-Host "Mode: $($relayedResult.mode)"
+      Write-Host "Status: $($relayedResult.status)"
+    }
+    exit $process.ExitCode
+  }
+  # A child can fail before its result writer runs. Preserve JSON even then,
+  # and never turn an empty successful exit into successful installation.
+  Write-StructuredResult -Result (New-Result `
+    -Mode $mode `
+    -Status 'failed' `
+    -Installed $installed `
+    -DetectedVersion $detected `
+    -CommandPath $commandPath `
+    -Warnings @("The elevated Node.js helper did not return a valid result (exit code $($process.ExitCode)).") `
+    -ManualSteps @('Install Node.js LTS manually from https://nodejs.org/.') `
+  ) -ExitCode 1
 }
 
 # === Elevated execution path ===

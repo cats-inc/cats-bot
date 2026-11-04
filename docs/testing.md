@@ -556,4 +556,16 @@ or changing the owner's npm configuration. The focused helper-runner suite passe
 25 tests on Windows, with the Unix-only case skipped; clean-machine installation
 remains a separate acceptance check.
 
+`tests/shell/nodeSetupElevation.test.ts` exercises the packaged helper runner,
+wrapper, Node helper and a real Windows PowerShell 5.1 child from a `Cats Bot`
+path and a temporary user path containing spaces and Unicode. Private fixture
+copies replace only the administrator observation and UAC launch, and add
+`-SkipNodeProbe` so no download or installer can run. Both cases reproduced the
+generic helper error with the original 0.5.2 helper, then passed with the pinned
+producer fix: the child result survives the elevation boundary, and a missing
+result returns a structured failure with its exit code. The helper-runner and
+wizard-logic suites passed 41 cases with one Unix-only case skipped. Actual UAC
+and clean-machine installation remain separate manual acceptance checks. Bot
+typecheck passed with the locked worktree dependencies installed.
+
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).

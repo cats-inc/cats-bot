@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "93b5de885b5b1a1532eea58697f77962c7f3d9f0",
+  "commit": "8f75a85a8b0124631fd02b1d4091b49570b8869f",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
-      "sha256": "f61cb84a488160224b0f3f463cc05eed50c0cccfc893745b6efb6ad57bf6e9f2",
+      "sha256": "9784cf54318f77e7bd4e4f921a1566ee9a8ec5c3941994b6e308587c833eb75f",
       "path": "windows/Install-Node.ps1",
       "executable": false
     },
