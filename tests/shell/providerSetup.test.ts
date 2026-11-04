@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { test } from 'node:test';
 import type { SetupLogEntry } from '../../src/shared/providerSetup.ts';
 import {
+  createHelperRunner,
   createScriptIdentity,
   describeHelperRun,
   helperInvocation,
@@ -20,6 +21,42 @@ import {
 
 const assets = fileURLToPath(new URL('../../assets/setup/', import.meta.url));
 const ready = (): HelperResult => ({ status: 'ready', installed: true, detectedVersion: '1.2.3' });
+
+test('Windows Codex check reports an install plan when npm has no global prefix', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cats-bot-codex-prefix-'));
+  try {
+    const windows = join(home, 'windows');
+    mkdirSync(windows);
+    for (const name of ['Install-Codex.ps1', '_NpmCliInstaller.ps1', '_VerifiedNpmUpdate.ps1']) {
+      let source = readFileSync(join(assets, 'windows', name), 'utf8');
+      if (name === 'Install-Codex.ps1') {
+        assert.ok(source.includes("-CommandName 'codex'"));
+        source = source.replace("-CommandName 'codex'", "-CommandName 'cats-bot-missing-cli-fixture'");
+      }
+      writeFileSync(join(windows, name), source);
+    }
+    writeFileSync(join(home, 'Invoke-SetupHelper.ps1'), `param([string]$Helper, [switch]$Apply)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+if ($Helper -ne 'codex' -or $Apply) { throw 'Unexpected fixture command' }
+function npm {
+ if ($args[0] -ne 'list') { throw 'Check attempted a non-list npm command' }
+ & $env:ComSpec /d /c 'echo npm error code ENOENT 1>&2 & exit /b 1'
+}
+& (Join-Path $PSScriptRoot 'windows/Install-Codex.ps1') -CheckOnly -Json -AllowAdmin
+exit $LASTEXITCODE
+`);
+    const result = await createHelperRunner(home)('codex', false);
+    assert.equal(result.status, 'changes_required');
+    assert.equal(result.installed, false);
+    assert.deepEqual(result.plannedActions, ['@openai/codex:install']);
+    assert.deepEqual(result.appliedChanges, []);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
 
 test('the Windows npm helper previews a PATH change without requiring a restart yet', {
   skip: process.platform !== 'win32',
