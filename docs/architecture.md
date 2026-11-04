@@ -53,6 +53,11 @@ all floating Cats. Each floating Cat menu owns only its conversations, heartbeat
 visibility, desktop-control Stop and bot settings. This boundary stays the same
 with zero, one or several Cats (SPEC-008 FR-16); the hub’s emergency Stop reaches
 all presented bots and remains available when avatars are hidden.
+The Hub's **Arrange all floating cats** action resets only avatar presentation:
+it recreates each running Cat's native window and persists a grid on the pointer's
+display work area. Recreating matters on Windows: an avatar can remain
+Shell-cloaked after a virtual-desktop switch even when moving and hiding/showing
+it succeeds. Notes, core processes and conversation/session state are unaffected.
 
 One bot is one resident process tree: a Node **bot core** that owns the bot's
 profile, conversations, work journal and every timer; a private

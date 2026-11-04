@@ -253,6 +253,24 @@ released explicitly, without sleeps or real profile access.
   `tests/core/providers.test.ts` covers the provider list, PATH detection,
   the model catalogs and first-run input validation (SPEC-002);
   `trayMenu.test.ts` also covers where the floating bot appears and its bubble text.
+  It checks the Hub-only arrange action's order, localization and availability
+  with zero Cats or unreadable status. `floatingArrangement.test.ts` checks
+  layout on negative-origin monitors, work-area/taskbar bounds, row wrapping and
+  small screens. After building, run
+  `electron scripts/testing/floating-arrangement-acceptance.mjs` for real native
+  avatar recreation, saved positions, hidden/offscreen recovery, repeated resets
+  during loading and hiding during a reset. It uses temporary Electron storage
+  and fixture pages, starts no Bot/core/provider, and checks that another window
+  survives. It does not reproduce Windows virtual-desktop Shell cloaking; that
+  needs native acceptance with the popup open across a desktop switch.
+  On 2026-11-04 this fixture passed on native Windows with Electron 41.2.0
+  for three avatars; typecheck and build passed and independent review found
+  no remaining blocker. The standalone Node 24.14.0 full run had 565 tests:
+  555 passed, 9 skipped and one existing Runtime-pin Git test failed because
+  the host executor did not own the sandbox-created worktree. That exact test
+  passed 1/1 when rerun by the owning sandbox executor; the original full run
+  was not entirely green. No installed-app upgrade or native macOS/Linux
+  arrangement acceptance ran.
   `bridge.test.ts` checks the renderer's `window.catsBot` type against the
   shell (commands, note layers, preload methods; ADR-003), and
   `architecture-boundaries.test.ts` that the renderer takes only types from
