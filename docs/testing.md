@@ -599,6 +599,8 @@ unsupported/unknown statuses, early exit, timeout, oversized output, cancellatio
 and descendant cleanup. The request allowlist has only initialize, initialized
 and windowsSandbox/readiness. Launcher fixtures cover npm cmd/ps1, Node x64/arm64
 independent of Electron, invalid shims/PE headers and standalone executables.
+Native fixture assertions compare canonical file identity because macOS temporary
+paths may be spelled through either `/var` or its `/private/var` target.
 Terminal tests retain CODEX_HOME and a Unicode/spaced working folder, use Command
 Prompt and require no execution-policy change. Both creation paths call the same
 fresh host gate; first-run IPC coverage also verifies sender and provider scope.

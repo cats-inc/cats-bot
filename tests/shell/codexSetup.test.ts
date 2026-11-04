@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -98,7 +98,8 @@ for(const arch of ['x64','arm64'] as const) for(const extension of ['cmd','ps1']
     put(shim,extension==='cmd'?'"%_prog%" "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*':'& "$basedir/node$exe" "$basedir/node_modules/@openai/codex/bin/codex.js" $args');
     const env={Path:dirname(node),CODEX_HOME:join(root,'private-profile')};
     const invocation=codexSetupInvocation(shim,env)!;
-    assert.equal(invocation.command,native);assert.deepEqual(invocation.args,['app-server']);
+    // require.resolve canonicalizes macOS /var -> /private/var; compare the actual file.
+    assert.equal(realpathSync(invocation.command),realpathSync(native));assert.deepEqual(invocation.args,['app-server']);
     assert.equal(invocation.env.CODEX_HOME,env.CODEX_HOME);
     assert.equal(invocation.env.CODEX_MANAGED_PACKAGE_ROOT,packageRoot);
     put(node,'not a PE executable');assert.equal(codexSetupInvocation(shim,env),null);
