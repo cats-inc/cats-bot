@@ -109,7 +109,7 @@ jobs:
             platform: linux
           - os: windows-latest
             platform: windows
-          - os: macos-26-intel
+          - os: macos-latest
             platform: macos
     steps:
       - name: Documentation-only change

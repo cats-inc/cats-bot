@@ -439,7 +439,7 @@ and the renderer (`tsconfig.renderer.json`).
 ## CI/CD Integration
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
-`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-26-intel` with Node 24 for every
+`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed

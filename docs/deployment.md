@@ -180,7 +180,7 @@ still report as described in [testing.md](testing.md#cicd-integration). Manual
 release and Package dispatches remain unchanged.
 The shared packager also checks the macOS executable's Intel and Apple Silicon
 architecture slices in both candidate CI and release builds. CI does not publish.
-Both workflows use GitHub's standard Intel `macos-26-intel` build host. The
+Both workflows use GitHub's standard ARM64 `macos-latest` build host. The
 Universal output requires both x86_64 and arm64 slices independently of the
 host architecture; candidate CI and signed releases enforce the same native check.
 A local Windows unpacked candidate can be built after
