@@ -522,4 +522,11 @@ verifies readiness, screenshot and graceful drain without installed-app changes.
 
 ## Setup wizard
 
+`tests/shell/providerSetup.test.ts` runs the Windows npm helper in read-only mode with
+temporary paths and explicit probe values. Its `changes_required` result anticipates a
+restart after changing PATH; setup keeps that unapplied plan tickable. The renderer
+fixture carries the same flag and follows the npm and Codex installs through to creation.
+Separate cases keep an actual post-install restart visible until a fresh check confirms
+the step.
+
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).

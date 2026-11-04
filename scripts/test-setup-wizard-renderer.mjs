@@ -60,7 +60,8 @@ function helpers(world) {
     const status = world.state[helper];
     if (status === 'ready') return { status: 'ready', installed: true, detectedVersion: '1.2.3' };
     if (status === 'auth_required') return { status, installed: true, detectedVersion: '2.0.0', manualSteps: ['Run claude to sign in.'] };
-    return { status, installed: false, plannedActions: world.planned?.[helper] ?? [`${helper}:plan`] };
+    // Windows' npm helper previews a restart when its unapplied plan changes PATH.
+    return { status, installed: false, restartRequired: helper === 'npm' && status === 'changes_required', plannedActions: world.planned?.[helper] ?? [`${helper}:plan`] };
   };
   return { calls, run };
 }
@@ -224,6 +225,7 @@ await app.whenReady();
   await w.wait("document.querySelector('.setup-row[data-row=npm] input')", 'second round');
   const round2 = await w.rows();
   check('round 2: everything else is read at once', round2.join(' ') === 'node:is-ready npm:is-needs provider:is-needs shell:is-needs', round2.join(' '));
+  check('the npm PATH plan can be ticked without restarting', await w.js("!!document.querySelector('#setup-tick-npm') && !document.querySelector('#setup-restart')"));
   check('the shortcut closes the list', await w.js("document.querySelector('.setup-rows').lastElementChild.classList.contains('setup-row-shortcut')"));
   await w.click('#setup-tick-required');
   await w.wait("document.querySelector('#setup-tick-provider')?.checked", 'shortcut ticks');
