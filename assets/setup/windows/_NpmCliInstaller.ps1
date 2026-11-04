@@ -117,6 +117,22 @@ function Write-NpmCliMissingResult {
   exit $exitCode
 }
 
+function Test-NpmCliPackageListed {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$PackageName
+  )
+  try {
+    & npm list -g --depth=0 $PackageName 2>$null | Out-Null
+  } catch {
+    # npm reports ENOENT before the separate prefix setup step creates its folder.
+    # Windows PowerShell turns native stderr into a terminating error under Stop.
+    if ($_.FullyQualifiedErrorId -eq 'NativeCommandError' -and $_.Exception.Message -match '\bENOENT\b') { return $false }
+    throw
+  }
+  return ($LASTEXITCODE -eq 0)
+}
+
 function Test-NpmCliPackageInstalled {
   param(
     [Parameter(Mandatory = $true)]
@@ -124,15 +140,9 @@ function Test-NpmCliPackageInstalled {
     [Parameter(Mandatory = $true)]
     [string]$CommandName
   )
-
-  if (Get-Command $CommandName -ErrorAction SilentlyContinue) {
-    return $true
-  }
-  if (-not (Test-NpmCliRuntimeAvailable)) {
-    return $false
-  }
-  & npm list -g --depth=0 $PackageName 2>$null | Out-Null
-  return ($LASTEXITCODE -eq 0)
+  if (Get-Command $CommandName -ErrorAction SilentlyContinue) { return $true }
+  if (-not (Test-NpmCliRuntimeAvailable)) { return $false }
+  return (Test-NpmCliPackageListed -PackageName $PackageName)
 }
 
 function Get-NpmCliPackageVersion {
@@ -141,7 +151,12 @@ function Get-NpmCliPackageVersion {
     [string]$PackageName
   )
 
-  $listRaw = (& npm list -g --depth=0 --json $PackageName 2>$null) | Out-String
+  try {
+    $listRaw = (& npm list -g --depth=0 --json $PackageName 2>$null) | Out-String
+  } catch {
+    if ($_.FullyQualifiedErrorId -eq 'NativeCommandError' -and $_.Exception.Message -match '\bENOENT\b') { return $null }
+    throw
+  }
   if ([string]::IsNullOrWhiteSpace($listRaw)) {
     return $null
   }
@@ -218,8 +233,7 @@ function Remove-SupersededNpmPackages {
   )
 
   foreach ($legacy in (Get-SupersededNpmPackages -PackageName $PackageName)) {
-    & npm list -g --depth=0 $legacy 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { continue }
+    if (-not (Test-NpmCliPackageListed -PackageName $legacy)) { continue }
 
     Write-Host "Removing superseded package $legacy (replaced by $PackageName)."
     & npm uninstall -g $legacy 2>$null | Out-Null
@@ -325,8 +339,7 @@ function Invoke-PackagedNpmCliInstall {
   $commandPath = if ($installed) { Resolve-NpmCliCommandPath -CommandName $CommandName } else { $null }
   if ($installed -and -not $detectedVersion -and -not $SkipNpmInvocation) {
     foreach ($legacy in (Get-SupersededNpmPackages -PackageName $PackageName)) {
-      & npm list -g --depth=0 $legacy 2>$null | Out-Null
-      if ($LASTEXITCODE -eq 0) { $installed = $false; break }
+      if (Test-NpmCliPackageListed -PackageName $legacy) { $installed = $false; break }
     }
   }
 

@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "9e54a28286cea0c962e4d0f98643d9676f2a5d08",
+  "commit": "93b5de885b5b1a1532eea58697f77962c7f3d9f0",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
@@ -64,7 +64,7 @@
     },
     {
       "source": "scripts/windows/_NpmCliInstaller.ps1",
-      "sha256": "57a60bbb1462c04f7861451ddb26e560cbcdd402406a984012b88655dfee62bb",
+      "sha256": "539fd4f42302d87ce48bb37fb430922fd9d84c86e4576a7f9a376fee68e4d122",
       "path": "windows/_NpmCliInstaller.ps1",
       "executable": false
     },

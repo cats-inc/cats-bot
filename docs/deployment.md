@@ -180,9 +180,9 @@ still report as described in [testing.md](testing.md#cicd-integration). Manual
 release and Package dispatches remain unchanged.
 The shared packager also checks the macOS executable's Intel and Apple Silicon
 architecture slices in both candidate CI and release builds. CI does not publish.
-Both workflows use GitHub's standard `macos-15-intel` build host so release
-availability does not depend on the ARM runner pool. The host architecture does
-not change the Universal output: both x86_64 and arm64 slices remain required.
+Both workflows use GitHub's standard ARM64 `macos-latest` build host. The
+Universal output requires both x86_64 and arm64 slices independently of the
+host architecture; candidate CI and signed releases enforce the same native check.
 A local Windows unpacked candidate can be built after
 `npm ci` and `npm run build`, with the .NET 8 SDK or newer installed:
 

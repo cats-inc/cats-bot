@@ -439,7 +439,7 @@ and the renderer (`tsconfig.renderer.json`).
 ## CI/CD Integration
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
-`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-15-intel` with Node 24 for every
+`npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
@@ -546,5 +546,14 @@ restart after changing PATH; setup keeps that unapplied plan tickable. The rende
 fixture carries the same flag and follows the npm and Codex installs through to creation.
 Separate cases keep an actual post-install restart visible until a fresh check confirms
 the step.
+
+The Windows Codex regression runs the real helper runner and vendored installer
+with a disposable native npm fixture that reports `ENOENT` for an absent global
+prefix. The check must return a JSON install plan instead of an unreadable-result
+error, so the wizard can offer both npm-folder setup and Codex installation in
+the same pass. It runs under Windows PowerShell 5.1 without installing a provider
+or changing the owner's npm configuration. The focused helper-runner suite passed
+25 tests on Windows, with the Unix-only case skipped; clean-machine installation
+remains a separate acceptance check.
 
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).

@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `c1d0111dd8d2bd4668e0d6d4f93afc20af9bd77b`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-c1d0111d.tgz`; 1,824,430 bytes.
-SHA-256: `0a66ac17326047261baefd8f9fe4cc7e972659fc3560720873cc609968d88936`.
+Source `1bbba8d0f12450af8c9fcdedcb55d7051fe69f5f`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-1bbba8d0.tgz`; 1,825,254 bytes.
+SHA-256: `22b9116a120d750524fbc1debca8dcf99dbad0865e3790a93547a168b3c349a7`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -24,6 +24,12 @@ provider selection. It carries cats-inc/cats-runtime#212 too: Runtime waits for
 Grok's exact session ID instead of matching its session files by working directory,
 so a new Grok session's next message no longer fails with
 `skill_content_profile_conflict`.
+
+Runtime cats-inc/cats-runtime#213 keeps an owner-only backup before replacing an
+unreadable provider-selection configuration and retains the five newest backups.
+If that copy cannot be made, the save is refused and the original file remains.
+Readable or missing configurations do not create a backup; the data format and
+selection routes remain unchanged.
 
 It retains explicitly selected native Muse MSP and Grok/official Google
 ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
