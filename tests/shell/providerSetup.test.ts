@@ -393,6 +393,36 @@ test('a restart or relaunch stands only while the fresh probe cannot confirm the
   assert.equal(installed.canFinish, true);
 });
 
+for (const usableAfterInstall of [true, false]) {
+  test(`an explicit Windows restart stays visible when the new Node is ${usableAfterInstall ? 'usable' : 'unavailable'}`, async () => {
+    let applied = false;
+    const warning = 'Windows requires a system restart to complete the installation.';
+    const setup = new ProviderSetup(async (helper, apply) => {
+      if (helper === 'node' && apply) {
+        applied = true;
+        return { status: 'restart_required', installed: true, restartRequired: true,
+          interruptions: [{ kind: 'restart_required', requiresRestart: true }], warnings: [warning] };
+      }
+      if (helper === 'node' && (!applied || !usableAfterInstall)) return { status: 'changes_required', installed: false };
+      return ready();
+    }, { windows: true });
+    await setup.check('codex');
+    const installed = await setup.install('codex', 'node');
+    const node = installed.steps.find(step => step.id === 'node')!;
+    assert.equal(node.systemRestartRequired, true);
+    assert.ok(node.warnings.includes(warning));
+    assert.equal(installed.canFinish, usableAfterInstall, 'usable CLIs keep working while the reboot advice remains');
+    const rechecked = await setup.check('codex');
+    assert.equal(rechecked.steps[0]!.systemRestartRequired, true);
+    assert.ok(rechecked.steps[0]!.warnings.includes(warning));
+    if (usableAfterInstall) {
+      const later = await setup.install('codex', 'npm');
+      assert.equal(later.steps[0]!.systemRestartRequired, true);
+      assert.ok(later.steps[0]!.warnings.includes(warning));
+    }
+  });
+}
+
 test('the same help line from the check and the install shows once', async () => {
   const setup = new ProviderSetup(async (_helper, apply) =>
     apply

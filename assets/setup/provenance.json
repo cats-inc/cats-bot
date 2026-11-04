@@ -1,10 +1,10 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "8f75a85a8b0124631fd02b1d4091b49570b8869f",
+  "commit": "a87c982aaf62b75b3f7baab5eaffd3c5b77d2ba6",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
-      "sha256": "9784cf54318f77e7bd4e4f921a1566ee9a8ec5c3941994b6e308587c833eb75f",
+      "sha256": "b53e392a13fb346b11e41ecdc3e7895fce4912264ea4f55d86e17835b788fbe5",
       "path": "windows/Install-Node.ps1",
       "executable": false
     },
@@ -28,25 +28,25 @@
     },
     {
       "source": "scripts/windows/Install-Antigravity.ps1",
-      "sha256": "bc771308e39aa3da662054280c5fd85289a7df407585ccc26b69687dcc6178c9",
+      "sha256": "b55e6146b0ece60c79ee3c224eef864768bab5e65c47197e753b5b85659c7c9d",
       "path": "windows/Install-Antigravity.ps1",
       "executable": false
     },
     {
       "source": "scripts/windows/Install-Grok.ps1",
-      "sha256": "09edf827b472ebe7ff962cd444290a583c2053fce54c0580dc245f145bec5083",
+      "sha256": "8ec0be6595e4fec944a65461ca17cde38e547cce3193ac5216b9f2f037dd126f",
       "path": "windows/Install-Grok.ps1",
       "executable": false
     },
     {
       "source": "scripts/windows/Install-MetaCli.ps1",
-      "sha256": "47ed9f7c91077c6afe8f9e72d97c94be6579b0e06dae37c3b4032c40eb914095",
+      "sha256": "ea40c93b53bac539f507ae1c5fb15fe22238bc1bcf3812a15d649ae62f595cb9",
       "path": "windows/Install-MetaCli.ps1",
       "executable": false
     },
     {
       "source": "scripts/windows/_HiddenProcess.ps1",
-      "sha256": "4179f2756702381087d3cae1577208d90622ddc94248584d352575c145fb9d43",
+      "sha256": "060de34eb631ffa953e2c186a4ece4fcf56b0aa0f67bb43c07beee66cb7b8dd5",
       "path": "windows/_HiddenProcess.ps1",
       "executable": false
     },
@@ -82,7 +82,7 @@
     },
     {
       "source": "scripts/macos/install-node.sh",
-      "sha256": "a52ec312dd45383050276c05a9974c3a04918aa31cccd23c95218c0a1cc15a4e",
+      "sha256": "320d03e837cd3efbee62ee0562fdf8b8696f549649a8a5a7de41dca813dc5660",
       "path": "macos/install-node.sh",
       "executable": false
     },
@@ -148,7 +148,7 @@
     },
     {
       "source": "scripts/linux/install-node.sh",
-      "sha256": "5d75d86a260b77b7e369ded62696ed4af534af64da9e75cccc4438cc51594ce7",
+      "sha256": "f4ab724bc60dd96ffebe89f819c6651df5be5381d3e628fae3481f41f522f4db",
       "path": "linux/install-node.sh",
       "executable": false
     },

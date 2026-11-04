@@ -18,6 +18,8 @@
     -Uninstall is intentionally omitted: removing Node.js mid-flight would
     break the packaged Cats runtime and every npm-global CLI helper, so
     uninstalling it must remain a manual step.
+.PARAMETER DryRun
+    Report a preview without elevation, downloads or installation.
 #>
 param(
   [switch]$CheckOnly,
@@ -88,6 +90,7 @@ function New-Result {
     [string[]]$AppliedChanges = @(),
     [string[]]$Warnings = @(),
     [string[]]$ManualSteps = @(),
+    [bool]$RestartRequired = $false,
     [object[]]$Interruptions = @()
   )
 
@@ -103,6 +106,7 @@ function New-Result {
     appliedChanges = $AppliedChanges
     warnings = $Warnings
     manualSteps = $ManualSteps
+    restartRequired = $RestartRequired
     interruptions = $Interruptions
   }
 }
@@ -202,6 +206,24 @@ if ($mode -eq 'check') {
   ) -ExitCode 0
 }
 
+# A preview returns before UAC, downloads or installer invocation.
+if ($DryRun) {
+  $previewAction = switch ($mode) {
+    apply { 'install_node_lts' }
+    upgrade { 'upgrade_node_lts' }
+    force { 'reinstall_node_lts' }
+  }
+  $planned = @(if ($mode -ne 'apply' -or -not $installed) { $previewAction })
+  Write-StructuredResult -Result (New-Result `
+    -Mode $mode `
+    -Status 'preview' `
+    -Installed $installed `
+    -DetectedVersion $detected `
+    -CommandPath $commandPath `
+    -PlannedActions $planned `
+  ) -ExitCode 0
+}
+
 if ($mode -eq 'apply' -and $installed) {
   Write-StructuredResult -Result (New-Result `
     -Mode $mode `
@@ -223,9 +245,7 @@ if (-not $isAdmin -and -not $SkipElevation) {
   $relayPath = [System.IO.Path]::Combine([System.IO.Path]::GetTempPath(),
     "cats-helper-relay-$([System.Guid]::NewGuid().ToString('N')).json")
 
-  # Start-Process joins ArgumentList with spaces; retain quotes around both
-  # file paths, including the default "Cats Bot" installation directory.
-  $relayArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', ('"{0}"' -f $PSCommandPath))
+  $relayArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $PSCommandPath)
   if ($CheckOnly) { $relayArgs += '-CheckOnly' }
   if ($Apply) { $relayArgs += '-Apply' }
   if ($Upgrade) { $relayArgs += '-Upgrade' }
@@ -236,19 +256,10 @@ if (-not $isAdmin -and -not $SkipElevation) {
   if ($PSBoundParameters.ContainsKey('DetectedVersion')) { $relayArgs += @('-DetectedVersion', $DetectedVersion) }
   if ($SkipNodeProbe) { $relayArgs += '-SkipNodeProbe' }
   $relayArgs += '-SkipElevation'
-  $relayArgs += @('-ResultRelayPath', ('"{0}"' -f $relayPath))
+  $relayArgs += @('-ResultRelayPath', $relayPath)
 
-  try {
-    $process = Start-Process -FilePath 'powershell.exe' `
-      -ArgumentList $relayArgs `
-      -Verb RunAs `
-      -Wait `
-      -PassThru
-  } catch {
-    $launchFailure = $_.Exception.Message
-    try {
-      if ([System.IO.File]::Exists($relayPath)) { [System.IO.File]::Delete($relayPath) }
-    } catch { } # Cleanup must not replace the structured elevation result.
+  $elevation = Invoke-CatsElevatedHelper -ArgumentList $relayArgs -RelayPath $relayPath
+  if ($null -ne $elevation.LaunchError) {
     Write-StructuredResult -Result (New-Result `
       -Mode $mode `
       -Status 'changes_required' `
@@ -256,47 +267,26 @@ if (-not $isAdmin -and -not $SkipElevation) {
       -DetectedVersion $detected `
       -CommandPath $commandPath `
       -Warnings @('Administrator elevation was cancelled or failed.') `
-      -Interruptions @([pscustomobject]@{ kind = 'elevation_required'; reason = $launchFailure }) `
+      -Interruptions @([pscustomobject]@{ kind = 'elevation_required'; reason = $elevation.LaunchError }) `
     ) -ExitCode 1
   }
-
-  $relayedResult = $null
-  try {
-    if ([System.IO.File]::Exists($relayPath)) {
-      $relayed = [System.IO.File]::ReadAllText($relayPath)
-      if (-not [string]::IsNullOrWhiteSpace($relayed)) {
-        $relayedResult = $relayed | ConvertFrom-Json
-        if ($relayedResult.status -isnot [string] -or [string]::IsNullOrWhiteSpace($relayedResult.status)) {
-          $relayedResult = $null
-        }
-      }
-    }
-  } catch {
-    $relayedResult = $null
-  } finally {
-    try {
-      if ([System.IO.File]::Exists($relayPath)) { [System.IO.File]::Delete($relayPath) }
-    } catch { } # A locked relay must not suppress its result or the failure below.
-  }
-  if ($null -ne $relayedResult) {
+  if ($null -ne $elevation.Result) {
     if ($Json) {
-      Write-Output $relayed
+      Write-Output $elevation.Payload
     } else {
-      Write-Host "Helper: $($relayedResult.helper)"
-      Write-Host "Mode: $($relayedResult.mode)"
-      Write-Host "Status: $($relayedResult.status)"
+      Write-Host "Helper: $($elevation.Result.helper)"
+      Write-Host "Mode: $($elevation.Result.mode)"
+      Write-Host "Status: $($elevation.Result.status)"
     }
-    exit $process.ExitCode
+    exit $elevation.ExitCode
   }
-  # A child can fail before its result writer runs. Preserve JSON even then,
-  # and never turn an empty successful exit into successful installation.
   Write-StructuredResult -Result (New-Result `
     -Mode $mode `
     -Status 'failed' `
     -Installed $installed `
     -DetectedVersion $detected `
     -CommandPath $commandPath `
-    -Warnings @("The elevated Node.js helper did not return a valid result (exit code $($process.ExitCode)).") `
+    -Warnings @("The elevated $DisplayName helper did not return a valid result (exit code $($elevation.ExitCode)).") `
     -ManualSteps @('Install Node.js LTS manually from https://nodejs.org/.') `
   ) -ExitCode 1
 }
@@ -305,6 +295,7 @@ if (-not $isAdmin -and -not $SkipElevation) {
 $applied = [System.Collections.Generic.List[string]]::new()
 $warnings = [System.Collections.Generic.List[string]]::new()
 $installSuccess = $false
+$restartRequired = $false
 
 $wingetExists = [bool](Get-Command winget -ErrorAction SilentlyContinue)
 
@@ -358,8 +349,12 @@ if (-not $installSuccess -and -not $SkipNodeProbe) {
     }
 
     $msiResult = Invoke-HiddenCommand -FileName 'msiexec.exe' -ArgumentList $msiArgs
-    if ($msiResult.ExitCode -eq 0) {
+    if ($msiResult.ExitCode -in @(0, 3010)) {
       $installSuccess = $true
+      if ($msiResult.ExitCode -eq 3010) {
+        $restartRequired = $true
+        $warnings.Add('Windows requires a system restart to complete the installation.')
+      }
       $applied.Add("msi_install_v$ltsVersion")
     } else {
       $warnings.Add("msiexec exited $($msiResult.ExitCode).")
@@ -389,13 +384,20 @@ $env:Path = [System.Environment]::GetEnvironmentVariable('Path', 'Machine') + ';
 $postCommandPath = Resolve-NodeCommandPath
 $postVersion = Get-NodeDetectedVersion -Override ''
 
+$interruptions = @(if ($restartRequired) {
+  [pscustomobject]@{ kind = 'restart_required'; reason = 'Restart Windows to complete the installation.'; requiresRestart = $true }
+} else {
+  [pscustomobject]@{ kind = 'relaunch_required'; reason = 'PATH was extended; relaunch downstream tools.' }
+})
+
 Write-StructuredResult -Result (New-Result `
   -Mode $mode `
-  -Status 'ready' `
+  -Status $(if ($restartRequired) { 'restart_required' } else { 'ready' }) `
   -Installed $true `
   -DetectedVersion $postVersion `
   -CommandPath $postCommandPath `
   -AppliedChanges $applied.ToArray() `
   -Warnings $warnings.ToArray() `
-  -Interruptions @([pscustomobject]@{ kind = 'relaunch_required'; reason = 'PATH was extended; relaunch downstream tools.' }) `
+  -RestartRequired $restartRequired `
+  -Interruptions $interruptions `
 ) -ExitCode 0

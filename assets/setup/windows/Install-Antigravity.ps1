@@ -152,7 +152,7 @@ function Invoke-AntigravityInstaller {
     [System.IO.File]::WriteAllText($tempScript, (Add-CatsScriptPrologue -ScriptText ([string]$installScript) -Prologue $CatsTls12Prologue), [System.Text.UTF8Encoding]::new($false))
 
     $powerShellExe = if (Get-Command pwsh.exe -ErrorAction SilentlyContinue) { 'pwsh.exe' } else { 'powershell.exe' }
-    $installerArguments = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)
+    $installerArguments = ConvertTo-CatsWindowsArgumentString -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)
     $process = Start-Process -FilePath $powerShellExe `
       -ArgumentList $installerArguments `
       -Wait -PassThru -NoNewWindow `

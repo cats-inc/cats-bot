@@ -380,6 +380,8 @@ export const zhTW: Record<string, string> = {
   'One at a time. This window cannot close until it finishes.': '一次一項。進行中不能關閉這個視窗。',
   'Cannot find {label} yet': '還找不到 {label}',
   'Check again first. What you typed stays if Cats Bot has to restart.': '先重新檢查看看。如果要重新啟動 Cats Bot，這頁填的資料會留著。',
+  'Windows restart required': '需要重新啟動 Windows',
+  'Restart Windows to finish installation.': '請重新啟動 Windows，以完成安裝。',
   '{label} did not finish': '{label} 沒有裝好',
   'Cannot check {label}': '無法檢查 {label}',
   'Its script did not run. The log below says why. Set it up yourself, then check again.': '它的腳本沒有執行。原因在下方的紀錄。請自行設定好，再檢查一次。',

@@ -564,8 +564,30 @@ copies replace only the administrator observation and UAC launch, and add
 generic helper error with the original 0.5.2 helper, then passed with the pinned
 producer fix: the child result survives the elevation boundary, and a missing
 result returns a structured failure with its exit code. The helper-runner and
-wizard-logic suites passed 41 cases with one Unix-only case skipped. Actual UAC
+wizard-logic suites passed 44 cases with one Unix-only case skipped. A third
+packaged-runner case verifies successful system-restart data passes through.
+Actual UAC
 and clean-machine installation remain separate manual acceptance checks. Bot
 typecheck passed with the locked worktree dependencies installed.
+
+The synchronized setup helpers also cover Desktop's shared Windows process
+quoting and Node previews on all three OSes. The producer's shared process
+regressions keep real installer/network calls behind isolated fixtures. Bot
+retains explicit Windows machine-restart advice through ready probes, later
+installs and rechecks in the current Hub session. The renderer shows that advice
+on a usable Node row and offers Windows-restart guidance for an unavailable one;
+it does not offer a Cats Bot restart for that machine-level request. Generic
+PATH/relaunch requests still clear after a successful fresh check. No restart
+marker is persisted and no Windows reboot is initiated by setup.
+
+The Electron renderer fixture registers its work after ESM evaluation instead
+of awaiting readiness at module scope; the latter deadlocked before the first
+scenario under Electron 41.2.0. Hidden windows disable background throttling and
+wait for animation frames before screenshots. The fixture checks that reboot
+advice has visible layout and that successful installs keep their change count
+after rechecking. It uses private appData/userData and fake installers only.
+Final Windows validation passed typecheck, build and all 92 renderer assertions
+under the locked Electron 41.2.0; the Windows-restart screenshot was visually
+checked. This remains separate from real UAC and clean-machine installation.
 
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).

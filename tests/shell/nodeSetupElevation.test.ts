@@ -9,7 +9,7 @@ import { createHelperRunner } from '../../src/shell/electron/providerSetup.ts';
 const assets = fileURLToPath(new URL('../../assets/setup/', import.meta.url));
 const literal = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 
-for (const launch of ['child', 'missing-result'] as const) {
+for (const launch of ['child', 'missing-result', 'system-restart'] as const) {
   test(`packaged Node elevation returns JSON through the Bot runner: ${launch}`, {
     skip: process.platform !== 'win32',
   }, async (t) => {
@@ -29,7 +29,12 @@ for (const launch of ['child', 'missing-result'] as const) {
     await copyFile(join(assets, 'windows', '_HiddenProcess.ps1'), join(windows, '_HiddenProcess.ps1'));
     const actualLaunch = launch === 'child'
       ? `Microsoft.PowerShell.Management\\Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -Wait -PassThru -WindowStyle Hidden -RedirectStandardOutput ${literal(join(root, 'child.stdout'))} -RedirectStandardError ${literal(join(root, 'child.stderr'))}`
-      : '[pscustomobject]@{ ExitCode = 17 }';
+      : launch === 'missing-result'
+        ? '[pscustomobject]@{ ExitCode = 17 }'
+        : `$match = [regex]::Match(($ArgumentList -join ' '), '-ResultRelayPath\\s+(?:"([^"]+)"|(\\S+))')
+  $path = if ($match.Groups[1].Success) { $match.Groups[1].Value } else { $match.Groups[2].Value }
+  [IO.File]::WriteAllText($path, '{"status":"restart_required","installed":true,"restartRequired":true,"appliedChanges":["fixture_msi_install"],"warnings":["Restart Windows to complete installation."],"interruptions":[{"kind":"restart_required","requiresRestart":true}]}')
+  [pscustomobject]@{ ExitCode = 0 }`;
     const stop = "$ErrorActionPreference = 'Stop'";
     let wrapper = await readFile(join(assets, 'Invoke-SetupHelper.ps1'), 'utf8');
     assert.ok(wrapper.includes(stop));
@@ -38,13 +43,21 @@ for (const launch of ['child', 'missing-result'] as const) {
 $env:TEMP = ${literal(temp)}
 $env:TMP = ${literal(temp)}
 function Start-Process {
-  param($FilePath, $ArgumentList, $Verb, [switch]$Wait, [switch]$PassThru)
-  if ($Verb -ne 'RunAs' -or -not $Wait -or -not $PassThru) { throw 'Unexpected elevation request' }
+  param($FilePath, $ArgumentList, $Verb, $WindowStyle, [switch]$Wait, [switch]$PassThru)
+  if ($Verb -ne 'RunAs' -or $WindowStyle -ne 'Hidden' -or -not $Wait -or -not $PassThru) { throw 'Unexpected elevation request' }
   ${actualLaunch}
 }
 `).replace('-Apply -Json @scoped', '-Apply -Json @scoped -InstallState missing -SkipNodeProbe');
     await writeFile(join(setup, 'Invoke-SetupHelper.ps1'), '\uFEFF' + wrapper);
     const result = await createHelperRunner(setup)('node', true);
+    if (launch === 'system-restart') {
+      assert.equal(result.status, 'restart_required');
+      assert.equal(result.installed, true);
+      assert.equal(result.restartRequired, true);
+      assert.deepEqual(result.interruptions, [{ kind: 'restart_required', requiresRestart: true }]);
+      assert.match(result.warnings!.join('\n'), /Restart Windows/u);
+      return;
+    }
     assert.equal(result.status, 'failed');
     assert.equal(result.installed, false);
     assert.deepEqual(result.appliedChanges, []);

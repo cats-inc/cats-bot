@@ -22,6 +22,8 @@ export interface SetupStep {
   warnings: string[];
   /** A restart needed now, not one a read-only plan anticipates after applying. */
   restartRequired: boolean;
+  /** An installer explicitly requested a Windows restart; CLI readiness does not cancel this advice. */
+  systemRestartRequired?: boolean;
   /** FR-12: never blocks another step or finishing. */
   optional: boolean;
   /** What the helper reports it would do. */

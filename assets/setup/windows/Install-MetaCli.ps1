@@ -248,7 +248,7 @@ function Invoke-MuseInstaller {
     # with no agent build, so the installer is run under 5.1 as well.
     $powerShellExe = 'powershell.exe'
     $process = Start-Process -FilePath $powerShellExe `
-      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript) `
+      -ArgumentList (ConvertTo-CatsWindowsArgumentString -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)) `
       -Wait -PassThru -NoNewWindow `
       -RedirectStandardOutput $stdoutPath `
       -RedirectStandardError $stderrPath
