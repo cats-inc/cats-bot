@@ -21,6 +21,34 @@ import {
 const assets = fileURLToPath(new URL('../../assets/setup/', import.meta.url));
 const ready = (): HelperResult => ({ status: 'ready', installed: true, detectedVersion: '1.2.3' });
 
+test('the Windows npm helper previews a PATH change without requiring a restart yet', {
+  skip: process.platform !== 'win32',
+}, async () => {
+  const home = mkdtempSync(join(tmpdir(), 'cats-bot-setup-npm-'));
+  const prefix = join(home, 'prefix');
+  try {
+    const { stdout } = await promisify(execFile)('powershell.exe', [
+      '-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
+      '-File', join(assets, 'windows', 'Setup-NodeGlobalPrefix.ps1'),
+      '-CheckOnly', '-Json', '-AllowAdmin', '-SkipNodeCheck',
+      '-UserHome', home, '-DesiredPrefix', prefix,
+      '-CurrentPrefix', join(home, 'old-prefix'), '-CurrentUserPath', join(home, 'old-bin'),
+    ], { windowsHide: true, timeout: 10_000 });
+    const result = JSON.parse(stdout.replace(/^\uFEFF/u, '')) as HelperResult;
+    assert.equal(result.status, 'changes_required');
+    assert.equal(result.restartRequired, true, 'the raw helper anticipates a restart after applying');
+    assert.ok(result.plannedChanges?.some((line) => line.includes('user PATH')));
+    assert.equal(existsSync(prefix), false, 'the read-only helper has not created the folder');
+    const setup = new ProviderSetup(async (helper) => helper === 'npm' ? result : ready(), { windows: true });
+    const state = await setup.check('codex');
+    assert.equal(state.steps[1]?.status, 'changes_required');
+    assert.equal(state.steps[1]?.restartRequired, false, 'the page must still offer to apply the plan');
+    assert.equal(state.canFinish, false);
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
 test('the packaged Codex prerequisite chain accepts an already configured npm folder with system Bash', {
   skip: process.platform === 'win32',
 }, async () => {
@@ -474,7 +502,7 @@ test('Codex goes on after the npm folder without a restart or Check again', asyn
         npmReady = true;
         return { status: 'restart_required', restartRequired: true };
       }
-      return npmReady ? { status: 'ready' } : { status: 'not_installed' };
+      return npmReady ? { status: 'ready' } : { status: 'changes_required', restartRequired: true };
     }
     if (apply) {
       codexInstalled = true;
@@ -482,7 +510,9 @@ test('Codex goes on after the npm folder without a restart or Check again', asyn
     }
     return codexInstalled ? ready() : { status: 'not_installed' };
   }, { windows: false });
-  await setup.check('codex');
+  const before = await setup.check('codex');
+  assert.equal(before.steps[1]?.status, 'changes_required');
+  assert.equal(before.steps[1]?.restartRequired, false, 'a read-only plan is not an installed step waiting for restart');
   const afterNpm = await setup.install('codex', 'npm');
   assert.equal(afterNpm.steps[1]?.status, 'ready');
   assert.equal(afterNpm.steps[2]?.status, 'not_installed');

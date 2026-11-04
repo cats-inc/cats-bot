@@ -20,6 +20,7 @@ export interface SetupStep {
   version: string | null;
   manualSteps: string[];
   warnings: string[];
+  /** A restart needed now, not one a read-only plan anticipates after applying. */
   restartRequired: boolean;
   /** FR-12: never blocks another step or finishing. */
   optional: boolean;

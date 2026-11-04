@@ -474,7 +474,9 @@ export class ProviderSetup {
         version: result.detectedVersion ?? null,
         warnings: result.warnings ?? [],
         manualSteps: result.manualSteps ?? [],
-        restartRequired: result.restartRequired === true,
+        // A check's changes_required flag previews the restart after applying its plan;
+        // no change has run yet, so the row must still offer its tick box.
+        restartRequired: result.restartRequired === true && result.status !== 'changes_required',
         optional: link.optional,
         planned: plannedBy(result),
         applied: [],
