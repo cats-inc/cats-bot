@@ -153,14 +153,31 @@ export class FloatingBot {
     if (process.platform === 'linux') window.on('show', this.applyInputRegions);
     window.on('move', () => this.remember());
     window.on('closed', () => {
-      if (this.window === window) this.window = null;
-      this.watchDisplays(false);
+      if (this.window === window) {
+        this.window = null;
+        this.watchDisplays(false);
+      }
     });
     this.watchDisplays(true);
-    await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html', { avatar: this.options.avatar() }));
+    try {
+      await window.loadURL(pageUrl(this.options.rendererDir, 'floating.html', { avatar: this.options.avatar() }));
+    } catch (error) {
+      if (this.window !== window || window.isDestroyed()) return;
+      throw error;
+    }
+    if (this.window !== window || window.isDestroyed()) return;
     // The owner may hide the avatar while its renderer is still loading.
     if (this.options.state().visible) window.showInactive();
     this.remember();
+  }
+
+  /** Recreate the native window as well: moving/showing cannot clear a stuck Shell cloak. */
+  async reset(position: { x: number; y: number }): Promise<void> {
+    this.destroy();
+    const state = this.options.state();
+    state.x = position.x;
+    state.y = position.y;
+    await this.show();
   }
 
   hide(): void {

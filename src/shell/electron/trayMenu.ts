@@ -99,6 +99,8 @@ export interface HubTrayActions {
   onOpenSettings(): void;
   /** Recover every running Cat, including deliberately hidden avatars. */
   onShowFloatingCats(): void;
+  /** Recreate and arrange every running Cat's avatar on the selected display. */
+  onArrangeFloatingCats(): void;
   /** Resolve the current presented bots when clicked, independent of status reads. */
   onStopAllDesktopControl(): void;
   onCheckForUpdates?(): void;
@@ -125,6 +127,7 @@ export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayAc
     { label: model.bots.length ? buildHubTrayTooltip(model) : t('No cat bot is running'), enabled: false },
     { type: 'separator' },
     { label: t('Show floating cats'), enabled: model.bots.length > 0, click: () => actions.onShowFloatingCats() },
+    { label: t('Arrange all floating cats'), enabled: model.bots.length > 0, click: () => actions.onArrangeFloatingCats() },
   );
   if (!held.length && !uncertain && model.bots.some((bot) => bot && (bot.desktopControl.enabled || bot.desktopControl.pendingRequests))) {
     template.push(stopAll);

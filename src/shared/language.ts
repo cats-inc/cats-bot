@@ -244,6 +244,7 @@ export const zhTW: Record<string, string> = {
   'Resume heartbeat': '恢復主動關心',
   'Start at login': '登入時啟動',
   'Show floating cats': '顯示所有浮動貓咪',
+  'Arrange all floating cats': '將所有貓咪歸位排整齊',
   'Stop all desktop control': '停止所有桌面控制',
   'Some Cat status is unavailable': '部分貓咪狀態無法取得',
   'Show floating cat': '顯示浮動貓咪',

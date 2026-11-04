@@ -36,6 +36,7 @@ import {
   type HubLanguageReport,
 } from '../../shared/language.ts';
 import { BotPresenter, type PresenterHost } from './botPresenter.ts';
+import { arrangeFloating } from './floatingPlacement.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
 import { BossCatBroker } from './hub/bossCatBroker.ts';
@@ -1000,6 +1001,16 @@ async function main(): Promise<void> {
   const hubTrayActions = {
     onShowFloatingCats: () => {
       for (const presenter of presented()) presenter.setFloatingVisible(true);
+    },
+    onArrangeFloatingCats: () => {
+      const bots = presented();
+      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      const positions = arrangeFloating(bots.length, display.workArea);
+      for (const [index, presenter] of bots.entries()) {
+        void presenter.floating.reset(positions[index]!)
+          .catch((error: unknown) => log(`arrange floating cat ${presenter.botId} failed: ${diagnosticError(error)}`, 'error'))
+          .finally(refreshTray);
+      }
     },
     onStopAllDesktopControl: () => {
       for (const presenter of presented()) botMenuActionsFor(() => presenter).onStopDesktopControl();

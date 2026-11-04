@@ -41,8 +41,32 @@ macOS has no native acceptance in this Windows session. Its explicit blur follow
 the API contract; actual menu dismissal, item actions and avatar ordering there
 still need a native Mac check. Linux's catcher/input-shape path is unchanged.
 
+## Windows virtual-desktop recovery (2026-11-04)
+
+In the installed Bot 0.5.0 / Electron 41.2.0, opening the avatar's menu and
+switching Windows virtual desktops left its native window Shell-cloaked
+(`DWMWA_CLOAKED=2`). The Hub and core stayed alive, CDP remained responsive and
+the avatar's coordinates were unchanged. Neither desktop showed the avatar after
+switching back. Moving it to the center and hiding/showing it did not clear the
+cloak. Closing and recreating only the avatar window restored it (`cloaked=0`),
+with the core and conversations still running.
+
+The Hub therefore offers **Arrange all floating cats**, directly below **Show
+floating cats**. It recreates all running avatars, including hidden ones, and
+saves a row-wrapped layout in the pointer monitor's work area. It is an explicit
+recovery action, not a fix for the virtual-desktop trigger. Electron's Windows
+`SetFocusable` also changes taskbar registration, making the popup's focus
+transition a candidate cause; this has not been isolated by a controlled comparison.
+
+The isolated native arrangement fixture checks replacement windows, saved
+positions, repeated reset/hide requests and preservation of other windows. It
+does not reproduce Shell cloaking or prove the root cause. The live installed
+recovery above and the source fixture establish different validation boundaries.
+
 ## Primary sources
 
 - [Electron 41.2.0 menu API](https://github.com/electron/electron/blob/v41.2.0/docs/api/menu.md): popup owner, callback and close event.
 - [Electron 41.2.0 BaseWindow API](https://github.com/electron/electron/blob/v41.2.0/docs/api/base-window.md): focusability and the macOS focus caveat.
 - [Electron 41.2.0 macOS native window](https://github.com/electron/electron/blob/v41.2.0/shell/browser/native_window_mac.mm): focus and window-order behavior.
+- [Electron 41.2.0 Views native window](https://github.com/electron/electron/blob/v41.2.0/shell/browser/native_window_views.cc): Windows focusability and taskbar registration.
+- [Microsoft DWMWINDOWATTRIBUTE](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute): `DWM_CLOAKED_SHELL` is the Shell's cloak flag, separate from window visibility.

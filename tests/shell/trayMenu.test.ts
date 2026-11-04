@@ -324,6 +324,7 @@ function hubActions(clicks: string[]) {
   return {
     onOpenSettings: () => clicks.push('hub:settings'),
     onShowFloatingCats: () => clicks.push('hub:show-cats'),
+    onArrangeFloatingCats: () => clicks.push('hub:arrange-cats'),
     onStopAllDesktopControl: () => clicks.push('hub:stop-all'),
     onCheckForUpdates: () => clicks.push('hub:updates'),
     onToggleOpenAtLogin: (enabled: boolean) => clicks.push(`hub:login:${enabled}`),
@@ -339,20 +340,24 @@ for (const count of [0, 1, 2]) {
     const menu = buildHubTrayMenuTemplate(model, hubActions(clicks));
     assert.deepEqual(menu.map((item) => item.label ?? item.type), [
       count ? `Cats Bot (${count} ${count === 1 ? 'cat bot' : 'cat bots'}) - ${count * 2} unread - ${count} waiting for you` : 'No cat bot is running',
-      'separator', 'Show floating cats', 'separator', 'Settings…', 'Start at login', 'Check for Updates…', 'separator', 'Quit',
+      'separator', 'Show floating cats', 'Arrange all floating cats', 'separator', 'Settings…', 'Start at login', 'Check for Updates…', 'separator', 'Quit',
     ]);
     assert.equal(menu.some((item) => item.submenu), false, 'the hub does not copy per-Cat menus');
     assert.equal(menu.find((item) => item.label === 'Show floating cats')!.enabled, count > 0);
-    if (count) menu.find((item) => item.label === 'Show floating cats')!.click!();
+    assert.equal(menu.find((item) => item.label === 'Arrange all floating cats')!.enabled, count > 0);
+    if (count) {
+      menu.find((item) => item.label === 'Show floating cats')!.click!();
+      menu.find((item) => item.label === 'Arrange all floating cats')!.click!();
+    }
     for (const label of ['Settings…', 'Start at login', 'Check for Updates…', 'Quit']) {
       menu.find((item) => item.label === label)!.click!();
     }
-    assert.deepEqual(clicks, [...(count ? ['hub:show-cats'] : []), 'hub:settings', 'hub:login:false', 'hub:updates', 'hub:quit']);
+    assert.deepEqual(clicks, [...(count ? ['hub:show-cats', 'hub:arrange-cats'] : []), 'hub:settings', 'hub:login:false', 'hub:updates', 'hub:quit']);
     const withoutLogin = buildHubTrayMenuTemplate({ ...model, openAtLoginAvailable: false }, hubActions(clicks));
     assert.equal(withoutLogin.some((item) => item.label === 'Start at login'), false);
     for (const bot of bots) {
       const catMenu = buildBotMenuTemplate(bot.model, bot.actions);
-      assert.equal(catMenu.some((item) => ['Settings…', 'Start at login', 'Check for Updates…', 'Quit', 'Show floating cats'].includes(item.label ?? '')), false);
+      assert.equal(catMenu.some((item) => ['Settings…', 'Start at login', 'Check for Updates…', 'Quit', 'Show floating cats', 'Arrange all floating cats'].includes(item.label ?? '')), false);
       catMenu.find((item) => item.label === 'Cat bot settings…')!.click!();
       assert.equal(clicks.at(-1), `${bot.model.botName}:settings`);
     }
@@ -406,6 +411,7 @@ test('both menu scopes localize product labels and preserve owner conversation t
   assert.equal(catMenu.some((item) => ['設定…', '檢查更新…', '結束', '登入時啟動'].includes(item.label ?? '')), false);
   const menu = buildHubTrayMenuTemplate({ locale: 'zh-TW', bots: [bot.model], openAtLogin: false, openAtLoginAvailable: true }, hubActions(clicks));
   assert.ok(menu.some((item) => item.label === '顯示所有浮動貓咪'));
+  assert.equal(menu[menu.findIndex((item) => item.label === '顯示所有浮動貓咪') + 1]!.label, '將所有貓咪歸位排整齊');
   assert.ok(menu.some((item) => item.label === '設定…'));
   assert.ok(menu.some((item) => item.label === '檢查更新…'));
   assert.ok(menu.some((item) => item.label === '結束'));
@@ -419,9 +425,13 @@ test('unreadable Cat status preserves recovery and emergency Stop without a fals
   const menu = buildHubTrayMenuTemplate(model, hubActions(clicks));
   assert.equal(menu[0]!.label, 'Stop all desktop control');
   const recovery = menu.find((item) => item.label === 'Show floating cats')!;
+  const arrange = menu.find((item) => item.label === 'Arrange all floating cats')!;
+  assert.equal(arrange.enabled, true);
+  arrange.click!();
+  assert.equal(clicks.at(-1), 'hub:arrange-cats');
   assert.equal(recovery.enabled, true);
   recovery.click!();
   menu[0]!.click!();
-  assert.deepEqual(clicks, ['hub:show-cats', 'hub:stop-all']);
+  assert.deepEqual(clicks, ['hub:arrange-cats', 'hub:show-cats', 'hub:stop-all']);
   assert.equal(buildHubTrayTooltip(model), 'Cats Bot (1 cat bot) - Some Cat status is unavailable');
 });

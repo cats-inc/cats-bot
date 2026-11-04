@@ -185,6 +185,14 @@ The hub keeps its registry (`bots.json`), preferences (`hub-state.json`) and
 locks beside `bots/` in the Cats Bot root. Its first run creates the first bot;
 bots that `cats-bot init` made before then are taken in, up to five. While the
 hub runs, `cats-bot hub status` lists its bots.
+The Hub tray's **Arrange all floating cats** action, immediately below
+**Show floating cats**, gathers every running Cat at the bottom-right of the
+monitor where the pointer is, wrapping into rows as needed. It shows hidden
+avatars, saves the new positions and recreates their native windows to recover
+avatars Windows has left cloaked after switching virtual desktops. Notes and
+cores keep running. This is a recovery action; it does not prevent the popup-menu
+and virtual-desktop interaction from occurring again. No stored-data format or
+public CLI/API contract changes, migration or compatibility version boundary are needed.
 Electron's binary is downloaded by its install script, which `allowScripts`
 in `package.json` permits for the pinned version.
 

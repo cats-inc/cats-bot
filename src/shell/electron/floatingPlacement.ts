@@ -92,6 +92,26 @@ export function placeFloating(
   };
 }
 
+/** Arrange the visible cats from the work area's bottom-right, wrapping into rows. */
+export function arrangeFloating(count: number, workArea: Rect): Array<{ x: number; y: number }> {
+  if (count <= 0) return [];
+  const gap = 16;
+  const marginX = Math.min(16, Math.max(0, (workArea.width - FLOATING_CAT.width) / 2));
+  const marginY = Math.min(16, Math.max(0, (workArea.height - FLOATING_CAT.height) / 2));
+  const width = Math.max(0, workArea.width - 2 * marginX - FLOATING_CAT.width);
+  const height = Math.max(0, workArea.height - 2 * marginY - FLOATING_CAT.height);
+  const columns = Math.min(count, Math.max(1, Math.floor(width / (FLOATING_CAT.width + gap)) + 1));
+  const rows = Math.ceil(count / columns);
+  // On unusually small displays keep every cat reachable, even if rows must overlap.
+  const stepY = rows > 1 ? Math.min(FLOATING_CAT.height + gap, height / (rows - 1)) : 0;
+  return Array.from({ length: count }, (_, slot) => ({
+    x: Math.round(workArea.x + workArea.width - marginX - FLOATING_CAT.width
+      - (slot % columns) * (FLOATING_CAT.width + gap) - FLOATING_CAT.x),
+    y: Math.round(workArea.y + workArea.height - marginY - FLOATING_CAT.height
+      - Math.floor(slot / columns) * stepY - FLOATING_CAT.y),
+  }));
+}
+
 /** A reply as one short line of plain text, for the bubble. */
 export function bubbleText(text: string, limit = 160): string {
   const plain = text.replace(/```[\s\S]*?```/gu, ' ').replace(/[*_`#>]+/gu, '').replace(/\s+/gu, ' ').trim();

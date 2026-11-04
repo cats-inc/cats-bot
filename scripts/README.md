@@ -53,6 +53,11 @@ with a fake Runtime and an isolated temporary profile. On Linux,
 avatar pixels, click-through, bubbles and dragging;
 see [the testing guide](../docs/testing.md#shell-tests) before running it.
 
+`testing/floating-arrangement-acceptance.mjs` checks the real avatar window's
+recreation and position persistence, including hidden/offscreen avatars and
+overlapping reset/hide requests. It starts no Bot, Runtime or provider and writes
+only a temporary Electron profile, fixture pages and evidence.
+
 Use the provider manifest separately to refresh its complete closure from Platform.
 Skill sync discovers nested packages, rejects duplicates/links and preserves
 unrelated skills even with `--clean`. Windows PowerShell and Linux wrappers expose
