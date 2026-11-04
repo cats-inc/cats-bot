@@ -13,6 +13,7 @@ import {
 } from '../../../shared/botText.ts';
 import { LANGUAGE_OPTIONS, translate, type LanguagePreference, type Locale } from '../../../shared/language.ts';
 import type { ProviderSetupState, SetupEnvironment, SetupStepId } from '../../../shared/providerSetup.ts';
+import { canCreateFromSetup } from '../../../shared/providerSetup.ts';
 import { avatarSvg, avatarUrl } from '../../avatarArt.ts';
 import { errorText } from '../../errors.ts';
 import { useI18n } from '../../i18n.ts';
@@ -135,6 +136,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [folder, setFolder] = useState<string | null>(null);
   const [terminal, setTerminal] = useState<'opened' | 'missing' | null>(null);
   const [openingTerminal, setOpeningTerminal] = useState(false);
+  const [codexTerminal, setCodexTerminal] = useState<'opened' | 'missing' | null>(null);
 
   const heading = useRef<HTMLHeadingElement>(null);
   const elapsed = useElapsed(runStart);
@@ -269,6 +271,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       setAttempted(new Set());
     }
     setTerminal(null);
+    setCodexTerminal(null);
     setStep(2);
     void runCheck();
   };
@@ -285,6 +288,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     setError(null);
     if (target === 3) {
       setTerminal(null);
+      setCodexTerminal(null);
       setModelProvider(provider);
       void api.setup.folder(name).then(setFolder);
     }
@@ -370,15 +374,16 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const label = providerInfo?.label ?? provider;
   const displayName = name.trim() || t('Cat bot');
 
-  const openTerminal = async () => {
+  const openTerminal = async (initializeCodex = false) => {
     setOpeningTerminal(true);
     let opened = false;
     try {
-      opened = (await api.setup.openTerminal(provider)).opened;
+      opened = (await (initializeCodex ? api.setup.openCodexInitialization() : api.setup.openTerminal(provider))).opened;
     } catch {
       opened = false;
     }
-    setTerminal(opened ? 'opened' : 'missing');
+    if (initializeCodex) setCodexTerminal(opened ? 'opened' : 'missing');
+    else setTerminal(opened ? 'opened' : 'missing');
     if (!opened) {
       // FR-14: a failure opens the log, and a close still waiting from an earlier run must not undo that.
       if (settleTimer.current) clearTimeout(settleTimer.current);
@@ -390,7 +395,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   };
 
   const create = async () => {
-    if (!modelReady || busy) return;
+    if (!modelReady || busy || !canCreateFromSetup(state)) return;
     setPhase('creating');
     setError(null);
     openLogForRun();
@@ -726,6 +731,25 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
             </div>
           )}
         </li>
+        {provider === 'codex' && windows && (
+          <li className={state?.codexInitialization?.status === 'ready' ? 'setup-row is-ready' : 'setup-row'} data-row="codex-initialization">
+            <div className="setup-row-top">
+              <span className="setup-glyph">{state?.codexInitialization?.status === 'ready' ? <CheckIcon /> : <WaitIcon />}</span>
+              <div className="setup-row-text">
+                <strong>{t('Complete Codex first-time setup')}</strong>
+                {state?.codexInitialization?.status !== 'ready' && <p>{t('After signing in, open Codex and complete its Windows sandbox prompts. Exit Codex, then check again. Codex handles any administrator prompt and sandbox choices.')}</p>}
+                {state?.codexInitialization?.status === 'unavailable' && <p className="warn">{t('Could not verify Codex setup. Complete it in the terminal, then check again.')}</p>}
+              </div>
+              <span className={state?.codexInitialization?.status === 'ready' ? 'setup-row-state' : 'setup-row-state is-attention'}>{t(state?.codexInitialization?.status === 'ready' ? 'Ready' : 'First-time setup needed')}</span>
+            </div>
+            {state?.codexInitialization?.status !== 'ready' && <div className="setup-row-actions">
+              <CommandSnippet command="codex" copyable />
+              <button type="button" id="setup-open-codex" disabled={busy || openingTerminal} onClick={() => void openTerminal(true)}>{t('Open Codex first-time setup')}</button>
+              {codexTerminal === 'opened' && <span className="hint">{t('Terminal opened. Complete setup there, exit Codex, then check again.')}</span>}
+              {codexTerminal === 'missing' && <span className="hint warn" role="alert">{t('No terminal was found. Open Command Prompt in a working folder you trust and run codex.')}</span>}
+            </div>}
+          </li>
+        )}
         {environment.startAtLoginOffered && (
           <li className="setup-row is-needs" data-row="start-at-login">
             <div className="setup-row-top">
@@ -762,10 +786,10 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     <>
       <p className="hint setup-foot-hint" />
       <button type="button" id="setup-back" disabled={phase === 'creating'} onClick={() => goTo(2)}>{t('Back')}</button>
-      {provider === 'claude' && signIn === 'required' && (
+      {(provider === 'codex' && windows || provider === 'claude' && signIn === 'required') && (
         <button type="button" id="setup-recheck" disabled={busy} onClick={() => void runCheck()}>{t('Check again')}</button>
       )}
-      <button type="button" className="primary" id="setup-submit" disabled={!modelReady || busy} onClick={() => void create()}>
+      <button type="button" className="primary" id="setup-submit" disabled={!modelReady || busy || openingTerminal || !canCreateFromSetup(state)} onClick={() => void create()}>
         {phase === 'creating' ? t('Creating…') : t('Create and start {name}', { name: displayName })}
       </button>
     </>

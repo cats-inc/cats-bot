@@ -69,6 +69,7 @@ function helpers(world) {
 async function open(world, extra = {}) {
   const { calls, run } = helpers(world);
   const providers = new ProviderSetup(run, {
+    codexInitialization: async (_commandPath, _signal, onCommand) => { onCommand('fake codex app-server'); return { status: world.codexInitialization ?? 'ready' }; },
     describe: (helper, apply) => ({ command: `fake ${helper}${apply ? ' -Apply' : ''}`, file: `${helper}.ps1` }),
     identify: (helper) => ({ file: `${helper}.ps1`, sha256: 'a'.repeat(64), source: 'cats-platform 1234567' }),
   });
@@ -86,6 +87,7 @@ async function open(world, extra = {}) {
     takeDraft: () => null,
     restart: () => true,
     create: async (input) => { created.push(input); },
+    initializeCodex: async () => { calls.push('open-codex-terminal'); return { opened: true, command: 'codex' }; },
     ...extra,
   });
   const window = BrowserWindow.getAllWindows().find((item) => !before.has(item));
@@ -178,7 +180,7 @@ app.whenReady().then(async () => {
   // The rule, on the page.
   await w.click('input[name=setup-provider][value=codex]');
   check('choosing a provider runs nothing', w.calls.length === 0);
-  check('the hint counts the checks', /at most 4 read-only checks/u.test(await w.js("document.querySelector('.setup-foot-hint').textContent")) || process.platform !== 'win32');
+  check('the hint counts the checks', /at most 5 read-only checks/u.test(await w.js("document.querySelector('.setup-foot-hint').textContent")) || process.platform !== 'win32');
   await w.type('#setup-name', 'a\nb');
   await w.type('#setup-name', 'Mo\u202Echi');
   await w.wait("document.querySelector('#setup-name-error')", 'name error');
@@ -268,6 +270,39 @@ app.whenReady().then(async () => {
   const input = w.created[0];
   check('the owner\'s choices reach creation', input?.name === 'Mochi' && input?.provider === 'codex' && input?.startAtLogin === false, JSON.stringify(input));
   check('no page error, Codex path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
+/* ---- Codex first-run Windows initialization is separate from installation/sign-in ---- */
+if (process.platform === 'win32') {
+  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
+  const w = await open(world);
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'can reach login');
+  await w.click('#setup-next');
+  await w.wait("document.querySelector('#setup-open-codex')", 'initialization action');
+  check('Windows first-run initialization follows the login row', await w.js("!!document.querySelector('[data-row=sign-in] + [data-row=codex-initialization]')"));
+  check('missing sandbox blocks Create despite installed CLI and optional PowerShell', await w.js("document.querySelector('#setup-submit').disabled"));
+  await w.shot('10-codex-initialization-needed');
+  await w.click('#setup-open-codex');
+  await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Terminal opened.')", 'terminal result');
+  check('initialization opens the fixed terminal action', w.calls.includes('open-codex-terminal'));
+  check('opened terminal is not proof of readiness', await w.js("document.querySelector('#setup-submit').disabled"));
+  const refused = await w.js("window.catsBot.setup.finish({name:'Mochi',provider:'codex',model:null,instructions:''}).then(()=>'',e=>e.message)");
+  check('host refuses direct creation before initialization', /Complete Codex first-time setup/u.test(refused) && w.created.length === 0);
+  world.codexInitialization = 'unavailable';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Could not verify')", 'unknown readiness');
+  check('an inconclusive check keeps Create blocked', await w.js("document.querySelector('#setup-submit').disabled"));
+  world.codexInitialization = 'ready';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready') && !document.querySelector('#setup-submit').disabled", 'verified readiness');
+  check('fresh ready evidence permits Create', true);
+  await w.shot('11-codex-initialization-ready');
+  check('initialization adds no horizontal overflow', await w.js("document.documentElement.scrollWidth <= innerWidth"));
+  await w.click('#setup-submit'); await w.done;
+  check('verified initialization creates the selected cat', w.created[0]?.provider === 'codex');
+  check('initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
 }
 
 /* ---- Claude, installed but not signed in, with an old npm shim first ---- */

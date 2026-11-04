@@ -174,6 +174,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     openTerminal(provider) {
       return ipcRenderer.invoke('setup:openTerminal', provider);
     },
+    openCodexInitialization() {
+      return ipcRenderer.invoke('setup:openCodexInitialization');
+    },
     environment() {
       return ipcRenderer.invoke('setup:environment');
     },

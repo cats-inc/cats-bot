@@ -52,7 +52,7 @@ const providers = new ProviderSetup(async (helper, apply) => {
     installed: installed.has(helper),
     detectedVersion: installed.has(helper) ? 'fixture-1.0' : null,
   };
-});
+}, { codexInitialization: async () => ({ status: 'ready' }) });
 let core,
   windows,
   floating,

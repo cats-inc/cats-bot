@@ -88,7 +88,7 @@ test('rows before the check follow the shell\'s order, and the hint counts them 
   assert.deepEqual(pendingSteps('codex', 'Codex', 'win32').map((item) => item.id), ['node', 'npm', 'provider', 'shell']);
   assert.deepEqual(pendingSteps('codex', 'Codex', 'darwin').map((item) => item.id), ['node', 'npm', 'provider']);
   assert.deepEqual(pendingSteps('grok', 'Grok', 'win32').map((item) => [item.id, item.helper]), [['provider', 'grok']]);
-  assert.equal(checksToRun('codex', 'win32'), 4);
+  assert.equal(checksToRun('codex', 'win32'), 5);
   assert.equal(checksToRun('codex', 'linux'), 3);
   assert.equal(checksToRun('muse', 'win32'), 1);
 });
