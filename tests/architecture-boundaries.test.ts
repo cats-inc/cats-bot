@@ -177,7 +177,6 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const allowed = [
           typesFile,
           join(srcRoot, 'shared', 'shellUpdate.ts'),
-          join(srcRoot, 'shared', 'providerSetup.ts'),
         ];
         const target = resolve(dirname(file), specifier);
         // Translation is intentionally shared with native menus; it has no platform imports.
@@ -187,7 +186,9 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const avatars = target === join(srcRoot, 'shared', 'avatars.ts');
         // SPEC-010 FR-19: one rule for a name and a persona, on the page as in the core; it has no platform imports.
         const botText = target === join(srcRoot, 'shared', 'botText.ts');
-        if (!language && !providerTools && !avatars && !botText && (!typeOnly || !allowed.includes(target)))
+        // SPEC-010 FR-15: creation readiness is one pure rule in the host and page.
+        const providerSetup = target === join(srcRoot, 'shared', 'providerSetup.ts');
+        if (!language && !providerTools && !avatars && !botText && !providerSetup && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
@@ -200,6 +201,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
             'shared translations stay platform independent',
           );
         if (avatars) assert.deepEqual(importSpecifiers(target), [], 'the Cat looks stay plain data');
+        if (providerSetup) assert.deepEqual(importSpecifiers(target), [], 'setup readiness stays browser safe');
       }
     }
   }

@@ -38,6 +38,10 @@ export interface SetupStep {
 /** FR-15: only what a CLI itself reports. Most give no signal, and that is said rather than guessed. */
 export type SetupSignIn = 'signed_in' | 'required' | 'unknown';
 
+export interface CodexInitialization {
+  status: 'ready' | 'required' | 'unavailable';
+}
+
 export interface ProviderSetupState {
   provider: string;
   steps: SetupStep[];
@@ -45,6 +49,12 @@ export interface ProviderSetupState {
   signIn: SetupSignIn;
   /** FR-15: the fixed command that signs in to this provider. */
   signInCommand: string | null;
+  /** Windows Codex first-run setup is separate from installation and sign-in. */
+  codexInitialization?: CodexInitialization;
+}
+
+export function canCreateFromSetup(state: ProviderSetupState | null): boolean {
+  return state?.canFinish === true && (!state.codexInitialization || state.codexInitialization.status === 'ready');
 }
 
 /** FR-14: one run of a helper, or one terminal opened, as the page's log shows it. */

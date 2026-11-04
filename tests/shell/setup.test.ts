@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { registerHooks } from 'node:module';
 import { test, type TestContext } from 'node:test';
-import { ProviderSetup, type HelperResult, type SetupHelperRunner } from '../../src/shell/electron/providerSetup.ts';
+import { ProviderSetup, type HelperResult, type SetupHelperRunner, type ProviderSetupOptions } from '../../src/shell/electron/providerSetup.ts';
 import { BrowserWindow, ipcMain } from '../support/setup-electron.ts';
 
 const hooks = registerHooks({
@@ -23,13 +23,14 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-function fixture(t: TestContext, helper: SetupHelperRunner, create: () => Promise<void> = async () => {}) {
+function fixture(t: TestContext, helper: SetupHelperRunner, create: () => Promise<void> = async () => {}, options: ProviderSetupOptions & { initializeCodex?: () => Promise<{ opened: boolean; command: string | null }> } = {}) {
   BrowserWindow.instances = [];
   ipcMain.handlers.clear();
-  const providers = new ProviderSetup(helper);
+  const providers = new ProviderSetup(helper, options);
   const done = runFirstRunSetup({
     providers, create, preloadPath: '', rendererDir: '', iconPath: '', systemLocale: 'en',
     language: { read: () => 'system', write: () => {} },
+    initializeCodex: options.initializeCodex,
   });
   const window = BrowserWindow.instances[0]! as BrowserWindow;
   t.after(() => { if (!window.isDestroyed()) window.destroy(); });
@@ -123,6 +124,39 @@ test('opening the page runs nothing: the provider list is fixed and no helper st
   await ipcMain.invoke(f.window, 'setup:environment');
   assert.deepEqual(calls, []);
   f.window.destroy();
+});
+
+test('Codex may reach sign-in after installation but cannot be created until a fresh initialization check passes', async t => {
+  let status: 'required' | 'ready' | 'unavailable' = 'required', created = false, opened = 0, probes = 0;
+  const f = fixture(t, async helper => helper === 'shell' ? { status: 'changes_required' } : ready(), async () => { created = true; }, {
+    windows: true, codexInitialization: async () => { probes++; return { status }; },
+    initializeCodex: async () => { opened++; return { opened: true, command: 'codex' }; },
+  });
+  const checked = await f.providers.check('codex');
+  assert.equal(checked.canFinish, true, 'page 2 must allow reaching login and initialization');
+  assert.equal(checked.codexInitialization?.status, 'required');
+  const codex = { ...input, provider: 'codex' };
+  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
+  assert.equal(created, false);
+  assert.deepEqual(await ipcMain.invoke(f.window, 'setup:openCodexInitialization'), { opened: true, command: 'codex' });
+  assert.equal(opened, 1);
+  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
+  status = 'unavailable';
+  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
+  status = 'ready';
+  await ipcMain.invoke(f.window, 'setup:finish', codex);
+  assert.equal(created, true); assert.equal(await f.done, true);
+  assert.equal(probes, 5, 'every submission uses fresh evidence');
+});
+
+test('Codex initialization cannot be opened from another frame or for another selected provider', async t => {
+  let opened = false;
+  const f = fixture(t, async () => ready(), undefined, { windows: true, initializeCodex: async () => { opened = true; return { opened: true, command: 'codex' }; } });
+  await f.providers.check('claude');
+  await assert.rejects(ipcMain.invoke(f.window, 'setup:openCodexInitialization'), /Wait/);
+  const handler = ipcMain.handlers.get('setup:openCodexInitialization')!;
+  await assert.rejects(Promise.resolve().then(() => handler({ sender: { id: -1 } })), /Wait/);
+  assert.equal(opened, false);
 });
 
 test('Back stops a running check, which ends in the page\'s log (FR-6, FR-14)', async t => {

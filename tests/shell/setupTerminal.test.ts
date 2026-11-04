@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { test } from 'node:test';
-import { openSignInTerminal, signInCommand, signInScript, terminalInvocation } from '../../src/shell/electron/setupTerminal.ts';
+import { openCodexInitializationTerminal, openSignInTerminal, signInCommand, signInScript, terminalInvocation } from '../../src/shell/electron/setupTerminal.ts';
 
 test('each provider has one fixed sign-in command, and nothing else has any (SPEC-010 FR-15)', () => {
   assert.equal(signInCommand('codex'), 'codex login');
@@ -62,6 +62,21 @@ test('opening is detached from the app and reports what happened', async () => {
   assert.equal(opened.calls[0]!.options.stdio, 'ignore');
   const missing = fakeLaunch('error');
   assert.deepEqual(await openSignInTerminal('codex', { platform: 'win32', env: {}, launch: missing.launch }), { opened: false, command: 'codex login' });
+});
+
+test('Codex initialization uses fixed codex in Command Prompt and an owned folder with the same profile environment', async () => {
+  const opened = fakeLaunch('spawn');
+  const cwd = 'C:\\temp\\貓咪 & setup';
+  const env = { ComSpec: 'C:\\Windows\\system32\\cmd.exe', CODEX_HOME: 'C:\\Users\\cat\\.codex' };
+  assert.deepEqual(await openCodexInitializationTerminal({ platform: 'win32', cwd, env, launch: opened.launch }), { opened: true, command: 'codex' });
+  assert.equal(opened.calls[0]!.command, env.ComSpec);
+  assert.equal(opened.calls[0]!.args.at(-1), 'codex');
+  assert.equal(opened.calls[0]!.options.cwd, cwd);
+  assert.equal(opened.calls[0]!.options.env, env);
+  assert.ok(!opened.calls[0]!.args.some(arg => /powershell|ExecutionPolicy|setupStart|--yolo/u.test(arg)));
+  const absent = fakeLaunch('error');
+  assert.equal((await openCodexInitializationTerminal({ platform: 'win32', cwd, launch: absent.launch })).opened, false);
+  assert.deepEqual(await openCodexInitializationTerminal({ platform: 'darwin', launch: opened.launch }), { opened: false, command: null });
 });
 
 test('a launcher that exits with an error right away did not open anything', async () => {

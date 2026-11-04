@@ -3,6 +3,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { findOnPath } from '../../core/providers/catalog.ts';
+import { codexSetupWorkspace } from './codexSetup.ts';
 
 /**
  * SPEC-010 FR-15: sign-in needs a real terminal, so this opens one with a fixed
@@ -94,7 +95,20 @@ export function openSignInTerminal(
   provider: unknown,
   options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; launch?: typeof spawn } = {},
 ): Promise<{ opened: boolean; command: string | null }> {
-  const command = signInCommand(provider);
+  return openTerminalCommand(signInCommand(provider), options);
+}
+
+/** Fixed interactive first-run entry. Codex itself handles sandbox choice, UAC and configuration. */
+export function openCodexInitializationTerminal(options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; launch?: typeof spawn; cwd?: string } = {}): Promise<{ opened: boolean; command: string | null }> {
+  if ((options.platform ?? process.platform) !== 'win32') return Promise.resolve({ opened: false, command: null });
+  // cmd resolves either an npm .cmd shim or a standalone .exe, and never a .ps1.
+  return openTerminalCommand('codex', { ...options, cwd: options.cwd ?? codexSetupWorkspace() });
+}
+
+function openTerminalCommand(
+  command: string | null,
+  options: { platform?: NodeJS.Platform; env?: NodeJS.ProcessEnv; launch?: typeof spawn; cwd?: string },
+): Promise<{ opened: boolean; command: string | null }> {
   if (!command) return Promise.resolve({ opened: false, command: null });
   const platform = options.platform ?? process.platform;
   const env = options.env ?? process.env;
@@ -105,7 +119,7 @@ export function openSignInTerminal(
     try {
       const script = invocation.script ? writeScript(invocation.script, platform) : '';
       const args = invocation.args.map((arg) => (arg === '{script}' ? script : arg));
-      const child = launch(invocation.command, args, { detached: true, stdio: 'ignore', env, cwd: homedir(), windowsHide: false });
+      const child = launch(invocation.command, args, { detached: true, stdio: 'ignore', env, cwd: options.cwd ?? homedir(), windowsHide: false });
       child.once('error', () => resolve({ opened: false, command }));
       // A launcher with no display to open on starts, then exits with an error right away.
       child.once('exit', (code) => resolve({ opened: code === 0, command }));

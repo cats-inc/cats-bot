@@ -144,6 +144,19 @@ persona get one rule wherever they enter.
       never reads a credential file. No text from the page or from a model reaches it.
     - Where no terminal is found, the row says so and the command can be copied.
     - After a change, the row says already-open terminals need reopening to see the new PATH.
+    - Windows Codex adds a first-time setup row immediately after sign-in. Its button
+      opens Command Prompt in an owned empty temporary workspace and runs the fixed
+      `codex` command, supporting npm shims and standalone executables without enabling
+      PowerShell scripts. Codex owns sandbox choices, configuration and any UAC prompts.
+    - The read-only check asks Codex app-server `windowsSandbox/readiness` after the CLI
+      prerequisites pass. `ready` completes this row; `notConfigured` or `updateRequired`
+      needs setup; unsupported, failed or inconclusive checks remain unverified. This
+      starts no thread or model turn and performs no sandbox setup or config writes.
+    - Installation readiness still permits reaching page 3. Both creation entry points
+      require a fresh successful initialization check before creating a Windows Codex
+      cat. Opening or closing the terminal never proves readiness; "Check again" does.
+      Already initialized profiles need no extra terminal step. Runtime still validates
+      the actual session permissions; sandbox readiness does not prove every policy.
 16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, in the Bot tab too:
     every catalog entry; the selected entry's controls except `request` scope; `(default)`
     on default entries and values; the first listed value when a catalog names no default;

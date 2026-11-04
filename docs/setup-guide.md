@@ -82,6 +82,20 @@ and a way to do it by hand. On Windows, PowerShell scripts is optional. The last
 through a real terminal, picks the model and creates the cat bot. Cats Bot itself should not need
 a restart after an install; terminals that were already open do, to see the new PATH.
 
+On Windows, Codex also needs its own first-time sandbox initialization after sign-in.
+The last page offers **Open Codex first-time setup** when that setup is incomplete or
+cannot be verified. It opens Command Prompt and runs `codex` in an empty temporary
+workspace; complete Codex's own prompts, exit Codex, then press **Check again**.
+PowerShell scripts remains optional. An already initialized profile shows Ready
+without this extra step. A terminal opening is not completion: creation requires a
+fresh readiness check. Unsupported CLI checks remain blocked rather than assuming
+the sandbox is ready. The actual session still has Runtime's permission checks.
+
+If an existing cat previously failed with `workspace-write` versus `readOnly`,
+complete initialization in `codex.cmd` from Command Prompt or PowerShell, then fully
+quit and reopen Cats Bot before retrying. This recreates the failed provider session.
+Use `codex` in Command Prompt for a standalone executable installation.
+
 Closing onboarding during a provider check cancels the check and exits without
 creating a bot. The New cat bot window can also close during a check; the hub stays
 running. Quit cancels read-only provider checks. An explicitly requested install

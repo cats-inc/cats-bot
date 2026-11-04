@@ -86,7 +86,7 @@ export function pendingSteps(provider: string, label: string, platform: string):
 
 /** FR-3: the hint beside "Check this computer". */
 export function checksToRun(provider: string, platform: string): number {
-  return pendingSteps(provider, provider, platform).length;
+  return pendingSteps(provider, provider, platform).length + (provider === 'codex' && platform === 'win32' ? 1 : 0);
 }
 
 /** FR-14: a helper run in the log: its start and end entries as one. */

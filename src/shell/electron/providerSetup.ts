@@ -4,6 +4,7 @@ import { join, posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
 import { signInCommand } from './setupTerminal.ts';
+import { canCreateFromSetup } from '../../shared/providerSetup.ts';
 import type {
   ProviderSetupState,
   SetupLogEntry,
@@ -11,6 +12,7 @@ import type {
   SetupSignIn,
   SetupStep,
   SetupStepId,
+  CodexInitialization,
 } from '../../shared/providerSetup.ts';
 
 const execute = promisify(execFile);
@@ -243,6 +245,7 @@ export function createHelperRunner(assets: string, onCommandDirectory?: (directo
 
 export interface ProviderSetupOptions {
   windows?: boolean;
+  codexInitialization?(commandPath: string | undefined, signal: AbortSignal, onCommand: (command: string) => void): Promise<CodexInitialization>;
   /** How a helper's run reads in the log. */
   describe?(helper: string, apply: boolean): { command: string; file: string };
   /** Which copy of a helper's script this is. */
@@ -284,6 +287,9 @@ export class ProviderSetup {
   }
   get installing(): boolean {
     return this.active?.installing === true;
+  }
+  get codexSelected(): boolean {
+    return this.windows && this.selected === 'codex';
   }
   /** Read-only probes must never keep a closing app alive. Installs drain normally. */
   cancelCheck(): void {
@@ -366,6 +372,13 @@ export class ProviderSetup {
       this.selected = provider;
       return this.inspect(provider, signal, listener);
     }, false, signal);
+  }
+  /** Both creation IPC paths use the same fresh preflight, never a renderer's cached result. */
+  async checkForCreation(provider: unknown, signal?: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
+    const state = await this.check(provider, signal, listener);
+    if (!state.canFinish) throw new Error('Complete setup for the selected provider first');
+    if (!canCreateFromSetup(state)) throw new Error('Complete Codex first-time setup, then check again.');
+    return state;
   }
   install(provider: unknown, step: unknown, listener?: SetupLogListener): Promise<ProviderSetupState> {
     this.assertProvider(provider);
@@ -450,6 +463,7 @@ export class ProviderSetup {
    */
   private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
     const steps: SetupStep[] = [];
+    let codexCommandPath: string | undefined;
     let nodeReady = true;
     for (const link of this.chain(provider)) {
       const script = this.options.identify?.(link.helper) ?? null;
@@ -473,6 +487,7 @@ export class ProviderSetup {
         continue;
       }
       const result = await this.run(link.helper, false, signal, listener);
+      if (link.id === 'provider' && provider === 'codex') codexCommandPath = result.commandPath;
       if (link.id === 'node') nodeReady = result.status === 'ready';
       steps.push({
         id: link.id,
@@ -493,12 +508,41 @@ export class ProviderSetup {
         applyCommand,
       });
     }
+    let codexInitialization: CodexInitialization | undefined;
+    if (this.windows && provider === 'codex') {
+      codexInitialization = { status: 'required' };
+      if (steps.every((step) => step.optional || stepDone(step))) {
+        const run = ++this.runs, started = Date.now();
+        const base = { run, kind: 'check' as const, helper: 'codex-initialization', file: 'Codex app-server', command: '' };
+        const emit = (entry: SetupLogEntry) => {
+          for (const hear of [listener, this.options.onRun]) { try { hear?.(entry); } catch { /* A closing view. */ } }
+        };
+        let reported = false;
+        const reportCommand = (command: string) => {
+          base.command = command;
+          if (!reported) emit({ ...base, phase: 'start', at: new Date(started).toISOString() });
+          reported = true;
+        };
+        try {
+          codexInitialization = await this.options.codexInitialization?.(codexCommandPath, signal, reportCommand) ?? { status: 'unavailable' };
+          if (!reported) reportCommand('');
+          signal.throwIfAborted();
+          emit({ ...base, phase: 'end', at: new Date().toISOString(), durationMs: Date.now() - started, status: codexInitialization.status });
+        } catch (error) {
+          if (!reported) reportCommand('');
+          emit({ ...base, phase: 'end', at: new Date().toISOString(), durationMs: Date.now() - started, error: signal.aborted ? 'Stopped' : 'Could not check Codex first-time setup.' });
+          signal.throwIfAborted();
+          codexInitialization = { status: 'unavailable' };
+        }
+      }
+    }
     return {
       provider,
       steps,
       canFinish: steps.every((step) => step.optional || stepDone(step)),
       signIn: signInState(provider, steps),
       signInCommand: signInCommand(provider),
+      ...(codexInitialization ? { codexInitialization } : {}),
     };
   }
 }

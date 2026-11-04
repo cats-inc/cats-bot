@@ -239,6 +239,7 @@ export interface CatsBotBridge {
     cancel(): Promise<void>;
     /** FR-15: a new terminal with the provider's fixed sign-in command. */
     openTerminal(provider: string): Promise<{ opened: boolean; command: string | null }>;
+    openCodexInitialization(): Promise<{ opened: boolean; command: string | null }>;
     environment(): Promise<import('../shared/providerSetup.ts').SetupEnvironment>;
     /** FR-18: the folder a cat bot of this name would get; null for a name the rule refuses. */
     folder(name: string): Promise<string | null>;

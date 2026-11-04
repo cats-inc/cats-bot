@@ -4,7 +4,7 @@ import { fixedProviders, readPackagedModelCatalog } from '../../core/providers/c
 import type { ProviderSetup } from './providerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
 import type { SetupDraft, SetupEnvironment, SetupLogEntry } from '../../shared/providerSetup.ts';
-import { openSignInTerminal } from './setupTerminal.ts';
+import { openCodexInitializationTerminal, openSignInTerminal } from './setupTerminal.ts';
 import { isLanguagePreference, resolveLocale, type LanguagePreference } from '../../shared/language.ts';
 import { createPageWindow, pageUrl, SETUP_WINDOW_SIZE, type PageWindowOptions } from './settingsWindow.ts';
 import { validateSetupInput, type SetupInput } from './setupInput.ts';
@@ -30,6 +30,8 @@ export interface FirstRunOptions extends PageWindowOptions {
   takeDraft?(): SetupDraft | null;
   /** FR-13: keeps the input and restarts Cats Bot. */
   restart?(draft: unknown): boolean;
+  /** Injectable for isolated acceptance; production always opens the fixed Codex command. */
+  initializeCodex?(): Promise<{ opened: boolean; command: string | null }>;
 }
 
 let terminalRuns = 0;
@@ -60,7 +62,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       ipcMain.removeHandler('setup:providers');
       ipcMain.removeHandler('setup:models');
       ipcMain.removeHandler('setup:finish');
-      for (const channel of ['setup:check', 'setup:install', 'setup:cancel', 'setup:openTerminal', 'setup:environment', 'setup:folder', 'setup:draft', 'setup:restart', 'ui:language', 'ui:setLanguage'])
+      for (const channel of ['setup:check', 'setup:install', 'setup:cancel', 'setup:openTerminal', 'setup:openCodexInitialization', 'setup:environment', 'setup:folder', 'setup:draft', 'setup:restart', 'ui:language', 'ui:setLanguage'])
         ipcMain.removeHandler(channel);
     };
     const sendLog = (entry: SetupLogEntry) => {
@@ -94,6 +96,12 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       if (!fromSetup(event)) throw new Error('Unknown setup window');
       return { platform: process.platform, startAtLoginOffered: options.startAtLoginOffered === true };
     });
+    ipcMain.handle('setup:openCodexInitialization', async (event) => {
+      if (!fromSetup(event) || !options.providers.codexSelected || options.providers.busy || submitting) throw new Error('Wait for the current setup operation to finish');
+      const result = await (options.initializeCodex ?? openCodexInitializationTerminal)();
+      if (result.command) logTerminal(sendLog, result.command, result.opened);
+      return result;
+    });
     ipcMain.handle('setup:folder', (event, name: unknown) => {
       if (!fromSetup(event) || typeof name !== 'string') return null;
       const normalized = normalizeBotName(name);
@@ -121,9 +129,8 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       const input = validateSetupInput(raw);
       submitting = true;
       try {
-        const checked = await options.providers.check(input.provider, checks.signal, sendLog);
+        await options.providers.checkForCreation(input.provider, checks.signal, sendLog);
         checks.signal.throwIfAborted();
-        if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
         creating = true;
         await options.create(input);
       } catch (error) {

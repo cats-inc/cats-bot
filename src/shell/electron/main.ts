@@ -48,8 +48,9 @@ import {
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
+import { probeCodexInitialization } from './codexSetup.ts';
 import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
-import { openSignInTerminal } from './setupTerminal.ts';
+import { openCodexInitializationTerminal, openSignInTerminal } from './setupTerminal.ts';
 import type { SetupEnvironment, SetupLogEntry } from '../../shared/providerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
 import { SETUP_WINDOW_SIZE, createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
@@ -286,6 +287,7 @@ async function main(): Promise<void> {
       void presenter.core.useCommandDirectory(directory).catch((error: unknown) => log(`provider directory: ${diagnosticError(error)}`, 'error'));
     }
   }), {
+    codexInitialization: (commandPath, signal, onCommand) => probeCodexInitialization(commandPath, signal, { onCommand }),
     describe: (helper, apply) => describeHelperRun(join(assetsDir, 'setup'), process.platform, helper, apply),
     identify: createScriptIdentity(join(assetsDir, 'setup'), process.platform),
     onRun: (entry) => {
@@ -1098,6 +1100,13 @@ async function main(): Promise<void> {
     if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');
     return { platform: process.platform, startAtLoginOffered: false };
   });
+  ipcMain.handle('setup:openCodexInitialization', async (event) => {
+    if (quitting || !ownedMainFrame(event) || !fromCreate(event) || !providerSetup.codexSelected
+      || providerSetup.busy || finishing || creating) throw new Error('Wait for the current setup operation to finish');
+    const result = await openCodexInitializationTerminal();
+    if (result.command) logTerminal(setupLogTo(event), result.command, result.opened);
+    return result;
+  });
   ipcMain.handle('setup:folder', (event, name: unknown) => {
     if (!ownedMainFrame(event) || !fromCreate(event) || typeof name !== 'string') return null;
     const normalized = normalizeBotName(name);
@@ -1135,10 +1144,9 @@ async function main(): Promise<void> {
     const input = validateSetupInput(raw);
     finishing = true;
     try {
-      const checked = await providerSetup.check(input.provider, checks.signal, setupLogTo(event));
+      await providerSetup.checkForCreation(input.provider, checks.signal, setupLogTo(event));
       checks.signal.throwIfAborted();
       if (quitting) throw new Error('Cats Bot is stopping');
-      if (!checked.canFinish) throw new Error('Complete setup for the selected provider first');
       creating = true;
       const id = await manager.create({
         name: input.name,

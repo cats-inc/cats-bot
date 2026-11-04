@@ -591,3 +591,34 @@ under the locked Electron 41.2.0; the Windows-restart screenshot was visually
 checked. This remains separate from real UAC and clean-machine installation.
 
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).
+
+Windows Codex initialization regressions additionally cover the public app-server
+readiness preflight and official terminal entry. `tests/shell/codexSetup.test.ts`
+uses real disposable child processes for fragmented RPC replies, notifications,
+unsupported/unknown statuses, early exit, timeout, oversized output, cancellation
+and descendant cleanup. The request allowlist has only initialize, initialized
+and windowsSandbox/readiness. Launcher fixtures cover npm cmd/ps1, Node x64/arm64
+independent of Electron, invalid shims/PE headers and standalone executables.
+Native fixture assertions compare canonical file identity because macOS temporary
+paths may be spelled through either `/var` or its `/private/var` target.
+Terminal tests retain CODEX_HOME and a Unicode/spaced working folder, use Command
+Prompt and require no execution-policy change. Both creation paths call the same
+fresh host gate; first-run IPC coverage also verifies sender and provider scope.
+
+The renderer fixture adds an incomplete → terminal opened → unverified → ready
+scenario: page 2 can reach login, opening a terminal cannot enable Create, direct
+IPC creation is refused, and only fresh ready evidence enables creation. Windows
+Electron 41.2.0 passed all 102 assertions, and the needed/ready screenshots were
+visually checked. Native Codex 0.166.0 checks used four private CODEX_HOME configs,
+no credentials, no model turns and no sandbox installation; all config bytes
+stayed unchanged. MXC readiness depends on the account's machine capabilities.
+See the [dated findings](research/2026-11-05-codex-windows-initialization.md).
+Actual terminal/UAC completion on a clean machine remains manual acceptance.
+
+The full Windows run with a checkout-local npm cache reported 580 passed,
+9 skipped, one failed and one cancelled (591 total). The existing wedged-core
+and helper-descendant termination cases failed under the restricted executor;
+both affected integration files then passed all 9 tests under the normal host
+account. Two additional host-gate/logging regressions also passed in the focused
+suite. Typecheck and the production build passed; Vite required the normal host
+account because the restricted executor could not read an ancestor directory.

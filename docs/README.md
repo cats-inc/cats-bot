@@ -119,6 +119,7 @@ Add your project-specific automation scripts here.
 | [research/](./research/)                                                                              | Directory | Research notes and external sources                                                                                                                  |
 | [Standalone living bot feasibility](./research/2026-10-27-standalone-living-bot-feasibility.md)       | Research  | Read-only survey of cats-runtime, cats-platform and desktop-work-fleet; Catlas versus companion, runtime wakeup limits, dependency-direction options |
 | [Resident bot architecture assessment](./research/2026-10-27-resident-bot-architecture-assessment.md) | Research  | Independent source-based recommendations for bot lifetime, Runtime integration, global model settings and desktop presentation                       |
+| [Codex Windows initialization](./research/2026-11-05-codex-windows-initialization.md) | Research | Codex 0.166.0 clean-machine failure, read-only sandbox readiness and official terminal initialization |
 
 ## Decision Records
 
