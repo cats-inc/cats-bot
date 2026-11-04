@@ -47,6 +47,9 @@ test('each status maps to one row state (SPEC-010 FR-8)', () => {
   assert.equal(rowKind(step('node', 'relaunch_required')), 'restart');
   assert.equal(rowKind(step('node', 'ready', { restartRequired: true })), 'restart', 'ready but asking for a restart is not done');
   assert.equal(rowKind(step('node', 'something_new')), 'needs', 'an unknown status is not taken as ready');
+  assert.equal(rowKind(step('node', 'changes_required', { systemRestartRequired: true })), 'restart', 'a missing Node keeps the explicit Windows reboot advice');
+  assert.equal(rowKind(step('node', 'ready', { systemRestartRequired: true })), 'ready', 'a usable Node can continue while the reboot advice remains visible');
+  assert.equal(rowKind(step('node', 'failed', { systemRestartRequired: true })), 'failed', 'reboot advice cannot hide a real check failure');
 });
 
 test('the shortcut, the queue and what is left leave optional and waiting rows alone (FR-9, FR-11)', () => {

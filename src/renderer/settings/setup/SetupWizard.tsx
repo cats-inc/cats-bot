@@ -525,8 +525,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     title = t('Applying what you ticked');
     lead = t('One at a time. This window cannot close until it finishes.');
   } else if (stopped && rowKind(stopped) === 'restart') {
-    title = t('Cannot find {label} yet', { label: t(stopped.label) });
-    lead = t('Check again first. What you typed stays if Cats Bot has to restart.');
+    title = stopped.systemRestartRequired ? t('Windows restart required') : t('Cannot find {label} yet', { label: t(stopped.label) });
+    lead = stopped.systemRestartRequired ? t('Restart Windows to finish installation.') : t('Check again first. What you typed stays if Cats Bot has to restart.');
   } else if (stopped && retry.length > 0) {
     title = t('{label} did not finish', { label: t(stopped.label) });
     lead = t('What comes after it did not run. Try again, or set it up yourself and check again.');
@@ -538,8 +538,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     lead = t('Tick what Cats Bot should do. Nothing unticked runs. You can also set it up yourself, then check again.');
   } else if (state) {
     title = t('This computer is ready for {provider}', { provider: label });
-    lead = applied.size > 0
-      ? t('Changed {count} item(s). The log below has the details.', { count: applied.size })
+    lead = changes > 0
+      ? t('Changed {count} item(s). The log below has the details.', { count: changes })
       : t('Nothing needed installing, and nothing here changed.');
   } else if (error) {
     title = t('The check did not finish');
@@ -662,7 +662,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     pageTwoFoot = (
       <>
         <p className="hint setup-foot-hint" />
-        <button type="button" id="setup-restart" onClick={() => void api.setup.restart(draft())}>{t('Restart Cats Bot')}</button>
+        {!stopped.systemRestartRequired && <button type="button" id="setup-restart" onClick={() => void api.setup.restart(draft())}>{t('Restart Cats Bot')}</button>}
         <button type="button" className="primary" id="setup-recheck" onClick={() => void runCheck()}>{t('Check again')}</button>
       </>
     );

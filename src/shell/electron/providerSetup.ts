@@ -82,7 +82,7 @@ export interface HelperResult {
   manualSteps?: string[];
   warnings?: string[];
   restartRequired?: boolean;
-  interruptions?: Array<{ kind?: string }>;
+  interruptions?: Array<{ kind?: string; requiresRestart?: boolean }>;
   /** What the helper would do. Each helper uses one of these two names. */
   plannedActions?: string[];
   plannedChanges?: string[];
@@ -271,6 +271,9 @@ export class ProviderSetup {
   private readonly windows: boolean;
   private readonly options: ProviderSetupOptions;
   private runs = 0;
+  // Keep machine-restart advice through later checks/installs in this Hub session.
+  private systemRestartReported = false;
+  private systemRestartWarnings: string[] = [];
   constructor(runHelper: SetupHelperRunner, options: ProviderSetupOptions = {}) {
     this.runHelper = runHelper;
     this.windows = options.windows ?? process.platform === 'win32';
@@ -393,6 +396,11 @@ export class ProviderSetup {
             : 'Complete the steps above first');
       }
       const applied = await this.run(step === 'provider' ? provider : (step as string), true, signal, listener);
+      if (this.windows && step === 'node' && applied.restartRequired === true &&
+          applied.interruptions?.some(item => item.kind === 'restart_required' && item.requiresRestart === true)) {
+        this.systemRestartReported = true;
+        this.systemRestartWarnings = distinctLines([...this.systemRestartWarnings, ...(applied.warnings ?? [])]);
+      }
       const checked = await this.inspect(provider, signal, listener);
       const target = checked.steps.find((item) => item.id === step)!;
       // A failure or a refused elevation always stands. A restart or relaunch the helper
@@ -472,7 +480,8 @@ export class ProviderSetup {
         status: result.status,
         installed: result.installed === true || result.status === 'ready',
         version: result.detectedVersion ?? null,
-        warnings: result.warnings ?? [],
+        warnings: distinctLines([...(result.warnings ?? []), ...(link.id === 'node' ? this.systemRestartWarnings : [])]),
+        ...(link.id === 'node' && this.systemRestartReported ? { systemRestartRequired: true } : {}),
         manualSteps: result.manualSteps ?? [],
         // A check's changes_required flag previews the restart after applying its plan;
         // no change has run yet, so the row must still offer its tick box.

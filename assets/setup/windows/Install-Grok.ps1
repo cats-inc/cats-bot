@@ -161,7 +161,7 @@ function Invoke-GrokInstaller {
       'powershell.exe'
     }
     $process = Start-Process -FilePath $powerShellExe `
-      -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript) `
+      -ArgumentList (ConvertTo-CatsWindowsArgumentString -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $tempScript)) `
       -Wait -PassThru -NoNewWindow `
       -RedirectStandardOutput $stdoutPath `
       -RedirectStandardError $stderrPath

@@ -152,7 +152,10 @@ export function StepRow({
       <li className="setup-row is-ready" data-row={step.id}>
         <div className="setup-row-top">
           <span className="setup-glyph"><CheckIcon /></span>
-          <div className="setup-row-text"><StepTitle label={step.label} optional={step.optional} /></div>
+          <div className="setup-row-text">
+            <StepTitle label={step.label} optional={step.optional} />
+            {step.systemRestartRequired && <p className="setup-system-restart">{t('Restart Windows to finish installation.')}</p>}
+          </div>
           <span className="setup-row-state">
             {justApplied ? t('Just finished') : t('Ready')}{step.version && <code className="setup-version">{step.version}</code>}
           </span>
@@ -180,7 +183,9 @@ export function StepRow({
           <span className="setup-glyph"><WaitIcon /></span>
           <div className="setup-row-text">
             <StepTitle label={step.label} optional={step.optional} />
-            <p>{t('Installed, but Cats Bot cannot find it yet. Check again first. If that does not help, restart Cats Bot.')}</p>
+            <p className={step.systemRestartRequired ? 'setup-system-restart' : undefined}>{step.systemRestartRequired
+              ? t('Restart Windows to finish installation.')
+              : t('Installed, but Cats Bot cannot find it yet. Check again first. If that does not help, restart Cats Bot.')}</p>
           </div>
           <span className="setup-row-state is-attention">{t('Not found yet')}</span>
         </div>
@@ -195,6 +200,7 @@ export function StepRow({
           <div className="setup-row-text">
             <StepTitle label={step.label} optional={step.optional} />
             <p>{kind === 'declined' ? t(elevationDeclinedText) : t('It did not finish. The log below says why.')}</p>
+            {step.systemRestartRequired && <p className="setup-system-restart">{t('Restart Windows to finish installation.')}</p>}
           </div>
           <span className="setup-row-state is-danger">{t('Not installed')}</span>
         </div>

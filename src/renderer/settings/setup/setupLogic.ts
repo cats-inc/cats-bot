@@ -20,6 +20,7 @@ export function rowKind(step: SetupStep): RowKind {
   if (step.status === 'prerequisite_required') return 'waiting';
   if (step.status === 'elevation_required') return 'declined';
   if (step.status === 'failed') return 'failed';
+  if (step.systemRestartRequired && !step.installed) return 'restart';
   if (step.status === 'restart_required' || step.status === 'relaunch_required' || step.restartRequired) return 'restart';
   if (step.status === 'ready') return 'ready';
   if (step.status === 'auth_required' && step.installed && step.id === 'provider') return 'ready';

@@ -21,10 +21,11 @@ emit_json='false'
 install_state='auto'
 detected_version_override=''
 skip_node_probe='false'
+dry_run='false'
 
 print_help() {
   cat <<EOF
-Usage: install-node.sh [--check] [--apply] [-upgrade] [-force] [--json]
+Usage: install-node.sh [--check] [--apply] [-upgrade] [-force] [--json] [--dry-run]
                        [--install-state auto|installed|missing] [--detected-version <ver>]
                        [--skip-node-probe]
 EOF
@@ -37,7 +38,7 @@ while [ $# -gt 0 ]; do
     -upgrade|-Upgrade) mode='upgrade' ;;
     -force|-Force) mode='force' ;;
     --json|-Json) emit_json='true' ;;
-    --dry-run|-DryRun) ;;  # Accepted for parity with the Windows helper; not honored.
+    --dry-run|-DryRun) dry_run='true' ;;
     --install-state)
       shift; install_state="${1:-auto}"
       ;;
@@ -166,6 +167,19 @@ if [ "$mode" = 'check' ]; then
 fi
 
 # Mode: apply (idempotent)
+if [ "$dry_run" = 'true' ]; then
+  installed='false'
+  if is_node_installed; then installed='true'; fi
+  if [ "$mode" != 'apply' ] || [ "$installed" != 'true' ]; then
+    case "$mode" in
+      apply) planned_actions+=('install_node_lts_via_nvm') ;;
+      upgrade) planned_actions+=('upgrade_node_lts_via_nvm') ;;
+      force) planned_actions+=('reinstall_node_lts_via_nvm') ;;
+    esac
+  fi
+  emit_result 'preview' "$installed" 0
+fi
+
 if [ "$mode" = 'apply' ] && is_node_installed; then
   emit_result 'ready' 'true' 0
 fi

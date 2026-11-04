@@ -113,6 +113,12 @@ persona get one rule wherever they enter.
     again" first and then restarting Cats Bot, keeping the page's input (a draft file read
     once and removed on the next start).
 
+    An explicit Windows machine-restart request from an installer is separate
+    from a PATH/Cats Bot relaunch. Keep its advice visible through subsequent
+    checks and installs in the current Hub session. A usable CLI may continue;
+    an unavailable CLI asks for a Windows restart instead of offering to restart
+    Cats Bot. Setup never restarts Windows itself or adds persisted restart state.
+
 **The log**
 
 14. FR-14: The log is a read-only text area in the product's ink, across the window's foot,

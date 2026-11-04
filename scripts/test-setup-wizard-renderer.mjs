@@ -90,6 +90,7 @@ async function open(world, extra = {}) {
   });
   const window = BrowserWindow.getAllWindows().find((item) => !before.has(item));
   const { webContents } = window;
+  webContents.setBackgroundThrottling(false);
   const errors = [];
   webContents.on('console-message', (event) => { if (event.level === 'error') errors.push(event.message); });
   if (webContents.isLoading()) await new Promise((ready) => webContents.once('did-finish-load', ready));
@@ -113,6 +114,7 @@ async function open(world, extra = {}) {
   })()`);
   const shot = async (name) => {
     await sleep(250);
+    await js('new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))');
     writeFileSync(join(evidence, `${name}.png`), (await webContents.capturePage()).toPNG());
   };
   const logOpen = () => js("document.querySelector('.setup-log').classList.contains('is-open')");
@@ -121,7 +123,9 @@ async function open(world, extra = {}) {
   return { window, calls, created, done, errors, js, wait, click, type, shot, logOpen, rows };
 }
 
-await app.whenReady();
+// Electron waits for its ESM entrypoint before ready; top-level await would
+// deadlock this fixture before its first scenario. Register the work instead.
+app.whenReady().then(async () => {
 
 /* ---- Codex on a clean Windows machine ---- */
 {
@@ -412,8 +416,42 @@ await app.whenReady();
   check('no page error, fresh check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
+/* ---- A real Windows restart is distinct from a Cats Bot/PATH relaunch ---- */
+{
+  const world = {
+    state: { node: 'changes_required', npm: 'ready', codex: 'ready', shell: 'ready' },
+    applies: { node: [{ status: 'restart_required', installed: true, restartRequired: true,
+      appliedChanges: ['fixture_msi_install'], warnings: ['Windows requires a system restart.'],
+      interruptions: [{ kind: 'restart_required', requiresRestart: true }] }] },
+  };
+  const w = await open(world);
+  await w.type('#setup-name', 'Mochi');
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-tick-node')", 'Node plan');
+  await w.click('#setup-tick-node');
+  await w.click('#setup-apply');
+  await w.wait("document.querySelector('.setup-system-restart') && !document.querySelector('#setup-recheck')?.disabled", 'Windows restart advice');
+  check('a Windows reboot is not offered as a Cats Bot restart', await w.js("!document.querySelector('#setup-restart') && /Restart Windows/.test(document.querySelector('.setup-pane').textContent)"));
+  await w.click('#setup-recheck');
+  await w.wait("!document.querySelector('#setup-recheck')?.disabled && !!document.querySelector('.setup-system-restart')", 'unavailable Node keeps reboot advice');
+  check('a missing Node does not offer reinstall or app restart while Windows reboot is pending', await w.js("!document.querySelector('#setup-tick-node') && !document.querySelector('#setup-restart')"));
+  world.state.node = 'ready';
+  await w.click('#setup-recheck');
+  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-ready')", 'Node usable after probe');
+  check('a ready Node keeps the Windows restart advice visible', await w.js("!!document.querySelector('.setup-row[data-row=node] .setup-system-restart')"));
+  check('the Windows restart advice has visible layout', await w.js("(() => { const node = document.querySelector('.setup-system-restart'); const box = node.getBoundingClientRect(); const style = getComputedStyle(node); return box.width > 0 && box.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'; })()"));
+  check('a usable Node can continue without hiding reboot advice', await w.js("!!document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled"));
+  check('a successful install followed by rechecking still counts its change', await w.js("/Changed 1 item/.test(document.querySelector('.setup-pane').textContent)"));
+  await w.shot('9-windows-system-restart');
+  w.window.destroy();
+  await w.done;
+  check('no page error, Windows restart path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
 console.log(results.join('\n'));
 const failed = results.filter((line) => line.startsWith('FAIL')).length;
 console.log(`passed ${results.length - failed} of ${results.length}; screenshots in ${evidence}`);
 assert.equal(failed, 0);
 app.exit(0);
+}).catch(fail);

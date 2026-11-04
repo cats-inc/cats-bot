@@ -27,6 +27,57 @@ Enable-CatsTls12
 # so its script runs this first.
 $CatsTls12Prologue = "function Enable-CatsTls12 {$(${function:Enable-CatsTls12})}`nEnable-CatsTls12"
 
+function ConvertTo-CatsWindowsArgumentString {
+  <# .SYNOPSIS
+      Serialize Windows argv, preserving empty arguments, quotes and trailing backslashes.
+  #>
+  param([AllowEmptyCollection()][string[]]$ArgumentList = @())
+  return (($ArgumentList | ForEach-Object {
+    if ($_ -eq '') { '""' }
+    elseif ($_ -notmatch '[\s"]') { $_ }
+    else {
+      $escaped = [regex]::Replace($_, '(\\*)"', '$1$1\"')
+      $escaped = [regex]::Replace($escaped, '\\+$', '$0$0')
+      '"' + $escaped + '"'
+    }
+  }) -join ' ')
+}
+
+function Invoke-CatsElevatedHelper {
+  <# .SYNOPSIS
+      Wait for an elevated helper and read its private JSON relay without losing failures.
+  #>
+  param([string[]]$ArgumentList, [string]$RelayPath)
+  $payload = ''
+  $result = $null
+  $launchError = $null
+  $exitCode = 1
+  try {
+    try {
+      $process = Start-Process -FilePath 'powershell.exe' `
+        -ArgumentList (ConvertTo-CatsWindowsArgumentString -ArgumentList $ArgumentList) `
+        -Verb RunAs -WindowStyle Hidden -Wait -PassThru
+      $exitCode = $process.ExitCode
+    } catch {
+      $launchError = $_.Exception.Message
+    }
+    if ($null -eq $launchError -and [IO.File]::Exists($RelayPath)) {
+      try {
+        $payload = [IO.File]::ReadAllText($RelayPath)
+        $result = $payload | ConvertFrom-Json
+        if ($result.status -isnot [string] -or [string]::IsNullOrWhiteSpace($result.status)) {
+          $result = $null
+        }
+      } catch { $result = $null }
+    }
+  } finally {
+    try {
+      if ([IO.File]::Exists($RelayPath)) { [IO.File]::Delete($RelayPath) }
+    } catch { } # Cleanup cannot replace the child result or the launch error.
+  }
+  return [pscustomobject]@{ ExitCode = $exitCode; Result = $result; Payload = $payload; LaunchError = $launchError }
+}
+
 function Invoke-HiddenCommand {
   param(
     [Parameter(Mandatory)]
@@ -44,13 +95,7 @@ function Invoke-HiddenCommand {
   $psi.RedirectStandardError = $true
 
   if ($ArgumentList.Count -gt 0) {
-    $psi.Arguments = ($ArgumentList | ForEach-Object {
-      if ($_ -match '[\s"]') {
-        '"{0}"' -f ($_ -replace '"', '\"')
-      } else {
-        $_
-      }
-    }) -join ' '
+    $psi.Arguments = ConvertTo-CatsWindowsArgumentString -ArgumentList $ArgumentList
   }
 
   $proc = [System.Diagnostics.Process]::Start($psi)
