@@ -63,7 +63,7 @@
     },
     {
       "repository": "cats-inc/cats-platform",
-      "commit": "32305a506505f284dd28c17748cdc95c796ded02",
+      "commit": "9711a55b05bfc4348185ce6d3e3682f35b73b38a",
       "files": [
         {
           "source": "scripts/shared/renderer-cdp.mjs",
