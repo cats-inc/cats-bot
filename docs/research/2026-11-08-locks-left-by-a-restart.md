@@ -59,7 +59,8 @@ one wrongly taken lets two cores write one bot.
 - Records from 0.5.4 and earlier have no identity. On Windows they are stale
   when the process using their PID was created more than a minute after them,
   which heals the files a restart left. One naming the reader's own PID is
-  stale when written before the reader started. Otherwise they stand.
+  stale when written more than a minute before the reader started. Otherwise
+  they stand.
 - A stale lock is removed only while its bytes are still those judged, so a
   lock another hub wrote in the meantime survives.
 

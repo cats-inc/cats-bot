@@ -124,7 +124,14 @@ function linuxIdentity(pid: number): ProcessIdentity | 'gone' | null {
   try {
     stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
   } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'gone' : null;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return null;
+    // With /proc mounted `hidepid`, another account's process is hidden but still runs.
+    try {
+      process.kill(pid, 0);
+      return null;
+    } catch (signal) {
+      return (signal as NodeJS.ErrnoException).code === 'EPERM' ? null : 'gone';
+    }
   }
   if (bootId === undefined) {
     try {

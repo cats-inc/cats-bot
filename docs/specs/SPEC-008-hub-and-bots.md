@@ -51,8 +51,8 @@ descriptions for the model and this documentation say "bot".
    rule, so a restart never leaves the hub refusing to start. The update
    leases and install marker in the hub's user data store their writer's
    identity and follow the same rule; ones from 0.5.4 and earlier are judged
-   by their modification time. Each installation keeps a random installation
-   id in its user data (FR-12).
+   by their modification time on Windows and otherwise stand. Each
+   installation keeps a random installation id in its user data (FR-12).
 2. FR-2: The bot registry is `<CATS_BOT_HOME>/bots.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
    `environmentProfile` (ADR-010) and the Boss Cat (SPEC-009). Only

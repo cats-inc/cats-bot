@@ -6,7 +6,7 @@ import { dirname, join } from 'node:path';
 import type { HandoffMessage } from '../types.ts';
 import { readJsonFile, writeJsonAtomic } from './atomicFile.ts';
 import type { BotPaths } from './paths.ts';
-import { identityCreatedAt, readProcessIdentity, type ProcessIdentity } from './processIdentity.ts';
+import { identityCreatedAt, ownProcessIdentity, readProcessIdentity, type ProcessIdentity } from './processIdentity.ts';
 
 /** For the update leases, which the shell writes through this module. */
 export { ownProcessIdentity } from './processIdentity.ts';
@@ -50,7 +50,11 @@ export interface LockOwnerProbe {
   identity(pid: number): ProcessIdentity | 'gone' | null;
 }
 
-export const systemLockOwnerProbe: LockOwnerProbe = { alive: processAlive, identity: readProcessIdentity };
+export const systemLockOwnerProbe: LockOwnerProbe = {
+  alive: processAlive,
+  // This process's identity is read once; on macOS each read starts `ps`.
+  identity: (pid) => (pid === process.pid ? ownProcessIdentity() : readProcessIdentity(pid)),
+};
 
 /**
  * Records written before identities (Cats Bot 0.5.4 and earlier) are judged by

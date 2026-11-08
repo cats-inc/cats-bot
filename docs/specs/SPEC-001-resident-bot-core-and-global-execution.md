@@ -98,8 +98,9 @@ freeze of the storage format.
    another host, when no process uses its PID, or when the process using it has another identity. When this
    system cannot read an identity, a lock with a live PID stands, as before. A lock from 0.5.4 or earlier has
    no identity; on Windows it is stale when the process using its PID was created more than a minute after its
-   `startedAt`, one naming this process's own PID is stale when written before this process started, and
-   otherwise it stands. A stale lock is removed only while its bytes are those that were judged.
+   `startedAt`, one naming this process's own PID is stale when written more than a minute before this
+   process started, and otherwise it stands. On Linux, a process that `/proc` hides (`hidepid`) but that
+   still runs counts as one whose identity cannot be read. A stale lock is removed only while its bytes are those that were judged.
 4. FR-4: When reading, missing or invalid fields get defaults field by field without rewriting the existing
    file; when a file is corrupt, report an error and keep the original file, never overwriting it with empty
    content.
