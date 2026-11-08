@@ -1,12 +1,15 @@
-import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
-import { hostname, uptime } from 'node:os';
+import { hostname } from 'node:os';
 import { dirname, join } from 'node:path';
 
 import type { HandoffMessage } from '../types.ts';
 import { readJsonFile, writeJsonAtomic } from './atomicFile.ts';
 import type { BotPaths } from './paths.ts';
+import { identityCreatedAt, readProcessIdentity, type ProcessIdentity } from './processIdentity.ts';
+
+/** For the update leases, which the shell writes through this module. */
+export { ownProcessIdentity } from './processIdentity.ts';
 
 /**
  * SPEC-001 FR-3: one writer per data root. The lock file names the owning
@@ -43,110 +46,98 @@ function processAlive(pid: number): boolean {
  */
 export interface LockOwnerProbe {
   alive(pid: number): boolean;
-  /** When the process now using `pid` was created, in ms since the epoch; `gone` when none does; null when unknown. */
-  createdAt(pid: number): number | 'gone' | null;
-  /** When the system last booted, in ms since the epoch. */
-  bootedAt(): number;
+  /** See `readProcessIdentity`: a token for the process now using `pid`, `gone`, or null when unknown. */
+  identity(pid: number): ProcessIdentity | 'gone' | null;
 }
 
-/** A writer records its time after it starts; this covers rounding and a small clock step in between. */
-const CREATED_SLACK_MS = 2_000;
-/** A wall-clock step after a lock was written moves the computed boot time by as much. */
-const BOOT_MARGIN_MS = 5 * 60_000;
-/** A process creation time is asked again after this, in case its PID was reused unseen. */
-const CREATED_CACHE_MS = 10 * 60_000;
+export const systemLockOwnerProbe: LockOwnerProbe = { alive: processAlive, identity: readProcessIdentity };
 
+/**
+ * Records written before identities (Cats Bot 0.5.4 and earlier) are judged by
+ * time on Windows, where the creation time is known: a process created this
+ * long after the record cannot have written it. The margin absorbs a clock
+ * step between a writer's start and its record; restarts are far longer.
+ */
+const LEGACY_SLACK_MS = 60_000;
 const ownStartedAt = Date.now() - process.uptime() * 1000;
-const createdCache = new Map<number, { value: number; at: number }>();
 
-/**
- * Windows: one hidden PowerShell asks CIM, which also answers for processes
- * of other accounts. It runs only for a PID that is alive and not this
- * process, so only on a real or suspected conflict, and takes about a second.
- */
-function windowsProcessCreatedAt(pid: number): number | 'gone' | null {
-  if (!Number.isSafeInteger(pid) || pid <= 0) return null;
-  const powershell = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe');
-  const script = `$p = Get-CimInstance -ClassName Win32_Process -Filter 'ProcessId=${pid}' -ErrorAction Stop; `
-    + `if ($p) { [DateTimeOffset]::new($p.CreationDate).ToUnixTimeMilliseconds() } else { 'gone' }`;
-  try {
-    const result = spawnSync(powershell, ['-NoLogo', '-NoProfile', '-NonInteractive', '-Command', script], {
-      encoding: 'utf8', timeout: 15_000, windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'],
-    });
-    const output = result.status === 0 ? result.stdout.trim() : '';
-    if (output === 'gone') return 'gone';
-    return /^\d{12,15}$/u.test(output) ? Number(output) : null;
-  } catch {
-    return null;
-  }
+/** Who wrote a record: the writer's identity when it stored one, and when it was written. */
+export interface RecordWriter {
+  identity?: unknown;
+  /** ms since the epoch; only records without an identity use it. */
+  writtenAt?: number;
 }
 
 /**
- * Creation times are read on Windows, where PIDs are reused soonest and Fast
- * Startup keeps the boot time across a shutdown. Elsewhere a restart is
- * caught by the boot time, and reuse within one boot is far rarer.
+ * Whether the process now using `pid` is the one that wrote a record. An
+ * identity that differs, or no process at all, means the writer is gone.
+ * When this system cannot tell, the record stands, as a live PID did before.
  */
-export const systemLockOwnerProbe: LockOwnerProbe = {
-  alive(pid) {
-    const alive = processAlive(pid);
-    if (!alive) createdCache.delete(pid);
-    return alive;
-  },
-  createdAt(pid) {
-    if (process.platform !== 'win32') return null;
-    const cached = createdCache.get(pid);
-    if (cached && Date.now() - cached.at < CREATED_CACHE_MS) return cached.value;
-    const value = windowsProcessCreatedAt(pid);
-    if (typeof value === 'number') createdCache.set(pid, { value, at: Date.now() });
-    else createdCache.delete(pid);
-    return value;
-  },
-  bootedAt: () => Date.now() - uptime() * 1000,
-};
-
-/**
- * Whether the process now using `pid` is the one that wrote a record at
- * `writtenAt` (ms since the epoch). A process created after the record, or a
- * record from before the last boot, names a process that is gone.
- */
-export function processStillOwns(pid: number, writtenAt: number, probe: LockOwnerProbe = systemLockOwnerProbe): boolean {
+export function processStillOwns(pid: number, writer: RecordWriter, probe: LockOwnerProbe = systemLockOwnerProbe): boolean {
   if (!probe.alive(pid)) return false;
-  // A record without a time cannot be told apart from its writer, so it stands.
-  if (!Number.isFinite(writtenAt)) return true;
-  if (pid === process.pid) return writtenAt >= ownStartedAt - CREATED_SLACK_MS;
-  const created = probe.createdAt(pid);
-  if (created === 'gone') return false;
-  // Both times were taken from the same clock before any later step, so this holds across one.
-  if (created !== null) return created <= writtenAt + CREATED_SLACK_MS;
-  return writtenAt >= probe.bootedAt() - BOOT_MARGIN_MS;
+  const current = probe.identity(pid);
+  if (current === 'gone') return false;
+  if (current === null) return true;
+  if (typeof writer.identity === 'string') return writer.identity === current;
+  if (writer.writtenAt === undefined || !Number.isFinite(writer.writtenAt)) return true;
+  // An old record naming this process's PID was written by an earlier process.
+  if (pid === process.pid) return writer.writtenAt >= ownStartedAt - LEGACY_SLACK_MS;
+  const created = identityCreatedAt(current);
+  return created === null || created <= writer.writtenAt + LEGACY_SLACK_MS;
 }
+
+interface LockRecord { pid: number; host: string; startedAt?: unknown; identity?: unknown }
 
 /** Whether a lock file's record names a process on this host that still holds it. */
-export function lockOwnerHolds(record: { pid: number; host: string; startedAt?: unknown }, probe: LockOwnerProbe = systemLockOwnerProbe): boolean {
+export function lockOwnerHolds(record: LockRecord, probe: LockOwnerProbe = systemLockOwnerProbe): boolean {
   if (typeof record !== 'object' || record === null || record.host !== hostname()) return false;
-  return processStillOwns(record.pid, typeof record.startedAt === 'string' ? Date.parse(record.startedAt) : Number.NaN, probe);
+  return processStillOwns(record.pid, {
+    identity: record.identity,
+    writtenAt: typeof record.startedAt === 'string' ? Date.parse(record.startedAt) : undefined,
+  }, probe);
 }
 
 export function acquireInstanceLock(paths: BotPaths, pid: number = process.pid): LockResult {
   return acquireLockFile<InstanceLock>(paths.lock, { pid, host: hostname(), startedAt: new Date().toISOString() });
 }
 
+function readRaw(file: string): string | null {
+  try {
+    return readFileSync(file, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
+function parseRecord<T>(raw: string): T | null {
+  try {
+    const value = JSON.parse(raw) as unknown;
+    return typeof value === 'object' && value !== null ? value as T : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
- * A lock file that names the process holding it on this host, created
- * exclusively. A file whose process is gone (see `lockOwnerHolds`), or that
- * cannot be read, is replaced; `release` removes the file only while it still
- * names this process. The instance lock (SPEC-001 FR-3) and the hub's root
- * lock (SPEC-008 FR-1) are such files.
+ * A lock file that names the process holding it on this host, and that
+ * process's identity, created exclusively. A file whose process is gone (see
+ * `lockOwnerHolds`), or that cannot be read, is replaced, but only while it
+ * still holds what was judged, so a lock another process wrote meanwhile is
+ * never removed; `release` removes the file only while it still names this
+ * process. The instance lock (SPEC-001 FR-3), the hub's root lock (SPEC-008
+ * FR-1) and the registry's write lock are such files.
  */
-export function acquireLockFile<T extends { pid: number; host: string; startedAt?: unknown }>(
+export function acquireLockFile<T extends LockRecord>(
   file: string,
   record: T,
   probe: LockOwnerProbe = systemLockOwnerProbe,
 ): { held: true; release: () => void } | { held: false; owner: T } {
   mkdirSync(dirname(file), { recursive: true });
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  const identity = record.identity === undefined ? probe.identity(record.pid) : record.identity;
+  const written = typeof identity === 'string' ? { ...record, identity } : record;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
     try {
-      writeFileSync(file, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
+      writeFileSync(file, `${JSON.stringify(written, null, 2)}\n`, { encoding: 'utf8', flag: 'wx' });
       return {
         held: true,
         release: () => {
@@ -159,24 +150,28 @@ export function acquireLockFile<T extends { pid: number; host: string; startedAt
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
     }
-    const existing = readJsonFile<T>(file);
-    if (existing.ok && lockOwnerHolds(existing.value, probe)) {
-      return { held: false, owner: existing.value };
+    const raw = readRaw(file);
+    if (raw === null) continue;
+    const existing = parseRecord<T>(raw);
+    if (existing && lockOwnerHolds(existing, probe)) {
+      return { held: false, owner: existing };
     }
-    // Stale or unreadable: the owner is gone, so the lock is ours to replace.
+    // Stale or unreadable, so the lock is ours to replace, unless another
+    // process replaced it while it was judged.
+    if (readRaw(file) !== raw) continue;
     rmSync(file, { force: true });
   }
   throw new Error(`Could not acquire the lock at ${file}`);
 }
 
 /** The process holding a lock file on this host, or null when it is free or stale. */
-export function readLockFile<T extends { pid: number; host: string; startedAt?: unknown }>(
+export function readLockFile<T extends LockRecord>(
   file: string,
   probe: LockOwnerProbe = systemLockOwnerProbe,
 ): T | null {
-  const existing = readJsonFile<T>(file);
-  if (!existing.ok) return null;
-  return lockOwnerHolds(existing.value, probe) ? existing.value : null;
+  const raw = readRaw(file);
+  const existing = raw === null ? null : parseRecord<T>(raw);
+  return existing && lockOwnerHolds(existing, probe) ? existing : null;
 }
 
 export function readInstanceLock(paths: BotPaths, probe: LockOwnerProbe = systemLockOwnerProbe): InstanceLock | null {

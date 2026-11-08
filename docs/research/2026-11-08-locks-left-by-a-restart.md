@@ -38,23 +38,37 @@ gets a low PID, which boot-time services take again on the next boot.
 
 ## The rule now
 
-A lock or lease stands only while the process using its PID is the one that
-wrote it (SPEC-001 FR-3):
+A lock or lease records its writer's process identity, and stands only while
+the process using its PID has the same one (SPEC-001 FR-3). No clock is read
+after a process starts, so a clock step, a sleep or a paused VM cannot make a
+live lock look stale; a stale lock wrongly kept costs a dialog, while a live
+one wrongly taken lets two cores write one bot.
 
-- On Windows the process's creation time comes from CIM through one hidden
-  PowerShell, about one to two seconds. It runs only when the PID is alive and
-  is not this process, and the result is cached for ten minutes. Both times
-  come from the same clock, so a later clock step does not change the answer.
-  PID 2408 reported 14:22:21Z, after the lock's 13:40:58Z.
-- Elsewhere, or when the query fails, a record more than five minutes older
-  than the last boot is stale. libuv's uptime counts sleep on all three
-  systems (`GetTickCount64`, `/proc/uptime` or `CLOCK_BOOTTIME`,
-  `KERN_BOOTTIME`), so a long sleep does not make a live lock look old.
-- Windows Fast Startup keeps the boot time across a shutdown. Only the
-  creation time catches a reused PID then, which is why Windows reads it.
-- A lock naming this process's own PID stands only if it was written after
-  this process started.
+- Windows: the creation FILETIME, through koffi. `GetProcessTimes` answers in
+  about 90 µs for processes of this account. Services refuse the handle
+  (`ERROR_ACCESS_DENIED` for PID 2408, 4 and 1324 here), so the system process
+  list from `NtQuerySystemInformation` answers for them in 7 to 9 ms for 432
+  processes. Its layout is not documented, so it is used only after it agrees
+  with `GetProcessTimes` for the reading process. It reported PID 2408 at
+  14:22:21.412Z, as CIM did, after the lock's 13:40:58Z.
+- Linux: the boot id and field 22 of `/proc/<pid>/stat`, the start time in
+  clock ticks since boot.
+- macOS: `ps -o lstart=` in UTC, at most every 500 ms per PID.
+- An identity that cannot be read leaves a lock with a live PID standing, as
+  before, so a system without koffi or `/proc` keeps the old behavior.
+- Records from 0.5.4 and earlier have no identity. On Windows they are stale
+  when the process using their PID was created more than a minute after them,
+  which heals the files a restart left. One naming the reader's own PID is
+  stale when written before the reader started. Otherwise they stand.
+- A stale lock is removed only while its bytes are still those judged, so a
+  lock another hub wrote in the meantime survives.
+
+A first version compared creation time with the lock's time through a hidden
+PowerShell and fell back to the boot time. Review found that a clock step
+between a process's start and its lock, or a forward step after it (a paused
+VM, a large correction), could make a live lock look stale, and that the query
+blocked the hub for a second or more on each read. Identities replaced it.
 
 Releasing the locks when Windows ends the session would leave fewer stale
-files, but a power loss or crash still leaves them, so the start-time rule is
+files, but a power loss or crash still leaves them, so the identity rule is
 the fix.

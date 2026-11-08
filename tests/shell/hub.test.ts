@@ -147,7 +147,8 @@ test('one hub holds a root; a second learns which installation does (FR-1)', () 
   if (fourth.held) fourth.release();
   // A lock left before a restart, whose PID a live process now uses (the test runner here), is taken over too.
   writeFileSync(hubPathsFor(root).lock, JSON.stringify({
-    pid: process.ppid, host: hostname(), installationId: 'install-a', executable: 'C:\\A\\Cats Bot.exe', startedAt: '2000-01-01T00:00:00.000Z',
+    pid: process.ppid, host: hostname(), installationId: 'install-a', executable: 'C:\\A\\Cats Bot.exe',
+    startedAt: new Date().toISOString(), identity: 'a hub that ended',
   }));
   const fifth = acquireHubLock(root, 'install-b', 'C:\\B\\Cats Bot.exe');
   assert.equal(fifth.held, true);

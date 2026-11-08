@@ -49,9 +49,10 @@ descriptions for the model and this documentation say "bot".
    installation holds the lock and exits. A root lock whose process ended, or
    whose PID another process now uses, is taken over by the SPEC-001 FR-3
    rule, so a restart never leaves the hub refusing to start. The update
-   leases in the hub's user data follow the same rule, by the time each file
-   was written. Each installation keeps a random installation id in its user
-   data (FR-12).
+   leases and install marker in the hub's user data store their writer's
+   identity and follow the same rule; ones from 0.5.4 and earlier are judged
+   by their modification time. Each installation keeps a random installation
+   id in its user data (FR-12).
 2. FR-2: The bot registry is `<CATS_BOT_HOME>/bots.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
    `environmentProfile` (ADR-010) and the Boss Cat (SPEC-009). Only

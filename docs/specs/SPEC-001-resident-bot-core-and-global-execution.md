@@ -91,11 +91,15 @@ freeze of the storage format.
 3. FR-3: A data root has only one writer at a time, guaranteed by a lock file; a second instance with the same
    id hands its startup arguments to the first and exits. All writes go through a temp file plus rename; reads
    never write back. Under the hub (SPEC-008) the writer is the bot's core process; the hub's own files have
-   their own locks, and the hub takes a bot's lock only to archive, restore or delete it. A lock is stale, and
-   is replaced, when it names another host, when its process has ended, or when the process now using its PID
-   is not the one that wrote it: on Windows that process was created after the lock's `startedAt`, and where
-   no creation time can be read the lock predates the last boot by more than five minutes. Locks outlive a
-   shutdown because Windows ends programs without their quit handlers, and a PID can be reused by then.
+   their own locks, and the hub takes a bot's lock only to archive, restore or delete it. Locks outlive a
+   shutdown because Windows ends programs without their quit handlers, and by the next start a PID can belong
+   to another process. A lock therefore records its writer's process identity: the creation time on Windows,
+   the boot id and start time on Linux, the start time on macOS. It is stale, and replaced, when it names
+   another host, when no process uses its PID, or when the process using it has another identity. When this
+   system cannot read an identity, a lock with a live PID stands, as before. A lock from 0.5.4 or earlier has
+   no identity; on Windows it is stale when the process using its PID was created more than a minute after its
+   `startedAt`, one naming this process's own PID is stale when written before this process started, and
+   otherwise it stands. A stale lock is removed only while its bytes are those that were judged.
 4. FR-4: When reading, missing or invalid fields get defaults field by field without rewriting the existing
    file; when a file is corrupt, report an error and keep the original file, never overwriting it with empty
    content.

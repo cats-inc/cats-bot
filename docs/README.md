@@ -120,7 +120,7 @@ Add your project-specific automation scripts here.
 | [Standalone living bot feasibility](./research/2026-10-27-standalone-living-bot-feasibility.md)       | Research  | Read-only survey of cats-runtime, cats-platform and desktop-work-fleet; Catlas versus companion, runtime wakeup limits, dependency-direction options |
 | [Resident bot architecture assessment](./research/2026-10-27-resident-bot-architecture-assessment.md) | Research  | Independent source-based recommendations for bot lifetime, Runtime integration, global model settings and desktop presentation                       |
 | [Codex Windows initialization](./research/2026-11-05-codex-windows-initialization.md) | Research | Codex 0.166.0 clean-machine failure, read-only sandbox readiness and official terminal initialization |
-| [Locks left by a restart](./research/2026-11-08-locks-left-by-a-restart.md) | Research | Windows restart left the hub lock whose PID a service reused; lock and lease rule by creation time and boot time |
+| [Locks left by a restart](./research/2026-11-08-locks-left-by-a-restart.md) | Research | Windows restart left the hub lock whose PID a service reused; locks and leases now record their writer's process identity |
 
 ## Decision Records
 
