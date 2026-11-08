@@ -152,11 +152,11 @@ persona get one rule wherever they enter.
       prerequisites pass. `ready` completes this row; `notConfigured` or `updateRequired`
       needs setup; unsupported, failed or inconclusive checks remain unverified. This
       starts no thread or model turn and performs no sandbox setup or config writes.
-    - Installation readiness still permits reaching page 3. Both creation entry points
-      require a fresh successful initialization check before creating a Windows Codex
-      cat. Opening or closing the terminal never proves readiness; "Check again" does.
-      Already initialized profiles need no extra terminal step. Runtime still validates
-      the actual session permissions; sandbox readiness does not prove every policy.
+    - Installation readiness permits reaching page 3 and creating a cat. Both creation
+      entry points recheck installation, but incomplete or unverified Codex initialization
+      is advisory and must not disable Create. The row explains that setup may still need
+      completing before chatting. Opening or closing the terminal never proves readiness;
+      "Check again" does. Runtime still validates the actual session permissions.
 16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, in the Bot tab too:
     every catalog entry; the selected entry's controls except `request` scope; `(default)`
     on default entries and values; the first listed value when a catalog names no default;

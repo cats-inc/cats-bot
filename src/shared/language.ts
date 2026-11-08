@@ -130,7 +130,7 @@ export const zhTW: Record<string, string> = {
   'Could not verify Codex setup. Complete it in the terminal, then check again.': '目前無法確認 Codex 設定是否完成。請在終端完成設定後，再重新檢查。',
   'Terminal opened. Complete setup there, exit Codex, then check again.': '已開啟終端。請在終端完成設定並離開 Codex，再按「重新檢查」。',
   'No terminal was found. Open Command Prompt in a working folder you trust and run codex.': '無法開啟終端。請在你信任的工作資料夾中開啟「命令提示字元」，再執行 codex。',
-  'Complete Codex first-time setup, then check again.': '請先完成 Codex 首次設定，再按「重新檢查」。',
+  'You can create {name} now. If Codex setup is incomplete, finish it before chatting.': '現在可以建立 {name}。若 Codex 尚未完成設定，請在開始對話前完成。',
   'Waiting for the current turn…': '等待目前回合結束…',
   'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.': '工作階段仍忙碌，已停止自動重試。你的訊息仍保留在這裡，請稍後再試。',
   'Boss Cat tools have not connected. Check provider access settings or start a conversation.': 'Boss Cat 工具尚未連接，請檢查 provider 存取設定或開始對話。',

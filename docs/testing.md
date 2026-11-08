@@ -602,18 +602,26 @@ independent of Electron, invalid shims/PE headers and standalone executables.
 Native fixture assertions compare canonical file identity because macOS temporary
 paths may be spelled through either `/var` or its `/private/var` target.
 Terminal tests retain CODEX_HOME and a Unicode/spaced working folder, use Command
-Prompt and require no execution-policy change. Both creation paths call the same
-fresh host gate; first-run IPC coverage also verifies sender and provider scope.
+Prompt and require no execution-policy change. Both creation paths recheck provider
+installation, while sandbox readiness is advisory; first-run IPC coverage also
+verifies sender and provider scope. Submission does not run the readiness probe,
+so a diagnostic that would never settle cannot hold creation open.
 
 The renderer fixture adds an incomplete → terminal opened → unverified → ready
-scenario: page 2 can reach login, opening a terminal cannot enable Create, direct
-IPC creation is refused, and only fresh ready evidence enables creation. Windows
-Electron 41.2.0 passed all 102 assertions, and the needed/ready screenshots were
-visually checked. Native Codex 0.166.0 checks used four private CODEX_HOME configs,
+scenario: page 2 can reach login and Create stays available with incomplete or
+unverified initialization and optional PowerShell unset. Opening a terminal does
+not mark the initialization row ready. Renderer clicks and first-run IPC cover
+creating a cat in both advisory states. Native Codex 0.166.0 checks used four private CODEX_HOME configs,
 no credentials, no model turns and no sandbox installation; all config bytes
 stayed unchanged. MXC readiness depends on the account's machine capabilities.
 See the [dated findings](research/2026-11-05-codex-windows-initialization.md).
 Actual terminal/UAC completion on a clean machine remains manual acceptance.
+
+For the 2026-11-08 creation-gate correction, the focused provider/setup/renderer
+run passed 60 tests with one Unix-only skip, and the real hidden Windows Electron
+fixture passed 106/106 assertions. Typecheck and build passed. An independent
+review confirmed installation checks, cancellation and Runtime permission
+enforcement remain in place; no live model, customer profile or UAC was exercised.
 
 The full Windows run with a checkout-local npm cache reported 580 passed,
 9 skipped, one failed and one cancelled (591 total). The existing wedged-core
