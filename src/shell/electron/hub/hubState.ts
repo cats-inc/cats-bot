@@ -76,6 +76,8 @@ export interface HubLockOwner {
   installationId: string;
   executable: string;
   startedAt: string;
+  /** The hub's process identity, which tells it from a later process with its PID. */
+  identity?: string;
 }
 
 /** FR-1: one hub per Cats Bot root; a later hub learns which installation holds it. */

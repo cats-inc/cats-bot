@@ -46,8 +46,13 @@ descriptions for the model and this documentation say "bot".
    Windows). A second launch hands its arguments to the running hub and exits.
    The hub also takes a root lock in `<CATS_BOT_HOME>`, so two installations
    pointed at one root never manage the same bots: the later hub shows which
-   installation holds the lock and exits. Each installation keeps a random
-   installation id in its user data (FR-12).
+   installation holds the lock and exits. A root lock whose process ended, or
+   whose PID another process now uses, is taken over by the SPEC-001 FR-3
+   rule, so a restart never leaves the hub refusing to start. The update
+   leases and install marker in the hub's user data store their writer's
+   identity and follow the same rule; ones from 0.5.4 and earlier are judged
+   by their modification time on Windows and otherwise stand. Each
+   installation keeps a random installation id in its user data (FR-12).
 2. FR-2: The bot registry is `<CATS_BOT_HOME>/bots.json`, schema version 1:
    bots (id, order, start automatically, created at, archived at),
    `environmentProfile` (ADR-010) and the Boss Cat (SPEC-009). Only
@@ -392,6 +397,6 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 ---
 
 *Created: 2026-10-29*
-*Updated: 2026-11-03 (FR-6 cap of five, FR-29 ten Cat looks)*
+*Updated: 2026-11-08 (FR-1 locks left by a restart)*
 *Author: Claude, from the owner's decisions*
 *Related Plan: [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)*

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
@@ -9,6 +9,7 @@ import type { AppUpdater } from 'electron-updater';
 import type { IpcMainInvokeEvent } from 'electron';
 import { assertCanElevate, configureUpdater, createUpdaterAdapter, installDebianUpdate } from '../../src/shell/electron/update/adapter.ts';
 import { BotUpdateController, InstallHandoffTimeout, type BotUpdater, type UpdateHooks } from '../../src/shell/electron/update/controller.ts';
+import { readProcessIdentity } from '../../src/core/store/processIdentity.ts';
 import { BotInstallation, InstallationRecoveryRequired } from '../../src/shell/electron/update/installation.ts';
 import { isUpdateSender, updateAction } from '../../src/shell/electron/update/ipc.ts';
 import { assertNoOtherUsers } from '../../src/shell/electron/update/otherUsers.ts';
@@ -553,6 +554,32 @@ test('crashed owner, reused PID and incomplete gate have explicit safe recovery'
   mkdirSync(join(bot.directory, 'install')); writeFileSync(join(bot.directory, 'install', 'owner.json'), '{');
   assert.throws(() => bot.register('nori'), InstallationRecoveryRequired);
   bot.acknowledgeFinishedInstaller(); bot.register('nori'); bot.unregister();
+});
+
+test('a lease left before a restart does not block an update once its PID is reused', t => {
+  const root = mkdtempSync(join(tmpdir(), 'cats-update-')); t.after(() => rmSync(root, { recursive: true, force: true }));
+  const bot = new BotInstallation(root, join(root, 'app'), '0.2.0');
+  bot.register('nori');
+  // A lease naming the test runner, which is alive, as its writer is another running shell.
+  const lease = join(bot.directory, `pid-${process.ppid}.json`);
+  const runner = readProcessIdentity(process.ppid);
+  assert.equal(typeof runner, 'string');
+  writeFileSync(lease, JSON.stringify({ botId: 'mochi', nonce: 'n', identity: runner, writtenAt: Date.now() }));
+  assert.throws(() => bot.acquire('0.3.0'), /other Cats Bot/u);
+  // Its shell ended and the PID went to another process.
+  writeFileSync(lease, JSON.stringify({ botId: 'mochi', nonce: 'n', identity: 'a shell that ended', writtenAt: Date.now() }));
+  bot.acquire('0.3.0').release();
+  assert.equal(existsSync(lease), false);
+  if (process.platform === 'win32') {
+    // A lease from 0.5.4 or earlier has neither; one written in 2000, before that process existed, is stale too.
+    writeFileSync(lease, '{"botId":"mochi","nonce":"n"}');
+    utimesSync(lease, new Date('2000-01-01T00:00:00Z'), new Date('2000-01-01T00:00:00Z'));
+    bot.acquire('0.3.0').release();
+    assert.equal(existsSync(lease), false);
+  }
+  // This shell's own lease carries its identity.
+  assert.equal(JSON.parse(readFileSync(join(bot.directory, `pid-${process.pid}.json`), 'utf8')).identity, readProcessIdentity(process.pid));
+  bot.unregister();
 });
 
 test('shared Unix installations refuse replacement while another account runs the app', () => {

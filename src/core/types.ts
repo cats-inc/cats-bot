@@ -395,6 +395,8 @@ export interface InstanceLock {
   pid: number;
   host: string;
   startedAt: string;
+  /** The writer's process identity (`readProcessIdentity`); absent in locks from 0.5.4 and earlier. */
+  identity?: string;
 }
 
 /** `status`. */

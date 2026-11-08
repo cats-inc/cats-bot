@@ -456,7 +456,9 @@ Each entry names where it is implemented.
   - A second quit handed to a bot that is already stopping changes nothing.
   - A hub that cannot start shows why in a dialog.
   - A hub lock left by a process that no longer runs is taken over. One whose
-    PID now belongs to another program names the file to delete.
+    PID now belongs to another program named the file to delete until
+    2026-11-08; it is now taken over too (SPEC-008 FR-1), because every restart
+    leaves the lock and a service had taken its PID.
 - **D25, owner confirmations (5.3).** SPEC-009 FR-5 shows a request as a
   decision in the holder's note and in the tray. This version asks in a native
   dialog the hub shows, which no page or bot's API can answer. The dialog names
