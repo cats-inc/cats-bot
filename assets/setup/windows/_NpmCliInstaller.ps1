@@ -24,6 +24,39 @@
 #>
 
 . (Join-Path $PSScriptRoot '_VerifiedNpmUpdate.ps1')
+. (Join-Path $PSScriptRoot '_HiddenProcess.ps1')
+
+function Get-NpmCliInstallArguments {
+  param([string]$PackageName, [string]$Version)
+
+  # Use npm's normal engine policy: a transitive package's stale upper bound
+  # must not turn an upstream-supported Node LTS into an installation failure.
+  # A user-configured engine-strict policy is still respected.
+  $installArgs = @('install', '-g', '--include=optional', '--fetch-retries=0',
+    '--fetch-timeout=30000', "$PackageName@$Version")
+  $configRaw = ((& npm config list --long --json) | Out-String)
+  if ($LASTEXITCODE -ne 0) { throw 'Could not read npm install-script policy.' }
+  $config = $configRaw | ConvertFrom-Json
+  # Older npm runs scripts by default and does not recognize this flag. Newer
+  # npm needs a one-off approval, scoped to exactly the requested CLI version.
+  if ($null -ne $config.PSObject.Properties['allow-scripts']) {
+    $installArgs += "--allow-scripts=$PackageName@$Version"
+  }
+  return $installArgs
+}
+
+function Test-NpmCliCommandVersion {
+  param([string]$CommandPath, [string]$Version)
+
+  $escapedPath = $CommandPath.Replace("'", "''")
+  $probe = Invoke-HiddenCommand -FileName 'powershell.exe' -ArgumentList @(
+    '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command',
+    "& '$escapedPath' --version; exit `$LASTEXITCODE"
+  ) -TimeoutMs 30000
+  $versions = @([regex]::Matches(($probe.Output + "`n" + $probe.ErrorOutput),
+    '\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?') | ForEach-Object { $_.Value })
+  return $probe.ExitCode -eq 0 -and $versions -contains $Version
+}
 
 function Test-NpmCliInstallerAdminGuard {
   param(
@@ -605,7 +638,7 @@ function Invoke-PackagedNpmCliInstall {
   # silently exits when invoked. Pure-JS CLIs such as copilot don't notice.
   $expectedVersion = ((& npm view "$PackageName@latest" version --fetch-retries=0 --fetch-timeout=10000 --loglevel=error) | Out-String).Trim()
   if ($LASTEXITCODE -ne 0 -or $expectedVersion -notmatch '^\d+\.\d+\.\d+(-[a-zA-Z0-9._-]+)?$') { throw 'Could not resolve the provider version before installing.' }
-  $arguments = @('install', '-g', '--include=optional', '--engine-strict', '--fetch-retries=0', '--fetch-timeout=30000', "$PackageName@$expectedVersion")
+  $arguments = @(Get-NpmCliInstallArguments -PackageName $PackageName -Version $expectedVersion)
 
   & npm @arguments | Out-Null
   if ($LASTEXITCODE -ne 0) {
@@ -618,6 +651,9 @@ function Invoke-PackagedNpmCliInstall {
   $finalVersion = if ($finalInstalled) { Get-NpmCliPackageVersion -PackageName $PackageName } else { $null }
 
   if (-not $finalInstalled -or -not $finalCommandPath -or $finalVersion -ne $expectedVersion) { throw 'Provider installation verification failed. Check npm prefix and command PATH.' }
+  if (-not (Test-NpmCliCommandVersion -CommandPath $finalCommandPath -Version $expectedVersion)) {
+    throw 'The installed provider could not run with the expected version. Check Node.js compatibility and npm install-script policy, then repair the installation.'
+  }
 
   $result = [pscustomobject]@{
     helper = $HelperId

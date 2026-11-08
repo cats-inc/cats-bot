@@ -1339,7 +1339,18 @@ LEGACY_EOF
   if [ "$check_only" != 'true' ] && [ "$dry_run" != 'true' ]; then
     remove_superseded_npm_packages "$package_name"
   fi
-  npm install -g --include=optional --engine-strict --fetch-retries=0 --fetch-timeout=30000 "${package_name}@${expected_version}" >/dev/null || return 1
+  # Keep npm's normal engine policy, including any explicit user policy. A
+  # transitive dependency's upper bound must not add a Cats-only install gate.
+  local install_args=(install -g --include=optional --fetch-retries=0 --fetch-timeout=30000 "${package_name}@${expected_version}")
+  local npm_config script_policy
+  npm_config="$(npm config list --long --json)" || return 1
+  script_policy="$(printf '%s' "$npm_config" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{console.log(Object.prototype.hasOwnProperty.call(JSON.parse(s),"allow-scripts"))})')" || return 1
+  if [ "$script_policy" = 'true' ]; then
+    # One-off approval of the selected CLI version, never every dependency or
+    # a persistent change to the user's npm configuration. Older npm needs none.
+    install_args+=("--allow-scripts=${package_name}@${expected_version}")
+  fi
+  npm "${install_args[@]}" >/dev/null || return 1
   applied+=("${package_name}:${planned_action}")
   hash -r
 
@@ -1350,6 +1361,10 @@ LEGACY_EOF
 
   if [ -z "$final_command_path" ] || [ "$final_version" != "$expected_version" ]; then
     printf 'Provider verification failed. Check npm prefix and PATH.\n' >&2
+    return 1
+  fi
+  if ! node -e 'const {spawnSync}=require("node:child_process");const r=spawnSync(process.argv[1],["--version"],{encoding:"utf8",timeout:30000});const versions=((r.stdout||"")+"\n"+(r.stderr||"")).match(/\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/g)||[];process.exit(r.status===0&&versions.includes(process.argv[2])?0:1)' "$final_command_path" "$expected_version"; then
+    printf 'The installed provider could not run with the expected version. Check Node.js compatibility and npm install-script policy, then repair the installation.\n' >&2
     return 1
   fi
 

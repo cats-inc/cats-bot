@@ -28,6 +28,44 @@ lines.on('line',line=>{
 process.stdin.on('end',()=>process.exit(0));
 `;
 
+async function assertDescendantStopped(pid: number) {
+  // Group SIGKILL and the direct child's close event do not synchronize the
+  // grandchild's exit/reaping. A zombie has stopped executing but kill(pid, 0)
+  // still succeeds until the OS's adopter reaps it.
+  const deadline = Date.now() + 2000;
+  do {
+    try { process.kill(pid, 0); }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return;
+      throw error;
+    }
+    if (process.platform === 'linux') {
+      try {
+        const stat = readFileSync(`/proc/${pid}/stat`, 'utf8');
+        const state = stat.slice(stat.lastIndexOf(') ') + 2, stat.lastIndexOf(') ') + 3);
+        if (state === 'Z' || state === 'X') return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+        throw error;
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 10));
+  } while (Date.now() < deadline);
+  assert.fail('owned descendant is still executing after cleanup');
+}
+
+test('descendant cleanup still rejects a process that remains alive through the deadline', async () => {
+  const child = spawn(process.execPath, ['-e', 'setInterval(()=>{},1000)'], { stdio: 'ignore' });
+  await new Promise<void>((resolve, reject) => { child.once('spawn', resolve); child.once('error', reject); });
+  try {
+    await assert.rejects(assertDescendantStopped(child.pid!), /still executing after cleanup/);
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) {
+      await new Promise<void>(resolve => { child.once('close', resolve); child.kill('SIGKILL'); });
+    }
+  }
+});
+
 async function probe(spec: object, signal?: AbortSignal, afterSpawn?: () => void) {
   const root=mkdtempSync(join(tmpdir(),'cats-codex-readiness-test-'));
   const script=join(root,'server.mjs'),log=join(root,'requests.jsonl');
@@ -41,7 +79,7 @@ async function probe(spec: object, signal?: AbortSignal, afterSpawn?: () => void
       invocation:{command:process.execPath,args:[script],env:{...process.env,FAKE_CODEX_SPEC:JSON.stringify(spec),FAKE_CODEX_LOG:log}}});
     const frames=readFileSync(log,'utf8').trim().split('\n').filter(Boolean).map(line=>JSON.parse(line));
     assert.equal(closed,true,'probe reaps its owned process before returning');
-    if(existsSync(log+'.child')) assert.throws(()=>process.kill(Number(readFileSync(log+'.child','utf8')),0),'owned descendant is also reaped');
+    if(existsSync(log+'.child')) await assertDescendantStopped(Number(readFileSync(log+'.child','utf8')));
     assert.ok(frames.every(frame=>['initialize','initialized','windowsSandbox/readiness'].includes(frame.method)));
     return {result,frames};
   } finally {
