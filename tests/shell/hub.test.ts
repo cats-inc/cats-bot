@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -144,6 +145,13 @@ test('one hub holds a root; a second learns which installation does (FR-1)', () 
   const fourth = acquireHubLock(root, 'install-b', 'C:\\B\\Cats Bot.exe');
   assert.equal(fourth.held, true);
   if (fourth.held) fourth.release();
+  // A lock left before a restart, whose PID a live process now uses (the test runner here), is taken over too.
+  writeFileSync(hubPathsFor(root).lock, JSON.stringify({
+    pid: process.ppid, host: hostname(), installationId: 'install-a', executable: 'C:\\A\\Cats Bot.exe', startedAt: '2000-01-01T00:00:00.000Z',
+  }));
+  const fifth = acquireHubLock(root, 'install-b', 'C:\\B\\Cats Bot.exe');
+  assert.equal(fifth.held, true);
+  if (fifth.held) fifth.release();
 });
 
 test('owner CLI hub commands go through the hub, and refuse without one (FR-25)', async () => {

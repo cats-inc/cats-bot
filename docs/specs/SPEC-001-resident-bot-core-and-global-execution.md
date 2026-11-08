@@ -91,7 +91,11 @@ freeze of the storage format.
 3. FR-3: A data root has only one writer at a time, guaranteed by a lock file; a second instance with the same
    id hands its startup arguments to the first and exits. All writes go through a temp file plus rename; reads
    never write back. Under the hub (SPEC-008) the writer is the bot's core process; the hub's own files have
-   their own locks, and the hub takes a bot's lock only to archive, restore or delete it.
+   their own locks, and the hub takes a bot's lock only to archive, restore or delete it. A lock is stale, and
+   is replaced, when it names another host, when its process has ended, or when the process now using its PID
+   is not the one that wrote it: on Windows that process was created after the lock's `startedAt`, and where
+   no creation time can be read the lock predates the last boot by more than five minutes. Locks outlive a
+   shutdown because Windows ends programs without their quit handlers, and a PID can be reused by then.
 4. FR-4: When reading, missing or invalid fields get defaults field by field without rewriting the existing
    file; when a file is corrupt, report an error and keep the original file, never overwriting it with empty
    content.
@@ -420,5 +424,6 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 ---
 
 *Created: 2026-10-27*
+*Updated: 2026-11-08 (FR-3 locks left by a restart)*
 *Author: Claude*
 *Related Plan: [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md)*

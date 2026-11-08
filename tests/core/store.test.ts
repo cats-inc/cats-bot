@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
 import { existsSync, readdirSync, writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
-import { homedir } from 'node:os';
+import { homedir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { readJsonFile, writeJsonAtomic } from '../../src/core/store/atomicFile.ts';
 import { appendJournal, readJournal, rebuildJournalState } from '../../src/core/store/journal.ts';
-import { acquireInstanceLock, readInstanceLock, takeHandoffs, writeHandoff } from '../../src/core/store/lock.ts';
+import {
+  acquireInstanceLock, acquireLockFile, lockOwnerHolds, processStillOwns, readInstanceLock, takeHandoffs, writeHandoff,
+  type LockOwnerProbe,
+} from '../../src/core/store/lock.ts';
 import { botPathsFor, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../../src/core/store/paths.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
@@ -66,6 +69,67 @@ test('the instance lock admits one live writer and replaces a stale one (FR-3)',
   const replaced = acquireInstanceLock(paths);
   assert.ok(replaced.held, 'a lock from another host or dead process is stale');
   replaced.release();
+});
+
+/** A system where `pid` is alive, was created at `created`, and the machine booted at `booted`. */
+function probe(created: number | 'gone' | null, booted = Date.parse('2026-11-08T14:22:06Z'), alive = true): LockOwnerProbe {
+  return { alive: () => alive, createdAt: () => created, bootedAt: () => booted };
+}
+
+test('a lock whose PID now belongs to a process started after it is stale', () => {
+  // The hub lock left by the 13:40 start; a service took PID 2408 at 14:22 after a restart.
+  const written = Date.parse('2026-11-08T13:40:58.038Z');
+  assert.equal(processStillOwns(2408, written, probe(Date.parse('2026-11-08T14:22:21.412Z'))), false);
+  assert.equal(processStillOwns(2408, written, probe(Date.parse('2026-11-08T13:40:57.787Z'))), true, 'its writer, created first');
+  assert.equal(processStillOwns(2408, written, probe(written + 1_500)), true, 'a small clock step after start');
+  assert.equal(processStillOwns(2408, written, probe('gone')), false, 'ended since the PID check');
+  assert.equal(processStillOwns(2408, written, probe(Date.parse('2026-11-08T13:40:57Z'), Date.parse('2026-11-08T14:22:06Z'), false)), false);
+  assert.equal(processStillOwns(2408, Number.NaN, probe(Date.parse('2026-11-08T14:22:21Z'))), true, 'no time to compare, so it stands');
+});
+
+test('without a creation time, a lock from before the last boot is stale', () => {
+  const booted = Date.parse('2026-11-08T14:22:06Z');
+  assert.equal(processStillOwns(2408, Date.parse('2026-11-08T13:40:58Z'), probe(null, booted)), false);
+  assert.equal(processStillOwns(2408, Date.parse('2026-11-08T14:23:12Z'), probe(null, booted)), true);
+  assert.equal(processStillOwns(2408, booted - 60_000, probe(null, booted)), true, 'a clock step within the margin');
+});
+
+test('a lock naming this process stands only if written after it started', () => {
+  assert.equal(processStillOwns(process.pid, Date.now(), probe(null)), true);
+  assert.equal(processStillOwns(process.pid, Date.parse('2000-01-01T00:00:00Z'), probe(null, 0)), false,
+    'an earlier process with the same PID wrote it');
+  assert.equal(lockOwnerHolds({ pid: process.pid, host: 'elsewhere', startedAt: new Date().toISOString() }, probe(null)), false);
+  assert.equal(lockOwnerHolds(null as unknown as { pid: number; host: string }, probe(null)), false, 'a lock file that is not an object');
+});
+
+test('a lock left before a restart is replaced even though its PID is in use again', () => {
+  const file = join(home.botsHome, 'reused', 'hub.lock.json');
+  mkdirSync(join(home.botsHome, 'reused'), { recursive: true });
+  const stale = { pid: 2408, host: hostname(), startedAt: '2026-11-08T13:40:58.038Z' };
+  writeFileSync(file, JSON.stringify(stale));
+  const taken = acquireLockFile(file, { pid: process.pid, host: hostname(), startedAt: new Date().toISOString() },
+    probe(Date.parse('2026-11-08T14:22:21.412Z')));
+  assert.equal(taken.held, true);
+  if (taken.held) taken.release();
+  writeFileSync(file, JSON.stringify(stale));
+  const refused = acquireLockFile(file, { pid: process.pid, host: hostname(), startedAt: new Date().toISOString() },
+    probe(Date.parse('2026-11-08T13:40:57.787Z')));
+  assert.equal(refused.held, false, 'the process that wrote it still runs');
+});
+
+test('the system check tells a live writer from a later process with its PID', () => {
+  // The test runner outlives this file; it started before now and long after 2000.
+  const paths = botPathsFor(join(home.botsHome, 'system-probe'));
+  mkdirSync(paths.root, { recursive: true });
+  writeFileSync(paths.lock, JSON.stringify({ pid: process.ppid, host: hostname(), startedAt: new Date().toISOString() }));
+  assert.equal(readInstanceLock(paths)?.pid, process.ppid);
+  assert.equal(acquireInstanceLock(paths).held, false);
+  writeFileSync(paths.lock, JSON.stringify({ pid: process.ppid, host: hostname(), startedAt: '2000-01-01T00:00:00.000Z' }));
+  assert.equal(readInstanceLock(paths), null);
+  writeFileSync(paths.lock, JSON.stringify({ pid: process.pid, host: hostname(), startedAt: '2000-01-01T00:00:00.000Z' }));
+  const replaced = acquireInstanceLock(paths);
+  assert.equal(replaced.held, true, 'a lock naming this PID from before this process is stale too');
+  if (replaced.held) replaced.release();
 });
 
 test('handoff files arrive in order and are consumed once', () => {

@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+
+import { processStillOwns } from '../../../core/store/lock.ts';
 import { isNewerVersion } from './release.ts';
 
 interface InstallRecord { pid: number; nonce: string; phase: 'draining' | 'handoff'; botId: string; targetVersion: string }
@@ -11,16 +13,22 @@ export function processIsAlive(pid: number): boolean {
   catch (error) { return (error as NodeJS.ErrnoException).code !== 'ESRCH'; }
 }
 
+/** When a lease or marker was written; NaN, which keeps it standing, when it cannot be read. */
+function writtenAt(file: string): number {
+  try { return statSync(file).mtimeMs; } catch { return Number.NaN; }
+}
+
 /** All shells using one executable participate, including shells starting during an update. */
 export class BotInstallation {
   readonly directory: string;
   private readonly pid: number;
   private readonly version: string;
-  private readonly alive: (pid: number) => boolean;
+  /** Whether the process now using a PID wrote a file at the given time: a lease outlives a shutdown and its PID can be reused. */
+  private readonly alive: (pid: number, writtenAt: number) => boolean;
   private readonly nonce = randomUUID();
   private botId = '';
   private registered = false;
-  constructor(appData: string, executable: string, version: string, pid = process.pid, alive = processIsAlive) {
+  constructor(appData: string, executable: string, version: string, pid = process.pid, alive: (pid: number, writtenAt: number) => boolean = (owner, at) => processStillOwns(owner, at)) {
     const identity = process.platform === 'win32' ? resolve(executable).toLowerCase() : resolve(executable);
     this.directory = join(appData, 'Cats Bot', 'installations', createHash('sha256').update(identity).digest('hex'));
     this.pid = pid; this.version = version; this.alive = alive;
@@ -54,14 +62,14 @@ export class BotInstallation {
   acknowledgeFinishedInstaller(): void {
     const record = this.record();
     if (record) {
-      if (record.pid !== this.pid && this.alive(record.pid)) throw new Error('Another Bot may still be installing.');
+      if (record.pid !== this.pid && this.alive(record.pid, writtenAt(this.marker))) throw new Error('Another Bot may still be installing.');
       this.removeGate(record.nonce);
     } else {
       // A crash can leave a gate before its first atomic marker write. Only an
       // explicit user acknowledgement, with no other live shell, may clear it.
       for (const name of readdirSync(this.directory)) {
         const match = /^pid-(\d+)\.json$/u.exec(name);
-        if (match && Number(match[1]) !== this.pid && this.alive(Number(match[1]))) throw new Error('Another Bot may still be installing.');
+        if (match && Number(match[1]) !== this.pid && this.alive(Number(match[1]), writtenAt(join(this.directory, name)))) throw new Error('Another Bot may still be installing.');
       }
       for (const name of readdirSync(this.gate)) {
         if (name !== 'owner.json' && !/^owner-[a-f0-9-]+\.tmp$/u.test(name)) throw new Error('Unknown installation marker; recovery requires inspection.');
@@ -82,7 +90,7 @@ export class BotInstallation {
       if (!existsSync(this.gate)) return;
       const record = this.record();
       if (!record) throw new InstallationRecoveryRequired('An interrupted update left an incomplete installation marker. Finish or close any installer before reopening Cats Bot.');
-      if (record.pid !== this.pid && this.alive(record.pid)) throw new Error('Cats Bot is installing an update. Wait for the installer to finish.');
+      if (record.pid !== this.pid && this.alive(record.pid, writtenAt(this.marker))) throw new Error('Cats Bot is installing an update. Wait for the installer to finish.');
       if (record.phase === 'handoff' && this.version !== record.targetVersion && !isNewerVersion(this.version, record.targetVersion)) {
         throw new InstallationRecoveryRequired('An earlier installer did not confirm completion. Finish or close it before reopening this version of Cats Bot.');
       }
@@ -106,7 +114,7 @@ export class BotInstallation {
       for (const name of readdirSync(this.directory)) {
         const match = /^pid-(\d+)\.json$/u.exec(name);
         if (!match || Number(match[1]) === this.pid) continue;
-        if (this.alive(Number(match[1]))) throw new Error('Quit the other Cats Bot instances before installing this update.');
+        if (this.alive(Number(match[1]), writtenAt(join(this.directory, name)))) throw new Error('Quit the other Cats Bot instances before installing this update.');
         unlinkSync(join(this.directory, name));
       }
     } catch (error) { this.removeGate(record.nonce); throw error; }
