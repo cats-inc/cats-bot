@@ -54,7 +54,8 @@ export interface ProviderSetupState {
 }
 
 export function canCreateFromSetup(state: ProviderSetupState | null): boolean {
-  return state?.canFinish === true && (!state.codexInitialization || state.codexInitialization.status === 'ready');
+  // Sandbox readiness is advice about future turns, not a prerequisite for creating a cat.
+  return state?.canFinish === true;
 }
 
 /** FR-14: one run of a helper, or one terminal opened, as the page's log shows it. */

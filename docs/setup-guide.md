@@ -87,9 +87,10 @@ The last page offers **Open Codex first-time setup** when that setup is incomple
 cannot be verified. It opens Command Prompt and runs `codex` in an empty temporary
 workspace; complete Codex's own prompts, exit Codex, then press **Check again**.
 PowerShell scripts remains optional. An already initialized profile shows Ready
-without this extra step. A terminal opening is not completion: creation requires a
-fresh readiness check. Unsupported CLI checks remain blocked rather than assuming
-the sandbox is ready. The actual session still has Runtime's permission checks.
+without this extra step. Initialization readiness is advisory: an incomplete or
+unverified check does not disable **Create and start**. A terminal opening does not
+mark Codex ready. You can create the cat and finish Codex setup before chatting;
+the actual session still has Runtime's permission checks.
 
 If an existing cat previously failed with `workspace-write` versus `readOnly`,
 complete initialization in `codex.cmd` from Command Prompt or PowerShell, then fully

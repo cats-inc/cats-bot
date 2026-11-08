@@ -29,7 +29,10 @@ config files byte-identical. Runtime retains its actual-session permission guard
 
 The chosen entry is a fixed `codex` command in Command Prompt after login, from
 an owned temporary workspace. Codex handles config, mode selection and UAC.
-No terminal lifecycle event counts as success; both creation paths recheck.
+No terminal lifecycle event counts as success. Following the clean-machine
+creation regression reported on 2026-11-08, readiness is advisory: both creation
+paths recheck installation but do not reject incomplete or unverified sandbox
+setup. Runtime still enforces permissions when a turn actually starts.
 The preflight resolves the checked official npm launcher to a native executable
 using its Node executable's PE architecture, avoiding PowerShell policy,
 Electron/Node architecture mismatches and extra console windows. Standalone

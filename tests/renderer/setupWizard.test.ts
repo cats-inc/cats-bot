@@ -25,6 +25,7 @@ import {
 import { botPersonaProblem } from '../../src/shared/botText.ts';
 import { translate, zhTW } from '../../src/shared/language.ts';
 import type { ProviderSetupState, SetupLogEntry, SetupStep, SetupStepId } from '../../src/shared/providerSetup.ts';
+import { canCreateFromSetup } from '../../src/shared/providerSetup.ts';
 
 const step = (id: SetupStepId, status: string, extra: Partial<SetupStep> = {}): SetupStep => ({
   id, label: id, status, installed: status === 'ready', version: null, manualSteps: [], warnings: [], restartRequired: false,
@@ -32,6 +33,15 @@ const step = (id: SetupStepId, status: string, extra: Partial<SetupStep> = {}): 
 });
 const state = (...steps: SetupStep[]): ProviderSetupState => ({
   provider: 'codex', steps, canFinish: false, signIn: 'unknown', signInCommand: 'codex login',
+});
+
+test('Codex initialization advice never disables Create once installation is complete', () => {
+  assert.equal(canCreateFromSetup(null), false);
+  for (const status of ['ready', 'required', 'unavailable'] as const) {
+    const checked = { ...state(step('provider', 'ready')), codexInitialization: { status } };
+    assert.equal(canCreateFromSetup(checked), false, 'missing prerequisites still block creation');
+    assert.equal(canCreateFromSetup({ ...checked, canFinish: true }), true, status);
+  }
 });
 
 test('each status maps to one row state (SPEC-010 FR-8)', () => {

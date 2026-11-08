@@ -282,18 +282,41 @@ if (process.platform === 'win32') {
   await w.click('#setup-next');
   await w.wait("document.querySelector('#setup-open-codex')", 'initialization action');
   check('Windows first-run initialization follows the login row', await w.js("!!document.querySelector('[data-row=sign-in] + [data-row=codex-initialization]')"));
-  check('missing sandbox blocks Create despite installed CLI and optional PowerShell', await w.js("document.querySelector('#setup-submit').disabled"));
+  check('missing sandbox permits Create with installed CLI and optional PowerShell unset', await w.js("!document.querySelector('#setup-submit').disabled"));
+  check('initialization advice explains that creation can continue', await w.js("document.querySelector('[data-row=codex-initialization]').textContent.includes('You can create Mochi now.')"));
   await w.shot('10-codex-initialization-needed');
   await w.click('#setup-open-codex');
   await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Terminal opened.')", 'terminal result');
   check('initialization opens the fixed terminal action', w.calls.includes('open-codex-terminal'));
-  check('opened terminal is not proof of readiness', await w.js("document.querySelector('#setup-submit').disabled"));
-  const refused = await w.js("window.catsBot.setup.finish({name:'Mochi',provider:'codex',model:null,instructions:''}).then(()=>'',e=>e.message)");
-  check('host refuses direct creation before initialization', /Complete Codex first-time setup/u.test(refused) && w.created.length === 0);
+  check('opened terminal is not proof of readiness', await w.js("!document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready')"));
   world.codexInitialization = 'unavailable';
   await w.click('#setup-recheck');
   await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Could not verify')", 'unknown readiness');
-  check('an inconclusive check keeps Create blocked', await w.js("document.querySelector('#setup-submit').disabled"));
+  await w.wait("!document.querySelector('#setup-submit').disabled", 'unverified setup permits creation');
+  check('an inconclusive check permits Create without claiming readiness', await w.js("!document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready')"));
+  await w.click('#setup-submit'); await w.done;
+  check('unverified initialization still creates the selected cat', w.created[0]?.provider === 'codex');
+  check('unverified initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
+}
+if (process.platform === 'win32') {
+  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
+  const w = await open(world);
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'installed prerequisites');
+  await w.click('#setup-next');
+  await w.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled", 'incomplete setup permits creation');
+  await w.click('#setup-submit'); await w.done;
+  check('required initialization still creates the selected cat', w.created[0]?.provider === 'codex');
+  check('required initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
+}
+if (process.platform === 'win32') {
+  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
+  const w = await open(world);
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.click('#setup-check');
+  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'installed prerequisites');
+  await w.click('#setup-next');
   world.codexInitialization = 'ready';
   await w.click('#setup-recheck');
   await w.wait("document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready') && !document.querySelector('#setup-submit').disabled", 'verified readiness');
