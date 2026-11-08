@@ -82,6 +82,15 @@ and a way to do it by hand. On Windows, PowerShell scripts is optional. The last
 through a real terminal, picks the model and creates the cat bot. Cats Bot itself should not need
 a restart after an install; terminals that were already open do, to see the new PATH.
 
+The Codex npm installer follows npm's normal engine policy without adding an
+extra `--engine-strict` gate. An explicit user engine policy remains effective.
+On npm versions with install-script approvals, it authorizes only the selected
+CLI at its resolved exact version for that invocation; it does not persist an
+approval or approve all transitive scripts. Other user policies, including
+`ignore-scripts`, remain effective. Installation verifies both the exact package
+version and a bounded successful CLI `--version` response before reporting ready.
+This verifies basic startup, not authentication or a model turn.
+
 On Windows, Codex also needs its own first-time sandbox initialization after sign-in.
 The last page offers **Open Codex first-time setup** when that setup is incomplete or
 cannot be verified. It opens Command Prompt and runs `codex` in an empty temporary

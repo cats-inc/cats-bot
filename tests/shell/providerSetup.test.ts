@@ -29,7 +29,7 @@ test('Windows Codex check reports an install plan when npm has no global prefix'
   try {
     const windows = join(home, 'windows');
     mkdirSync(windows);
-    for (const name of ['Install-Codex.ps1', '_NpmCliInstaller.ps1', '_VerifiedNpmUpdate.ps1']) {
+    for (const name of ['Install-Codex.ps1', '_NpmCliInstaller.ps1', '_VerifiedNpmUpdate.ps1', '_HiddenProcess.ps1']) {
       let source = readFileSync(join(assets, 'windows', name), 'utf8');
       if (name === 'Install-Codex.ps1') {
         assert.ok(source.includes("-CommandName 'codex'"));
