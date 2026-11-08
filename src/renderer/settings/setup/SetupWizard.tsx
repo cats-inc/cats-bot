@@ -739,8 +739,9 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
                 <strong>{t('Complete Codex first-time setup')}</strong>
                 {state?.codexInitialization?.status !== 'ready' && <p>{t('After signing in, open Codex and complete its Windows sandbox prompts. Exit Codex, then check again. Codex handles any administrator prompt and sandbox choices.')}</p>}
                 {state?.codexInitialization?.status === 'unavailable' && <p className="warn">{t('Could not verify Codex setup. Complete it in the terminal, then check again.')}</p>}
+                {state?.codexInitialization?.status !== 'ready' && <p>{t('You can create {name} now. If Codex setup is incomplete, finish it before chatting.', { name: displayName })}</p>}
               </div>
-              <span className={state?.codexInitialization?.status === 'ready' ? 'setup-row-state' : 'setup-row-state is-attention'}>{t(state?.codexInitialization?.status === 'ready' ? 'Ready' : 'First-time setup needed')}</span>
+              <span className={state?.codexInitialization?.status === 'ready' ? 'setup-row-state' : 'setup-row-state is-attention'}>{t(state?.codexInitialization?.status === 'ready' ? 'Ready' : state?.codexInitialization?.status === 'unavailable' ? 'Cannot tell' : 'First-time setup needed')}</span>
             </div>
             {state?.codexInitialization?.status !== 'ready' && <div className="setup-row-actions">
               <CommandSnippet command="codex" copyable />

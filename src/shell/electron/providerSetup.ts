@@ -4,7 +4,6 @@ import { join, posix, win32 } from 'node:path';
 import { promisify } from 'node:util';
 import { CLI_PROVIDERS } from '../../core/providers/catalog.ts';
 import { signInCommand } from './setupTerminal.ts';
-import { canCreateFromSetup } from '../../shared/providerSetup.ts';
 import type {
   ProviderSetupState,
   SetupLogEntry,
@@ -373,12 +372,16 @@ export class ProviderSetup {
       return this.inspect(provider, signal, listener);
     }, false, signal);
   }
-  /** Both creation IPC paths use the same fresh preflight, never a renderer's cached result. */
+  /** Both creation IPC paths recheck installation; Codex readiness remains advisory. */
   async checkForCreation(provider: unknown, signal?: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
-    const state = await this.check(provider, signal, listener);
-    if (!state.canFinish) throw new Error('Complete setup for the selected provider first');
-    if (!canCreateFromSetup(state)) throw new Error('Complete Codex first-time setup, then check again.');
-    return state;
+    this.assertProvider(provider);
+    return this.exclusive(async (signal) => {
+      this.selected = provider;
+      // A diagnostic probe must not hold the owner's creation action open.
+      const state = await this.inspect(provider, signal, listener, false);
+      if (!state.canFinish) throw new Error('Complete setup for the selected provider first');
+      return state;
+    }, false, signal);
   }
   install(provider: unknown, step: unknown, listener?: SetupLogListener): Promise<ProviderSetupState> {
     this.assertProvider(provider);
@@ -461,7 +464,7 @@ export class ProviderSetup {
    * waits unread. Once it works, everything is read in one pass, because a check only
    * reads: a clean machine then asks the owner twice rather than once per step.
    */
-  private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
+  private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener, includeInitialization = true): Promise<ProviderSetupState> {
     const steps: SetupStep[] = [];
     let codexCommandPath: string | undefined;
     let nodeReady = true;
@@ -509,7 +512,7 @@ export class ProviderSetup {
       });
     }
     let codexInitialization: CodexInitialization | undefined;
-    if (this.windows && provider === 'codex') {
+    if (includeInitialization && this.windows && provider === 'codex') {
       codexInitialization = { status: 'required' };
       if (steps.every((step) => step.optional || stepDone(step))) {
         const run = ++this.runs, started = Date.now();

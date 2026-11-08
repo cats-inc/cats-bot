@@ -126,27 +126,21 @@ test('opening the page runs nothing: the provider list is fixed and no helper st
   f.window.destroy();
 });
 
-test('Codex may reach sign-in after installation but cannot be created until a fresh initialization check passes', async t => {
-  let status: 'required' | 'ready' | 'unavailable' = 'required', created = false, opened = 0, probes = 0;
+for (const status of ['required', 'unavailable', 'ready'] as const) test(`Codex creation accepts ${status} initialization advice with optional PowerShell unset`, async t => {
+  let created = false, opened = 0, probes = 0;
   const f = fixture(t, async helper => helper === 'shell' ? { status: 'changes_required' } : ready(), async () => { created = true; }, {
     windows: true, codexInitialization: async () => { probes++; return { status }; },
     initializeCodex: async () => { opened++; return { opened: true, command: 'codex' }; },
   });
   const checked = await f.providers.check('codex');
   assert.equal(checked.canFinish, true, 'page 2 must allow reaching login and initialization');
-  assert.equal(checked.codexInitialization?.status, 'required');
+  assert.equal(checked.codexInitialization?.status, status);
   const codex = { ...input, provider: 'codex' };
-  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
-  assert.equal(created, false);
   assert.deepEqual(await ipcMain.invoke(f.window, 'setup:openCodexInitialization'), { opened: true, command: 'codex' });
   assert.equal(opened, 1);
-  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
-  status = 'unavailable';
-  await assert.rejects(ipcMain.invoke(f.window, 'setup:finish', codex), /Complete Codex first-time setup/);
-  status = 'ready';
   await ipcMain.invoke(f.window, 'setup:finish', codex);
   assert.equal(created, true); assert.equal(await f.done, true);
-  assert.equal(probes, 5, 'every submission uses fresh evidence');
+  assert.equal(probes, 1, 'creation does not repeat the advisory diagnostic');
 });
 
 test('Codex initialization cannot be opened from another frame or for another selected provider', async t => {
