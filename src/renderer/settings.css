@@ -340,23 +340,74 @@ textarea {
   align-items: center;
 }
 
-.provider-installation {
-  padding: 14px;
-  border: 1px solid #d9d3c8;
+/* SPEC-013 FR-13: a cat bot's own CLI, in the setup wizard's rows, with its own log. */
+.provider-checklist {
+  overflow: hidden;
+  border: 1px solid var(--edge);
   border-radius: 10px;
-  background: #fffcf4;
+  background: var(--paper);
 }
-.provider-installation h3 {
-  margin-top: 0;
+
+.provider-checklist-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px 8px;
 }
-.setup-step {
-  margin: 12px 0;
-  padding: 10px 0;
-  border-bottom: 1px solid #e8e2d5;
+
+.provider-checklist-head h3 {
+  margin: 0;
+  font-size: 14px;
 }
-.setup-step p {
-  margin: 5px 0;
-  overflow-wrap: anywhere;
+
+.provider-checklist > .error {
+  margin: 0 12px 8px;
+}
+
+.provider-checklist > .setup-rows {
+  margin: 0 12px;
+}
+
+.provider-checklist-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+
+/* SPEC-013: Cats Bot Settings' Agent CLIs tab takes the panel the way the wizard takes its window. */
+.panels.is-flush {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+}
+
+.clis-host {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.clis-panel {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+}
+
+.clis-pane {
+  padding: 20px 28px 14px;
+}
+
+.clis-pane h2 {
+  margin-bottom: 2px;
+}
+
+.clis-panel .setup-foot {
+  padding: 8px 28px;
 }
 .notes {
   list-style: none;
@@ -974,6 +1025,118 @@ textarea {
 
 .setup-row.is-failed {
   background: #fff6f4;
+}
+
+/* SPEC-013 FR-2: a group of rows, and the stem that hangs Node.js's tools from it. */
+.setup-block + .setup-block {
+  margin-top: 14px;
+}
+
+.setup-group-label {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.setup-tick-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: -4px 0 10px;
+}
+
+.setup-row {
+  position: relative;
+}
+
+.setup-row.is-dep {
+  padding-left: 40px;
+}
+
+.setup-row.is-dep::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: -1px;
+  bottom: 0;
+  border-left: 2px dashed var(--edge);
+}
+
+.setup-row.is-dep::after {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 19px;
+  width: 13px;
+  border-top: 2px dashed var(--edge);
+}
+
+.setup-row.is-dep-last::before {
+  bottom: auto;
+  height: 21px;
+}
+
+.setup-row.is-dep-root::before {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 28px;
+  bottom: 0;
+  border-left: 2px dashed var(--edge);
+}
+
+.setup-rows.is-unlocked .setup-row.is-dep::before,
+.setup-rows.is-unlocked .setup-row.is-dep::after,
+.setup-rows.is-unlocked .setup-row.is-dep-root::before {
+  border-style: solid;
+  border-color: #a9cfa5;
+}
+
+.setup-row-users {
+  font-size: 12px !important;
+}
+
+/* SPEC-013 FR-8: an update is a tick at the right of a working row, after its version. */
+.setup-update {
+  flex: none;
+  width: 84px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding-left: 10px;
+  border-left: 1px solid var(--edge);
+  color: var(--ink);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.setup-update.is-empty {
+  border-left-color: transparent;
+}
+
+.setup-update input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.setup-row.is-updating {
+  background: #fffcf4;
+}
+
+.setup-update-note {
+  color: var(--ok) !important;
+}
+
+.setup-update-note.is-danger {
+  color: var(--danger) !important;
+}
+
+.setup-reason {
+  font: 12px/1.5 'Cascadia Mono', Consolas, ui-monospace, monospace;
 }
 
 .setup-row-shortcut {

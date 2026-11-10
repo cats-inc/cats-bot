@@ -198,6 +198,9 @@ persona get one rule wherever they enter.
 
 21. FR-21: The Bot tab checks a provider only when asked, and its text fields follow FR-19. The
     check on each launch stays (ADR-006).
+    - Amended by [SPEC-013](SPEC-013-agent-clis-in-cats-bot-settings.md) FR-13 (2026-11-11): the
+      Bot tab draws its provider's chain in this wizard's rows, ticks and log, may also update, and
+      links to Cats Bot Settings' Agent CLIs tab, which covers every CLI the cat bots share.
 
 **After an install**
 

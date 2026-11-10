@@ -73,7 +73,8 @@ descriptions for the model and this documentation say "bot".
    the first bot as the Boss Cat.
 5. FR-5: Bot management, the Bots tab of Cats Bot Settings (the hub's own
    settings window, beside its General tab: display language, start at login,
-   version, updates and the data folder; PLAN-010), lists every bot that is not archived, with
+   version, updates and the data folder; PLAN-010, and its Agent CLIs tab, which
+   installs, updates and signs in to the CLIs every bot shares; SPEC-013), lists every bot that is not archived, with
    its state (starting, running, stopped, failed, externally hosted), and offers
    create, start, stop, start automatically and order. Archived bots are listed
    separately. Removing a bot takes two separate steps, each with its own
