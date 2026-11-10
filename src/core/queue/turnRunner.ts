@@ -3,6 +3,7 @@ import type { ConversationStore } from '../conversations/store.ts';
 import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
 import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
+import { isProviderSessionUnavailable, PROVIDER_SESSION_UNAVAILABLE } from '../runtime/providerSession.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
 import { ResponsePresentation } from './responsePresentation.ts';
@@ -49,6 +50,17 @@ export type TurnOutcome =
     reason: 'runtime_unavailable' | 'session_busy' | 'no_capacity';
     retryAfterMs: number;
   };
+
+/**
+ * A turn that ended on an error before the provider produced anything: no
+ * text, no tool call. Only such a turn may be re-sent in a rebuilt session,
+ * since nothing of it can have happened yet.
+ */
+interface SilentFailure {
+  kind: 'failed_before_output';
+  reason: string;
+  code: string | null;
+}
 
 export interface TurnRetryDelays {
   ownerBusyMs: number;
@@ -101,6 +113,10 @@ export function originForKind(kind: WorkItem['kind']): MessageOrigin {
 export class TurnRunner {
   private readonly deps: TurnRunnerDependencies;
   private readonly delays: TurnRetryDelays;
+  /** Per conversation: the last turn that failed before any output, and in which session. */
+  private readonly lastSilentFailure = new Map<string, { sessionId: string; reason: string }>();
+  /** Per conversation: a failure a rebuilt session did not fix, until a turn completes there. */
+  private readonly rebuildDidNotHelp = new Map<string, string>();
 
   constructor(deps: TurnRunnerDependencies) {
     this.deps = deps;
@@ -114,6 +130,7 @@ export class TurnRunner {
     }
     let resumedAfterNoWorker = false;
     let rebuiltAfterExit = false;
+    let rebuiltFor: string | null = null;
     for (let round = 0; round < 3; round += 1) {
       if (controller.signal.aborted) return { kind: 'cancelled' };
       const bound = await this.deps.binder.bind(item.conversationId);
@@ -132,10 +149,12 @@ export class TurnRunner {
         historyBaseline: bound.how === 'created' ? 0 : await this.historyLength(client, bound.sessionId),
       };
       this.deps.persistRun(item);
+      let result: TurnOutcome | SilentFailure;
       try {
-        return await runWithSessionGate(bound.sessionId, () =>
+        result = await runWithSessionGate(bound.sessionId, () =>
           this.stream(client, bound.sessionId, item, controller));
       } catch (error) {
+        this.lastSilentFailure.delete(item.conversationId);
         if (controller.signal.aborted) return { kind: 'cancelled' };
         if (!(error instanceof RuntimeHttpError)) {
           return { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
@@ -151,8 +170,41 @@ export class TurnRunner {
         }
         return classified;
       }
+      if (result.kind !== 'failed_before_output') {
+        this.lastSilentFailure.delete(item.conversationId);
+        if (result.kind === 'completed') this.rebuildDidNotHelp.delete(item.conversationId);
+        return result;
+      }
+      if (rebuiltFor !== null) this.rebuildDidNotHelp.set(item.conversationId, rebuiltFor);
+      if (!rebuiltAfterExit && this.sessionIsLost(item.conversationId, bound.sessionId, result)) {
+        this.deps.log(`turn ${item.id}: the provider session behind ${bound.sessionId} cannot be continued; rebuilding from the transcript`);
+        this.lastSilentFailure.delete(item.conversationId);
+        // `failed` makes the binder tell the owner, hand the transcript on and retire the old session.
+        this.deps.conversations.setAttachment(item.conversationId, { state: 'failed', lastError: result.reason });
+        rebuiltAfterExit = true;
+        rebuiltFor = result.reason;
+        continue;
+      }
+      this.lastSilentFailure.set(item.conversationId, { sessionId: bound.sessionId, reason: result.reason });
+      return { kind: 'failed', reason: result.reason };
     }
     return { kind: 'failed', reason: 'The session could not be re-established after repeated attempts' };
+  }
+
+  /**
+   * SPEC-001 FR-18: whether a turn that failed before any output failed
+   * because its session can no longer be continued. Runtime's typed code or a
+   * known provider text says so directly. Otherwise the same failure twice in
+   * a row in the same session says so: a failure that a session repeats on
+   * every turn belongs to the session, not to the turn. A failure a rebuilt
+   * session repeated is left alone until a turn completes, so a persistent
+   * provider error never turns every turn into a new session.
+   */
+  private sessionIsLost(conversationId: string, sessionId: string, failure: SilentFailure): boolean {
+    if (this.rebuildDidNotHelp.get(conversationId) === failure.reason) return false;
+    if (isProviderSessionUnavailable(failure.reason, failure.code)) return true;
+    const previous = this.lastSilentFailure.get(conversationId);
+    return previous !== undefined && previous.sessionId === sessionId && previous.reason === failure.reason;
   }
 
   /** The session's history length before this turn's prompt; null when the runtime cannot say. */
@@ -174,6 +226,11 @@ export class TurnRunner {
     rebuiltAlready: boolean,
   ): TurnOutcome | 'resume' | 'rebuild' {
     const { conversationId } = item;
+    if (error.code === PROVIDER_SESSION_UNAVAILABLE && !rebuiltAlready) {
+      this.deps.log(`turn ${item.id}: the provider session behind ${sessionId} is unavailable; rebuilding from the transcript`);
+      this.deps.conversations.setAttachment(conversationId, { state: 'failed', lastError: error.message });
+      return 'rebuild';
+    }
     const noWorker = error.status === 404 && /no active worker/iu.test(error.message);
     const closed = error.status === 400 && /closed/iu.test(error.message);
     if ((noWorker || closed) && !resumedAlready) {
@@ -232,11 +289,14 @@ export class TurnRunner {
     sessionId: string,
     item: WorkItem,
     controller: AbortController,
-  ): Promise<TurnOutcome> {
+  ): Promise<TurnOutcome | SilentFailure> {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
-    const presentation = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt)
+    const heartbeat = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt);
+    // Whether the provider did anything this turn; a turn that did is never re-sent.
+    let produced = false;
+    const presentation = heartbeat
       ? null : new ResponsePresentation(this.deps.conversations, item, origin, this.deps.now());
     // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) and typed or clipboard
     // text in their inputs never reach the transcript.
@@ -285,6 +345,7 @@ export class TurnRunner {
         }
         case 'text': {
           if (typeof event.text === 'string' && event.text) {
+            produced = true;
             textParts.push(event.text);
             if (item.kind !== 'heartbeat') {
               if (presentation) {
@@ -297,6 +358,7 @@ export class TurnRunner {
           break;
         }
         case 'tool_use': {
+          produced = true;
           const desktopTool = typeof event.toolName === 'string' && isDesktopControlToolName(event.toolName);
           if (desktopTool && typeof event.toolId === 'string') desktopTools.set(event.toolId, event.toolName as string);
           const entry = this.deps.conversations.append(conversationId, {
@@ -311,6 +373,7 @@ export class TurnRunner {
           break;
         }
         case 'tool_result': {
+          produced = true;
           const name = typeof event.toolName === 'string' ? event.toolName
             : typeof event.toolId === 'string' ? desktopTools.get(event.toolId) : undefined;
           const raw = typeof event.text === 'string' ? event.text : '';
@@ -329,6 +392,11 @@ export class TurnRunner {
           break;
         }
         case 'error': {
+          // FR-25: a heartbeat the owner never asked for leaves no message behind, failed or not.
+          if (heartbeat) {
+            this.deps.log(`turn ${item.id}: heartbeat error${typeof event.code === 'string' ? ` (${event.code.replace(/[^a-zA-Z0-9_-]/gu, '').slice(0, 80)})` : ''}`);
+            break;
+          }
           const entry = this.deps.conversations.append(conversationId, {
             kind: 'error',
             origin,
@@ -368,7 +436,7 @@ export class TurnRunner {
     const text = textParts.join('').trim();
     if (outcome.completed) {
       // SPEC-001 FR-25: a quiet heartbeat leaves no message behind.
-      if (item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt)) {
+      if (heartbeat) {
         const parsed = parseHeartbeatReply(text);
         if (parsed.quiet) return { kind: 'completed', text: '', quiet: true };
         this.deps.conversations.append(conversationId, { kind: 'bot', origin: 'heartbeat', text: parsed.body, workItemId: item.id });
@@ -387,7 +455,9 @@ export class TurnRunner {
     publishPresentation();
     if (controller.signal.aborted) return { kind: 'cancelled' };
     if (outcome.errorText) {
-      return { kind: 'failed', reason: outcome.errorText };
+      return produced
+        ? { kind: 'failed', reason: outcome.errorText }
+        : { kind: 'failed_before_output', reason: outcome.errorText, code: outcome.errorCode };
     }
     this.deps.log(`turn ${item.id}: stream ended without a result`);
     return { kind: 'interrupted' };

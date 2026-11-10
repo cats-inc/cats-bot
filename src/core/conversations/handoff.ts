@@ -22,8 +22,9 @@ function speaker(entry: TranscriptEntry): string | null {
       return entry.origin === 'heartbeat' ? 'You (unprompted)' : 'You';
     case 'system':
       return 'System';
-    case 'error':
-      return 'Error';
+    // An error is about the execution path, not the conversation: handing it on
+    // would teach the next session that a stale session or a failed turn is
+    // something said, and repeated failures would crowd the budget.
     default:
       return null;
   }

@@ -27,6 +27,9 @@ let counter = 0;
 let busyOnce = new Set();
 let noWorkerOnce = new Set();
 let exitOnce = new Set();
+// `break-every-session` makes every session, old or new, fail the same way until `repair`.
+let brokenEverywhere = false;
+const UNAVAILABLE = 'provider_session_unavailable';
 
 function json(res, status, body) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -61,6 +64,9 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 async function handleMessage(req, res, session, body) {
   const message = String(body.message ?? '');
   calls.push({ op: 'message', id: session.id, message });
+  if (session.unavailable) {
+    return json(res, 410, { error: 'The provider session can no longer be resumed.', code: UNAVAILABLE });
+  }
   if (session.status === 'closed' || session.status === 'closing') {
     return json(res, 400, { error: 'Session is closed. Resume it first.' });
   }
@@ -111,6 +117,27 @@ async function handleMessage(req, res, session, body) {
     if (session.status === 'busy') session.status = ok ? 'ready' : 'closed';
     res.end();
   };
+  if (message === 'repair') brokenEverywhere = false;
+  // A session whose provider-native session is gone, the way each Runtime reports it.
+  if (session.lost === 'grok') {
+    write({ type: 'error', text: `No saved copy of session ${session.providerSessionId} was found remotely. Check the id, or run \`grok --resume\` to pick a session.` });
+    return finish(true);
+  }
+  if (session.lost === 'typed') {
+    write({ type: 'error', text: 'The provider session can no longer be resumed.', code: UNAVAILABLE });
+    session.unavailable = true;
+    session.status = 'closed';
+    session.abort = null;
+    return res.end();
+  }
+  if (session.lost === 'opaque') {
+    write({ type: 'error', text: 'provider transport reset' });
+    return finish(true);
+  }
+  if (brokenEverywhere) {
+    write({ type: 'error', text: 'provider is misconfigured' });
+    return finish(true);
+  }
   const reply = (text) => {
     session.turns.push({ user: message, assistant: text });
     write({ type: 'text', text });
@@ -172,6 +199,21 @@ async function handleMessage(req, res, session, body) {
     reply('used a tool');
   } else if (message.startsWith('instructions?')) {
     reply(`instructions=${session.instructions ?? ''}`);
+  } else if (message.startsWith('forget-session:')) {
+    // The reply arrives; the provider loses the session afterwards.
+    reply('forgotten');
+    session.lost = message.slice('forget-session:'.length);
+  } else if (message === 'gone-after-reply') {
+    // Runtime already knows the provider session is gone: closed, and 410 from now on.
+    reply('noted');
+    write({ type: 'result', sessionId: session.providerSessionId });
+    session.unavailable = true;
+    session.abort = null;
+    session.status = 'closed';
+    return res.end();
+  } else if (message === 'break-every-session') {
+    reply('broken');
+    brokenEverywhere = true;
   } else if (message.startsWith('[Cats heartbeat')) {
     reply(process.env.FAKE_HEARTBEAT_REPLY || '[quiet]');
   } else {
@@ -275,6 +317,9 @@ const server = createServer(async (req, res) => {
   if (req.method === 'POST' && action === 'resume') {
     const body = await readBody(req);
     calls.push({ op: 'resume', id: session.id, body });
+    if (session.unavailable) {
+      return json(res, 410, { error: 'The provider session can no longer be resumed.', code: UNAVAILABLE });
+    }
     if (resumeFails) return json(res, 500, { error: 'Failed to resume: boom' });
     session.status = 'ready';
     return json(res, 200, { ...view(session), action: 'resume' });

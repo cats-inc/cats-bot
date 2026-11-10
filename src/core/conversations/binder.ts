@@ -2,7 +2,8 @@ import type { ConversationStore } from './store.ts';
 import { buildHandoffPack, composeInstructions } from './handoff.ts';
 import { effectiveReplyLanguage } from '../profile/profile.ts';
 import { replyLanguageInstruction } from '../../shared/language.ts';
-import type { CreateSessionRequest, RuntimeClient, RuntimeMcpServer } from '../runtime/client.ts';
+import { RuntimeHttpError, type CreateSessionRequest, type RuntimeClient, type RuntimeMcpServer } from '../runtime/client.ts';
+import { isProviderSessionUnavailable, REBUILT_SESSION_NOTICE } from '../runtime/providerSession.ts';
 import type { BotProfile, ConversationRecord, SessionAttachment } from '../types.ts';
 
 /**
@@ -127,6 +128,14 @@ export class SessionBinder {
         return { ok: true, sessionId: attachment.sessionId, how: 'resumed' };
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (error instanceof RuntimeHttpError && isProviderSessionUnavailable(reason, error.code)) {
+          // The provider session is gone, so no later resume can succeed; the
+          // transcript is ours, so the conversation continues from it at once.
+          this.deps.log(`conversation ${conversation.id}: the provider session of ${attachment.sessionId} is unavailable; rebuilding`);
+          this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
+          this.deps.conversations.append(conversation.id, { kind: 'system', origin: 'system', text: REBUILT_SESSION_NOTICE });
+          return this.create(client, this.deps.conversations.require(conversation.id), profile);
+        }
         this.deps.log(`conversation ${conversation.id}: resume of ${attachment.sessionId} failed`);
         this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
         this.deps.conversations.append(conversation.id, {
@@ -137,11 +146,7 @@ export class SessionBinder {
         return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };
       }
     } else if (attachment.state === 'failed' && attachment.sessionId) {
-      this.deps.conversations.append(conversation.id, {
-        kind: 'system',
-        origin: 'system',
-        text: 'The previous session could not be continued; a new session starts with a handoff of what was said so far.',
-      });
+      this.deps.conversations.append(conversation.id, { kind: 'system', origin: 'system', text: REBUILT_SESSION_NOTICE });
     }
     return this.create(client, this.deps.conversations.require(conversation.id), profile);
   }
