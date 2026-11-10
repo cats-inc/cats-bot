@@ -17,6 +17,7 @@ import type {
   DesktopControlState,
   DesktopGrantDecision,
 } from '../core/types.ts';
+import type { DesktopScreenshotCaptureResult } from '../shared/screenshot/contracts.ts';
 import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 
 /**
@@ -42,6 +43,8 @@ export interface HostCommands {
   conversationTranscript: { args: [conversationId: string]; result: TranscriptEntry[] };
   sendOwnerMessage: { args: [conversationId: string, text: string]; result: WorkItem };
   retryOwnerMessage: { args: [conversationId: string, workItemId: string]; result: WorkItem };
+  addOwnerAttachment: { args: [conversationId: string, name: string, data: string]; result: { name: string; relativePath: string } };
+  attachmentPreview: { args: [conversationId: string, relativePath: string]; result: { mimeType: string; data: string } | null };
   cancelTurn: { args: [conversationId: string]; result: null };
   markSeen: { args: [conversationId: string]; result: null };
   listSchedules: { args: []; result: ScheduleRecord[] };
@@ -76,6 +79,8 @@ export const BRIDGE_COMMANDS = [
   'conversationTranscript',
   'sendOwnerMessage',
   'retryOwnerMessage',
+  'addOwnerAttachment',
+  'attachmentPreview',
   'cancelTurn',
   'markSeen',
   'listSchedules',
@@ -186,6 +191,8 @@ export interface CatsBotBridge {
   onNavigate(listener: (tab: string) => void): Unsubscribe;
   window: {
     hide(): Promise<null>;
+    /** SPEC-003 FR-9: the note and the floating Cats hide while the owner drags out a region. */
+    captureScreenshot(): Promise<DesktopScreenshotCaptureResult>;
     layerMenu(): Promise<null>;
     onLayer(listener: (layer: NoteLayer) => void): Unsubscribe;
     onLifted(listener: () => void): Unsubscribe;

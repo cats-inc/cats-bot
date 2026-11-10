@@ -180,6 +180,16 @@ export class FloatingBot {
     await this.show();
   }
 
+  /** SPEC-003 FR-9: out of a region screenshot, without changing whether it is shown; returns how to give it back. */
+  hideForScreenshot(): () => void {
+    const window = this.browserWindow;
+    if (!window || !window.isVisible()) return () => {};
+    window.hide();
+    return () => {
+      if (!window.isDestroyed() && this.options.state().visible) window.showInactive();
+    };
+  }
+
   hide(): void {
     const state = this.options.state();
     state.visible = false;

@@ -353,6 +353,10 @@ export interface BotHostApi {
   sendOwnerMessage(conversationId: string, text: string): Promise<WorkItem>;
   /** The latest owner message's failed turn, queued again; refused while the conversation is busy. */
   retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem>;
+  /** SPEC-003 FR-8: one file for the owner's next message, base64, in the bot's working directory. */
+  addOwnerAttachment(conversationId: string, name: string, data: string): Promise<{ name: string; relativePath: string }>;
+  /** SPEC-003 FR-8: an attached image as base64, or null when it is gone or not an image. */
+  attachmentPreview(conversationId: string, relativePath: string): Promise<{ mimeType: string; data: string } | null>;
   cancelTurn(conversationId: string): Promise<void>;
   markSeen(conversationId: string): Promise<void>;
   listSchedules(): Promise<ScheduleRecord[]>;

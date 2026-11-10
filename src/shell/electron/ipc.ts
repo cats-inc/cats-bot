@@ -18,7 +18,7 @@ export const HOST_COMMANDS: readonly HostCommand[] = [...CORE_COMMANDS, 'openPro
  * answered there or in the CLI, never from Settings, the floating cat or a provider request.
  */
 export const NOTE_ONLY_COMMANDS: readonly HostCommand[] = [
-  'conversationTranscript', 'retryOwnerMessage',
+  'conversationTranscript', 'retryOwnerMessage', 'addOwnerAttachment', 'attachmentPreview',
   'providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl',
   'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
 ];

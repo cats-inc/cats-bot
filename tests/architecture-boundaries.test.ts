@@ -190,8 +190,12 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const providerSetup = target === join(srcRoot, 'shared', 'providerSetup.ts');
         // SPEC-011 FR-2: the page checks the daily rhythm with the core's rule.
         const heartbeatRhythm = target === join(srcRoot, 'shared', 'heartbeatRhythm.ts');
+        // SPEC-003 FR-8: the attachment block is written by the note and read by both.
+        const attachments = target === join(srcRoot, 'shared', 'attachments.ts');
+        // SPEC-003 FR-9: the region screenshot's geometry and overlay contracts, shared by the shell and the overlay page.
+        const screenshot = dirname(target) === join(srcRoot, 'shared', 'screenshot');
         if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
-          && (!typeOnly || !allowed.includes(target)))
+          && !attachments && !screenshot && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
@@ -206,6 +210,11 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         if (avatars) assert.deepEqual(importSpecifiers(target), [], 'the Cat looks stay plain data');
         if (providerSetup) assert.deepEqual(importSpecifiers(target), [], 'setup readiness stays browser safe');
         if (heartbeatRhythm) assert.deepEqual(importSpecifiers(target), [], 'the daily rhythm stays browser safe');
+        if (attachments) assert.deepEqual(importSpecifiers(target), [], 'the attachment block stays browser safe');
+        if (screenshot) {
+          for (const specifier of importSpecifiers(target))
+            assert.ok(specifier.startsWith('./') && specifier.endsWith('.ts'), `${relative(repoRoot, target)} imports only its own module (${specifier})`);
+        }
       }
     }
   }

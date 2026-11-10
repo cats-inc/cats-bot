@@ -1,5 +1,6 @@
 import { delimiter, isAbsolute } from 'node:path';
 
+import { MAX_ATTACHMENT_BYTES } from '../../shared/attachments.ts';
 import { isHubLanguageReport, type HubLanguageReport } from '../../shared/language.ts';
 import { isTerminalWorkState } from '../queue/workItems.ts';
 import { isValidBotId } from '../store/paths.ts';
@@ -22,7 +23,8 @@ import type {
 export const CORE_COMMANDS = [
   'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities',
   'getProfile', 'updateProfile', 'listConversations', 'createConversation', 'deleteConversation',
-  'transcript', 'conversationTranscript', 'sendOwnerMessage', 'retryOwnerMessage', 'cancelTurn', 'markSeen',
+  'transcript', 'conversationTranscript', 'sendOwnerMessage', 'retryOwnerMessage', 'addOwnerAttachment',
+  'attachmentPreview', 'cancelTurn', 'markSeen',
   'listSchedules', 'cancelSchedule', 'listWorkItems', 'resolveApproval', 'status',
   'listProviders', 'listModels', 'renameConversation', 'telegramStatus', 'setTelegramToken',
   'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
@@ -88,6 +90,8 @@ function asDelivery(value: unknown): BotDelivery {
 
 const MAX_ID = 200;
 const MAX_TEXT = 1024 * 1024;
+/** SPEC-003 FR-8: base64 of the largest attachment. */
+const MAX_ATTACHMENT_BASE64 = Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4;
 
 /**
  * What a host reads of a history that only grows: the newest part within a
@@ -127,6 +131,13 @@ function asString(value: unknown, name: string, max = MAX_ID): string {
   return value;
 }
 
+/** SPEC-003 FR-8: an attachment's content; an empty file is a file. */
+function asBase64(value: unknown, max: number): string {
+  if (typeof value !== 'string') throw new Error('data must be a string');
+  if (value.length > max) throw new Error('data is too long');
+  return value;
+}
+
 function asOptionalConversation(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : asString(value, 'conversationId');
 }
@@ -159,6 +170,11 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'sendOwnerMessage': return target.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text', MAX_TEXT));
     case 'retryOwnerMessage':
       return target.retryOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'workItemId'));
+    case 'addOwnerAttachment':
+      return target.addOwnerAttachment(asString(args[0], 'conversationId'), asString(args[1], 'name', 1024),
+        asBase64(args[2], MAX_ATTACHMENT_BASE64));
+    case 'attachmentPreview':
+      return target.attachmentPreview(asString(args[0], 'conversationId'), asString(args[1], 'relativePath', 1024));
     case 'cancelTurn':
       await target.cancelTurn(asString(args[0], 'conversationId'));
       return null;

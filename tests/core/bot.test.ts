@@ -579,3 +579,21 @@ test('a failed owner message is run again as the same message, and only the late
     await core.stop();
   }
 });
+
+test('an owner attachment is stored in the working directory and named in front of the message (SPEC-003 FR-8)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'attach', core: fastRetries });
+  await core.start();
+  try {
+    const cwd = (await core.getProfile()).permissions.cwd;
+    const stored = await core.addOwnerAttachment('home', 'cat.png', Buffer.from('png bytes').toString('base64'));
+    assert.deepEqual(stored, { name: 'cat.png', relativePath: '.cats-attachments/cat.png' });
+    assert.equal(readFileSync(`${cwd}/.cats-attachments/cat.png`, 'utf8'), 'png bytes');
+    assert.deepEqual(await core.attachmentPreview('home', stored.relativePath), { mimeType: 'image/png', data: Buffer.from('png bytes').toString('base64') });
+    await assert.rejects(core.addOwnerAttachment('nowhere', 'cat.png', 'AA=='), /nowhere/u);
+    const item = await sendAndWait(core, 'home', `[Attached files in working directory:]\n- ${stored.relativePath}\n\nwhat is this?`);
+    assert.equal(item.state, 'completed');
+    assert.match(item.result?.text ?? '', /\.cats-attachments\/cat\.png/u, 'the provider got the path');
+  } finally {
+    await core.stop();
+  }
+});

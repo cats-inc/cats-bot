@@ -86,6 +86,8 @@ export class NoteWindows {
   private saveTimer: NodeJS.Timeout | null = null;
   /** Desktop or wallpaper notes taken out of their layer while the owner uses them. */
   private readonly lifted = new Set<string>();
+  /** SPEC-003 FR-9: notes hidden while a region screenshot is taken; they keep their lifted state. */
+  private readonly hiddenForScreenshot = new Set<string>();
   private healthTimer: NodeJS.Timeout | null = null;
 
   constructor(options: NoteWindowsOptions) {
@@ -389,7 +391,8 @@ export class NoteWindows {
   /** Returns a lifted note to its layer once the owner has moved on to another window. */
   private settle(conversationId: string, window: BrowserWindow): void {
     setTimeout(() => {
-      if (window.isDestroyed() || window.isFocused() || !this.lifted.has(conversationId)) return;
+      if (window.isDestroyed() || window.isFocused() || !this.lifted.has(conversationId)
+        || this.hiddenForScreenshot.has(conversationId)) return;
       this.lifted.delete(conversationId);
       if (window.isVisible()) this.guarded(`conversation ${conversationId}: returning to its layer`, () => this.applyLayer(conversationId, window));
     }, SETTLE_MS);
@@ -429,6 +432,29 @@ export class NoteWindows {
           this.log(`conversation ${conversationId}: attached to the ${view.layer} layer again`);
       }
     }
+  }
+
+  /**
+   * SPEC-003 FR-9: hides a note while a region screenshot is taken and returns how to show it again with the
+   * focus. It is not a close: the note stays open, and a lifted desktop or wallpaper note stays lifted.
+   */
+  hideForScreenshot(conversationId: string): () => void {
+    const window = this.windows.get(conversationId);
+    // An attached note is never the one asking: a click lifts it first.
+    if (!window || window.isDestroyed() || !window.isVisible() || this.options.desktop?.isAttached(handleOf(window))) {
+      return () => {};
+    }
+    this.hiddenForScreenshot.add(conversationId);
+    window.hide();
+    return () => {
+      this.hiddenForScreenshot.delete(conversationId);
+      if (!this.mayShow(conversationId, window)) return;
+      window.show();
+      window.focus();
+      // Its blur came while it was hidden; if the focus does not come back (Windows foreground rules),
+      // no later blur would return a lifted note to its layer.
+      if (this.lifted.has(conversationId)) this.settle(conversationId, window);
+    };
   }
 
   hide(conversationId: string): void {

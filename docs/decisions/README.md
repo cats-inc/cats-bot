@@ -54,6 +54,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [013](./013-keep-bounded-production-host-diagnostics.md) | Keep Bounded Production Host Diagnostics | Accepted | 2026-11-02 |
 | [014](./014-set-linux-avatar-input-through-the-x11-input-shape.md) | Set Linux Avatar Input through the X11 Input Shape | Accepted | 2026-11-02 |
 | [016](./016-put-macos-notes-on-the-desktop-and-wallpaper-through-window-levels.md) | Put macOS Notes on the Desktop and Wallpaper through Window Levels | Accepted | 2026-11-10 |
+| [017](./017-attach-owner-files-through-the-working-directory.md) | Attach Owner Files through the Working Directory | Accepted | 2026-11-10 |
 
 <!-- Add new ADRs above this line -->
 

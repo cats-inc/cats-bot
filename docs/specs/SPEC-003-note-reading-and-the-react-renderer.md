@@ -63,6 +63,23 @@ for the current-versus-pending boundary.
    owner message, not failed, or in a conversation with a queued or running turn. Cancelled and
    interrupted turns are not offered, and a send the note could not deliver (shown only in the note) has
    no work item to retry.
+8. FR-8: Attachments, as in Cats Desktop's composer (ADR-017). The composer has an "Add photos and files"
+   button of its own (Desktop keeps it and the screenshot in a plus menu; the note shows both as buttons);
+   picked files wait above the input as cards (images with a preview) and can be removed. On send,
+   each file (at most 10 MB) is stored by `addOwnerAttachment` in `.cats-attachments/` in the bot's working
+   directory (git-ignored there, a taken name gets a numbered one), and the message starts with Cats
+   Desktop's `[Attached files in working directory:]` block listing their relative paths, so the provider
+   CLI reads them with its own tools. A message may be only files. If storing or sending fails, nothing is
+   sent and the draft and files come back. In the transcript an owner bubble shows the block's images
+   inline (read back by `attachmentPreview`, PNG, JPEG, GIF and WebP) and other files as names; copying
+   it copies the text without the block.
+9. FR-9: Screenshots, as in Cats Desktop's composer. The composer's "Take screenshot" button hides the note
+   (without closing it; a lifted desktop or wallpaper note stays lifted) and every floating Cat, freezes
+   each display under an overlay window where the owner drags out a region (Escape cancels), and gives
+   the windows back. The region waits in the composer as a PNG file like a picked one: scaled down to
+   at most 8000 px a side and 10 MB on the overlay path, as `grim` writes it on wlroots (where a larger
+   picture is refused on send like any file over 10 MB). macOS needs Screen Recording for Cats Bot and says so; wlroots desktops use `grim`
+   and `slurp`. Cancelling or a region too small adds nothing; other failures are a line in the note.
 
 ## Acceptance
 
@@ -82,6 +99,10 @@ Full final UI-6/package/CI signoff is separate from this implemented cutover.
   completes and the buttons disappear.
 - A4a: A message whose turn failed shows "Response failed" and a retry action; retrying runs the turn
   again without a second owner bubble, and the label and action go away once the reply arrives.
+- A4b: Attaching a picture and a text file with the attach button shows two cards; sending stores both in
+  `.cats-attachments/`, the bubble shows the picture and the file name, and the reply can refer to them.
+- A4c: "Take screenshot" hides the note, shows the frozen screen, and a dragged region comes back as a
+  card in the composer of the note, which is open, visible and focused again; Escape adds nothing.
 - A5: The existing acceptance scripts (settings-page model race and saving, raising a desktop-layer
   note, unread of a background note) still pass on the new pages.
 - A6: The packaged installer shows the first-run page the first time it is opened, and after the bot is
