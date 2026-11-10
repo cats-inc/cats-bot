@@ -67,6 +67,7 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | [SPEC-009](./SPEC-009-boss-cat-role.md) | Boss Cat Role | Draft | [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md) |
 | [SPEC-010](./SPEC-010-setup-wizard.md) | Setup Wizard | Implemented; clean-machine acceptance pending | [PLAN-011](../plans/PLAN-011-setup-wizard.md) |
 | [SPEC-011](./SPEC-011-heartbeat-modes-rhythm-and-backoff.md) | Heartbeat Modes, Daily Rhythm and Back-off | Implemented | - |
+| [SPEC-012](./SPEC-012-boss-cat-status-board-and-contact-notes.md) | Boss Cat Status Board and Contact Notes | Approved; not implemented | - |
 <!-- Add new specs above this line -->
 
 ## For AI Agents
