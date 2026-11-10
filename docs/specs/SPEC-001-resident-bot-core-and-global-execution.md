@@ -452,7 +452,7 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 - [Standalone Living Bot Feasibility](../research/2026-10-27-standalone-living-bot-feasibility.md),
   [Resident Bot Architecture Assessment](../research/2026-10-27-resident-bot-architecture-assessment.md)
 - cats-runtime [docs/api.md](../../../cats-runtime/docs/api.md),
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md)
+  [SPEC-013](../../../cats-runtime/docs/specs/SPEC-013-scheduled-wakeup-substrate.md)
 - cats-platform [SPEC-124](../../../cats-platform/docs/specs/SPEC-124-alive-companion-life-loop.md)
 
 ---

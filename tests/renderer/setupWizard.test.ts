@@ -29,7 +29,7 @@ import { canCreateFromSetup } from '../../src/shared/providerSetup.ts';
 
 const step = (id: SetupStepId, status: string, extra: Partial<SetupStep> = {}): SetupStep => ({
   id, label: id, status, installed: status === 'ready', version: null, manualSteps: [], warnings: [], restartRequired: false,
-  optional: id === 'shell', planned: [], applied: [], script: null, applyCommand: null, ...extra,
+  optional: id === 'shell', planned: [], applied: [], script: null, applyCommand: null, updateCommand: null, ...extra,
 });
 const state = (...steps: SetupStep[]): ProviderSetupState => ({
   provider: 'codex', steps, canFinish: false, signIn: 'unknown', signInCommand: 'codex login',

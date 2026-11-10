@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BotProfile, BotStatus } from '../../core/types.ts';
 import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
 import { avatarUrl } from '../avatarArt.ts';
+import { AgentClisTab } from './AgentClisTab.tsx';
 import { BotTab } from './BotTab.tsx';
 import { BotsTab } from './BotsTab.tsx';
 import { NotesTab } from './NotesTab.tsx';
@@ -16,13 +17,14 @@ import { ToastContext } from './toast.ts';
  * note's ⚙ or the floating cat's menu, on the tab given by `?tab=` or later
  * by the shell. Like the note it keeps no durable state. With `?scope=hub` it
  * is Cats Bot Settings, the hub's General and Bots tabs (SPEC-008 FR-5,
- * PLAN-010), which reaches no bot's core.
+ * PLAN-010) and the Agent CLIs every cat bot shares (SPEC-013), which reaches
+ * no bot's core.
  */
 
 const api = window.catsBot;
 // A bot's settings reach only that bot; Cats Bot Settings holds the app and the bots (D17, D20).
 const BOT_TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
-const HUB_TABS = ['general', 'bots'] as const;
+const HUB_TABS = ['general', 'bots', 'clis'] as const;
 type Tab = (typeof BOT_TABS)[number] | (typeof HUB_TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   bot: 'Cat bot',
@@ -32,6 +34,7 @@ const TAB_LABELS: Record<Tab, string> = {
   app: 'Details',
   general: 'General',
   bots: 'Cat bots',
+  clis: 'Agent CLIs',
 };
 
 function isTabOf(tabs: readonly Tab[], value: string | null): value is Tab {
@@ -42,6 +45,12 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
   const { locale } = useI18n();
   const tabs: readonly Tab[] = scope === 'hub' ? HUB_TABS : BOT_TABS;
   const [tab, setTab] = useState<Tab>(isTabOf(tabs, initialTab) ? initialTab : tabs[0]!);
+  // SPEC-013 FR-3: once opened, the Agent CLIs tab stays mounted, so its results, ticks and
+  // log survive a look at another tab while a run goes on.
+  const [clisOpened, setClisOpened] = useState(tab === 'clis');
+  useEffect(() => {
+    if (tab === 'clis') setClisOpened(true);
+  }, [tab]);
   const [profile, setProfile] = useState<BotProfile | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [toastText, setToastText] = useState<string | null>(null);
@@ -119,7 +128,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
             </button>
           ))}
         </nav>
-        <main className="panels">
+        <main className={tab === 'clis' ? 'panels is-flush' : 'panels'}>
           {tab === 'bot' && profile && <BotTab profile={profile} onSaved={saved} />}
           {tab === 'notes' && <NotesTab />}
           {tab === 'life' && <LifeTab onSaved={saved} />}
@@ -127,6 +136,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
           {tab === 'app' && <AppTab />}
           {tab === 'general' && <GeneralTab />}
           {tab === 'bots' && <BotsTab />}
+          {scope === 'hub' && clisOpened && <div className="clis-host" hidden={tab !== 'clis'}><AgentClisTab /></div>}
         </main>
       </div>
       <div className="toast" id="toast" role="status" hidden={!toastText}>

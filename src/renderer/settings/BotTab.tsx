@@ -21,7 +21,7 @@ import {
 import { useToast } from './toast.ts';
 import { DesktopControlSettings } from './DesktopControlSettings.tsx';
 import { ProviderSettings } from './ProviderSettings.tsx';
-import { ProviderInstallation } from './ProviderInstallation.tsx';
+import { ProviderChecklist } from './ProviderChecklist.tsx';
 
 /**
  * SPEC-002 FR-2–FR-3: name, agent CLI, model, personality and permissions.
@@ -145,7 +145,12 @@ export function BotTab({
           </p>
         )}
         {providers.some((item) => item.id === form.provider) && (
-          <ProviderInstallation provider={form.provider} onState={onSetupState} onBusy={setInstalling} />
+          <ProviderChecklist
+            provider={form.provider}
+            label={providers.find((item) => item.id === form.provider)?.label ?? form.provider}
+            onState={onSetupState}
+            onBusy={setInstalling}
+          />
         )}
         {form.provider === 'claude' && (
           <label className="check">

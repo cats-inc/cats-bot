@@ -58,7 +58,7 @@ Where the two documents independently reached the same conclusion, this ADR adop
 - Platform's life loop, heartbeat, turn gate, Telegram polling and desktop/host mode are design references
   that can be copied, not packages that can be depended on (`exports` has only `.` and `./app-sdk`).
 - The runtime's wakeup only reattaches a worker and never sends a prompt; it is neither a scheduler nor a
-  heartbeat system (runtime SPEC-012).
+  heartbeat system (runtime SPEC-013).
 - desktop-work-fleet provides a verified native shell and two lessons (hidden WebView timers are throttled;
   a desktop window has no redirection surface), but its "non-visual resident core" is only a proposal
   (fleet ADR-058), so copying the shell cannot be assumed to yield the core.
@@ -361,7 +361,7 @@ Where the two documents complement or diverge, this ADR resolves them as follows
 ### Alternative 4: Use runtime wakeup as the bot's scheduler
 
 - **Pros**: the runtime already has a 1-second tick, cron recurrence and replay after restart.
-- **Cons**: SPEC-012 explicitly says it is not a scheduler or heartbeat system; it targets only sessions, does
+- **Cons**: SPEC-013 explicitly says it is not a scheduler or heartbeat system; it targets only sessions, does
   not send prompts, is UTC only and has no retry.
 - **Why rejected**: schedules need bot and conversation identity, a missed policy and retries; they are owned
   by the core's journal.
@@ -401,7 +401,7 @@ Where the two documents complement or diverge, this ADR resolves them as follows
   [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md)
 - cats-runtime: [docs/api.md](../../../cats-runtime/docs/api.md),
   [ADR-009](../../../cats-runtime/docs/decisions/009-keep-cats-runtime-separately-packageable-with-app-managed-local-startup.md),
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md)
+  [SPEC-013](../../../cats-runtime/docs/specs/SPEC-013-scheduled-wakeup-substrate.md)
 - cats-platform: [ADR-003](../../../cats-platform/docs/decisions/003-electron-host-manages-local-services.md),
   [ADR-110](../../../cats-platform/docs/decisions/110-keep-platform-clients-in-one-repository-with-explicit-package-boundaries.md),
   [ADR-127](../../../cats-platform/docs/decisions/127-keep-companion-cats-alive-with-a-platform-owned-life-loop.md),
