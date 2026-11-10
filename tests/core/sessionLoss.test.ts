@@ -3,7 +3,7 @@ import { after, before, test } from 'node:test';
 
 import { REBUILT_SESSION_NOTICE, isProviderSessionUnavailable } from '../../src/core/runtime/providerSession.ts';
 import type { BotCore } from '../../src/core/bot.ts';
-import { fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
+import { awakeNow, fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
  * SPEC-001 FR-11 / FR-18: the conversation is the core's, the provider session
@@ -231,7 +231,11 @@ test('a heartbeat rebuilds a lost session and leaves no error behind (FR-25)', a
   const start = Date.now();
   let offset = 0;
   const now = () => new Date(start + offset + (Date.now() - start));
-  const zeroDelay = { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0 };
+  // SPEC-011: a companion heartbeat inside the day's wake window.
+  const zeroDelay = {
+    enabled: true, mode: 'companion' as const, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0,
+    ...awakeNow(now()),
+  };
   const { core } = openTestBot({
     botsHome: home.botsHome,
     id: 'lost-heartbeat',
