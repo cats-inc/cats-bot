@@ -169,6 +169,32 @@ test('normalizeProfile fills every missing or invalid field from the fallback (F
   assert.equal(normalized.idleSleepMinutes, 15);
 });
 
+test('a heartbeat written before SPEC-011 reads as auto on Desktop\'s rhythm, and changes follow Desktop\'s rules', () => {
+  const fallback = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  const old = normalizeProfile(
+    { ...fallback, heartbeat: { enabled: false, wakeMinMinutes: 2, wakeMaxMinutes: 10, regularMinMinutes: 30, regularMaxMinutes: 120 } },
+    fallback,
+  );
+  assert.deepEqual(old.heartbeat, { ...HEARTBEAT_DEFAULTS, enabled: false });
+  assert.equal(old.heartbeat.mode, 'auto');
+  assert.deepEqual([old.heartbeat.bedtime, old.heartbeat.wakeWindowStart, old.heartbeat.wakeWindowEnd], ['23:00', '07:00', '09:00']);
+  const damaged = normalizeProfile({ ...fallback, heartbeat: { ...fallback.heartbeat, mode: 'chatty', bedtime: '25:00' } }, fallback);
+  assert.equal(damaged.heartbeat.mode, 'auto');
+  assert.equal(damaged.heartbeat.bedtime, '23:00');
+
+  const assist = applyProfilePatch(fallback, { heartbeat: { mode: 'assist', bedtime: '00:30', wakeWindowStart: '06:00', wakeWindowEnd: '08:00' } }, now);
+  assert.equal(assist.profile.heartbeat.mode, 'assist');
+  assert.equal(assist.profile.heartbeat.bedtime, '00:30');
+  assert.equal(assist.profile.configRevision, fallback.configRevision, 'the heartbeat is not a session setting');
+  assert.throws(() => applyProfilePatch(fallback, { heartbeat: { mode: 'chatty' as never } }, now), /auto, assist or companion/u);
+  assert.throws(() => applyProfilePatch(fallback, { heartbeat: { bedtime: '7pm' } }, now), /bedtime must be HH:MM/u);
+  assert.throws(() => applyProfilePatch(fallback, { heartbeat: { bedtime: '08:00' } }, now), /bedtime must fall outside the wake window/u);
+  assert.throws(() => applyProfilePatch(fallback, { heartbeat: { wakeWindowEnd: '06:00' } }, now), /must not end before it starts/u);
+  const handEdited = { ...fallback, heartbeat: { ...fallback.heartbeat, bedtime: '08:00' } };
+  assert.equal(applyProfilePatch(handEdited, { heartbeat: { enabled: false } }, now).profile.heartbeat.enabled, false,
+    'pausing never fails over times it did not change');
+});
+
 test('loadProfile protects unknown and corrupt data instead of replacing it with defaults', () => {
   const paths = botPathsFor(`${home.botsHome}/load`);
   const fallback = createProfile({ id: 'load', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });

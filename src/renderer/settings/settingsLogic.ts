@@ -1,6 +1,7 @@
 import { t } from '../localeStore.ts';
 import { resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import { botNameMessage, botNameProblem, botPersonaMessage, botPersonaProblem, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
+import { heartbeatRhythmProblem } from '../../shared/heartbeatRhythm.ts';
 import {
   LANGUAGE_OPTIONS,
   REPLY_LANGUAGE_CODES,
@@ -16,6 +17,8 @@ import type {
   BotProfilePatch,
   BotStatus,
   ConversationRecord,
+  EffectiveHeartbeatMode,
+  HeartbeatMode,
   HeartbeatPolicy,
   ModelCatalog,
   ModelSelection,
@@ -390,6 +393,10 @@ export function noteMeta(record: ConversationRecord, now = Date.now()): string {
 
 export interface LifeForm {
   heartbeat: boolean;
+  mode: HeartbeatMode;
+  bedtime: string;
+  wakeWindowStart: string;
+  wakeWindowEnd: string;
   wakeMin: string;
   wakeMax: string;
   regularMin: string;
@@ -400,6 +407,10 @@ export interface LifeForm {
 export function lifeForm(profile: BotProfile): LifeForm {
   return {
     heartbeat: profile.heartbeat.enabled,
+    mode: profile.heartbeat.mode,
+    bedtime: profile.heartbeat.bedtime,
+    wakeWindowStart: profile.heartbeat.wakeWindowStart,
+    wakeWindowEnd: profile.heartbeat.wakeWindowEnd,
     wakeMin: String(profile.heartbeat.wakeMinMinutes),
     wakeMax: String(profile.heartbeat.wakeMaxMinutes),
     regularMin: String(profile.heartbeat.regularMinMinutes),
@@ -415,9 +426,15 @@ function minutes(value: string): number {
 }
 
 export function lifePatch(form: LifeForm): { heartbeat: HeartbeatPolicy; idleSleepMinutes: number } {
+  const problem = heartbeatRhythmProblem(form);
+  if (problem) throw new Error(t(problem));
   return {
     heartbeat: {
       enabled: form.heartbeat,
+      mode: form.mode,
+      bedtime: form.bedtime,
+      wakeWindowStart: form.wakeWindowStart,
+      wakeWindowEnd: form.wakeWindowEnd,
       wakeMinMinutes: minutes(form.wakeMin),
       wakeMaxMinutes: minutes(form.wakeMax),
       regularMinMinutes: minutes(form.regularMin),
@@ -427,10 +444,29 @@ export function lifePatch(form: LifeForm): { heartbeat: HeartbeatPolicy; idleSle
   };
 }
 
+/** SPEC-011 FR-1: the mode choices; `auto` names what it means for this bot right now. */
+export function heartbeatModeOptions(effective: EffectiveHeartbeatMode | null): Array<{ value: HeartbeatMode; label: string }> {
+  const auto = t('Automatic: Assist for the Boss Cat, Companion for the others');
+  return [
+    {
+      value: 'auto',
+      label: effective
+        ? `${auto} (${effective === 'assist' ? t('now Assist') : t('now Companion')})`
+        : auto,
+    },
+    { value: 'assist', label: t('Assist: follow up on work you left unfinished') },
+    { value: 'companion', label: t('Companion: greetings and small talk') },
+  ];
+}
+
 export function nextHeartbeatText(
   status: BotStatus,
-  formatTime = (at: Date) => at.toLocaleTimeString(),
+  formatTime = (at: Date) => at.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
 ): string {
+  if (status.heartbeat.enabled && status.heartbeat.waitingForOwner)
+    return t('Heartbeat is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.', {
+      value0: String(status.heartbeat.unanswered),
+    });
   if (status.heartbeat.enabled && status.heartbeat.nextAt)
     return t('Next heartbeat around {value0}.', {
       value0: formatTime(new Date(status.heartbeat.nextAt)),

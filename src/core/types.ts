@@ -28,9 +28,24 @@ export interface BotPermissions {
   cwd: string;
 }
 
-/** SPEC-001 FR-1 / FR-25. Minutes are inclusive bounds of a uniform random draw. */
+/**
+ * SPEC-011 FR-1: what a heartbeat is for. `auto`, the default, is `assist` for
+ * the Boss Cat and `companion` for every other cat bot.
+ */
+export type HeartbeatMode = 'auto' | 'assist' | 'companion';
+export type EffectiveHeartbeatMode = Exclude<HeartbeatMode, 'auto'>;
+
+/**
+ * SPEC-001 FR-1 / FR-25, SPEC-011 FR-1. Minutes are inclusive bounds of a
+ * uniform random draw; clock values are local `HH:MM`, the same daily rhythm
+ * as Cats Desktop's companion life (its SPEC-124).
+ */
 export interface HeartbeatPolicy {
   enabled: boolean;
+  mode: HeartbeatMode;
+  bedtime: string;
+  wakeWindowStart: string;
+  wakeWindowEnd: string;
   wakeMinMinutes: number;
   wakeMaxMinutes: number;
   regularMinMinutes: number;
@@ -269,7 +284,7 @@ export type PresenceReason =
   | 'idle'
   | 'owner';
 
-export type HeartbeatKind = 'wake' | 'regular';
+export type HeartbeatKind = 'wake' | 'regular' | 'bedtime';
 export type HeartbeatResult = 'spoke' | 'quiet' | 'busy' | 'failed';
 
 /** One line of `journal.jsonl`. */
@@ -414,7 +429,19 @@ export interface BotStatus {
   bossCat: { holder: boolean; tools: boolean };
   conversations: number;
   schedules: number;
-  heartbeat: { enabled: boolean; nextAt: string | null; };
+  /**
+   * SPEC-011 FR-12: `mode` is the effective one; `unanswered` counts the
+   * unprompted messages since the owner last wrote, and `waitingForOwner` means
+   * heartbeats stopped until the owner writes again.
+   */
+  heartbeat: {
+    enabled: boolean;
+    nextAt: string | null;
+    mode: EffectiveHeartbeatMode;
+    phase: 'awake_hours' | 'rest_hours';
+    unanswered: number;
+    waitingForOwner: boolean;
+  };
   lastTickAt: string | null;
   lock: InstanceLock | null;
   telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null; };

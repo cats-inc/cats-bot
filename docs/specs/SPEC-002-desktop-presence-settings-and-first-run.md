@@ -58,7 +58,8 @@ instead of opening the alert.
    uses the provider name as the command.
 4. FR-4: There is one settings window per bot, opened from the floating Cat menu ("Bot settings…", "Manage
    conversations…") and from the ⚙ in a note's title bar; its tabs are Bot, Notes, Life, Telegram and Details
-   (the floating Cat, the bot's facts and folder), and it reaches only its own bot. Cats Bot Settings,
+   (the floating Cat, the bot's facts and folder), and it reaches only its own bot. The Life tab holds the
+   heartbeat switch, its mode and Cats Desktop's daily rhythm (SPEC-011 FR-12). Cats Bot Settings,
    the hub's own window (tray "Settings…"), has General (display language, reply language, start at
    login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows

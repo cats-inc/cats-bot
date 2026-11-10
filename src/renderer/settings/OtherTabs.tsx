@@ -4,7 +4,17 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import type { BotProfile, BotStatus, TelegramSettingsStatus } from '../../core/types.ts';
 import type { ShellStateView } from '../bridge.ts';
 import { errorText } from '../errors.ts';
-import { appFacts, lifeForm, lifePatch, nextHeartbeatText, telegramFacts, type Fact, type LifeForm } from './settingsLogic.ts';
+import {
+  appFacts,
+  heartbeatModeOptions,
+  lifeForm,
+  lifePatch,
+  nextHeartbeatText,
+  telegramFacts,
+  type Fact,
+  type LifeForm,
+} from './settingsLogic.ts';
+import type { HeartbeatMode } from '../../core/types.ts';
 import { useToast } from './toast.ts';
 import { Updates } from './Updates.tsx';
 import { LanguageField } from '../LanguageField.tsx';
@@ -56,8 +66,11 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
       toast(t('Could not save: {value0}', { value0: errorText(failure) }));
     }
   };
-  const number = (key: keyof Omit<LifeForm, 'heartbeat'>, id: string, max: number) => (
+  const number = (key: 'wakeMin' | 'wakeMax' | 'regularMin' | 'regularMax' | 'idle', id: string, max: number) => (
     <input type="number" id={id} min={1} max={max} value={form[key]} onChange={(event) => update({ [key]: event.target.value })} />
+  );
+  const clock = (key: 'bedtime' | 'wakeWindowStart' | 'wakeWindowEnd', id: string, label?: string) => (
+    <input type="time" id={id} aria-label={label} value={form[key]} onChange={(event) => update({ [key]: event.target.value })} />
   );
   return (
     <section className="panel" data-panel="life">
@@ -71,11 +84,34 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
             onChange={(event) => update({ heartbeat: event.target.checked })}
           />
           <span>
-            {t('Heartbeat: the cat bot wakes up on its own and may say something unprompted')}
+            {t('Heartbeat: on its daily rhythm, the cat bot sometimes reaches out first')}
           </span>
         </label>
+        <label className="field">
+          <span>{t('Heartbeat mode')}</span>
+          <select
+            id="life-mode"
+            value={form.mode}
+            onChange={(event) => update({ mode: event.target.value as HeartbeatMode })}
+          >
+            {heartbeatModeOptions(status?.heartbeat.mode ?? null).map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="pair">
-          <span>{t('Right after you talk, check in after')}</span>
+          <span>{t('Bedtime')}</span>
+          {clock('bedtime', 'life-bedtime')}
+        </div>
+        <div className="pair">
+          <span>{t('Wakes up between')}</span>
+          {clock('wakeWindowStart', 'life-wake-start')} {t('and')}{' '}
+          {clock('wakeWindowEnd', 'life-wake-end', t('Wakes up between'))}
+        </div>
+        <div className="pair">
+          <span>{t('After waking up, first check in after')}</span>
           {number('wakeMin', 'life-wake-min', 1440)} – {number('wakeMax', 'life-wake-max', 1440)}
           {t('minutes')}
         </div>
@@ -90,6 +126,9 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
           {number('idle', 'life-idle', 1440)}
           {t('idle minutes')}
         </div>
+        <p className="hint" id="life-rhythm">
+          {t('The cat bot stays quiet between bedtime and waking up. Each unprompted message you leave unanswered doubles the wait before the next; after 5 in a row it waits until you write.')}
+        </p>
         <p className="hint" id="life-next">
           {status ? nextHeartbeatText(status) : ''}
         </p>
