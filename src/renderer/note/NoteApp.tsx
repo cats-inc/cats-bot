@@ -10,6 +10,7 @@ import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
 import { InteractionCard } from '../interactions/InteractionCard.tsx';
 import type { NoteLayer } from '../bridge.ts';
+import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
   addEntry,
   appendDelta,
@@ -36,13 +37,21 @@ import {
  * everything else is a command through the preload bridge.
  */
 
-const LAYER_ICONS: Record<NoteLayer, string> = { normal: '▢', top: '📌', desktop: '🖥', wallpaper: '🖼' };
 const LAYER_TITLES: Record<NoteLayer, string> = {
   normal: 'Normal window',
   top: 'Always on top',
   desktop: 'On the desktop, below windows',
   wallpaper: 'On the wallpaper, below icons',
 };
+
+function LayerIcon({ layer }: { layer: NoteLayer }) {
+  const states = layerPlateStates(layer);
+  return (
+    <svg className="note-layer-icon" viewBox="0 0 24 24" aria-hidden="true">
+      {LAYER_PLATES.map((plate, index) => <path key={plate.layer} d={plate.path} className={states[index]} />)}
+    </svg>
+  );
+}
 
 const api = window.catsBot;
 
@@ -350,9 +359,10 @@ export function NoteApp() {
           className="note-button"
           id="layer"
           title={`${t(LAYER_TITLES[layer])} (${t('click to change')})`}
+          aria-label={`${t(LAYER_TITLES[layer])} (${t('click to change')})`}
           onClick={() => void api.window.layerMenu()}
         >
-          {LAYER_ICONS[layer]}
+          <LayerIcon layer={layer} />
         </button>
         <button
           className="note-button"
