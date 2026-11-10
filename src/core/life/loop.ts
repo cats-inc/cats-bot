@@ -2,7 +2,7 @@ import type { SessionBinder } from '../conversations/binder.ts';
 import type { ConversationStore } from '../conversations/store.ts';
 import { createWorkItem } from '../queue/workItems.ts';
 import { RuntimeHttpError, type RuntimeClient } from '../runtime/client.ts';
-import { resolveHeartbeatRhythm } from '../../shared/heartbeatRhythm.ts';
+import { resolveHeartbeatRhythm, type HeartbeatRhythm } from '../../shared/heartbeatRhythm.ts';
 import type {
   BotHostEvent,
   BotProfile,
@@ -35,9 +35,11 @@ import { afterFiring, isDue, settleMissed } from './schedules.ts';
  * checks the runtime, settles and fires schedules, keeps the home
  * conversation's session alive by the runtime's own session status, applies
  * the idle policy to notes, and decides when the next heartbeat turn is due.
- * SPEC-011: the heartbeat follows the bot's daily rhythm and backs off while
- * the owner does not answer; that state is kept in `life.json`, so neither a
- * restart nor a reboot counts as the owner answering.
+ * SPEC-011: with the heartbeat on, home follows the bot's daily rhythm as a
+ * Desktop Cat does: it sleeps in rest hours (a message still wakes it) and
+ * wakes at the day's wake time. The heartbeat backs off while the owner does
+ * not answer; that state is kept in `life.json`, so neither a restart nor a
+ * reboot counts as the owner answering.
  *
  * Shape adapted from cats-platform `src/products/chat/companion/life/loop.ts`
  * at revision 595e9ca (MIT), per ADR-001 §1.
@@ -47,9 +49,14 @@ export const LIFE_TICK_INTERVAL_MS = 60_000;
 export const LIFE_STARTUP_DELAY_MS = 5_000;
 export const LIFE_WAKE_BACKOFF_MS = 5 * 60_000;
 export const AWAITING_OWNER_TIMEOUT_MS = 24 * 60 * 60_000;
+/** SPEC-011 FR-17: in rest hours home goes to sleep once it is this quiet (Desktop's 15 minutes). */
+export const LIFE_REST_IDLE_MS = 15 * 60_000;
 
 export type LifeOutcome =
   | 'awake'
+  | 'asleep'
+  | 'slept'
+  | 'sleep_deferred'
   | 'busy_turn'
   | 'resumed'
   | 'rebuilt'
@@ -109,6 +116,8 @@ export interface LifeLoopDependencies {
   ensureRuntime(): Promise<boolean>;
   isTurnRunning(conversationId?: string): boolean;
   hasQueuedWork(coalesceKey: string): boolean;
+  /** Whether work for this conversation waits in the queue. */
+  hasQueuedWorkIn(conversationId: string): boolean;
   enqueue(item: WorkItem): void;
   schedules(): ScheduleRecord[];
   saveSchedule(schedule: ScheduleRecord): void;
@@ -125,6 +134,7 @@ export interface LifeLoopDependencies {
   awaitingOwnerTimeoutMs?: number;
   busyRetryMs?: number;
   failedRetryMs?: number;
+  restIdleMs?: number;
 }
 
 interface HomeMemory {
@@ -137,6 +147,8 @@ interface HomeMemory {
   catchUpUsed: boolean;
   /** Whether this process has planned a heartbeat yet (SPEC-011 FR-11). */
   planned: boolean;
+  /** Home was asleep for the night, so the next wake in awake hours is the rhythm's (SPEC-011 FR-18). */
+  resting: boolean;
 }
 
 function emptyHeartbeatState(): HeartbeatState {
@@ -178,6 +190,7 @@ export class LifeLoop {
     pendingReview: null,
     catchUpUsed: false,
     planned: false,
+    resting: false,
   };
   private beat: HeartbeatState;
   private lastTickAt: number | null = null;
@@ -363,8 +376,15 @@ export class LifeLoop {
     }
   }
 
-  /** FR-20: keep the home conversation's session alive by the runtime's own status. */
+  /**
+   * FR-20: keep the home conversation's session alive by the runtime's own
+   * status. SPEC-011 FR-16: with the heartbeat on, rest hours put it to sleep
+   * instead, and the day's wake time wakes it.
+   */
   private async reconcileHome(now: Date, report: LifeTickReport): Promise<LifeOutcome> {
+    const profile = this.deps.profile();
+    const rhythm = resolveHeartbeatRhythm(profile.heartbeat, profile.id, now);
+    if (profile.heartbeat.enabled && rhythm.phase === 'rest_hours') return this.restHome(now, rhythm, report);
     const home = this.deps.conversations.home();
     const client = this.deps.client()!;
     if (this.deps.isTurnRunning(home.id)) {
@@ -394,6 +414,8 @@ export class LifeLoop {
       }
     }
     if (!needsBind) {
+      // Woken by a message before the wake time: it simply stays up.
+      this.memory.resting = false;
       this.memory.backoffUntil = 0;
       this.memory.failureRecorded = false;
       this.memory.awakeSince ??= now.getTime();
@@ -415,11 +437,114 @@ export class LifeLoop {
     }
     this.memory.backoffUntil = 0;
     this.memory.failureRecorded = false;
-    this.memory.awakeSince ??= now.getTime();
-    const reason: PresenceReason = bound.how === 'resumed' ? 'resumed' : 'rebuilt';
+    let reason: PresenceReason = bound.how === 'resumed' ? 'resumed' : 'rebuilt';
+    if (this.memory.resting) {
+      // SPEC-011 FR-18: the morning. A heartbeat that lapsed overnight waits the wake delay;
+      // a later (backed-off) one keeps its time.
+      this.memory.resting = false;
+      this.memory.awakeSince = now.getTime();
+      if (this.beat.nextAt !== null && ms(this.beat.nextAt) <= now.getTime()) this.scheduleHeartbeat('wake', now.getTime());
+      reason = 'rhythm';
+    } else {
+      this.memory.awakeSince ??= now.getTime();
+    }
     this.presence(home.id, 'awake', reason, now);
     report.reason = reason;
     return bound.how === 'resumed' ? 'resumed' : 'rebuilt';
+  }
+
+  /**
+   * SPEC-011 FR-16 / FR-17 (Desktop SPEC-124 FR-8, FR-12, FR-17, FR-24): rest
+   * hours. A session still awake goes to sleep once home has been quiet for
+   * 15 minutes, after one good night in `companion`; the session id is kept,
+   * so the next wake resumes it. A message at night wakes it through its turn
+   * as usual, and it falls asleep again the same way.
+   */
+  private async restHome(now: Date, rhythm: HeartbeatRhythm, report: LifeTickReport): Promise<LifeOutcome> {
+    const home = this.deps.conversations.home();
+    const nowMs = now.getTime();
+    if (this.deps.isTurnRunning(home.id)) {
+      this.memory.awakeSince ??= nowMs;
+      return 'busy_turn';
+    }
+    const { attachment } = home;
+    if (!attachment.sessionId || (attachment.state !== 'ready' && attachment.state !== 'initializing')) {
+      this.memory.awakeSince = null;
+      this.memory.resting = true;
+      this.holdHeartbeatUntilWake(rhythm);
+      return 'asleep';
+    }
+    this.memory.awakeSince ??= nowMs;
+    if (
+      this.memory.pendingHeartbeatId !== null
+      || this.deps.hasQueuedWork('heartbeat')
+      || this.deps.hasQueuedWorkIn(home.id)
+    ) {
+      return 'sleep_deferred';
+    }
+    const restStart = rhythm.restStartedAt.getTime();
+    const lastMessage = Math.max(ms(home.lastOwnerMessageAt), ms(home.lastBotMessageAt));
+    // The good night itself does not keep it up; anything said after it does.
+    const saidGoodNight = ms(this.beat.lastBedtimeAt) >= restStart && lastMessage <= ms(this.beat.lastBedtimeAt);
+    if (!saidGoodNight && nowMs - lastMessage < (this.deps.restIdleMs ?? LIFE_REST_IDLE_MS)) return 'sleep_deferred';
+    // Awake past bedtime only because someone talked counts as dozing off again (as on Desktop).
+    const reason: PresenceReason = this.memory.awakeSince > restStart || (lastMessage >= restStart && !saidGoodNight)
+      ? 'idle'
+      : 'rest';
+    if (reason === 'rest' && this.goodNightDue(now, restStart)) {
+      if (this.deps.isTurnRunning()) return 'sleep_deferred';
+      this.queueHeartbeat('bedtime', now, null, null);
+      report.heartbeat = { kind: 'bedtime', action: 'queued' };
+      return 'sleep_deferred';
+    }
+
+    const { sessionId } = attachment;
+    try {
+      await this.deps.client()!.closeSession(sessionId);
+    } catch (error) {
+      if (!(error instanceof RuntimeHttpError && error.status === 404)) {
+        this.deps.log(`home session ${sessionId}: sleep failed: ${error instanceof Error ? error.message : String(error)}`);
+        return 'runtime_unknown';
+      }
+    }
+    // A turn that bound the session meanwhile resumes it on its own; only an untouched one is marked.
+    const current = this.deps.conversations.home().attachment;
+    if (
+      current.sessionId === sessionId
+      && (current.state === 'ready' || current.state === 'initializing')
+      && !this.deps.isTurnRunning(home.id)
+    ) {
+      const updated = this.deps.conversations.setAttachment(home.id, { state: 'sleeping' });
+      this.deps.emit({ type: 'conversation.updated', conversation: updated });
+    }
+    this.memory.awakeSince = null;
+    this.memory.resting = true;
+    this.holdHeartbeatUntilWake(rhythm);
+    this.presence(home.id, 'sleeping', reason, now);
+    report.reason = reason;
+    return 'slept';
+  }
+
+  /**
+   * SPEC-011 FR-17: one good night a night in `companion`, soon after bedtime,
+   * when the bot was awake before it, nobody talked since, and nothing is unanswered.
+   */
+  private goodNightDue(now: Date, restStart: number): boolean {
+    return this.deps.heartbeatMode() === 'companion'
+      && this.unanswered() === 0
+      && now.getTime() - restStart < HEARTBEAT_BEDTIME_WINDOW_MS
+      && ms(this.beat.lastBedtimeAt) < restStart;
+  }
+
+  /**
+   * SPEC-011 FR-5 / FR-18: the heartbeat sleeps too. One that would fall due
+   * overnight moves to the wake delay after the next wake time; a later one
+   * (backed off) keeps its time, and one waiting for the owner stays unset.
+   */
+  private holdHeartbeatUntilWake(rhythm: HeartbeatRhythm): void {
+    if (this.unanswered() >= HEARTBEAT_MAX_UNANSWERED) return;
+    const wakeAt = rhythm.nextWakeAt.getTime();
+    if (this.beat.nextAt === null || ms(this.beat.nextAt) < wakeAt) this.scheduleHeartbeat('wake', wakeAt);
   }
 
   private presence(conversationId: string, presence: PresenceState, reason: PresenceReason, now: Date): void {
@@ -501,15 +626,6 @@ export class LifeLoop {
       && ms(this.beat.lastWakeAt) < wakeAt.getTime();
   }
 
-  /** SPEC-011 FR-8: `companion` says good night once, soon after bedtime, if it was awake before it. */
-  private bedtimeDue(now: Date, restStartedAt: Date, mode: EffectiveHeartbeatMode): boolean {
-    return mode === 'companion'
-      && this.unanswered() === 0
-      && now.getTime() - restStartedAt.getTime() < HEARTBEAT_BEDTIME_WINDOW_MS
-      && this.memory.awakeSince !== null && this.memory.awakeSince <= restStartedAt.getTime()
-      && ms(this.beat.lastBedtimeAt) < restStartedAt.getTime();
-  }
-
   /**
    * SPEC-011 FR-6: the first heartbeat of a stretch: soon after the wake time
    * when a greeting is due, at the next wake time during rest hours, and an
@@ -565,33 +681,29 @@ export class LifeLoop {
       }
     }
 
-    let kind: HeartbeatKind;
     if (rhythm.phase === 'rest_hours') {
-      if (!this.bedtimeDue(now, rhythm.restStartedAt, mode)) {
-        // SPEC-011 FR-5: nothing is said in rest hours; a due heartbeat waits for the next wake time.
-        if (ms(this.beat.nextAt) <= now.getTime()) {
-          this.scheduleHeartbeat('wake', rhythm.nextWakeAt.getTime());
-          report.heartbeat = { kind: 'regular', action: 'deferred_rest' };
-        }
-        return;
+      // SPEC-011 FR-5: nothing is said in rest hours (the good night is the rest step's, FR-17);
+      // a due heartbeat waits for the next wake time.
+      if (ms(this.beat.nextAt) <= now.getTime()) {
+        this.scheduleHeartbeat('wake', rhythm.nextWakeAt.getTime());
+        report.heartbeat = { kind: 'regular', action: 'deferred_rest' };
       }
-      kind = 'bedtime';
-    } else {
-      if (now.getTime() < ms(this.beat.nextAt)) return;
-      kind = this.wakeGreetingDue(now, rhythm.wakeAt) ? 'wake' : 'regular';
+      return;
     }
+    if (now.getTime() < ms(this.beat.nextAt)) return;
+    const kind: HeartbeatKind = this.wakeGreetingDue(now, rhythm.wakeAt) ? 'wake' : 'regular';
 
     const lastOwnerAt = this.lastOwnerAt();
     if (now.getTime() - lastOwnerAt < HEARTBEAT_QUIET_AFTER_OWNER_MS) {
-      // An owner who is talking is not interrupted; a bedtime good night waits within its window,
-      // and a good morning is not said late into a conversation (as on Desktop).
+      // An owner who is talking is not interrupted, and a good morning is not said late into a
+      // conversation (as on Desktop).
       if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
-      if (kind !== 'bedtime') this.scheduleHeartbeat('regular', lastOwnerAt + HEARTBEAT_QUIET_AFTER_OWNER_MS);
+      this.scheduleHeartbeat('regular', lastOwnerAt + HEARTBEAT_QUIET_AFTER_OWNER_MS);
       report.heartbeat = { kind, action: 'deferred_owner' };
       return;
     }
     if (this.deps.isTurnRunning()) {
-      if (kind !== 'bedtime') this.beat.nextAt = new Date(now.getTime() + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS)).toISOString();
+      this.beat.nextAt = new Date(now.getTime() + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS)).toISOString();
       report.heartbeat = { kind, action: 'deferred_turn' };
       return;
     }
@@ -619,10 +731,18 @@ export class LifeLoop {
       fingerprint = built.fingerprint;
     }
 
+    this.queueHeartbeat(kind, now, review, fingerprint);
+    report.heartbeat = { kind, action: 'queued' };
+  }
+
+  private queueHeartbeat(kind: HeartbeatKind, now: Date, review: string | null, fingerprint: string | null): void {
+    const profile = this.deps.profile();
+    const mode = this.deps.heartbeatMode();
+    const lastOwnerAt = this.lastOwnerAt();
     const item = createWorkItem({
       kind: 'heartbeat',
       source: `heartbeat:${kind}`,
-      conversationId: home.id,
+      conversationId: this.deps.conversations.home().id,
       prompt: buildHeartbeatPrompt({
         kind,
         mode,
@@ -630,7 +750,7 @@ export class LifeLoop {
         awakeSince: this.memory.awakeSince === null ? null : new Date(this.memory.awakeSince),
         lastOwnerMessageAt: Number.isFinite(lastOwnerAt) ? new Date(lastOwnerAt) : null,
         botName: profile.name,
-        unanswered,
+        unanswered: this.unanswered(),
         review,
       }),
       coalesceKey: 'heartbeat',
@@ -638,7 +758,6 @@ export class LifeLoop {
     this.memory.pendingHeartbeatId = item.id;
     this.memory.pendingReview = fingerprint;
     this.deps.enqueue(item);
-    report.heartbeat = { kind, action: 'queued' };
     this.deps.log(`heartbeat ${mode} ${kind} queued as ${item.id}`);
   }
 
@@ -654,6 +773,13 @@ export class LifeLoop {
     const nowMs = now.getTime();
     this.deps.journal({ type: 'heartbeat', at: now.toISOString(), kind, result });
     this.deps.log(`heartbeat ${kind} ${result}`);
+    if (kind === 'bedtime') {
+      // SPEC-011 FR-17: one good night a night, whatever came of it. It expects no answer, and
+      // the rest step that asked for it puts home to sleep next and holds the schedule.
+      this.beat.lastBedtimeAt = now.toISOString();
+      this.persist();
+      return;
+    }
     if (result === 'busy') {
       this.beat.nextAt = new Date(nowMs + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS)).toISOString();
       this.persist();
@@ -665,10 +791,8 @@ export class LifeLoop {
       return;
     }
     if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
-    if (kind === 'bedtime') this.beat.lastBedtimeAt = now.toISOString();
-    if (result === 'spoke' && kind !== 'bedtime') {
-      // SPEC-011 FR-9 / FR-10: one more message the owner has not answered yet; a good night
-      // goes out as the owner leaves and expects no answer.
+    if (result === 'spoke') {
+      // SPEC-011 FR-9 / FR-10: one more message the owner has not answered yet.
       this.beat.unanswered = this.unanswered() + 1;
       this.beat.lastSpokeAt = now.toISOString();
     } else if (review !== null) {

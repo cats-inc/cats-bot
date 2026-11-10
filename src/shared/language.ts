@@ -266,8 +266,8 @@ export const zhTW: Record<string, string> = {
   'Open direct message': '開啟私訊',
   'New conversation': '新增對話',
   'Manage conversations…': '管理對話…',
-  'Pause heartbeat': '暫停心跳',
-  'Resume heartbeat': '恢復心跳',
+  'Pause own initiative': '暫停自主活動',
+  'Resume own initiative': '恢復自主活動',
   'Start at login': '登入時啟動',
   'Show floating cats': '顯示所有浮動貓咪',
   'Arrange all floating cats': '將所有貓咪歸位排整齊',
@@ -354,9 +354,9 @@ export const zhTW: Record<string, string> = {
   'Folder:': '資料夾：',
   'Full machine access': '完整電腦存取',
   'Grant duration': '授權期間',
-  'Heartbeat: on its daily rhythm, the cat bot sometimes reaches out first':
-    '心跳（Heartbeat）：機器貓依作息醒著，偶爾主動找你',
-  'Heartbeat mode': '心跳模式',
+  'Own initiative: the cat bot stays awake on its daily rhythm and does things on its own now and then':
+    '自主活動：機器貓依作息醒著，定時自己做點事',
+  'What it does on its own initiative': '自主活動要做什麼',
   'Automatic: Assist for the Boss Cat, Companion for the others': '自動：主控貓用協助，其他機器貓用陪伴',
   'now Assist': '目前為協助',
   'now Companion': '目前為陪伴',
@@ -365,10 +365,10 @@ export const zhTW: Record<string, string> = {
   Bedtime: '就寢時間',
   'Wakes up between': '起床時間介於',
   and: '到',
-  'The cat bot stays quiet between bedtime and waking up. Each unprompted message you leave unanswered doubles the wait before the next; after 5 in a row it waits until you write.':
-    '就寢到起床之間，機器貓不會主動發言。你每有一則主動訊息沒回，下一次就會多等一倍；連續 5 則沒回，就會等你先開口。',
-  'Heartbeat is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.':
-    '心跳正在等你：已有 {value0} 則主動訊息沒有回覆，等你傳訊息後才會再開始。',
+  'Between bedtime and waking up the cat bot sleeps: it takes no initiative, and its direct message falls asleep after 15 quiet minutes. A message from you wakes it to answer. Each unprompted message you leave unanswered doubles the wait before the next; after 5 in a row it waits until you write.':
+    '就寢到起床之間，機器貓會去睡：不做自主活動，私訊安靜 15 分鐘後就睡著；你傳訊息會叫醒他回覆。你每有一則主動訊息沒回，下一次就會多等一倍；連續 5 則沒回，就會等你先開口。',
+  'Own initiative is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.':
+    '自主活動正在等你：已有 {value0} 則主動訊息沒有回覆，等你傳訊息後才會再開始。',
   'Check the times: bedtime must fall outside the wake window, and the window must not end before it starts.':
     '請檢查時間：就寢時間不能落在起床區間內，起床區間的結束也不能早於開始。',
   'Times must be HH:MM': '時間格式必須是 HH:MM',
@@ -564,7 +564,7 @@ export const zhTW: Record<string, string> = {
   Rename: '重新命名',
   'Restart and install': '重新啟動並安裝',
   Result: '結果',
-  'After waking up, first check in after': '起床後，第一次心跳要再過',
+  'After waking up, first acts on its own after': '起床後，第一次自主活動要再過',
   'Runtime dynamic tools': 'Runtime 動態工具',
   'Save provider policy': '儲存 provider 政策',
   'Save token': '儲存權杖',
@@ -707,9 +707,9 @@ export const zhTW: Record<string, string> = {
     '目前回覆完成後，Runtime 會為 {value0} 重新啟動。',
   'The runtime restarts with Claude in Chrome {value0} once the current reply has finished.':
     '目前回覆完成後，Runtime 會重新啟動，並將 Claude in Chrome 設為 {value0}。',
-  'The next heartbeat is drawn once the cat bot is up.': '機器貓啟動後會安排下次心跳。',
-  'Heartbeat is paused.': '心跳已暫停。',
-  'Next heartbeat around {value0}.': '下次心跳約在 {value0}。',
+  'The next activity is planned once the cat bot is up.': '機器貓啟動後會安排下次自主活動。',
+  'Own initiative is paused.': '自主活動已暫停。',
+  'Next activity on its own around {value0}.': '下次自主活動約在 {value0}。',
   'no messages yet': '還沒有訊息',
   'just now': '剛剛',
   '{value0} min ago': '{value0} 分鐘前',

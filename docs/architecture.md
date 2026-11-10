@@ -196,13 +196,14 @@ does not establish browser/desktop helper availability or successful invocation.
   backoff, settle and fire schedules, keep the home session attached by the
   runtime's own session status (`initializing`/`ready`/`busy` are live and left
   alone; `closing`/`closed` resume; 404 rebuilds; unreachable means no action),
+  or with the heartbeat on put it to sleep in rest hours once it is quiet (SPEC-011),
   put idle notes to sleep, expire unanswered approvals, and decide when a
   heartbeat turn is due. `schedules.ts` and `cron.ts` hold durable one-time and
   cron schedules evaluated in an IANA zone with skip/coalesce/run_once missed
   policies; `heartbeat.ts` the `companion` and `assist` prompts, the delays with their
   unanswered back-off and the `[quiet]` rule, `review.ts` the `assist` review of the bot's
-  own conversations, and `src/shared/heartbeatRhythm.ts` Cats Desktop's daily rhythm
-  (SPEC-011); `recovery.ts`
+  own conversations, and `src/shared/heartbeatRhythm.ts` Cats Desktop's daily rhythm, by
+  which home also sleeps in rest hours and wakes at the wake time (SPEC-011); `recovery.ts`
   the evidence check that settles interrupted turns by the runtime transcript:
   only messages after the run's journaled history baseline count, and a reply
   completes the turn only when every tool call the core saw has its result

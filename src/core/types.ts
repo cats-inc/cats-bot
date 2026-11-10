@@ -287,7 +287,10 @@ export type PresenceReason =
   | 'wake_failed'
   | 'runtime_unavailable'
   | 'idle'
-  | 'owner';
+  | 'owner'
+  /** SPEC-011 FR-16 / FR-18: asleep for the night, and awake again at the day's wake time. */
+  | 'rest'
+  | 'rhythm';
 
 export type HeartbeatKind = 'wake' | 'regular' | 'bedtime';
 export type HeartbeatResult = 'spoke' | 'quiet' | 'busy' | 'failed';
