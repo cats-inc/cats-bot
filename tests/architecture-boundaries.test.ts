@@ -194,8 +194,10 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const attachments = target === join(srcRoot, 'shared', 'attachments.ts');
         // SPEC-003 FR-9: the region screenshot's geometry and overlay contracts, shared by the shell and the overlay page.
         const screenshot = dirname(target) === join(srcRoot, 'shared', 'screenshot');
+        // SPEC-003 FR-10: the dictation contract and its pure rules, shared by the shell and the note.
+        const voice = target === join(srcRoot, 'shared', 'voice.ts');
         if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
-          && !attachments && !screenshot && (!typeOnly || !allowed.includes(target)))
+          && !attachments && !screenshot && !voice && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
@@ -215,6 +217,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
           for (const specifier of importSpecifiers(target))
             assert.ok(specifier.startsWith('./') && specifier.endsWith('.ts'), `${relative(repoRoot, target)} imports only its own module (${specifier})`);
         }
+        if (voice) assert.deepEqual(importSpecifiers(target), [], 'the dictation contract stays browser safe');
       }
     }
   }

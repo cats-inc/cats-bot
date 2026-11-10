@@ -482,9 +482,11 @@ html { font-size: 16px; }
 .catsConversation .transcriptMessageTop strong { overflow-wrap: anywhere; min-width: 0; }
 .catsConversation .entry-meta { display: block; margin-top: 4px; color: var(--muted); font-size: 0.72rem; }
 
-/* SPEC-003 FR-8 and FR-9: the attach and screenshot buttons and the files for the next message, as in Cats Desktop's composer. */
+/* SPEC-003 FR-8, FR-9 and FR-10: the attach, screenshot and dictation buttons and the files for the next
+   message, as in Cats Desktop's composer. */
 .note-actions { align-items: center; }
 .composerIconButton {
+  position: relative;
   display: grid;
   width: 28px;
   height: 28px;
@@ -541,4 +543,31 @@ html { font-size: 16px; }
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.composerVoicePrivacyBadge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  display: grid;
+  width: 11px;
+  height: 11px;
+  place-items: center;
+  border: 1px solid var(--paper-edge);
+  border-radius: 50%;
+  background: #f59e0b;
+  color: #111827;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 1;
+}
+.composerVoiceButtonActive,
+.composerVoiceButtonActive:hover {
+  background: #dc2626;
+  border-color: #dc2626;
+  color: #fff;
+  animation: composerVoicePulse 1.4s ease-in-out infinite;
+}
+@keyframes composerVoicePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
+  50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
 }

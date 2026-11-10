@@ -3,6 +3,8 @@
 // package.json build.win.extraResources maps build/native-windows/${arch}/windows-desktop-control
 // there. electron-builder only warns when that source is missing, and an x64 helper
 // still starts on Windows on Arm under emulation, so packages are read back instead.
+// SPEC-003 FR-10: they carry the dictation helper (native/windows-stt) the same way, at
+// resources/native/windows-stt/, from build/native-windows/${arch}/windows-stt.
 // Usage: node scripts/windows-desktop-control.mjs publish [--arch x64|arm64]...
 //        node scripts/windows-desktop-control.mjs verify [--arch x64|arm64]...
 // Without --arch both follow the host architecture, as electron-builder does. Off
@@ -20,6 +22,13 @@ export const HELPER_BINARY = `${HELPER_NAME}.exe`;
 export const PACKAGED_HELPER_DIRECTORY = `native/${HELPER_DIRECTORY}`;
 export const WINDOWS_APP_EXECUTABLE = 'Cats Bot.exe';
 export const WINDOWS_ARCHES = ['x64', 'arm64'];
+/** SPEC-003 FR-10: the dictation helper, published beside the desktop control helper. */
+export const DICTATION_HELPER = { directory: 'windows-stt', project: 'CatsSttWindows.csproj', name: 'cats-stt-windows' };
+export const dictationOutputDirectory = (root, arch) => join(nativeBuildRoot(root), arch, DICTATION_HELPER.directory);
+export function dictationPublishArguments(root, arch) {
+  return ['publish', join(root, 'native', DICTATION_HELPER.directory, DICTATION_HELPER.project), '-c', 'Release', '-r', `win-${arch}`,
+    '--self-contained', 'true', '-o', dictationOutputDirectory(root, arch)];
+}
 
 const PE_MACHINES = { 0x8664: 'x64', 0xaa64: 'arm64', 0x014c: 'ia32' };
 
@@ -73,6 +82,24 @@ export async function publishWindowsDesktopControl(root, arches, { run = runDotn
   return published;
 }
 
+/** SPEC-003 FR-10: the dictation helper for each architecture, after the desktop control helper cleared the root. */
+export async function publishWindowsDictation(root, arches, { run = runDotnet, nugetRoot } = {}) {
+  const published = [];
+  for (const arch of checkArches(arches)) {
+    const outputDir = dictationOutputDirectory(root, arch);
+    await mkdir(outputDir, { recursive: true });
+    await run(dictationPublishArguments(root, arch), root);
+    const notices = await stageDotnetRuntimeNotices({
+      outputDir,
+      depsJsonPath: join(outputDir, `${DICTATION_HELPER.name}.deps.json`),
+      helperName: `${DICTATION_HELPER.name}.exe`,
+      ...(nugetRoot ? { nugetRoot } : {}),
+    });
+    published.push({ arch, outputDir, runtime: notices.runtime });
+  }
+  return published;
+}
+
 /** The architecture recorded in a PE file's COFF header. */
 export async function readPeArchitecture(file) {
   const handle = await open(file, 'r');
@@ -111,6 +138,24 @@ export async function verifyPackagedWindowsDesktopControl(resourcesDir) {
   return { arch: appArch };
 }
 
+/** SPEC-003 FR-10: the dictation helper for the app's own architecture, with its notices. */
+export async function verifyPackagedWindowsDictation(resourcesDir) {
+  const helperDir = join(resourcesDir, 'native', DICTATION_HELPER.directory);
+  const helper = join(helperDir, `${DICTATION_HELPER.name}.exe`);
+  try {
+    await access(helper);
+  } catch {
+    throw new Error(`The Windows package lacks the dictation helper at ${helper}`);
+  }
+  const [appArch, helperArch] = await Promise.all([
+    readPeArchitecture(join(resourcesDir, '..', WINDOWS_APP_EXECUTABLE)),
+    readPeArchitecture(helper),
+  ]);
+  if (helperArch !== appArch) throw new Error(`The Windows dictation helper is ${helperArch} but the app is ${appArch}`);
+  await verifyDotnetRuntimeNotices(helperDir);
+  return { arch: appArch };
+}
+
 function hostArches() {
   if (!WINDOWS_ARCHES.includes(process.arch)) throw new Error(`Unsupported Windows host architecture ${process.arch}; pass --arch.`);
   return [process.arch];
@@ -133,12 +178,15 @@ export async function main(argv, { platform = process.platform, root = process.c
     for (const item of published) {
       log(`Published ${HELPER_BINARY} for ${item.arch} with ${item.runtime.id} ${item.runtime.version} notices`);
     }
-    return { published };
+    const dictation = await publishWindowsDictation(root, selected, options);
+    for (const item of dictation) log(`Published ${DICTATION_HELPER.name}.exe for ${item.arch}`);
+    return { published, dictation };
   }
   const verified = [];
   for (const arch of selected) {
     verified.push(await verifyPackagedWindowsDesktopControl(unpackedResources(root, arch)));
-    log(`Verified the packaged ${arch} desktop control helper and its notices`);
+    await verifyPackagedWindowsDictation(unpackedResources(root, arch));
+    log(`Verified the packaged ${arch} desktop control and dictation helpers and their notices`);
   }
   return { verified };
 }

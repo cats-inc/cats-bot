@@ -49,6 +49,15 @@ import {
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { RegionScreenshots } from './screenshot/regionScreenshot.ts';
 import { NOTE_SCREENSHOT_IPC_CHANNEL, captureScreenshotRegion, parseDesktopScreenshotCaptureRequest } from './screenshot/screenshotCapture.ts';
+import {
+  DesktopVoiceCaptureController,
+  NOTE_VOICE_CANCEL_CHANNEL,
+  NOTE_VOICE_EVENT_CHANNEL,
+  NOTE_VOICE_START_CHANNEL,
+  NOTE_VOICE_STOP_CHANNEL,
+  parseVoiceCaptureSessionId,
+  parseVoiceCaptureStartOptions,
+} from './voiceCapture.ts';
 import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
 import { probeCodexInitialization } from './codexSetup.ts';
 import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
@@ -1401,6 +1410,48 @@ async function main(): Promise<void> {
       screenshotRunning = false;
     }
   });
+
+  // SPEC-003 FR-10: dictation for a note's composer. One helper runs at a time; each session's events go to the
+  // note that started it, and a note that goes away ends its session.
+  const voiceOwners = new Map<string, Electron.WebContents>();
+  const voice = new DesktopVoiceCaptureController({
+    config: { packaged: app.isPackaged, appPath, resourcesPath: process.resourcesPath },
+    sendEvent: (event) => {
+      const owner = voiceOwners.get(event.sessionId);
+      if (owner && !owner.isDestroyed()) owner.send(NOTE_VOICE_EVENT_CHANNEL, event);
+      if (event.type === 'end') voiceOwners.delete(event.sessionId);
+    },
+    logLine: (line) => log(line),
+  });
+  const voiceNote = (event: Electron.IpcMainInvokeEvent) => {
+    if (!senderOf(event)?.presenter.windows.windowFor(event.sender.id)) throw new Error('Voice input belongs to a note.');
+    return event.sender;
+  };
+  // A note's session ends when the note is closed (hidden) or destroyed; one listener each per note.
+  const voiceWatched = new WeakSet<Electron.WebContents>();
+  const endVoiceOf = (contents: Electron.WebContents) => {
+    for (const [sessionId, owner] of voiceOwners) if (owner === contents) void voice.cancelVoiceCapture(sessionId);
+  };
+  ipcMain.handle(NOTE_VOICE_START_CHANNEL, async (event, payload: unknown) => {
+    const sender = voiceNote(event);
+    const options = parseVoiceCaptureStartOptions(payload);
+    if (voiceOwners.has(options.sessionId)) throw new Error('That voice session exists already.');
+    voiceOwners.set(options.sessionId, sender);
+    if (!voiceWatched.has(sender)) {
+      voiceWatched.add(sender);
+      sender.once('destroyed', () => endVoiceOf(sender));
+      BrowserWindow.fromWebContents(sender)?.on('hide', () => endVoiceOf(sender));
+    }
+    await voice.startVoiceCapture(options);
+  });
+  for (const [channel, control] of [[NOTE_VOICE_STOP_CHANNEL, 'stop'], [NOTE_VOICE_CANCEL_CHANNEL, 'cancel']] as const) {
+    ipcMain.handle(channel, async (event, value: unknown) => {
+      const sessionId = parseVoiceCaptureSessionId(value);
+      if (voiceOwners.get(sessionId) !== voiceNote(event)) return;
+      await (control === 'stop' ? voice.stopVoiceCapture(sessionId) : voice.cancelVoiceCapture(sessionId));
+    });
+  }
+  app.once('will-quit', () => voice.dispose());
   ipcMain.handle('window:hide', (event) => {
     const presenter = senderOf(event)?.presenter;
     const owner = presenter?.windows.windowFor(event.sender.id);
