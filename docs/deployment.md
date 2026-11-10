@@ -20,9 +20,18 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    also checks lockfile SHA-512 integrity. The script updates only the marked record in
    `vendor/README.md`, so update its description by hand.
 
+   Record the selected Runtime commit and Runtime main at selection in this
+   version's notes, using full 40-character SHAs:
+
+   ```md
+   - **Source selection:** cats-runtime@FULL_COMMIT_SHA; main@FULL_BASELINE_SHA.
+   ```
+
    The preview guard runs the same check as Cats Desktop, from the shared
-   `scripts/shared/source-selection.mjs`. It refuses a Runtime commit that is not on
-   Runtime `main`. It also refuses one that lacks other changes on `main`, unless the
+   `scripts/shared/source-selection.mjs`. It requires the selected commit to be
+   an ancestor of that baseline, and the baseline to have landed on Runtime
+   `main`. The vendored pin must equal the notes' selection. It refuses one that
+   lacks changes present at that baseline, unless the
    release notes list each one on a `Left out of this release:` line:
 
    ```md
@@ -37,21 +46,36 @@ Preview** (`.github/workflows/bot-preview.yml`) publishes only on manual dispatc
    installers. A mention elsewhere in the notes does not count, because notes also cite
    what they include, and a bare `#N` does not count, because pull request numbers
    collide between repositories. The guard checks the names, so review checks that the
-   line gives a reason. If Runtime merges another change after the bump, the dispatch
-   fails: refresh the pin or list the change, in a new commit.
+   line gives a reason. Runtime commits after the baseline do not invalidate
+   dispatches or retries and do not need new omission entries.
 3. Prepare `docs/releases/vX.Y.Z.md` in the original bump PR: changes, supported
    OS/architectures, signing policy, exact Bot/Runtime source identity and artifact
    pins, compatibility, upgrade/backup/failure recovery. Use the release commit
    as the Bot identity; the workflow appends its exact SHA without a self-reference
    in the commit. Data migrations need tested validation, backup and atomic
    recovery; a version bump alone is insufficient.
-4. Pass CI and independent review, merge the prepared commit, and wait for CI on
-   `main` to pass on the merged commit. Then select `main` in Actions → Cats Bot
-   Standard Preview → Run workflow, with tag `vX.Y.Z`. Nothing here authorizes
-   publishing from an ordinary feature PR.
+4. Freeze the completed bump SHA and all pins in `release/vX.Y.Z`. "Latest" means
+   latest at selection. Pass independent review and run `ci.yaml` manually on
+   that fixed branch. After CI succeeds at the exact SHA, dispatch
+   `bot-preview.yml` from that same branch with tag `vX.Y.Z`. A successful
+   main-push CI on the exact SHA also qualifies. Ordinary feature PRs and their
+   synthetic merge CI are not release sources.
+
+   ```sh
+   gh workflow run ci.yaml --repo cats-inc/cats-bot --ref release/vX.Y.Z
+   # After that exact source passes CI:
+   gh workflow run bot-preview.yml --repo cats-inc/cats-bot --ref release/vX.Y.Z -f tag=vX.Y.Z
+   ```
+
+Later Bot, Runtime or shared-source PRs do not reopen the release. Keep main
+integration on a separate branch; satisfying its up-to-date merge rule must not
+advance the fixed release branch. Do not force-push or relax branch protections.
+Only an explicit owner addition or a concrete release defect justifies selecting
+new inputs and validating the affected scope again.
 
 The workflow pins the selected SHA and refuses it unless CI passed on that commit
-on `main`; it does not rerun typecheck or the tests. It serializes all preview
+through main push CI or manual CI on the matching release branch, in this same
+repository; it does not rerun typecheck or the tests. It serializes all preview
 releases, reserves a draft, builds all platforms, verifies every asset, attaches
 source/checksums and provenance, then publishes a prerelease with
 `make_latest=false`. The tag is created only at publication. No push or tag
@@ -199,10 +223,11 @@ establish provenance conventions, not a defense against a locally modified app.
 
 A failed build leaves a draft. Prefer **Re-run failed jobs** on that run, which keeps
 its guard result. A new dispatch from the same commit and tag also resumes the draft,
-because only a draft whose recorded source matches may be replaced, but it repeats the
-Runtime check. If Runtime has merged another change since, that dispatch is refused and
-a new commit cannot reuse the draft: re-run the failed jobs, or delete the unpublished
-draft and dispatch the new commit. Existing tags, another source's draft and published
+because only a draft whose recorded source matches may be replaced. It rechecks
+Runtime against the same frozen baseline; later main commits do not change the
+outcome. A new source cannot reuse that draft. Resolve a concrete release defect
+in a new selection; never silently refresh pins while retrying. Existing tags,
+another source's draft and published
 releases are rejected. Do not edit a published release to repair it; prepare a new
 version and obtain publication authorization.
 

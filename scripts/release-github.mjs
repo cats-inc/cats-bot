@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { assertNewerRelease, repository, validateInputs } from './release-contract.mjs';
-import { assertSelectedSource } from './shared/source-selection.mjs';
+import { assertFrozenSource, requireTestedReleaseSource } from './shared/source-selection.mjs';
 
 /** Octokit is supplied by actions/github-script; all external values stay data. */
 export async function guardRelease({ github, root, tag, sourceCommit }) {
@@ -23,16 +23,10 @@ export async function guardRelease({ github, root, tag, sourceCommit }) {
   return { ...input, notes, existing, identity, owner, repo };
 }
 
-/** The preview build does not rerun the tests, so main's CI must have passed on this exact commit. */
-export async function requireTestedSource({ github, owner, repo, sourceCommit }) {
-  const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yaml', head_sha: sourceCommit,
-    event: 'push', branch: 'main', status: 'completed', per_page: 20 });
-  if (!data.workflow_runs.some(run => run.head_sha === sourceCommit && run.conclusion === 'success')) {
-    throw new Error(`CI has not passed on ${sourceCommit} on main; wait for that run to pass, then dispatch again.`);
-  }
-}
+/** The preview build does not rerun tests; CI must have passed on this exact frozen commit. */
+export const requireTestedSource = requireTestedReleaseSource;
 
-/** The pin must be on Runtime main, and the notes must list what it leaves out. Checked once: Runtime merging during a build does not fail the publish. */
+/** Check the bump's recorded baseline, so later Runtime PRs cannot invalidate dispatch or retry. */
 export async function requireCurrentRuntime({ runtimeRoot, commit, notes }) {
-  return assertSelectedSource({ root: runtimeRoot, commit, notes, repository: 'cats-runtime' });
+  return assertFrozenSource({ root: runtimeRoot, commit, notes, repository: 'cats-runtime' });
 }

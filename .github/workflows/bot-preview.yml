@@ -20,7 +20,7 @@ jobs:
   guard:
     runs-on: ubuntu-latest
     # Job permissions replace the workflow's, so contents: read is restated.
-    # actions: read lets the guard find main's CI run for the source commit.
+    # actions: read lets the guard verify CI at the frozen source commit.
     permissions:
       contents: read
       actions: read
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-      # Full history, because the identity step compares the pin with all of Runtime main.
+      # Full history validates ancestry; omissions stop at the bump's recorded baseline.
       - uses: actions/checkout@v4
         with:
           repository: cats-inc/cats-runtime
@@ -50,7 +50,7 @@ jobs:
           script: |
             const { guardRelease, requireCurrentRuntime, requireTestedSource } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-github.mjs`);
             const input = await guardRelease({ github, root: process.env.GITHUB_WORKSPACE, tag: process.env.RELEASE_TAG, sourceCommit: context.sha });
-            await requireTestedSource({ github, owner: input.owner, repo: input.repo, sourceCommit: context.sha });
+            await requireTestedSource({ github, owner: input.owner, repo: input.repo, sourceCommit: context.sha, sourceRef: context.ref, tag: input.tag });
             await requireCurrentRuntime({ runtimeRoot: `${process.env.GITHUB_WORKSPACE}/runtime-source`, commit: input.runtime.commit, notes: input.notes });
             core.setOutput('tag', input.tag);
             core.setOutput('source', context.sha);
@@ -100,8 +100,8 @@ jobs:
           node-version-file: .nvmrc
           cache: npm
       - run: npm ci
-      # The guard required main's CI to pass on this commit, which ran typecheck
-      # and the tests on all three platforms; the release only builds and signs.
+      # The guard required CI at this frozen source (main push or manual release
+      # branch), including tests on all three platforms; release only builds and signs.
       - run: npm run build
       - name: Stage macOS notarization key
         if: matrix.platform == 'macos'
