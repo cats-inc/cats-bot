@@ -275,6 +275,15 @@ freeze of the storage format.
     records `sourceRef` (`telegram:<chat>:<message>`), so even if a crash happens after the work item was
     written to the journal but before `update_id` was saved, the resent same message does not create a second
     work item.
+    Only the owner's private chat gets through. The first private text message binds its chat as the owner
+    chat (`ownerChatId`, persisted with the Telegram settings and shown in Settings), and the bot greets it.
+    Every other chat, and every group, is ignored without a reply, and replies are mirrored only to the owner
+    chat. There is no reset in Settings yet. Cats Desktop follows the same rule (cats-platform SPEC-140), and
+    adds history settling, a reset that lets the owner pick, and no greeting.
+
+    Planned for both apps and not built yet: pairing through Telegram's own deep linking replaces "first
+    message wins". The app shows a `t.me/<bot>?start=<one-time token>` link or QR code, the bot receives
+    `/start <token>`, and that account becomes the owner.
 
 ### Global provider/model changes
 
