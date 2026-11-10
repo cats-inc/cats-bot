@@ -1,6 +1,7 @@
 import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
+import { readAttachmentImage, storeAttachment, type StoredAttachment } from './conversations/attachmentStore.ts';
 import { ConversationStore } from './conversations/store.ts';
 import {
   catsDesktopExecutables,
@@ -66,6 +67,7 @@ import type {
   BotProfile,
   BotProfilePatch,
   BotStatus,
+  EffectiveHeartbeatMode,
   ConversationRecord,
   HandoffMessage,
   JournalEntry,
@@ -341,6 +343,7 @@ export class BotCore implements BotHostApi {
       now: this.now,
       random: life.random ?? Math.random,
       profile: () => this.profile,
+      heartbeatMode: () => this.heartbeatMode(),
       conversations: this.conversations,
       binder: this.binder,
       client: () => this.client(),
@@ -457,6 +460,12 @@ export class BotCore implements BotHostApi {
    */
   private hubToolsOffered(): boolean {
     return this.bossCatRole && providerCanOfferSessionTools(this.profile.executionTarget.provider, this.profile.providerPolicy);
+  }
+
+  /** SPEC-011 FR-1: `auto` assists for the Boss Cat and keeps company for every other cat bot. */
+  private heartbeatMode(): EffectiveHeartbeatMode {
+    const { mode } = this.profile.heartbeat;
+    return mode === 'auto' ? (this.bossCatRole ? 'assist' : 'companion') : mode;
   }
 
   /** SPEC-009 FR-3: the hub's word on whether this bot holds the Boss Cat role. */
@@ -1077,7 +1086,12 @@ export class BotCore implements BotHostApi {
           && ['ready', 'initializing'].includes(conversation.attachment.state) && this.hubTools?.hasDiscovered(conversation.id)) },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
-      heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
+      heartbeat: {
+        enabled: this.profile.heartbeat.enabled,
+        nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null,
+        mode: this.heartbeatMode(),
+        ...this.life.heartbeatStatus(this.now()),
+      },
       lastTickAt: this.readLifeState()?.lastTickAt ?? null,
       lock: readInstanceLock(this.paths),
       telegram: {
@@ -1412,6 +1426,7 @@ export class BotCore implements BotHostApi {
       await client.sessionControls(result.profile.executionTarget.provider, policy);
     }
     const desktopWas = this.profile.desktopControl.enabled;
+    const heartbeatWas = this.profile.heartbeat.enabled;
     const presentationChanged = result.profile.name !== this.profile.name || result.profile.avatar !== this.profile.avatar;
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
@@ -1453,8 +1468,10 @@ export class BotCore implements BotHostApi {
       }
     }
     if (patch.heartbeat) {
-      this.life.resetHeartbeatSchedule();
-      this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'}; next interval is re-drawn`);
+      const resumed = !heartbeatWas && this.profile.heartbeat.enabled;
+      this.life.resetHeartbeatSchedule({ resumed });
+      this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'} (${this.heartbeatMode()}); next interval is re-drawn${
+        resumed ? ', unanswered count cleared' : ''}`);
     }
     if (patch.telegram) {
       await this.stopTelegram();
@@ -1608,6 +1625,50 @@ export class BotCore implements BotHostApi {
     this.queue.enqueue(item);
     this.pump();
     return structuredClone(item);
+  }
+
+  /**
+   * Runs the conversation's latest owner message again after its turn failed. The owner entry stays the one
+   * message in the transcript; its work item is queued again, as the owner's next turn.
+   */
+  async retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem> {
+    const id = this.resolveConversationId(conversationId);
+    const item = this.workItems.get(workItemId);
+    if (!item || item.conversationId !== id || item.kind !== 'owner_message') {
+      throw new Error(`No owner message ${workItemId} in this conversation`);
+    }
+    if (item.state !== 'failed') throw new Error(`Work item ${workItemId} is ${item.state}; only a failed turn is retried`);
+    const transcript = this.conversations.transcript(id);
+    const latest = transcript.findLast((entry) => entry.kind === 'owner');
+    if (latest?.workItemId !== item.id) throw new Error('Only the latest owner message is retried');
+    const active = this.listWorkItems().some((other) => other.conversationId === id
+      && (other.state === 'queued' || other.state === 'running'));
+    if (active) throw new Error('The conversation is busy; retry once its turn ends');
+    // A fresh busy-retry budget, and recovery that ignores what the failed attempts wrote.
+    const queued = this.record(transitionWorkItem(item, 'queued', this.now(), {
+      error: undefined,
+      attempts: 0,
+      attemptFromSeq: transcript.at(-1)?.seq ?? 0,
+    }));
+    this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
+    this.queue.enqueue(queued);
+    this.pump();
+    return structuredClone(queued);
+  }
+
+  /**
+   * SPEC-003 FR-8: one file the owner attaches to their next message, stored in the bot's working directory
+   * for the provider CLI to read. The note then sends the message with the file's path in front of the text.
+   */
+  async addOwnerAttachment(conversationId: string, name: string, data: string): Promise<StoredAttachment> {
+    this.resolveConversationId(conversationId);
+    return storeAttachment(this.profile.permissions.cwd, name, Buffer.from(data, 'base64'));
+  }
+
+  /** SPEC-003 FR-8: an attached image for the note to show, or null when it is gone or not an image. */
+  async attachmentPreview(conversationId: string, relativePath: string): Promise<{ mimeType: string; data: string } | null> {
+    this.resolveConversationId(conversationId);
+    return readAttachmentImage(this.profile.permissions.cwd, relativePath);
   }
 
   /** Enqueues a background work item (schedules, heartbeats and events use this). */

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { BotInteraction, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
-import { buildNoteItems, liveInteractions, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
+import { buildNoteItems, liveInteractions, retryableOwnerEntry, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
 
 /** SPEC-003 FR-4, FR-5: tool cards and the owner's decisions in the note. */
 
@@ -101,4 +101,18 @@ test('the note shows only requests that can still be answered, never finished re
   }));
   assert.deepEqual(liveInteractions(interactions).map((i) => i.status), ['pending', 'responding']);
   assert.deepEqual(liveInteractions(interactions.filter((i) => i.status === 'resolved')), [], 'receipts alone leave the note empty');
+});
+
+test('the note offers to retry only the latest owner message whose turn failed, while nothing runs', () => {
+  const owner = (seq: number, id: string) => entry(seq, 'owner', `message ${seq}`, { workItemId: id });
+  const failed = work('w2', 'failed', { kind: 'owner_message' });
+  const entries = [owner(1, 'w1'), entry(2, 'bot', 'reply', { workItemId: 'w1' }), owner(3, 'w2'), entry(4, 'error', 'boom', { workItemId: 'w2' })];
+  const items = [work('w1', 'completed', { kind: 'owner_message' }), failed];
+  assert.equal(retryableOwnerEntry(entries, items, false)?.seq, 3);
+  assert.equal(retryableOwnerEntry(entries, items, true), null, 'not while a turn runs');
+  assert.equal(retryableOwnerEntry([...entries, owner(5, 'w3')], [...items, work('w3', 'completed', { kind: 'owner_message' })], false), null,
+    'not once a later message was sent');
+  for (const state of ['cancelled', 'interrupted', 'completed'] as const)
+    assert.equal(retryableOwnerEntry(entries, [items[0]!, { ...failed, state }], false), null, state);
+  assert.equal(retryableOwnerEntry(entries, [items[0]!], false), null, 'not without its work item');
 });

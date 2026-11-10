@@ -546,3 +546,54 @@ test('a hub report that arrives during a profile save is not saved over (SPEC-00
     await core.stop();
   }
 });
+
+test('a failed owner message is run again as the same message, and only the latest one while nothing runs', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'retry', core: fastRetries });
+  await core.start();
+  try {
+    const failed = await sendAndWait(core, 'home', 'error-once please');
+    assert.equal(failed.state, 'failed');
+    await assert.rejects(core.retryOwnerMessage('home', 'missing'), /No owner message missing/);
+    const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === failed.id
+      && event.workItem.state === 'completed');
+    const queued = await core.retryOwnerMessage('home', failed.id);
+    assert.equal(queued.state, 'queued');
+    assert.equal(queued.error, undefined);
+    assert.equal(queued.attempts, 0, 'a fresh busy-retry budget');
+    assert.equal(queued.attemptFromSeq, core.transcript('home').at(-1)?.seq);
+    await assert.rejects(core.retryOwnerMessage('home', failed.id), /only a failed turn is retried/);
+    const event = await done;
+    assert.equal(event.type === 'turn.completed' && event.workItem.result?.text, 'echo: error-once please');
+    assert.equal(event.type === 'turn.completed' && event.workItem.attempts, 1);
+    const transcript = core.transcript('home');
+    assert.deepEqual(transcript.filter((entry) => entry.kind === 'owner').map((entry) => entry.text), ['error-once please'],
+      'one owner message');
+    assert.ok(transcript.some((entry) => entry.kind === 'error'), 'the failure stays in the transcript');
+    assert.deepEqual([transcript.at(-1)?.kind, transcript.at(-1)?.text], ['bot', 'echo: error-once please']);
+
+    const older = await sendAndWait(core, 'home', 'error for good');
+    assert.equal(older.state, 'failed');
+    await sendAndWait(core, 'home', 'hello');
+    await assert.rejects(core.retryOwnerMessage('home', older.id), /Only the latest owner message is retried/);
+  } finally {
+    await core.stop();
+  }
+});
+
+test('an owner attachment is stored in the working directory and named in front of the message (SPEC-003 FR-8)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'attach', core: fastRetries });
+  await core.start();
+  try {
+    const cwd = (await core.getProfile()).permissions.cwd;
+    const stored = await core.addOwnerAttachment('home', 'cat.png', Buffer.from('png bytes').toString('base64'));
+    assert.deepEqual(stored, { name: 'cat.png', relativePath: '.cats-attachments/cat.png' });
+    assert.equal(readFileSync(`${cwd}/.cats-attachments/cat.png`, 'utf8'), 'png bytes');
+    assert.deepEqual(await core.attachmentPreview('home', stored.relativePath), { mimeType: 'image/png', data: Buffer.from('png bytes').toString('base64') });
+    await assert.rejects(core.addOwnerAttachment('nowhere', 'cat.png', 'AA=='), /nowhere/u);
+    const item = await sendAndWait(core, 'home', `[Attached files in working directory:]\n- ${stored.relativePath}\n\nwhat is this?`);
+    assert.equal(item.state, 'completed');
+    assert.match(item.result?.text ?? '', /\.cats-attachments\/cat\.png/u, 'the provider got the path');
+  } finally {
+    await core.stop();
+  }
+});

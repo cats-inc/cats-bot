@@ -11,7 +11,9 @@ import {
   botPatch,
   botReplyLanguageOptions,
   hubReplyLanguageOptions,
+  heartbeatModeOptions,
   lifeForm,
+  nextHeartbeatText,
   lifePatch,
   modelOptions,
   modelSelection,
@@ -41,7 +43,7 @@ const PROFILE: BotProfile = {
   executionTarget: { provider: 'claude', model: 'haiku' },
   configRevision: 3,
   permissions: { workspaceAccess: 'read_write', permissionMode: 'whitelist', allowedTools: ['Read', 'Grep'], cwd: 'C:/work' },
-  heartbeat: { enabled: true, wakeMinMinutes: 2, wakeMaxMinutes: 10, regularMinMinutes: 30, regularMaxMinutes: 120 },
+  heartbeat: { enabled: true, mode: 'auto', bedtime: '23:00', wakeWindowStart: '07:00', wakeWindowEnd: '09:00', wakeMinMinutes: 2, wakeMaxMinutes: 10, regularMinMinutes: 30, regularMaxMinutes: 120 },
   idleSleepMinutes: 15,
   telegram: { enabled: false, ownerChatId: null },
   desktopControl: { enabled: false },
@@ -243,6 +245,23 @@ test('life minutes must be whole positive numbers; facts never show the Telegram
   assert.deepEqual(facts, [['Token', 'stored, encrypted by the OS'], ['Polling', 'off'], ['Owner chat', 'not bound yet: send your bot a private message']]);
   const status = { id: 'nori', root: 'C:/bots/nori', runtime: { state: 'ready', pid: 42 } } as BotStatus;
   assert.deepEqual(appFacts(status, '0.1.0'), [['Cat bot id', 'nori'], ['Data folder', 'C:/bots/nori'], ['Runtime', 'ready (pid 42)'], ['Version', '0.1.0']]);
+});
+
+test('the Life tab sends the mode and Desktop\'s rhythm, refuses times Desktop refuses, and says when it waits (SPEC-011)', () => {
+  const form = lifeForm(PROFILE);
+  assert.equal(form.mode, 'auto');
+  const patch = lifePatch({ ...form, mode: 'assist', bedtime: '00:30' });
+  assert.equal(patch.heartbeat.mode, 'assist');
+  assert.equal(patch.heartbeat.bedtime, '00:30');
+  assert.throws(() => lifePatch({ ...form, bedtime: '08:00' }), /bedtime must fall outside the wake window/u);
+  assert.deepEqual(heartbeatModeOptions(null).map((option) => option.value), ['auto', 'assist', 'companion']);
+  assert.match(heartbeatModeOptions('assist')[0]!.label, /now Assist/u);
+  const status = (heartbeat: Partial<BotStatus['heartbeat']>) => ({
+    heartbeat: { enabled: true, nextAt: null, mode: 'companion', phase: 'awake_hours', unanswered: 0, waitingForOwner: false, ...heartbeat },
+  }) as BotStatus;
+  assert.match(nextHeartbeatText(status({ unanswered: 5, waitingForOwner: true })), /waiting for you: 5 unprompted messages/u);
+  assert.equal(nextHeartbeatText(status({ nextAt: '2026-11-10T10:00:00.000Z' }), () => 'Tue 18:00'), 'Next heartbeat around Tue 18:00.');
+  assert.equal(nextHeartbeatText(status({ enabled: false })), 'Heartbeat is paused.');
 });
 
 test('reply language choices: the display language first and Unspecified last, as on Desktop (SPEC-008 FR-28)', () => {

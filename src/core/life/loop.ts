@@ -2,9 +2,11 @@ import type { SessionBinder } from '../conversations/binder.ts';
 import type { ConversationStore } from '../conversations/store.ts';
 import { createWorkItem } from '../queue/workItems.ts';
 import { RuntimeHttpError, type RuntimeClient } from '../runtime/client.ts';
+import { resolveHeartbeatRhythm } from '../../shared/heartbeatRhythm.ts';
 import type {
   BotHostEvent,
   BotProfile,
+  EffectiveHeartbeatMode,
   HeartbeatKind,
   HeartbeatResult,
   JournalEntry,
@@ -16,12 +18,15 @@ import type {
 } from '../types.ts';
 import {
   buildHeartbeatPrompt,
+  HEARTBEAT_BEDTIME_WINDOW_MS,
   HEARTBEAT_BUSY_RETRY_MS,
   HEARTBEAT_FAILED_RETRY_MS,
+  HEARTBEAT_MAX_UNANSWERED,
   HEARTBEAT_QUIET_AFTER_OWNER_MS,
   HEARTBEAT_WAKE_WINDOW_MS,
   pickHeartbeatDelayMs,
 } from './heartbeat.ts';
+import { buildWorkReview } from './review.ts';
 import { afterFiring, isDue, settleMissed } from './schedules.ts';
 
 /**
@@ -30,6 +35,9 @@ import { afterFiring, isDue, settleMissed } from './schedules.ts';
  * checks the runtime, settles and fires schedules, keeps the home
  * conversation's session alive by the runtime's own session status, applies
  * the idle policy to notes, and decides when the next heartbeat turn is due.
+ * SPEC-011: the heartbeat follows the bot's daily rhythm and backs off while
+ * the owner does not answer; that state is kept in `life.json`, so neither a
+ * restart nor a reboot counts as the owner answering.
  *
  * Shape adapted from cats-platform `src/products/chat/companion/life/loop.ts`
  * at revision 595e9ca (MIT), per ADR-001 §1.
@@ -50,9 +58,31 @@ export type LifeOutcome =
   | 'runtime_unknown'
   | 'runtime_down';
 
+/** SPEC-011 FR-11: the heartbeat state that survives a restart. */
+export interface HeartbeatState {
+  nextAt: string | null;
+  /** Unprompted messages since the owner last wrote, counted when they were sent. */
+  unanswered: number;
+  lastSpokeAt: string | null;
+  /** The last completed wake and bedtime heartbeats: once per day each. */
+  lastWakeAt: string | null;
+  lastBedtimeAt: string | null;
+  /** `assist`: the review fingerprint the last quiet review saw. */
+  reviewedThrough: string | null;
+}
+
 export interface LifeState {
   lastTickAt: string | null;
+  heartbeat?: HeartbeatState;
 }
+
+export type HeartbeatAction =
+  | 'queued'
+  | 'deferred_owner'
+  | 'deferred_turn'
+  | 'deferred_rest'
+  | 'skipped_nothing_to_review'
+  | 'waiting_for_owner';
 
 export interface LifeTickReport {
   at: string;
@@ -60,7 +90,7 @@ export interface LifeTickReport {
   reason?: PresenceReason;
   firedSchedules: string[];
   settledSchedules: Array<{ id: string; action: 'run' | 'skip'; occurrences: number }>;
-  heartbeat?: { kind: HeartbeatKind; action: 'queued' | 'deferred_owner' | 'deferred_turn' };
+  heartbeat?: { kind: HeartbeatKind; action: HeartbeatAction };
   sleptNotes: string[];
   expiredApprovals: string[];
   downtimeMs: number | null;
@@ -70,6 +100,8 @@ export interface LifeLoopDependencies {
   now(): Date;
   random(): number;
   profile(): BotProfile;
+  /** SPEC-011 FR-1: the profile's mode, with `auto` resolved by the Boss Cat role. */
+  heartbeatMode(): EffectiveHeartbeatMode;
   conversations: ConversationStore;
   binder: SessionBinder;
   client(): RuntimeClient | null;
@@ -99,11 +131,41 @@ interface HomeMemory {
   backoffUntil: number;
   failureRecorded: boolean;
   awakeSince: number | null;
-  nextHeartbeatAt: number | null;
-  heartbeatKind: HeartbeatKind;
   pendingHeartbeatId: string | null;
-  wakeHeartbeatDone: boolean;
+  /** `assist`: the fingerprint of the review the pending heartbeat carries. */
+  pendingReview: string | null;
   catchUpUsed: boolean;
+  /** Whether this process has planned a heartbeat yet (SPEC-011 FR-11). */
+  planned: boolean;
+}
+
+function emptyHeartbeatState(): HeartbeatState {
+  return { nextAt: null, unanswered: 0, lastSpokeAt: null, lastWakeAt: null, lastBedtimeAt: null, reviewedThrough: null };
+}
+
+function isoOrNull(value: unknown): string | null {
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null;
+}
+
+/** A missing or damaged record starts afresh, field by field. */
+function readHeartbeatState(value: unknown): HeartbeatState {
+  if (typeof value !== 'object' || value === null) return emptyHeartbeatState();
+  const record = value as Record<string, unknown>;
+  const unanswered = typeof record.unanswered === 'number' && Number.isFinite(record.unanswered)
+    ? Math.max(0, Math.floor(record.unanswered)) : 0;
+  return {
+    nextAt: isoOrNull(record.nextAt),
+    unanswered,
+    lastSpokeAt: isoOrNull(record.lastSpokeAt),
+    lastWakeAt: isoOrNull(record.lastWakeAt),
+    lastBedtimeAt: isoOrNull(record.lastBedtimeAt),
+    reviewedThrough: typeof record.reviewedThrough === 'string' ? record.reviewedThrough : null,
+  };
+}
+
+function ms(value: string | null): number {
+  const parsed = value === null ? Number.NaN : Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
 }
 
 export class LifeLoop {
@@ -112,12 +174,12 @@ export class LifeLoop {
     backoffUntil: 0,
     failureRecorded: false,
     awakeSince: null,
-    nextHeartbeatAt: null,
-    heartbeatKind: 'regular',
     pendingHeartbeatId: null,
-    wakeHeartbeatDone: false,
+    pendingReview: null,
     catchUpUsed: false,
+    planned: false,
   };
+  private beat: HeartbeatState;
   private lastTickAt: number | null = null;
   private inFlight: Promise<LifeTickReport> | null = null;
   private stopped = false;
@@ -127,8 +189,10 @@ export class LifeLoop {
 
   constructor(deps: LifeLoopDependencies) {
     this.deps = deps;
-    this.lastTickAt = deps.readLifeState()?.lastTickAt ? Date.parse(deps.readLifeState()!.lastTickAt!) : null;
+    const state = deps.readLifeState();
+    this.lastTickAt = state?.lastTickAt ? Date.parse(state.lastTickAt) : null;
     if (this.lastTickAt !== null && Number.isNaN(this.lastTickAt)) this.lastTickAt = null;
+    this.beat = readHeartbeatState(state?.heartbeat);
   }
 
   get report(): LifeTickReport | null {
@@ -136,7 +200,18 @@ export class LifeLoop {
   }
 
   get nextHeartbeatAt(): Date | null {
-    return this.memory.nextHeartbeatAt === null ? null : new Date(this.memory.nextHeartbeatAt);
+    return this.beat.nextAt === null ? null : new Date(this.beat.nextAt);
+  }
+
+  /** SPEC-011 FR-12: what the status shows about the heartbeat. */
+  heartbeatStatus(now: Date): { phase: 'awake_hours' | 'rest_hours'; unanswered: number; waitingForOwner: boolean } {
+    const profile = this.deps.profile();
+    const unanswered = this.unanswered();
+    return {
+      phase: resolveHeartbeatRhythm(profile.heartbeat, profile.id, now).phase,
+      unanswered,
+      waitingForOwner: profile.heartbeat.enabled && unanswered >= HEARTBEAT_MAX_UNANSWERED,
+    };
   }
 
   get awakeSince(): Date | null {
@@ -226,7 +301,7 @@ export class LifeLoop {
     }
 
     this.lastTickAt = nowMs;
-    this.deps.writeLifeState({ lastTickAt: now.toISOString() });
+    this.persist();
     this.lastReport = report;
     return report;
   }
@@ -340,11 +415,9 @@ export class LifeLoop {
     }
     this.memory.backoffUntil = 0;
     this.memory.failureRecorded = false;
-    const firstWake = this.memory.awakeSince === null;
     this.memory.awakeSince ??= now.getTime();
     const reason: PresenceReason = bound.how === 'resumed' ? 'resumed' : 'rebuilt';
     this.presence(home.id, 'awake', reason, now);
-    if (firstWake || this.memory.nextHeartbeatAt === null) this.scheduleFirstHeartbeat(now);
     report.reason = reason;
     return bound.how === 'resumed' ? 'resumed' : 'rebuilt';
   }
@@ -384,19 +457,77 @@ export class LifeLoop {
     }
   }
 
+  private persist(): void {
+    this.deps.writeLifeState({
+      lastTickAt: this.lastTickAt === null ? null : new Date(this.lastTickAt).toISOString(),
+      heartbeat: { ...this.beat },
+    });
+  }
+
+  /** The owner's latest message in any conversation; another bot's message is not the owner's. */
+  private lastOwnerAt(): number {
+    let latest = Number.NEGATIVE_INFINITY;
+    for (const record of this.deps.conversations.list()) latest = Math.max(latest, ms(record.lastOwnerMessageAt));
+    return latest;
+  }
+
+  /**
+   * SPEC-011 FR-9: only a message from the owner answers; a restart, a reboot
+   * or an opened window does not.
+   */
+  private unanswered(): number {
+    if (this.beat.unanswered === 0) return 0;
+    return this.lastOwnerAt() > ms(this.beat.lastSpokeAt) ? 0 : this.beat.unanswered;
+  }
+
+  /** The owner wrote after an unanswered message: back to the ordinary pace, re-drawn from now. */
+  private noticeOwnerAnswer(): void {
+    if (this.beat.unanswered > 0 && this.unanswered() === 0) {
+      this.beat.unanswered = 0;
+      this.beat.nextAt = null;
+    }
+  }
+
   private scheduleHeartbeat(kind: HeartbeatKind, fromMs: number): void {
-    this.memory.heartbeatKind = kind;
-    this.memory.nextHeartbeatAt = fromMs + pickHeartbeatDelayMs(kind, this.deps.profile().heartbeat, this.deps.random);
+    const delay = pickHeartbeatDelayMs(kind, this.deps.profile().heartbeat, this.deps.random, this.unanswered());
+    this.beat.nextAt = new Date(fromMs + delay).toISOString();
   }
 
-  /** FR-25: the first heartbeat after waking greets, unless the wake is already old. */
+  /** SPEC-011 FR-7: a wake greeting once a day, soon after the day's wake time, while the owner answers. */
+  private wakeGreetingDue(now: Date, wakeAt: Date): boolean {
+    return this.unanswered() === 0
+      && now.getTime() >= wakeAt.getTime()
+      && now.getTime() - wakeAt.getTime() < HEARTBEAT_WAKE_WINDOW_MS
+      && ms(this.beat.lastWakeAt) < wakeAt.getTime();
+  }
+
+  /** SPEC-011 FR-8: `companion` says good night once, soon after bedtime, if it was awake before it. */
+  private bedtimeDue(now: Date, restStartedAt: Date, mode: EffectiveHeartbeatMode): boolean {
+    return mode === 'companion'
+      && this.unanswered() === 0
+      && now.getTime() - restStartedAt.getTime() < HEARTBEAT_BEDTIME_WINDOW_MS
+      && this.memory.awakeSince !== null && this.memory.awakeSince <= restStartedAt.getTime()
+      && ms(this.beat.lastBedtimeAt) < restStartedAt.getTime();
+  }
+
+  /**
+   * SPEC-011 FR-6: the first heartbeat of a stretch: soon after the wake time
+   * when a greeting is due, at the next wake time during rest hours, and an
+   * ordinary (backed-off) wait otherwise.
+   */
   private scheduleFirstHeartbeat(now: Date): void {
-    const awakeSince = this.memory.awakeSince ?? now.getTime();
-    const greetable = now.getTime() - awakeSince < HEARTBEAT_WAKE_WINDOW_MS && !this.memory.wakeHeartbeatDone;
-    this.scheduleHeartbeat(greetable ? 'wake' : 'regular', now.getTime());
+    const profile = this.deps.profile();
+    const rhythm = resolveHeartbeatRhythm(profile.heartbeat, profile.id, now);
+    if (rhythm.phase === 'rest_hours') {
+      this.scheduleHeartbeat('wake', rhythm.nextWakeAt.getTime());
+    } else if (this.wakeGreetingDue(now, rhythm.wakeAt)) {
+      this.scheduleHeartbeat('wake', now.getTime());
+    } else {
+      this.scheduleHeartbeat('regular', now.getTime());
+    }
   }
 
-  /** FR-23 / FR-25: decide whether a heartbeat turn is due now. */
+  /** FR-23 / FR-25 and SPEC-011: decide whether a heartbeat turn is due now. */
   private planHeartbeat(now: Date, downtimeMs: number | null, report: LifeTickReport): void {
     const profile = this.deps.profile();
     const home = this.deps.conversations.home();
@@ -405,82 +536,171 @@ export class LifeLoop {
     if (!profile.heartbeat.enabled || !live) {
       return;
     }
-    if (this.memory.pendingHeartbeatId !== null) return;
-    if (this.memory.nextHeartbeatAt === null) {
-      this.scheduleFirstHeartbeat(now);
+    if (this.memory.pendingHeartbeatId !== null || this.deps.hasQueuedWork('heartbeat')) return;
+    this.noticeOwnerAnswer();
+    const unanswered = this.unanswered();
+    if (unanswered >= HEARTBEAT_MAX_UNANSWERED) {
+      // SPEC-011 FR-10: stopped until the owner writes; nothing is drawn meanwhile.
+      this.beat.nextAt = null;
+      report.heartbeat = { kind: 'regular', action: 'waiting_for_owner' };
+      return;
     }
-    if (downtimeMs !== null && this.memory.nextHeartbeatAt !== null && this.memory.nextHeartbeatAt < now.getTime() - downtimeMs) {
+    const mode = this.deps.heartbeatMode();
+    const rhythm = resolveHeartbeatRhythm(profile.heartbeat, profile.id, now);
+    if (!this.memory.planned) {
+      // SPEC-011 FR-11: a heartbeat that fell due while the app was closed waits the wake delay,
+      // so nothing is said the moment the app starts.
+      this.memory.planned = true;
+      if (this.beat.nextAt !== null && ms(this.beat.nextAt) <= now.getTime()) this.scheduleHeartbeat('wake', now.getTime());
+    }
+    if (this.beat.nextAt === null) this.scheduleFirstHeartbeat(now);
+    const nextAt = ms(this.beat.nextAt);
+    if (downtimeMs !== null && nextAt < now.getTime() - downtimeMs) {
       // The machine slept past the heartbeat: at most one catch-up.
       if (this.memory.catchUpUsed) {
         this.scheduleHeartbeat('regular', now.getTime());
       } else {
         this.memory.catchUpUsed = true;
-        this.memory.nextHeartbeatAt = now.getTime();
+        this.beat.nextAt = now.toISOString();
       }
     }
-    if (this.memory.nextHeartbeatAt === null || now.getTime() < this.memory.nextHeartbeatAt) return;
-    const lastOwnerAt = home.lastOwnerMessageAt ? Date.parse(home.lastOwnerMessageAt) : Number.NaN;
-    if (Number.isFinite(lastOwnerAt) && now.getTime() - lastOwnerAt < HEARTBEAT_QUIET_AFTER_OWNER_MS) {
-      this.scheduleHeartbeat('regular', lastOwnerAt + HEARTBEAT_QUIET_AFTER_OWNER_MS);
-      report.heartbeat = { kind: this.memory.heartbeatKind, action: 'deferred_owner' };
+
+    let kind: HeartbeatKind;
+    if (rhythm.phase === 'rest_hours') {
+      if (!this.bedtimeDue(now, rhythm.restStartedAt, mode)) {
+        // SPEC-011 FR-5: nothing is said in rest hours; a due heartbeat waits for the next wake time.
+        if (ms(this.beat.nextAt) <= now.getTime()) {
+          this.scheduleHeartbeat('wake', rhythm.nextWakeAt.getTime());
+          report.heartbeat = { kind: 'regular', action: 'deferred_rest' };
+        }
+        return;
+      }
+      kind = 'bedtime';
+    } else {
+      if (now.getTime() < ms(this.beat.nextAt)) return;
+      kind = this.wakeGreetingDue(now, rhythm.wakeAt) ? 'wake' : 'regular';
+    }
+
+    const lastOwnerAt = this.lastOwnerAt();
+    if (now.getTime() - lastOwnerAt < HEARTBEAT_QUIET_AFTER_OWNER_MS) {
+      // An owner who is talking is not interrupted; a bedtime good night waits within its window,
+      // and a good morning is not said late into a conversation (as on Desktop).
+      if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
+      if (kind !== 'bedtime') this.scheduleHeartbeat('regular', lastOwnerAt + HEARTBEAT_QUIET_AFTER_OWNER_MS);
+      report.heartbeat = { kind, action: 'deferred_owner' };
       return;
     }
     if (this.deps.isTurnRunning()) {
-      this.memory.nextHeartbeatAt = now.getTime() + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS);
-      report.heartbeat = { kind: this.memory.heartbeatKind, action: 'deferred_turn' };
+      if (kind !== 'bedtime') this.beat.nextAt = new Date(now.getTime() + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS)).toISOString();
+      report.heartbeat = { kind, action: 'deferred_turn' };
       return;
     }
-    const kind = this.memory.heartbeatKind;
+
+    let review: string | null = null;
+    let fingerprint: string | null = null;
+    if (mode === 'assist') {
+      // SPEC-011 FR-13 / FR-14: no turn when there is nothing to look over, or nothing new since a quiet look.
+      const built = buildWorkReview(
+        this.deps.conversations.list().map((record) => ({
+          record,
+          transcript: () => this.deps.conversations.transcript(record.id),
+        })),
+        this.deps.awaitingOwner(),
+        now,
+      );
+      if (!built || built.fingerprint === this.beat.reviewedThrough) {
+        if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
+        this.scheduleHeartbeat('regular', now.getTime());
+        report.heartbeat = { kind, action: 'skipped_nothing_to_review' };
+        this.deps.log(`heartbeat ${kind} skipped: ${built ? 'nothing new since the last review' : 'nothing to review'}`);
+        return;
+      }
+      review = built.text;
+      fingerprint = built.fingerprint;
+    }
+
     const item = createWorkItem({
       kind: 'heartbeat',
       source: `heartbeat:${kind}`,
       conversationId: home.id,
       prompt: buildHeartbeatPrompt({
         kind,
+        mode,
         now,
         awakeSince: this.memory.awakeSince === null ? null : new Date(this.memory.awakeSince),
         lastOwnerMessageAt: Number.isFinite(lastOwnerAt) ? new Date(lastOwnerAt) : null,
         botName: profile.name,
+        unanswered,
+        review,
       }),
       coalesceKey: 'heartbeat',
     }, now);
     this.memory.pendingHeartbeatId = item.id;
+    this.memory.pendingReview = fingerprint;
     this.deps.enqueue(item);
     report.heartbeat = { kind, action: 'queued' };
-    this.deps.log(`heartbeat ${kind} queued as ${item.id}`);
+    this.deps.log(`heartbeat ${mode} ${kind} queued as ${item.id}`);
   }
 
   /** Called by the core when a heartbeat work item reached a terminal state (FR-25). */
   onHeartbeatResult(item: WorkItem, result: HeartbeatResult): void {
     if (this.memory.pendingHeartbeatId !== item.id && this.memory.pendingHeartbeatId !== null) return;
     this.memory.pendingHeartbeatId = null;
-    const kind: HeartbeatKind = item.source === 'heartbeat:wake' ? 'wake' : 'regular';
-    const nowMs = this.deps.now().getTime();
-    this.deps.journal({ type: 'heartbeat', at: this.deps.now().toISOString(), kind, result });
+    const review = this.memory.pendingReview;
+    this.memory.pendingReview = null;
+    const source = item.source.replace(/^heartbeat:/u, '');
+    const kind: HeartbeatKind = source === 'wake' || source === 'bedtime' ? source : 'regular';
+    const now = this.deps.now();
+    const nowMs = now.getTime();
+    this.deps.journal({ type: 'heartbeat', at: now.toISOString(), kind, result });
     this.deps.log(`heartbeat ${kind} ${result}`);
     if (result === 'busy') {
-      this.memory.nextHeartbeatAt = nowMs + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS);
-      this.memory.heartbeatKind = kind;
+      this.beat.nextAt = new Date(nowMs + (this.deps.busyRetryMs ?? HEARTBEAT_BUSY_RETRY_MS)).toISOString();
+      this.persist();
       return;
     }
-    if (kind === 'wake' && (result === 'spoke' || result === 'quiet')) this.memory.wakeHeartbeatDone = true;
     if (result === 'failed') {
-      this.memory.heartbeatKind = 'regular';
-      this.memory.nextHeartbeatAt = nowMs + (this.deps.failedRetryMs ?? HEARTBEAT_FAILED_RETRY_MS);
+      this.beat.nextAt = new Date(nowMs + (this.deps.failedRetryMs ?? HEARTBEAT_FAILED_RETRY_MS)).toISOString();
+      this.persist();
       return;
     }
-    this.scheduleHeartbeat('regular', nowMs);
+    if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
+    if (kind === 'bedtime') this.beat.lastBedtimeAt = now.toISOString();
+    if (result === 'spoke' && kind !== 'bedtime') {
+      // SPEC-011 FR-9 / FR-10: one more message the owner has not answered yet; a good night
+      // goes out as the owner leaves and expects no answer.
+      this.beat.unanswered = this.unanswered() + 1;
+      this.beat.lastSpokeAt = now.toISOString();
+    } else if (review !== null) {
+      this.beat.reviewedThrough = review;
+    }
+    if (this.beat.unanswered >= HEARTBEAT_MAX_UNANSWERED) {
+      this.beat.nextAt = null;
+      this.deps.log(`heartbeat waits for the owner: ${this.beat.unanswered} unprompted messages unanswered`);
+    } else {
+      this.scheduleHeartbeat('regular', nowMs);
+    }
+    this.persist();
   }
 
-  /** FR-25: a changed heartbeat policy re-draws the next interval on the next tick. */
-  resetHeartbeatSchedule(): void {
-    this.memory.nextHeartbeatAt = null;
+  /**
+   * FR-25: a changed heartbeat policy re-draws the next interval on the next
+   * tick. SPEC-011 FR-10: turning the heartbeat back on is the owner asking
+   * for it, so the unanswered count starts over.
+   */
+  resetHeartbeatSchedule(options: { resumed?: boolean } = {}): void {
+    this.beat.nextAt = null;
+    if (options.resumed) {
+      this.beat.unanswered = 0;
+      this.beat.reviewedThrough = null;
+    }
+    this.persist();
   }
 
-  /** The home session went away (runtime exit): forget the awake state. */
+  /** The home session went away (runtime exit): forget the awake state; the durable schedule stays. */
   forgetAwake(): void {
     this.memory.awakeSince = null;
-    this.memory.nextHeartbeatAt = null;
     this.memory.pendingHeartbeatId = null;
+    this.memory.pendingReview = null;
   }
 }

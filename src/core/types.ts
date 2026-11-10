@@ -28,9 +28,24 @@ export interface BotPermissions {
   cwd: string;
 }
 
-/** SPEC-001 FR-1 / FR-25. Minutes are inclusive bounds of a uniform random draw. */
+/**
+ * SPEC-011 FR-1: what a heartbeat is for. `auto`, the default, is `assist` for
+ * the Boss Cat and `companion` for every other cat bot.
+ */
+export type HeartbeatMode = 'auto' | 'assist' | 'companion';
+export type EffectiveHeartbeatMode = Exclude<HeartbeatMode, 'auto'>;
+
+/**
+ * SPEC-001 FR-1 / FR-25, SPEC-011 FR-1. Minutes are inclusive bounds of a
+ * uniform random draw; clock values are local `HH:MM`, the same daily rhythm
+ * as Cats Desktop's companion life (its SPEC-124).
+ */
 export interface HeartbeatPolicy {
   enabled: boolean;
+  mode: HeartbeatMode;
+  bedtime: string;
+  wakeWindowStart: string;
+  wakeWindowEnd: string;
   wakeMinMinutes: number;
   wakeMaxMinutes: number;
   regularMinMinutes: number;
@@ -216,6 +231,11 @@ export interface WorkItem {
   notification?: NotificationState;
   /** The provider/model/session the run actually used (ADR-001 §3 evidence). */
   run?: WorkRun;
+  /**
+   * SPEC-003 FR-7: a retried owner message's earlier attempts wrote transcript entries up to this `seq`;
+   * recovery reads only the entries after it.
+   */
+  attemptFromSeq?: number;
   error?: string;
   updatedAt: string;
 }
@@ -269,7 +289,7 @@ export type PresenceReason =
   | 'idle'
   | 'owner';
 
-export type HeartbeatKind = 'wake' | 'regular';
+export type HeartbeatKind = 'wake' | 'regular' | 'bedtime';
 export type HeartbeatResult = 'spoke' | 'quiet' | 'busy' | 'failed';
 
 /** One line of `journal.jsonl`. */
@@ -331,6 +351,12 @@ export interface BotHostApi {
   /** An open view in the background does not read replies; only a focused one does. */
   setViewFocused(conversationId: string, focused: boolean): Promise<void>;
   sendOwnerMessage(conversationId: string, text: string): Promise<WorkItem>;
+  /** The latest owner message's failed turn, queued again; refused while the conversation is busy. */
+  retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem>;
+  /** SPEC-003 FR-8: one file for the owner's next message, base64, in the bot's working directory. */
+  addOwnerAttachment(conversationId: string, name: string, data: string): Promise<{ name: string; relativePath: string }>;
+  /** SPEC-003 FR-8: an attached image as base64, or null when it is gone or not an image. */
+  attachmentPreview(conversationId: string, relativePath: string): Promise<{ mimeType: string; data: string } | null>;
   cancelTurn(conversationId: string): Promise<void>;
   markSeen(conversationId: string): Promise<void>;
   listSchedules(): Promise<ScheduleRecord[]>;
@@ -414,7 +440,19 @@ export interface BotStatus {
   bossCat: { holder: boolean; tools: boolean };
   conversations: number;
   schedules: number;
-  heartbeat: { enabled: boolean; nextAt: string | null; };
+  /**
+   * SPEC-011 FR-12: `mode` is the effective one; `unanswered` counts the
+   * unprompted messages since the owner last wrote, and `waitingForOwner` means
+   * heartbeats stopped until the owner writes again.
+   */
+  heartbeat: {
+    enabled: boolean;
+    nextAt: string | null;
+    mode: EffectiveHeartbeatMode;
+    phase: 'awake_hours' | 'rest_hours';
+    unanswered: number;
+    waitingForOwner: boolean;
+  };
   lastTickAt: string | null;
   lock: InstanceLock | null;
   telegram: { enabled: boolean; polling: boolean; ownerChatId: number | null; };

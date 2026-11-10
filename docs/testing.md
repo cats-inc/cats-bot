@@ -30,7 +30,8 @@ last step, not the first.
 ### Unit tests
 
 - **Location**: `tests/core/profile.test.ts`, `store.test.ts`, `handoff.test.ts`,
-  `queue.test.ts`, `cron.test.ts`, `schedules.test.ts`, `heartbeat.test.ts`,
+  `queue.test.ts`, `cron.test.ts`, `schedules.test.ts`, `heartbeat.test.ts`
+  (also the SPEC-011 rhythm, back-off, prompts and work review),
   `tools.test.ts`, `secrets.test.ts`, `telegram.test.ts` (against an
   in-process fake Telegram Bot API)
 - **Scope**: profile defaults and field-by-field normalisation, atomic writes,
@@ -52,7 +53,11 @@ last step, not the first.
   `core.tick()` by hand with an adjustable clock: home session creation and
   revival after a crash, busy protection, quiet and spoken heartbeats, pause,
   due schedules and coalescing, missed policies after downtime, approvals and
-  their timeout, idle notes.
+  their timeout, idle notes. `tests/core/heartbeatLife.test.ts` covers SPEC-011:
+  the back-off and its stop after five unanswered messages across a restart,
+  rest hours, the good night and the morning greeting, and `assist` reviewing
+  notes into the direct message. Tests on the wall clock set the rhythm with
+  `awakeNow()` so they pass at any hour.
 
 ### Integration tests
 
@@ -404,6 +409,11 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   check `IsWindowVisible` stays false, and restart Explorer with a wallpaper
   note shown: the note opens again on the wallpaper, and hiding it leaves the
   wallpaper intact.
+- Screenshots (SPEC-003 FR-9): on macOS grant Cats Bot Screen Recording first (a build without it
+  answers with the permission message). Take a screenshot from a note on the desktop layer and from
+  a normal one, with a floating Cat on screen: neither the note nor the Cat is in the picture, the
+  note comes back focused and still on its layer once it loses focus. On every display the overlay
+  covers the screen, a drag selects, Escape cancels. On wlroots, check with and without `grim`/`slurp`.
 - Note layers (ADR-016) on macOS: read each note's level from WindowServer
   (`CGWindowListCopyWindowInfo`, `kCGWindowLayer`; no Screen Recording needed).
   - Expect `CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1` on the

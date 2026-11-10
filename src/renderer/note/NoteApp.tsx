@@ -1,4 +1,4 @@
-import { ConversationMessage, ConversationResponse, ConversationMarkdown } from '@cats-inc/platform-ui-web';
+import { ConversationMessage, ConversationResponse, ConversationMarkdown, RetryActionIcon } from '@cats-inc/platform-ui-web';
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
 import { conversationWorkState } from './workState.ts';
@@ -10,11 +10,14 @@ import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
 import { InteractionCard } from '../interactions/InteractionCard.tsx';
 import type { NoteLayer } from '../bridge.ts';
+import { screenshotOutcome } from './screenshot.ts';
+import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type MessageAttachment } from '../../shared/attachments.ts';
 import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
   addEntry,
   appendDelta,
   buildNoteItems,
+  retryableOwnerEntry,
   entryMeta,
   entryText,
   errorText,
@@ -55,16 +58,91 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
 
 const api = window.catsBot;
 
-function Entry({ entry }: { entry: TranscriptEntry }) {
+const FileIcon = ({ size }: { size: number }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+    <path d="M14 2v6h6" />
+  </svg>
+);
+
+/** SPEC-003 FR-8: an attached image, read back from the bot's working directory. */
+function AttachedImage({ conversationId, attachment }: { conversationId: string; attachment: MessageAttachment }) {
+  const [src, setSrc] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.invoke('attachmentPreview', conversationId, attachment.relativePath).then((image) => {
+      if (live && image) setSrc(`data:${image.mimeType};base64,${image.data}`);
+    }).catch(() => undefined);
+    return () => { live = false; };
+  }, [conversationId, attachment.relativePath]);
+  return src
+    ? <img className="messageBodyImage" src={src} alt={attachment.filename} />
+    : <span className="messageBodyFileChip"><FileIcon size={14} />{attachment.filename}</span>;
+}
+
+function OwnerBody({ conversationId, entry }: { conversationId: string; entry: TranscriptEntry }) {
+  const { attachments, text } = extractAttachments(entry.text);
+  const images = attachments.filter((attachment) => attachment.isImage);
+  const files = attachments.filter((attachment) => !attachment.isImage);
+  return <div className="messageBodyWrapper">
+    {images.length > 0 && <div className="messageBodyImages">
+      {images.map((attachment) => <AttachedImage key={attachment.relativePath} conversationId={conversationId} attachment={attachment} />)}
+    </div>}
+    {files.length > 0 && <div className="messageBodyFiles">
+      {files.map((attachment) => <span key={attachment.relativePath} className="messageBodyFileChip"><FileIcon size={14} />{attachment.filename}</span>)}
+    </div>}
+    {text && <p className="messageBody">{text}</p>}
+  </div>;
+}
+
+/** A failed owner message: the note shows it failed and offers to run its turn again. */
+interface EntryRetry {
+  onRetry: () => void;
+}
+
+function Entry({ entry, conversationId, retry }: { entry: TranscriptEntry; conversationId: string; retry?: EntryRetry }) {
   useI18n();
   const meta = entryMeta(entry);
+  const copyText = entry.kind === 'owner' ? extractAttachments(entry.text).text : entry.text;
+  const actions = retry
+    ? [{ key: `retry:${entry.seq}`, title: t('Retry response'), icon: <RetryActionIcon />, onSelect: retry.onRetry }]
+    : undefined;
   return <ConversationMessage senderKind={entry.kind === 'owner' ? 'user' : entry.kind === 'bot' ? 'agent' : 'system'}
-    copyLabel={t('Copy')} showCopy={!!entry.text.trim()}
-    onCopy={() => { void navigator.clipboard.writeText(entry.text); }}>
+    copyLabel={t('Copy')} showCopy={!!copyText.trim()}
+    onCopy={() => { void navigator.clipboard.writeText(copyText); }} actions={actions}>
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
-      : <p className="messageBody">{entryText(entry)}</p>}
+      : entry.kind === 'owner' ? <OwnerBody conversationId={conversationId} entry={entry} />
+        : <p className="messageBody">{entryText(entry)}</p>}
     {meta && <span className="entry-meta">{meta}</span>}
+    {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;
+}
+
+/** SPEC-003 FR-8: a file waiting to go with the next message, as Cats Desktop shows it in its composer. */
+function AttachmentCard({ file, disabled, onRemove }: { file: File; disabled: boolean; onRemove: () => void }) {
+  const [preview, setPreview] = useState<string | null>(null);
+  useEffect(() => {
+    if (!file.type.startsWith('image/')) return;
+    // The note's policy allows data: images, not blob: ones.
+    const reader = new FileReader();
+    reader.onload = () => { if (typeof reader.result === 'string') setPreview(reader.result); };
+    reader.readAsDataURL(file);
+    return () => reader.abort();
+  }, [file]);
+  return <div className="attachmentCard">
+    <button className="attachmentRemove" type="button" disabled={disabled} onClick={onRemove}
+      aria-label={t('Remove {fileName}', { fileName: file.name })}>&times;</button>
+    {preview ? <img className="attachmentPreview" src={preview} alt={file.name} />
+      : <div className="attachmentFileIcon"><FileIcon size={24} /></div>}
+    <span className="attachmentName">{file.name}</span>
+  </div>;
+}
+
+async function base64Of(file: File): Promise<string> {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  for (let start = 0; start < bytes.length; start += 0x8000) binary += String.fromCharCode(...bytes.subarray(start, start + 0x8000));
+  return btoa(binary);
 }
 
 function ToolCard({ item }: { item: ToolItem }) {
@@ -151,6 +229,24 @@ export function NoteApp() {
   const [runtimeNote, setRuntimeNote] = useState('');
   const [historyError, setHistoryError] = useState('');
   const [draft, setDraft] = useState('');
+  // SPEC-003 FR-8: files for the next message.
+  const [files, setFiles] = useState<File[]>([]);
+  const [capturing, setCapturing] = useState(false);
+  // SPEC-003 FR-9: the note steps aside while the owner drags out a region; the picture waits like a picked file.
+  const takeScreenshot = async () => {
+    if (capturing) return;
+    setCapturing(true);
+    try {
+      const outcome = screenshotOutcome(await api.window.captureScreenshot());
+      if (outcome.kind === 'file') setFiles((current) => [...current, outcome.file]);
+      else if (outcome.kind === 'error') setEntries((current) => [...current, localEntry('error', t(outcome.message))]);
+    } catch (error) {
+      setEntries((current) => [...current, localEntry('error', t('Could not take a screenshot: {error}', { error: errorText(error) }))]);
+    } finally {
+      setCapturing(false);
+    }
+  };
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [interactions, setInteractions] = useState<BotInteraction[]>([]);
   const desktop = useDesktopControl(conversation);
   const refreshDesktop = desktop.refresh;
@@ -304,17 +400,49 @@ export function NoteApp() {
 
   const send = async () => {
     const text = draft.trim();
-    if (!text || runningRef.current || busy) return;
+    if ((!text && files.length === 0) || runningRef.current || busy) return;
+    const tooLarge = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
+    if (tooLarge) {
+      setEntries((current) => [...current, localEntry('error',
+        t('{fileName} is larger than {limit} MB', { fileName: tooLarge.name, limit: String(MAX_ATTACHMENT_BYTES / (1024 * 1024)) }))]);
+      return;
+    }
+    const sending = files;
     setDraft('');
+    setFiles([]);
     followTranscript.current = true;
     setRunning(true);
     try {
-      await api.invoke('sendOwnerMessage', conversation.current, text);
+      const paths: string[] = [];
+      for (const file of sending) {
+        const stored = await api.invoke('addOwnerAttachment', conversation.current, file.name, await base64Of(file));
+        paths.push(stored.relativePath);
+      }
+      await api.invoke('sendOwnerMessage', conversation.current, attachedFilesMessage(text, paths));
+    } catch (error) {
+      setRunning(false);
+      // Nothing was sent: the owner gets the draft and the files back.
+      setDraft((current) => current || text);
+      setFiles((current) => (current.length ? current : sending));
+      setEntries((current) => [
+        ...current,
+        localEntry('error', t('Could not send: {error}', { error: errorText(error) })),
+      ]);
+    }
+  };
+
+  const retryable = retryableOwnerEntry(entries, workItems, busy);
+  const retry = async (workItemId: string) => {
+    if (runningRef.current || busy) return;
+    followTranscript.current = true;
+    setRunning(true);
+    try {
+      await api.invoke('retryOwnerMessage', conversation.current, workItemId);
     } catch (error) {
       setRunning(false);
       setEntries((current) => [
         ...current,
-        localEntry('error', t('Could not send: {error}', { error: errorText(error) })),
+        localEntry('error', t('Could not retry: {error}', { error: errorText(error) })),
       ]);
     }
   };
@@ -388,7 +516,9 @@ export function NoteApp() {
             onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
           if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
-          return <Entry key={item.key} entry={item.entry} />;
+          const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
+          return <Entry key={item.key} entry={item.entry} conversationId={conversation.current}
+            retry={failed ? { onRetry: () => void retry(failed) } : undefined} />;
         })}
         {pending && (
           <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>
@@ -409,6 +539,10 @@ export function NoteApp() {
         </div>
       </main>
       <footer className="note-composer">
+        {files.length > 0 && <div className="composerAttachments">
+          {files.map((file, index) => <AttachmentCard key={`${file.name}-${file.size}-${index}`} file={file} disabled={busy}
+            onRemove={() => setFiles((current) => current.filter((_, i) => i !== index))} />)}
+        </div>}
         <textarea
           id="input"
           ref={inputRef}
@@ -419,6 +553,22 @@ export function NoteApp() {
           onKeyDown={onKeyDown}
         />
         <div className="note-actions">
+          <button className="composerIconButton" id="attach" type="button" aria-label={t('Add photos and files')}
+            title={t('Add photos and files')} disabled={busy} onClick={() => fileInputRef.current?.click()}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3" />
+              <path d="M8 2v8" />
+              <path d="M4 6l4-4 4 4" />
+            </svg>
+          </button>
+          <button className="composerIconButton" id="take-screenshot" type="button" aria-label={t('Take screenshot')}
+            title={t('Take screenshot')} disabled={busy || capturing} onClick={() => void takeScreenshot()}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M5 3.5l1-1h4l1 1h2a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1h2z" />
+              <circle cx="8" cy="8.5" r="2.5" />
+            </svg>
+          </button>
+          <span className="note-spacer" />
           <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>
             {t('Send')}
           </button>
@@ -431,6 +581,13 @@ export function NoteApp() {
             {t('Cancel')}
           </button>
         </div>
+        <input ref={fileInputRef} id="attach-files" type="file" multiple hidden disabled={busy}
+          onChange={(event) => {
+            const input = event.currentTarget;
+            const selected = input.files ? Array.from(input.files) : [];
+            if (selected.length > 0) setFiles((current) => [...current, ...selected]);
+            input.value = '';
+          }} />
       </footer>
     </>
   );

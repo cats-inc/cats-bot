@@ -47,6 +47,8 @@ import {
   type BossCatLimits, type RegistryBot,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
+import { RegionScreenshots } from './screenshot/regionScreenshot.ts';
+import { NOTE_SCREENSHOT_IPC_CHANNEL, captureScreenshotRegion, parseDesktopScreenshotCaptureRequest } from './screenshot/screenshotCapture.ts';
 import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
 import { probeCodexInitialization } from './codexSetup.ts';
 import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
@@ -1372,6 +1374,32 @@ async function main(): Promise<void> {
     }
     if (command === 'updateProfile') botsChanged();
     return result;
+  });
+  // SPEC-003 FR-9: a region screenshot for a note's composer; the note and every floating Cat step aside.
+  let screenshotRunning = false;
+  const screenshots = new RegionScreenshots({
+    overlayPage: join(rendererDir, 'screenshotOverlay.html'),
+    overlayPreload: join(assetsDir, 'screenshotOverlayPreload.cjs'),
+  });
+  ipcMain.handle(NOTE_SCREENSHOT_IPC_CHANNEL, async (event, payload: unknown) => {
+    const from = senderOf(event);
+    const owner = from?.presenter.windows.windowFor(event.sender.id);
+    if (!from || !owner) throw new Error('A screenshot is taken from a note.');
+    parseDesktopScreenshotCaptureRequest(payload);
+    // Taken before any window is hidden, so a second note cannot hide and come back during the capture.
+    if (screenshotRunning || screenshots.busy) return { outcome: 'error', message: 'A screenshot is already being taken.' };
+    screenshotRunning = true;
+    try {
+      return await captureScreenshotRegion({
+        hiders: [
+          () => from.presenter.windows.hideForScreenshot(owner.conversationId),
+          ...presented().map((presenter) => () => presenter.floating.hideForScreenshot()),
+        ],
+        captureNativeRegion: () => screenshots.capture(),
+      });
+    } finally {
+      screenshotRunning = false;
+    }
   });
   ipcMain.handle('window:hide', (event) => {
     const presenter = senderOf(event)?.presenter;

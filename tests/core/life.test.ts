@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
 import { readJournal } from '../../src/core/store/journal.ts';
-import { fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
+import { awakeNow, fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
  * SPEC-001 A2 on the fake runtime: the reconcile tick, schedules, heartbeat
@@ -95,7 +95,7 @@ test('a tick during a running turn neither resumes, rebuilds nor cancels (A2 bus
 });
 
 test('a quiet heartbeat leaves a journal entry but no message; a spoken one is a bot message with a notification (FR-25)', async () => {
-  const zeroDelay = { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0 };
+  const zeroDelay = { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0, ...awakeNow() };
   const { core: quiet } = openTestBot({ botsHome: home.botsHome, id: 'quiet', core: { ...fast, life: { random: () => 0 } } });
   await quiet.start();
   try {

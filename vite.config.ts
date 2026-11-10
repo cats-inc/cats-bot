@@ -29,6 +29,8 @@ export default defineConfig({
         note: `${root}note.html`,
         settings: `${root}settings.html`,
         floating: `${root}floating.html`,
+        // SPEC-003 FR-9: one overlay per display while a region screenshot is taken.
+        screenshotOverlay: `${root}screenshotOverlay.html`,
       },
       output: {
         // React and markdown in one chunk the note and settings share; the floating cat loads none of it.

@@ -58,6 +58,10 @@ contextBridge.exposeInMainWorld('catsBot', {
     hide() {
       return ipcRenderer.invoke('window:hide');
     },
+    // SPEC-003 FR-9: a region screenshot for the composer.
+    captureScreenshot() {
+      return ipcRenderer.invoke('note:captureScreenshot', { source: 'composer' });
+    },
     layerMenu() {
       return ipcRenderer.invoke('window:layerMenu');
     },
