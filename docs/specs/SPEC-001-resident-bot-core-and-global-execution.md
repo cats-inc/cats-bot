@@ -181,7 +181,8 @@ freeze of the storage format.
     sent only after this work item's HTTP stream was admitted. No persisted format changes are needed.
 18. FR-18: Turn execution goes through `POST /sessions/{id}/messages` with `Accept: application/x-ndjson`;
     `text`, `tool_use`, `tool_result`, `progress`, `error` and `result` events are appended to the transcript
-    and the view in real time; receiving `result` marks `completed`; a stream that ends without `result` marks
+    and the view in real time, and a failed turn whose stream already wrote its error adds no second error
+    entry; receiving `result` marks `completed`; a stream that ends without `result` marks
     `interrupted`; a 404 "no active worker" resumes first and then retries once; a 410 marks the attachment
     `closed` and rebuilds it at the next admission; a 403 / 429 guardrail marks `failed` with the runtime's
     reason and respects `cooldownUntil`. A provider session that is unavailable — Runtime's
@@ -451,7 +452,7 @@ provider CLI (claude / codex / pi resident; others spawned per turn and resumed)
 - [Standalone Living Bot Feasibility](../research/2026-10-27-standalone-living-bot-feasibility.md),
   [Resident Bot Architecture Assessment](../research/2026-10-27-resident-bot-architecture-assessment.md)
 - cats-runtime [docs/api.md](../../../cats-runtime/docs/api.md),
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md)
+  [SPEC-013](../../../cats-runtime/docs/specs/SPEC-013-scheduled-wakeup-substrate.md)
 - cats-platform [SPEC-124](../../../cats-platform/docs/specs/SPEC-124-alive-companion-life-loop.md)
 
 ---

@@ -633,6 +633,8 @@ checked. This remains separate from real UAC and clean-machine installation.
 
 `electron scripts/test-setup-wizard-renderer.mjs` (after a build) drives the real page, preload and first-run IPC with fake helpers: no window is shown, no script runs and no terminal opens. It does not replace the installs below on a clean machine, which still need a person (PLAN-011 Phase 4).
 
+`electron scripts/test-agent-clis-renderer.mjs` (after a build) does the same for Cats Bot Settings' Agent CLIs tab and a cat bot's own CLI (SPEC-013): the real settings page, preload and `computer:*` channels, with fake helpers, in English and Traditional Chinese at 860×640. A real install or update still needs a person on a clean machine (PLAN-012 Phase 3).
+
 Windows Codex initialization regressions additionally cover the public app-server
 readiness preflight and official terminal entry. `tests/shell/codexSetup.test.ts`
 uses real disposable child processes for fragmented RPC replies, notifications,

@@ -35,7 +35,7 @@ test('switching locale updates product copy while retaining owner names and mess
     assert.equal(conversationTitle({ role: 'home', title: 'Home' }), '私訊');
     assert.equal(conversationTitle({ role: 'home', title: 'My private desk' }), 'My private desk');
     assert.equal(conversationTitle({ role: 'note', title: 'Home' }), 'Home');
-    assert.equal(translate('zh-TW', 'Install {name}', { name: 'Claude Code' }), '安裝 Claude Code');
+    assert.equal(translate('zh-TW', 'Used by {names}', { names: 'Mochi' }), 'Mochi 在用');
     assert.equal(
       translate('zh-TW', 'A provider returned this message'),
       'A provider returned this message',

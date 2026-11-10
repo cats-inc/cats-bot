@@ -224,6 +224,8 @@ export interface CatsBotBridge {
     chooseFolder(current: string): Promise<string | null>;
     openDataFolder(): Promise<null>;
     openSettings(tab?: string): Promise<null>;
+    /** SPEC-013 FR-13: from a bot's settings, Cats Bot Settings on its Agent CLIs tab. */
+    openAgentClis(): Promise<null>;
     setFloatingVisible(visible: boolean): Promise<boolean | null>;
     noteLayers(): Promise<NoteLayersView | null>;
     setNoteLayer(conversationId: string, layer: NoteLayer): Promise<NoteLayer | null>;
@@ -236,6 +238,20 @@ export interface CatsBotBridge {
     activate(): Promise<null>;
     menu(): Promise<null>;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
+  };
+  /** SPEC-013: Cats Bot Settings' Agent CLIs tab only; every other window is refused. */
+  computer: {
+    /** What the hub kept from this session's last check, or every row not checked yet. Runs nothing. */
+    state(): Promise<import('../shared/providerSetup.ts').ComputerSetupState>;
+    /** FR-4: the read-only checks, which pressing Check this computer consents to. */
+    check(): Promise<import('../shared/providerSetup.ts').ComputerSetupState>;
+    /** FR-7: one ticked row, set up or updated, then read again. */
+    change(
+      helper: import('../shared/providerSetup.ts').SetupHelperId,
+      change: import('../shared/providerSetup.ts').SetupChange,
+    ): Promise<import('../shared/providerSetup.ts').ComputerSetupState>;
+    openTerminal(provider: string): Promise<{ opened: boolean; command: string | null }>;
+    openCodexInitialization(): Promise<{ opened: boolean; command: string | null }>;
   };
   /** Cats Bot Settings only (D17); a bot's settings window is refused. */
   hub: {
@@ -251,6 +267,8 @@ export interface CatsBotBridge {
     install(
       provider: string,
       step: import('../shared/providerSetup.ts').SetupStepId,
+      /** SPEC-013 FR-13: `upgrade` from a bot's own settings only. */
+      change?: import('../shared/providerSetup.ts').SetupChange,
     ): Promise<import('../shared/providerSetup.ts').ProviderSetupState>;
     providers(): Promise<ProviderInfo[]>;
     models(provider: string): Promise<ModelCatalog>;

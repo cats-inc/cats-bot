@@ -56,6 +56,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [016](./016-put-macos-notes-on-the-desktop-and-wallpaper-through-window-levels.md) | Put macOS Notes on the Desktop and Wallpaper through Window Levels | Accepted | 2026-11-10 |
 | [017](./017-attach-owner-files-through-the-working-directory.md) | Attach Owner Files through the Working Directory | Accepted | 2026-11-10 |
 | [018](./018-dictate-through-native-speech-helpers.md) | Dictate through Native Speech Helpers | Accepted | 2026-11-11 |
+| [019](./019-manage-agent-clis-from-cats-bot-settings-with-the-wizard-rows.md) | Manage Agent CLIs from Cats Bot Settings with the Wizard's Rows | Accepted | 2026-11-11 |
 | [020](./020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md) | Send the Owner to the macOS System Settings Pane a Permission Needs | Accepted | 2026-11-11 |
 
 <!-- Add new ADRs above this line -->

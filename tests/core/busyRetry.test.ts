@@ -11,6 +11,11 @@ test('a non-busy HTTP 409 fails once with its original reason', async () => {
   await core.start();
   try {
     const result = await sendAndWait(core, 'home', 'selection-conflict', 1500);
+    assert.equal(
+      core.transcript('home').filter((entry) => entry.workItemId === result.id && entry.kind === 'error').length,
+      1,
+      'a failure no stream wrote is still written once',
+    );
     assert.equal(result.state, 'failed');
     assert.match(result.error!, /409.*provider_changed.*provider is no longer selected/u);
     assert.equal((await fetchFakeState(core)).calls.filter(c => c.op === 'message').length, 1);

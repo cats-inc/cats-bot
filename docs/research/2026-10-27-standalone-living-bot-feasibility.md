@@ -97,7 +97,7 @@ Liveness primitives, the most critical constraint for this topic:
   and the target can only be `{kind:'session'}`, with no retry/backoff.
 - When triggered it only calls `ensureSessionAwake` ([sessionWakeup.ts](../../../cats-runtime/src/core/runtime/sessionWakeup.ts)):
   it reconnects the worker with `--resume`, **sends no message**, and the `metadata` is not handed to the agent.
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md) states explicitly "not a general scheduler,
+  [SPEC-013](../../../cats-runtime/docs/specs/SPEC-013-scheduled-wakeup-substrate.md) states explicitly "not a general scheduler,
   heartbeat system, or product workflow engine".
 - The NDJSON stream silently sends a `progress kind:"heartbeat"` every 30 seconds; that is a keep-alive, not a product heartbeat.
 - The runtime has no webhook, event bus, Telegram or idle reclaim; the only event subscription is `GET /sessions/{id}/stream`.
@@ -285,7 +285,7 @@ bot.exe             shell: tray, note windows, single instance, updater
 ## References
 
 - cats-runtime: [docs/api.md](../../../cats-runtime/docs/api.md),
-  [SPEC-012](../../../cats-runtime/docs/specs/SPEC-012-scheduled-wakeup-substrate.md),
+  [SPEC-013](../../../cats-runtime/docs/specs/SPEC-013-scheduled-wakeup-substrate.md),
   [ADR-009](../../../cats-runtime/docs/decisions/009-keep-cats-runtime-separately-packageable-with-app-managed-local-startup.md),
   [ADR-032](../../../cats-runtime/docs/decisions/032-replace-gemini-cli-with-antigravity-cli.md),
   [bundle-runtime.mjs](../../../cats-runtime/scripts/bundle-runtime.mjs).

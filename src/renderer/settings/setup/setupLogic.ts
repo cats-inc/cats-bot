@@ -1,4 +1,14 @@
-import type { ProviderSetupState, SetupLogEntry, SetupStep, SetupStepId } from '../../../shared/providerSetup.ts';
+import {
+  isUpdatableHelper,
+  SETUP_PROVIDER_IDS,
+  type ComputerSetupState,
+  type ProviderSetupState,
+  type SetupChange,
+  type SetupHelperId,
+  type SetupLogEntry,
+  type SetupStep,
+  type SetupStepId,
+} from '../../../shared/providerSetup.ts';
 
 /**
  * SPEC-010: what the wizard decides, apart from React, so it is tested with node:test.
@@ -13,17 +23,21 @@ export const PERSONA_PRESETS: ReadonlyArray<{ label: string; text: string }> = [
   { label: 'Blunt', text: 'You are a blunt cat who says what you see. Point out where I am wrong, then tell me how to fix it.' },
 ];
 
-export type RowKind = 'ready' | 'needs' | 'waiting' | 'failed' | 'declined' | 'restart';
+export type RowKind = 'ready' | 'needs' | 'waiting' | 'failed' | 'declined' | 'restart' | 'unchecked' | 'checkFailed';
 
-/** FR-8: the one state a step's row is in. */
-export function rowKind(step: SetupStep): RowKind {
+const isProviderRow = (id: string): boolean => id === 'provider' || (SETUP_PROVIDER_IDS as readonly string[]).includes(id);
+
+/** FR-8: the one state a step's row is in. SPEC-013 adds a row not checked yet and one whose check could not run. */
+export function rowKind(step: SetupStep<string>): RowKind {
+  if (step.status === 'not_checked') return 'unchecked';
+  if (step.status === 'check_failed') return 'checkFailed';
   if (step.status === 'prerequisite_required') return 'waiting';
   if (step.status === 'elevation_required') return 'declined';
   if (step.status === 'failed') return 'failed';
   if (step.systemRestartRequired && !step.installed) return 'restart';
   if (step.status === 'restart_required' || step.status === 'relaunch_required' || step.restartRequired) return 'restart';
   if (step.status === 'ready') return 'ready';
-  if (step.status === 'auth_required' && step.installed && step.id === 'provider') return 'ready';
+  if (step.status === 'auth_required' && step.installed && isProviderRow(step.id)) return 'ready';
   return 'needs';
 }
 
@@ -176,3 +190,117 @@ export const elapsedLabel = (ms: number): string => {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 };
+
+/* ---- SPEC-013: Cats Bot Settings' Agent CLIs tab, and a bot's own tab ---- */
+
+export type ComputerStep = SetupStep<SetupHelperId>;
+
+/** FR-8: a working row whose helper can update it. The shell gives only those an update command. */
+export const canUpdate = (step: SetupStep<string>): boolean =>
+  rowKind(step) === 'ready' && step.updateCommand !== null && isUpdatableHelper(step.id === 'provider' ? 'codex' : step.id);
+
+/** FR-7: what Apply does for a ticked row: set up what is missing, or update what works. */
+export function changeFor(step: SetupStep<string>): SetupChange | null {
+  const kind = rowKind(step);
+  if (kind === 'needs') return 'apply';
+  return canUpdate(step) ? 'upgrade' : null;
+}
+
+/** FR-7: ticked rows in the order they run, top down, whether they install or update. */
+export function changeQueue<Id extends string>(steps: ReadonlyArray<SetupStep<Id>>, ticked: ReadonlySet<string>): Id[] {
+  return steps.filter((step) => ticked.has(step.id) && changeFor(step) !== null).map((step) => step.id);
+}
+
+/** FR-8: the rows "Tick all N updates" ticks, which it offers from two of them. */
+export const updatableSteps = <Id extends string>(steps: ReadonlyArray<SetupStep<Id>>): Array<SetupStep<Id>> => steps.filter(canUpdate);
+
+export interface ComputerGroup {
+  key: 'node' | 'native' | 'optional';
+  title: string;
+  rows: ComputerStep[];
+  /** FR-2: its rows hang from Node.js, as the wizard draws them. */
+  stem: boolean;
+}
+
+/** FR-2: the wizard's groups. Inside a group, the order every list uses. */
+export function computerGroups(state: ComputerSetupState): ComputerGroup[] {
+  const of = (ids: readonly SetupHelperId[]) =>
+    ids.map((id) => state.steps.find((step) => step.id === id)).filter((step): step is ComputerStep => step !== undefined);
+  const groups: ComputerGroup[] = [
+    { key: 'node', title: 'Installed through Node.js', rows: of(['node', 'npm', 'codex']), stem: true },
+    { key: 'native', title: 'With their own installer', rows: of(['claude', 'antigravity', 'grok', 'muse']), stem: false },
+    { key: 'optional', title: 'Optional, and fine to leave for later', rows: of(['shell']), stem: false },
+  ];
+  return groups.filter((group) => group.rows.length > 0);
+}
+
+/** FR-2: where a row sits on its group's stem. */
+export function stemClass(group: ComputerGroup, index: number): string | undefined {
+  if (!group.stem) return undefined;
+  if (index === 0) return 'is-dep-root';
+  return index === group.rows.length - 1 ? 'is-dep is-dep-last' : 'is-dep';
+}
+
+/** FR-6: the cat bots using each provider, from Settings → Cat bots. Archived ones do not count. */
+export function usersByProvider(bots: ReadonlyArray<{ name: string; provider: string | null; state: string }>): Map<string, string[]> {
+  const users = new Map<string, string[]>();
+  for (const bot of bots) {
+    if (!bot.provider || bot.state === 'archived') continue;
+    users.set(bot.provider, [...(users.get(bot.provider) ?? []), bot.name]);
+  }
+  return users;
+}
+
+/** FR-6: what the cat bots need: the CLIs they use, and Node.js and its npm folder for Codex. */
+export function neededHelpers(users: ReadonlyMap<string, readonly string[]>): Set<SetupHelperId> {
+  const needed = new Set<SetupHelperId>();
+  for (const id of SETUP_PROVIDER_IDS) if (users.get(id)?.length) needed.add(id);
+  if (needed.has('codex')) {
+    needed.add('node');
+    needed.add('npm');
+  }
+  return needed;
+}
+
+/** FR-6: rows the cat bots need that are not ready, which is how far from ready the tab says they are. */
+export const neededPending = (steps: readonly ComputerStep[], needed: ReadonlySet<SetupHelperId>): ComputerStep[] =>
+  steps.filter((step) => needed.has(step.id) && !step.optional && rowKind(step) !== 'ready');
+
+/** FR-7: the rows "Tick all N required" ticks: ones the cat bots need, and it appears from two. */
+export const neededTickable = (steps: readonly ComputerStep[], needed: ReadonlySet<SetupHelperId>): ComputerStep[] =>
+  steps.filter((step) => needed.has(step.id) && rowKind(step) === 'needs');
+
+/** FR-4: the hint beside Check this computer: every row, and Codex's first-time setup on Windows. */
+export const computerChecks = (state: ComputerSetupState): number =>
+  state.steps.length + (state.platform === 'win32' ? 1 : 0);
+
+/**
+ * What Try again runs. An update starts from something that works, so a row its update left
+ * broken is installed again instead; the shell would refuse to update it.
+ */
+export function retryChange(step: SetupStep<string>, attempted: SetupChange): SetupChange {
+  return attempted === 'upgrade' && !step.installed ? 'apply' : attempted;
+}
+
+/** FR-9: what the last update found, in a few words. */
+export function updateNote(step: SetupStep<string>): { text: string; values?: Record<string, string>; tone: 'ok' | 'danger' } | null {
+  const update = step.lastUpdate;
+  if (!update) return null;
+  switch (update.outcome) {
+    case 'updated':
+      return update.from && update.to
+        ? { text: 'Updated {from} → {to}', values: { from: update.from, to: update.to }, tone: 'ok' }
+        : { text: 'Updated to {to}', values: { to: update.to ?? '' }, tone: 'ok' };
+    case 'current':
+      return { text: 'Already the newest', tone: 'ok' };
+    case 'restart':
+      return { text: 'Installed. It finishes after a restart; the version you had works until then.', tone: 'ok' };
+    case 'declined':
+      return { text: 'You chose No in the Windows prompt, so nothing changed.', tone: 'danger' };
+    default:
+      return { text: 'The update did not finish, and the version you had still works. The log below says why.', tone: 'danger' };
+  }
+}
+
+/** FR-3: when the results the tab shows were read. */
+export const shortClock = (iso: string): string => clockOf(iso).slice(0, 5);
