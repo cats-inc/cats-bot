@@ -120,10 +120,10 @@ function NoteRow({
         )}
       </div>
       {!renaming && (
-        <>
+        <div className="note-actions">
           <select
             className="layer"
-            title={t('Where this conversation lives')}
+            aria-label={t('Where this conversation lives')}
             value={layers.views[record.id] ?? 'normal'}
             onChange={(event) => void setLayer(event.target.value as NoteLayer)}
           >
@@ -136,19 +136,19 @@ function NoteRow({
           <button type="button" onClick={() => void api.window.openConversation(record.id)}>
             {t('Open')}
           </button>
-          <button type="button" onClick={() => setRenaming(true)}>
+          <button type="button" className="quiet" onClick={() => setRenaming(true)}>
             {t('Rename')}
           </button>
           {record.role !== 'home' && (
             <button
               type="button"
-              className={armed ? 'danger armed' : 'danger'}
+              className={armed ? 'danger armed' : 'quiet danger'}
               onClick={() => void remove()}
             >
               {armed ? t('Delete for good?') : t('Delete')}
             </button>
           )}
-        </>
+        </div>
       )}
     </li>
   );
@@ -194,11 +194,7 @@ export function NotesTab() {
           {t('New conversation')}
         </button>
       </div>
-      <p className="lead">
-        {t(
-          'Each conversation has its own history. Closing its window only hides it. Desktop windows stay below other apps; wallpaper windows stay below desktop icons. Open a conversation here to use it.',
-        )}
-      </p>
+      <p className="lead">{t('Each conversation keeps its own history. Closing its window only hides it.')}</p>
       <ul className="notes" id="notes-list">
         {layers &&
           records.map((record) => (

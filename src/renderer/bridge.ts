@@ -21,6 +21,7 @@ import type { DesktopScreenshotCaptureResult } from '../shared/screenshot/contra
 import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 import type { VoiceCaptureEvent, VoiceCaptureStartOptions } from '../shared/voice.ts';
 import type { SystemSettingsPane } from '../shared/systemSettings.ts';
+import type { BotAvatar } from '../shared/avatars.ts';
 
 /**
  * ADR-003: the type of `window.catsBot`, which `assets/preload.cjs` exposes.
@@ -138,7 +139,11 @@ export interface FloatingBubbleMessage {
 export interface BotRow {
   id: string;
   name: string;
+  /** The bot's look, so the list shows each cat by its own face (SPEC-008 FR-29). */
+  avatar: BotAvatar | null;
   provider: string | null;
+  /** The provider as the owner knows it, such as Claude or Codex. */
+  providerLabel: string | null;
   state: 'starting' | 'running' | 'stopped' | 'failed' | 'external' | 'archived' | 'missing';
   error: string | null;
   pid: number | null;

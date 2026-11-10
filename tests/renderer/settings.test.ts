@@ -7,7 +7,9 @@ import { REPLY_LANGUAGE_CODES } from '../../src/shared/language.ts';
 import {
   ago,
   appFacts,
+  bossCatChoice,
   botForm,
+  botStateLine,
   botPatch,
   botReplyLanguageOptions,
   hubReplyLanguageOptions,
@@ -292,4 +294,23 @@ test('the Bot tab sends a reply language only when it changed (SPEC-008 FR-28)',
   assert.equal(botForm(PROFILE).replyLanguage, 'hub');
   assert.equal(botPatch(PROFILE, botForm(PROFILE)), null);
   assert.deepEqual(botPatch(PROFILE, { ...botForm(PROFILE), replyLanguage: 'ko' }), { replyLanguage: 'ko' });
+});
+
+test('a Bots row names the provider and state, and a pid only for another program (SPEC-008 FR-5)', () => {
+  acceptLanguage({ preference: 'en', locale: 'en' });
+  assert.equal(botStateLine({ state: 'running', pid: 93136, provider: 'claude', providerLabel: 'Claude' }), 'Claude · Running');
+  assert.equal(botStateLine({ state: 'external', pid: 4410, provider: 'claude', providerLabel: 'Claude' }), 'Claude · Running in another program (pid 4410)');
+  assert.equal(botStateLine({ state: 'stopped', pid: null, provider: 'kiro', providerLabel: null }), 'kiro · Stopped', 'an unknown provider shows its id');
+  assert.equal(botStateLine({ state: 'missing', pid: null, provider: null, providerLabel: null }), 'Folder missing');
+  acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
+  assert.equal(botStateLine({ state: 'running', pid: 1, provider: 'codex', providerLabel: 'Codex' }), 'Codex · 執行中');
+  acceptLanguage({ preference: 'en', locale: 'en' });
+});
+
+test('the Boss Cat menu assigns, moves and clears the role, and choosing the holder again does nothing (SPEC-009 FR-2)', () => {
+  assert.deepEqual(bossCatChoice(null, 'qq'), { id: 'qq', action: 'makeBossCat' });
+  assert.deepEqual(bossCatChoice('qq', 'mochi'), { id: 'mochi', action: 'makeBossCat' });
+  assert.deepEqual(bossCatChoice('qq', ''), { id: 'qq', action: 'clearBossCat' });
+  assert.equal(bossCatChoice('qq', 'qq'), null);
+  assert.equal(bossCatChoice(null, ''), null);
 });

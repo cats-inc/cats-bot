@@ -4,6 +4,7 @@ import type { HubReplyLanguage } from '../../shared/language.ts';
 import { errorText } from '../errors.ts';
 import { t, useI18n } from '../i18n.ts';
 import { hubReplyLanguageOptions } from './settingsLogic.ts';
+import { Row } from './Rows.tsx';
 import { useToast } from './toast.ts';
 
 /**
@@ -37,8 +38,7 @@ export function ReplyLanguageField() {
   };
 
   return (
-    <label className="field">
-      <span>{t('Reply language')}</span>
+    <Row label={t('Reply language')} htmlFor="reply-language" hint={t('Each cat bot can choose its own in its settings.')}>
       <select
         id="reply-language"
         value={value ?? ''}
@@ -51,9 +51,6 @@ export function ReplyLanguageField() {
           </option>
         ))}
       </select>
-      <small className="hint">
-        {t('Cat bots reply in this language unless you ask for another one in the conversation. A cat bot can choose its own in its settings.')}
-      </small>
-    </label>
+    </Row>
   );
 }

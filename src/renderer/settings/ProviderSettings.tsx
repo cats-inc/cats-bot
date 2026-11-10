@@ -73,153 +73,160 @@ export function ProviderSettings({
   };
   const observation = snapshot?.observation;
   return (
-    <section className="provider-settings">
-      <h3>{t('Provider access and tools')}</h3>
-      <label className="field">
-        <span>{t('Execution policy')}</span>
-        <select value={mode} onChange={(e) => {
-          setMode(e.target.value as typeof mode);
-          if (nativeTools) { setAccess('full-access'); setNetwork(true); }
-        }}>
-          <option value="legacy">{t('Keep existing tool permission settings')}</option>
-          <option value="provider">{nativeTools ? t('Enable native tools with provider permissions') : t('Use provider configuration within a limit')}</option>
-          {!nativeTools && <option value="explicit">{t('Choose access and approval separately')}</option>}
-        </select>
-      </label>
-      {mode !== 'legacy' && (
-        <>
-          <label className="field">
-            <span>
-              {mode === 'provider' ? t('Maximum admitted access') : t('Local file access')}
-            </span>
-            <select value={access} disabled={nativeTools} onChange={(e) => setAccess(e.target.value as ExecutionAccess)}>
-              <option value="read-only">{t('Read only')}</option>
-              <option value="workspace-write">{t('Write in the workspace')}</option>
-              <option value="full-access">{t('Full machine access')}</option>
-            </select>
-          </label>
-          <label className="check">
-            <input
-              type="checkbox"
-              disabled={nativeTools || mode === 'explicit' && access !== 'workspace-write'}
-              checked={
-                mode === 'explicit' && access === 'full-access'
-                  ? true
-                  : mode === 'explicit' && access === 'read-only'
-                    ? false
-                    : network
-              }
-              onChange={(e) => setNetwork(e.target.checked)}
-            />{' '}
-            {mode === 'provider' ? t('Allow provider network access') : t('Network access')}
-          </label>
-          {mode === 'explicit' && (
+    <div className="provider-settings">
+      {/* A policy the owner already chose stays in view; the default is folded away. */}
+      <details className="advanced" open={profile.providerPolicy !== null}>
+        <summary>{t('Provider access and tools')}</summary>
+        <label className="field">
+          <span>{t('Execution policy')}</span>
+          <select value={mode} onChange={(e) => {
+            setMode(e.target.value as typeof mode);
+            if (nativeTools) { setAccess('full-access'); setNetwork(true); }
+          }}>
+            <option value="legacy">{t('Keep existing tool permission settings')}</option>
+            <option value="provider">{nativeTools ? t('Enable native tools with provider permissions') : t('Use provider configuration within a limit')}</option>
+            {!nativeTools && <option value="explicit">{t('Choose access and approval separately')}</option>}
+          </select>
+        </label>
+        {mode !== 'legacy' && (
+          <>
             <label className="field">
-              <span>{t('Approval policy')}</span>
-              <select
-                value={approval}
-                onChange={(e) => setApproval(e.target.value as ExecutionApproval)}
-              >
-                <option value="on-request">{t('Ask when requested by the agent')}</option>
-                <option value="untrusted">{t('Ask for untrusted commands')}</option>
-                <option value="never">{t('Never prompt; enforce the access limit')}</option>
+              <span>
+                {mode === 'provider' ? t('Maximum admitted access') : t('Local file access')}
+              </span>
+              <select value={access} disabled={nativeTools} onChange={(e) => setAccess(e.target.value as ExecutionAccess)}>
+                <option value="read-only">{t('Read only')}</option>
+                <option value="workspace-write">{t('Write in the workspace')}</option>
+                <option value="full-access">{t('Full machine access')}</option>
               </select>
             </label>
-          )}
-          <p className="hint">
-            {t(
-              'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.',
+            <label className="check">
+              <input
+                type="checkbox"
+                disabled={nativeTools || mode === 'explicit' && access !== 'workspace-write'}
+                checked={
+                  mode === 'explicit' && access === 'full-access'
+                    ? true
+                    : mode === 'explicit' && access === 'read-only'
+                      ? false
+                      : network
+                }
+                onChange={(e) => setNetwork(e.target.checked)}
+              />{' '}
+              {mode === 'provider' ? t('Allow provider network access') : t('Network access')}
+            </label>
+            {mode === 'explicit' && (
+              <label className="field">
+                <span>{t('Approval policy')}</span>
+                <select
+                  value={approval}
+                  onChange={(e) => setApproval(e.target.value as ExecutionApproval)}
+                >
+                  <option value="on-request">{t('Ask when requested by the agent')}</option>
+                  <option value="untrusted">{t('Ask for untrusted commands')}</option>
+                  <option value="never">{t('Never prompt; enforce the access limit')}</option>
+                </select>
+              </label>
             )}
-          </p>
-          {nativeTools && <p className="hint">
-            {t("Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.")}
-          </p>}
-          {nativeTools && profile.executionTarget.provider === 'antigravity' && <p className="hint">
-            {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}
-          </p>}
-          {profile.executionTarget.provider === 'claude' && (
-            <p className="hint warn">
+            <p className="hint">
               {t(
-                'Claude Code cannot limit file or network access on Windows, so only full machine access with network can be saved. Choose "Ask when requested by the agent" to approve each action yourself.',
+                'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.',
               )}
             </p>
-          )}
-        </>
-      )}
-      <button type="button" disabled={busy} onClick={() => void save()}>
-        {t('Save provider policy')}
-      </button>
-      <h3>{t('Current session')}</h3>
-      <label className="field">
-        <span>{t('Conversation')}</span>
-        <select value={conversation} onChange={(e) => setConversation(e.target.value)}>
-          {notes.map((n) => (
-            <option key={n.id} value={n.id}>
-              {conversationTitle(n)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <button type="button" disabled={busy || !conversation} onClick={() => void inspect(true)}>
-        {t('Refresh observation')}
-      </button>
-      {notice && <p role="status">{t(notice)}</p>}
-      {snapshot && !snapshot.observation && (
-        <p>
-          {snapshot.reason?.replaceAll('_', ' ') ?? t('No live observation')}
-          {t('. No model turn was started.')}
-        </p>
-      )}
-      {observation && (
-        <>
-          <p>
-            {t('Policy:')}
-            {observation.policy.source} · {observation.policy.status}
-            {observation.policy.reason
-              ? ` · ${observation.policy.reason.replaceAll('_', ' ')}`
-              : ''}
-          </p>
-          {observation.policy.observed && (
-            <p>
-              {t('Observed:')}
-              {observation.policy.observed.access}
-              {t('; network')}
-              {observation.policy.observed.network ? t('allowed') : t('off')}
-              {t('; approval')}
-              {observation.policy.observed.approval}
-              {t('; reviewer')}
-              {observation.policy.observed.reviewer}.
-            </p>
-          )}
-          <p>
-            {t('Tools:')}
-            {observation.inventory.state}
-            {observation.inventory.stale ? t(' · stale') : ''} ·{' '}
-            {observation.inventory.observedAt ?? t('not yet observed')}.
-          </p>
-          <p className="hint">
-            {t(
-              'This is the top-level MCP list. Nested tools may load later. Discovery does not verify a browser or desktop operation.',
-            )}
-          </p>
-          {observation.inventory.servers.map((s) => (
-            <details key={s.name}>
-              <summary>
-                {s.name} · {s.source} · {s.connection} · {s.tools.length}
-                {t('tools')}
-              </summary>
-              <p>
-                {t('Authentication mechanism:')}
-                {s.auth}
-                {t('. Discovery:')}
-                {s.discovery}
-                {t('. Invocation: not verified.')}
+            {nativeTools && <p className="hint">
+              {t("Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.")}
+            </p>}
+            {nativeTools && profile.executionTarget.provider === 'antigravity' && <p className="hint">
+              {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}
+            </p>}
+            {profile.executionTarget.provider === 'claude' && (
+              <p className="hint warn">
+                {t(
+                  'Claude Code cannot limit file or network access on Windows, so only full machine access with network can be saved. Choose "Ask when requested by the agent" to approve each action yourself.',
+                )}
               </p>
-              <ul>
-                {s.tools.map((t) => (
-                  <li key={t.qualifiedName}>{t.qualifiedName}</li>
-                ))}
-              </ul>
+            )}
+          </>
+        )}
+        <div className="actions">
+          <button type="button" disabled={busy} onClick={() => void save()}>
+            {t('Save provider policy')}
+          </button>
+        </div>
+      </details>
+      <details className="advanced">
+        <summary>{t('Current session')}</summary>
+        <label className="field">
+          <span>{t('Conversation')}</span>
+          <select value={conversation} onChange={(e) => setConversation(e.target.value)}>
+            {notes.map((n) => (
+              <option key={n.id} value={n.id}>
+                {conversationTitle(n)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="actions">
+          <button type="button" disabled={busy || !conversation} onClick={() => void inspect(true)}>
+            {t('Refresh observation')}
+          </button>
+        </div>
+        {snapshot && !snapshot.observation && (
+          <p>
+            {snapshot.reason?.replaceAll('_', ' ') ?? t('No live observation')}
+            {t('. No model turn was started.')}
+          </p>
+        )}
+        {observation && (
+          <>
+            <p>
+              {t('Policy:')}
+              {observation.policy.source} · {observation.policy.status}
+              {observation.policy.reason
+                ? ` · ${observation.policy.reason.replaceAll('_', ' ')}`
+                : ''}
+            </p>
+            {observation.policy.observed && (
+              <p>
+                {t('Observed:')}
+                {observation.policy.observed.access}
+                {t('; network')}
+                {observation.policy.observed.network ? t('allowed') : t('off')}
+                {t('; approval')}
+                {observation.policy.observed.approval}
+                {t('; reviewer')}
+                {observation.policy.observed.reviewer}.
+              </p>
+            )}
+            <p>
+              {t('Tools:')}
+              {observation.inventory.state}
+              {observation.inventory.stale ? t(' · stale') : ''} ·{' '}
+              {observation.inventory.observedAt ?? t('not yet observed')}.
+            </p>
+            <p className="hint">
+              {t(
+                'This is the top-level MCP list. Nested tools may load later. Discovery does not verify a browser or desktop operation.',
+              )}
+            </p>
+            {observation.inventory.servers.map((s) => (
+              <details key={s.name}>
+                <summary>
+                  {s.name} · {s.source} · {s.connection} · {s.tools.length}
+                  {t('tools')}
+                </summary>
+                <p>
+                  {t('Authentication mechanism:')}
+                  {s.auth}
+                  {t('. Discovery:')}
+                  {s.discovery}
+                  {t('. Invocation: not verified.')}
+                </p>
+                <ul>
+                  {s.tools.map((t) => (
+                    <li key={t.qualifiedName}>{t.qualifiedName}</li>
+                  ))}
+                </ul>
             </details>
           ))}
           {observation.inventory.builtinTools?.length ? (
@@ -253,6 +260,8 @@ export function ProviderSettings({
           ))}
         </>
       )}
-    </section>
+      </details>
+      {notice && <p className="notice" role="status">{t(notice)}</p>}
+    </div>
   );
 }
