@@ -9,7 +9,7 @@
 | **Reviewer** | Owner |
 | **Related decision** | ADR-001 |
 | **Related plan** | [PLAN-001](../plans/PLAN-001-resident-bot-core-foundation.md) |
-| **Pending change** | [SPEC-007](SPEC-007-cats-bot-identity-and-data-root.md) changes the FR-2 data root and FR-5 `--managed-by` (PLAN-008); [SPEC-008](SPEC-008-hub-and-bots.md) hosts the core under a hub (PLAN-009) |
+| **Pending change** | [SPEC-007](SPEC-007-cats-bot-identity-and-data-root.md) changes the FR-2 data root and FR-5 `--managed-by` (PLAN-008); [SPEC-008](SPEC-008-hub-and-bots.md) hosts the core under a hub (PLAN-009); [SPEC-014](SPEC-014-bot-state-database-and-migration.md) replaces the FR-2 layout, FR-3 write mechanics and FR-12 transcript files with a SQLite database, and [SPEC-015](SPEC-015-bot-memory-layers-recall-and-consolidation.md) changes the FR-11/FR-12 instructions and handoff pack (both approved 2026-11-11, PLAN-014) |
 
 ## Summary
 
