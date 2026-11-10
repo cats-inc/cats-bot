@@ -27,7 +27,7 @@ export type RowKind = 'ready' | 'needs' | 'waiting' | 'failed' | 'declined' | 'r
 
 const isProviderRow = (id: string): boolean => id === 'provider' || (SETUP_PROVIDER_IDS as readonly string[]).includes(id);
 
-/** FR-8: the one state a step's row is in. SPEC-012 adds a row not checked yet and one whose check could not run. */
+/** FR-8: the one state a step's row is in. SPEC-013 adds a row not checked yet and one whose check could not run. */
 export function rowKind(step: SetupStep<string>): RowKind {
   if (step.status === 'not_checked') return 'unchecked';
   if (step.status === 'check_failed') return 'checkFailed';
@@ -191,7 +191,7 @@ export const elapsedLabel = (ms: number): string => {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
 };
 
-/* ---- SPEC-012: Cats Bot Settings' Agent CLIs tab, and a bot's own tab ---- */
+/* ---- SPEC-013: Cats Bot Settings' Agent CLIs tab, and a bot's own tab ---- */
 
 export type ComputerStep = SetupStep<SetupHelperId>;
 

@@ -225,7 +225,7 @@ contextBridge.exposeInMainWorld('catsBot', {
       };
     },
   },
-  // SPEC-012: Cats Bot Settings' Agent CLIs tab. Its runs report on `setup:log`.
+  // SPEC-013: Cats Bot Settings' Agent CLIs tab. Its runs report on `setup:log`.
   computer: {
     state() {
       return ipcRenderer.invoke('computer:state');

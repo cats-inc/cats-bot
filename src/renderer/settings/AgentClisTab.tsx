@@ -29,7 +29,7 @@ import { CheckIcon, CodexSetupRow, PlainRow, QueuedRow, RunningRow, SignInRow, S
 import { useElapsed, useSetupLog } from './setup/useSetupLog.ts';
 
 /**
- * SPEC-012: Cats Bot Settings' Agent CLIs tab. Every agent CLI the cat bots can use, and what
+ * SPEC-013: Cats Bot Settings' Agent CLIs tab. Every agent CLI the cat bots can use, and what
  * those CLIs need, in the setup wizard's rows (SPEC-010). Opening it runs nothing; Check this
  * computer only reads; only what the owner ticks changes anything, top down, one at a time.
  */

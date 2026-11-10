@@ -6,7 +6,7 @@ Accepted — 2026-11-11. The owner asked for it: Cats Bot's onboarding and setup
 consistent and complete, but the Settings parts that help install or upgrade a CLI or a
 dependency had not been brought up to them, in function or in look. Asked where machine-wide
 CLIs belong, the owner chose a new tab in Cats Bot Settings. Specified by
-[SPEC-012](../specs/SPEC-012-agent-clis-in-cats-bot-settings.md) and carried out by
+[SPEC-013](../specs/SPEC-013-agent-clis-in-cats-bot-settings.md) and carried out by
 [PLAN-012](../plans/PLAN-012-agent-clis-in-cats-bot-settings.md).
 
 This extends [ADR-015](015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md)
@@ -105,7 +105,7 @@ to Settings and amends SPEC-010 FR-21 and SPEC-008 FR-5. The vendoring and prove
 
 ## References
 
-- [SPEC-012](../specs/SPEC-012-agent-clis-in-cats-bot-settings.md)
+- [SPEC-013](../specs/SPEC-013-agent-clis-in-cats-bot-settings.md)
 - [PLAN-012](../plans/PLAN-012-agent-clis-in-cats-bot-settings.md)
 - [ADR-015](015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md)
 - [SPEC-010](../specs/SPEC-010-setup-wizard.md)

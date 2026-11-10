@@ -8,7 +8,7 @@ import { CheckIcon, PlainRow, QueuedRow, RunningRow, StepRow, WaitIcon } from '.
 import { useElapsed, useSetupLog } from './setup/useSetupLog.ts';
 
 /**
- * SPEC-012 FR-13: a cat bot's Cat bot tab shows only its own CLI's chain, in the setup
+ * SPEC-013 FR-13: a cat bot's Cat bot tab shows only its own CLI's chain, in the setup
  * wizard's rows (SPEC-010). Looking at a provider starts nothing (SPEC-010 FR-21); a check
  * runs only when asked, and only ticked rows change anything. Every agent CLI, shared by
  * every cat bot, is in Cats Bot Settings' Agent CLIs tab.

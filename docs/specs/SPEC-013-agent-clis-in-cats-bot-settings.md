@@ -1,4 +1,4 @@
-# SPEC-012: Agent CLIs in Cats Bot Settings
+# SPEC-013: Agent CLIs in Cats Bot Settings
 
 ## Metadata
 

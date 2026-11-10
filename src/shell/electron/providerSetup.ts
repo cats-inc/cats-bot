@@ -98,7 +98,7 @@ export interface HelperResult {
 }
 /**
  * What a helper run does: `false` checks, `true` applies, and `'upgrade'` installs a newer
- * release of something that already works (SPEC-012 FR-8).
+ * release of something that already works (SPEC-013 FR-8).
  */
 export type HelperChange = boolean | 'upgrade';
 export type SetupHelperRunner = (helper: string, change: HelperChange, signal?: AbortSignal) => Promise<HelperResult>;
@@ -126,7 +126,7 @@ export function helperInvocation(
 ) {
   const file = FILES[helper];
   if (!file) throw new Error('Unknown setup helper');
-  // SPEC-012 FR-8: only these helpers' -Upgrade installs a newer release.
+  // SPEC-013 FR-8: only these helpers' -Upgrade installs a newer release.
   if (change === 'upgrade' && !isUpdatableHelper(helper)) throw new Error('This setup step has no update');
   if (platform === 'win32')
     return {
@@ -278,7 +278,7 @@ interface SetupLink<Id extends string = SetupStepId> {
   optional: boolean;
 }
 
-/** SPEC-012 FR-4: how many read-only checks run together, so a check does not start eight PowerShells. */
+/** SPEC-013 FR-4: how many read-only checks run together, so a check does not start eight PowerShells. */
 const CHECKS_AT_ONCE = 3;
 
 /** Provider-first setup. No helper path or shell argument crosses renderer IPC. */
@@ -293,9 +293,9 @@ export class ProviderSetup {
   // Keep machine-restart advice through later checks/installs in this Hub session.
   private systemRestartReported = false;
   private systemRestartWarnings: string[] = [];
-  /** SPEC-012 FR-3: the Agent CLIs tab's last results, for this hub session. */
+  /** SPEC-013 FR-3: the Agent CLIs tab's last results, for this hub session. */
   private computerState: ComputerSetupState | null = null;
-  /** SPEC-012 FR-9: what each helper's last update found, shown while that version is still the one there. */
+  /** SPEC-013 FR-9: what each helper's last update found, shown while that version is still the one there. */
   private updates = new Map<string, SetupUpdateResult>();
   constructor(runHelper: SetupHelperRunner, options: ProviderSetupOptions = {}) {
     this.runHelper = runHelper;
@@ -311,11 +311,11 @@ export class ProviderSetup {
   get codexSelected(): boolean {
     return this.windows && this.selected === 'codex';
   }
-  /** SPEC-012 FR-11: Codex first-time setup opens from the Agent CLIs tab only once Codex works. */
+  /** SPEC-013 FR-11: Codex first-time setup opens from the Agent CLIs tab only once Codex works. */
   get codexReadyOnComputer(): boolean {
     return this.windows && this.readyOnComputer('codex');
   }
-  /** SPEC-012 FR-10: a provider the last check of this computer found working. */
+  /** SPEC-013 FR-10: a provider the last check of this computer found working. */
   readyOnComputer(helper: unknown): boolean {
     const step = this.computerState?.steps.find((item) => item.id === helper);
     return step !== undefined && step.id !== 'node' && step.id !== 'npm' && step.id !== 'shell' && stepDone(step);
@@ -417,7 +417,7 @@ export class ProviderSetup {
     }, false, signal);
   }
   /**
-   * SPEC-010 FR-11 and SPEC-012 FR-8: one ticked step of the checked provider's chain,
+   * SPEC-010 FR-11 and SPEC-013 FR-8: one ticked step of the checked provider's chain,
    * installed or, where its helper has one, updated, followed by a fresh check.
    */
   install(provider: unknown, step: unknown, listener?: SetupLogListener, change: unknown = 'apply'): Promise<ProviderSetupState> {
@@ -462,7 +462,7 @@ export class ProviderSetup {
     }, true);
   }
 
-  /* ---- SPEC-012: this computer, for Cats Bot Settings' Agent CLIs tab ---- */
+  /* ---- SPEC-013: this computer, for Cats Bot Settings' Agent CLIs tab ---- */
 
   /** The last results, or every row not checked yet. Starts no process. */
   computer(): ComputerSetupState {
@@ -752,7 +752,7 @@ async function eachBounded<T>(items: readonly T[], limit: number, work: (item: T
  * always stands. A restart or relaunch the helper asks for stands only while the fresh probe
  * cannot confirm the step: the runner already hands a found CLI's folder to Runtime and every
  * core. An update that did not finish leaves a working tool as it was, so its row stays ready
- * and says what happened (SPEC-012 FR-9). True when the change stopped short.
+ * and says what happened (SPEC-013 FR-9). True when the change stopped short.
  */
 function settleChange<Id extends string>(target: SetupStep<Id>, applied: HelperResult, change: SetupChange, from: string | null): boolean {
   const done = stepDone(target);
@@ -799,7 +799,7 @@ function signInState(provider: string, status: string | undefined): SetupSignIn 
   return provider === 'claude' && status === 'ready' ? 'signed_in' : 'unknown';
 }
 
-/** SPEC-012 FR-10: every provider that works, with what it reports and its fixed command. */
+/** SPEC-013 FR-10: every provider that works, with what it reports and its fixed command. */
 function signInsOf(steps: Array<SetupStep<SetupHelperId>>): ComputerSetupState['signIn'] {
   const signIn: ComputerSetupState['signIn'] = {};
   for (const step of steps) {

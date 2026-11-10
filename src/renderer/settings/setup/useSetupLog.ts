@@ -18,7 +18,7 @@ export function useElapsed(since: number | null): string | null {
 
 /**
  * SPEC-010 FR-14, for every page with a log (the wizard, the Agent CLIs tab and a bot's own
- * tab, SPEC-012 FR-14): the runs this window heard, and when the log opens and closes. Any run
+ * tab, SPEC-013 FR-14): the runs this window heard, and when the log opens and closes. Any run
  * opens it. It closes about 1.4 s after success, stays open after a failure, and waits while
  * the pointer is on it. Once the owner toggles it, it stays as they set it, except that a
  * failure opens it.

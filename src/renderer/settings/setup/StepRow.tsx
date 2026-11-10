@@ -55,7 +55,7 @@ export function PlainRow({ label, optional, glyph, state, note, id, depClass, ex
   state: string;
   note?: string | null;
   id?: string;
-  /** SPEC-012 FR-2: where the row hangs from Node.js in the Agent CLIs tab. */
+  /** SPEC-013 FR-2: where the row hangs from Node.js in the Agent CLIs tab. */
   depClass?: string;
   /** A line under the summary, such as the cat bots that use a CLI. */
   extra?: string | null;
@@ -195,13 +195,13 @@ export function StepRow({
   detailsOpen: boolean;
   onTick(ticked: boolean): void;
   onDetails(open: boolean): void;
-  /** SPEC-012 FR-2: where the row hangs from Node.js in the Agent CLIs tab. */
+  /** SPEC-013 FR-2: where the row hangs from Node.js in the Agent CLIs tab. */
   depClass?: string;
-  /** SPEC-012 FR-6: the cat bots that use this CLI. */
+  /** SPEC-013 FR-6: the cat bots that use this CLI. */
   extra?: string | null;
-  /** SPEC-012 FR-8: offers an update of a working row; `ticked` then means the update. */
+  /** SPEC-013 FR-8: offers an update of a working row; `ticked` then means the update. */
   update?: boolean;
-  /** SPEC-012 FR-5: a row whose check could not run can be checked again on its own page. */
+  /** SPEC-013 FR-5: a row whose check could not run can be checked again on its own page. */
   onCheckAgain?: () => void;
 }) {
   const { t } = useI18n();

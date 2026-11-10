@@ -626,7 +626,7 @@ export const zhTW: Record<string, string> = {
   'npm installation folder': 'npm 安裝資料夾',
   'PowerShell scripts': 'PowerShell 指令碼',
   'Check again': '重新檢查',
-  // SPEC-012: Cats Bot Settings' Agent CLIs tab, and a cat bot's own CLI.
+  // SPEC-013: Cats Bot Settings' Agent CLIs tab, and a cat bot's own CLI.
   'Agent CLIs': 'Agent CLI',
   'Used by {names}': '{names} 在用',
   ', ': '、',

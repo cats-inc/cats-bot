@@ -340,7 +340,7 @@ textarea {
   align-items: center;
 }
 
-/* SPEC-012 FR-13: a cat bot's own CLI, in the setup wizard's rows, with its own log. */
+/* SPEC-013 FR-13: a cat bot's own CLI, in the setup wizard's rows, with its own log. */
 .provider-checklist {
   overflow: hidden;
   border: 1px solid var(--edge);
@@ -376,7 +376,7 @@ textarea {
   padding: 10px 12px;
 }
 
-/* SPEC-012: Cats Bot Settings' Agent CLIs tab takes the panel the way the wizard takes its window. */
+/* SPEC-013: Cats Bot Settings' Agent CLIs tab takes the panel the way the wizard takes its window. */
 .panels.is-flush {
   display: flex;
   flex-direction: column;
@@ -1027,7 +1027,7 @@ textarea {
   background: #fff6f4;
 }
 
-/* SPEC-012 FR-2: a group of rows, and the stem that hangs Node.js's tools from it. */
+/* SPEC-013 FR-2: a group of rows, and the stem that hangs Node.js's tools from it. */
 .setup-block + .setup-block {
   margin-top: 14px;
 }
@@ -1096,7 +1096,7 @@ textarea {
   font-size: 12px !important;
 }
 
-/* SPEC-012 FR-8: an update is a tick at the right of a working row, after its version. */
+/* SPEC-013 FR-8: an update is a tick at the right of a working row, after its version. */
 .setup-update {
   flex: none;
   width: 84px;

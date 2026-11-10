@@ -7,7 +7,7 @@ import { logTerminal } from './setup.ts';
 import { openCodexInitializationTerminal, openSignInTerminal } from './setupTerminal.ts';
 
 /**
- * SPEC-012: the channels behind Cats Bot Settings' Agent CLIs tab. Only that window's main
+ * SPEC-013: the channels behind Cats Bot Settings' Agent CLIs tab. Only that window's main
  * frame may use them (FR-12), and only a fixed helper id and change cross them: never a path,
  * an argument or a command. Every run goes through the hub's one `ProviderSetup`, so one setup
  * operation runs at a time across all cat bots (SPEC-008 FR-19).

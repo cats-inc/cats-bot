@@ -17,7 +17,7 @@ import { ToastContext } from './toast.ts';
  * note's ⚙ or the floating cat's menu, on the tab given by `?tab=` or later
  * by the shell. Like the note it keeps no durable state. With `?scope=hub` it
  * is Cats Bot Settings, the hub's General and Bots tabs (SPEC-008 FR-5,
- * PLAN-010) and the Agent CLIs every cat bot shares (SPEC-012), which reaches
+ * PLAN-010) and the Agent CLIs every cat bot shares (SPEC-013), which reaches
  * no bot's core.
  */
 
@@ -45,7 +45,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
   const { locale } = useI18n();
   const tabs: readonly Tab[] = scope === 'hub' ? HUB_TABS : BOT_TABS;
   const [tab, setTab] = useState<Tab>(isTabOf(tabs, initialTab) ? initialTab : tabs[0]!);
-  // SPEC-012 FR-3: once opened, the Agent CLIs tab stays mounted, so its results, ticks and
+  // SPEC-013 FR-3: once opened, the Agent CLIs tab stays mounted, so its results, ticks and
   // log survive a look at another tab while a run goes on.
   const [clisOpened, setClisOpened] = useState(tab === 'clis');
   useEffect(() => {

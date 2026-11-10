@@ -1,4 +1,4 @@
-// Isolated Electron acceptance for Cats Bot Settings' Agent CLIs tab (SPEC-012). Build first, then run:
+// Isolated Electron acceptance for Cats Bot Settings' Agent CLIs tab (SPEC-013). Build first, then run:
 //   electron scripts/test-agent-clis-renderer.mjs
 // It drives the real settings page, preload and Agent CLIs IPC with fake helpers. No window is shown,
 // no script runs, no terminal opens, nothing is written outside tmp/, and no failure opens a dialog.

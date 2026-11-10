@@ -985,7 +985,7 @@ async function main(): Promise<void> {
       }),
   });
   // D20: the hub's Settings: the app language, start at login, version and updates, the Bots tab,
-  // and the agent CLIs every cat bot shares (SPEC-012).
+  // and the agent CLIs every cat bot shares (SPEC-013).
   const openHubSettings = (tab?: 'general' | 'bots' | 'clis') => {
     void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${diagnosticError(error)}`, 'error'));
   };
@@ -1096,11 +1096,11 @@ async function main(): Promise<void> {
     if (quitting) throw new Error('Cats Bot is stopping');
     if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
-    // SPEC-012 FR-13: a bot's own tab may also update its CLI; the New cat bot window only installs.
+    // SPEC-013 FR-13: a bot's own tab may also update its CLI; the New cat bot window only installs.
     if (!isSetupChange(change) || (change === 'upgrade' && !fromSettings(event))) throw new Error('Invalid setup change');
     return providerSetup.install(provider, step, setupLogTo(event), change);
   });
-  // SPEC-012: Cats Bot Settings' Agent CLIs tab, for the hub's own settings window only.
+  // SPEC-013: Cats Bot Settings' Agent CLIs tab, for the hub's own settings window only.
   registerComputerSetupIpc({
     providers: providerSetup,
     fromHub: (event) => ownedMainFrame(event) && fromHubSettings(event),
@@ -1118,7 +1118,7 @@ async function main(): Promise<void> {
     return result;
   });
   ipcMain.handle('setup:environment', (event): SetupEnvironment => {
-    // SPEC-012 FR-13: a bot's own tab words its rows for this operating system too.
+    // SPEC-013 FR-13: a bot's own tab words its rows for this operating system too.
     if (!ownedMainFrame(event) || (!fromCreate(event) && !fromSettings(event))) throw new Error('Provider setup is available only from Settings');
     return { platform: process.platform, startAtLoginOffered: false };
   });
@@ -1595,7 +1595,7 @@ async function main(): Promise<void> {
     from.presenter.openSettings(typeof tab === 'string' ? tab : undefined);
     return null;
   });
-  // SPEC-012 FR-13: a bot's Cat bot tab links to the agent CLIs every cat bot shares.
+  // SPEC-013 FR-13: a bot's Cat bot tab links to the agent CLIs every cat bot shares.
   ipcMain.handle('shell:openAgentClis', (event) => {
     if (!ownedMainFrame(event) || !fromSettings(event)) return null;
     openHubSettings('clis');

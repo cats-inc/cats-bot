@@ -23,7 +23,7 @@ const { COMPUTER_SETUP_CHANNELS, registerComputerSetupIpc } = await import('../.
 hooks.deregister();
 
 /**
- * SPEC-012: the hub's Agent CLIs tab. These run stub helpers only: nothing here installs,
+ * SPEC-013: the hub's Agent CLIs tab. These run stub helpers only: nothing here installs,
  * updates or checks anything on the machine running the tests.
  */
 

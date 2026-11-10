@@ -11,7 +11,7 @@
 
 ## Related Spec
 
-[SPEC-012: Agent CLIs in Cats Bot Settings](../specs/SPEC-012-agent-clis-in-cats-bot-settings.md),
+[SPEC-013: Agent CLIs in Cats Bot Settings](../specs/SPEC-013-agent-clis-in-cats-bot-settings.md),
 under [ADR-019](../decisions/019-manage-agent-clis-from-cats-bot-settings-with-the-wizard-rows.md).
 
 ## Overview

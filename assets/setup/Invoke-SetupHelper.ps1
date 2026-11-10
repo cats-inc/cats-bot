@@ -5,7 +5,7 @@
     Only the five supported providers and Codex prerequisites are accepted.
     No command strings or additional arguments are accepted from the UI.
     -Upgrade installs a newer release of Node.js or a provider CLI that already
-    works (SPEC-012 FR-8); the npm folder and PowerShell scripts have none.
+    works (SPEC-013 FR-8); the npm folder and PowerShell scripts have none.
 .PARAMETER Helper
     The packaged helper to run.
 .PARAMETER Apply

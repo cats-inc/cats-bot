@@ -158,7 +158,7 @@ script that changes the computer is ticked by the owner
 installs, updates and signs in to the CLIs every cat bot shares, in the same
 rows and under the same rules
 ([ADR-019](decisions/019-manage-agent-clis-from-cats-bot-settings-with-the-wizard-rows.md),
-[SPEC-012](specs/SPEC-012-agent-clis-in-cats-bot-settings.md),
+[SPEC-013](specs/SPEC-013-agent-clis-in-cats-bot-settings.md),
 [PLAN-012](plans/PLAN-012-agent-clis-in-cats-bot-settings.md)).
 
 The heartbeat either keeps the owner company or follows up on unfinished work,

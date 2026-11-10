@@ -5,7 +5,7 @@
 export type SetupStepId = 'node' | 'npm' | 'provider' | 'shell';
 
 /**
- * SPEC-012: every packaged helper the hub can run, which is also a row of Cats Bot
+ * SPEC-013: every packaged helper the hub can run, which is also a row of Cats Bot
  * Settings' Agent CLIs tab. A provider's row is its own id there, and `provider` in a
  * bot's chain (SPEC-010).
  */
@@ -15,7 +15,7 @@ export type SetupHelperId = 'node' | 'npm' | 'shell' | 'codex' | 'claude' | 'ant
 export const SETUP_PROVIDER_IDS = ['codex', 'claude', 'antigravity', 'grok', 'muse'] as const;
 
 /**
- * SPEC-012 FR-8: helpers whose `-Upgrade` installs a newer release. The npm folder only
+ * SPEC-013 FR-8: helpers whose `-Upgrade` installs a newer release. The npm folder only
  * re-applies its settings and PowerShell scripts only sets a policy, so neither has one.
  */
 export const UPDATABLE_HELPERS: readonly SetupHelperId[] = ['node', ...SETUP_PROVIDER_IDS];
@@ -26,7 +26,7 @@ export const isSetupHelperId = (value: unknown): value is SetupHelperId =>
 export const isUpdatableHelper = (value: unknown): boolean =>
   typeof value === 'string' && (UPDATABLE_HELPERS as readonly string[]).includes(value);
 
-/** SPEC-012 FR-7: what a ticked row does. Installing or setting up, or updating something that works. */
+/** SPEC-013 FR-7: what a ticked row does. Installing or setting up, or updating something that works. */
 export type SetupChange = 'apply' | 'upgrade';
 
 export const isSetupChange = (value: unknown): value is SetupChange => value === 'apply' || value === 'upgrade';
@@ -39,7 +39,7 @@ export interface SetupScript {
   source: string | null;
 }
 
-/** SPEC-012 FR-9: what the last update found, from the checks before and after it. */
+/** SPEC-013 FR-9: what the last update found, from the checks before and after it. */
 export interface SetupUpdateResult {
   from: string | null;
   to: string | null;
@@ -67,11 +67,11 @@ export interface SetupStep<Id extends string = SetupStepId> {
   script: SetupScript | null;
   /** FR-10: the command applying this step really runs. */
   applyCommand: string | null;
-  /** SPEC-012 FR-8: the command an update really runs; null where the helper has none. */
+  /** SPEC-013 FR-8: the command an update really runs; null where the helper has none. */
   updateCommand: string | null;
-  /** SPEC-012 FR-9: set once an update of this step has run in this hub session. */
+  /** SPEC-013 FR-9: set once an update of this step has run in this hub session. */
   lastUpdate?: SetupUpdateResult;
-  /** SPEC-012 FR-5: the reason a read-only check could not run. */
+  /** SPEC-013 FR-5: the reason a read-only check could not run. */
   checkError?: string;
 }
 
@@ -94,7 +94,7 @@ export interface ProviderSetupState {
 }
 
 /**
- * SPEC-012: this computer as the Agent CLIs tab shows it, kept by the hub for its session.
+ * SPEC-013: this computer as the Agent CLIs tab shows it, kept by the hub for its session.
  * Until the owner first presses Check this computer, every step reads `not_checked` and
  * nothing has run.
  */

@@ -40,7 +40,7 @@ test('every bridge namespace method exists in the preload script', () => {
   assert.deepEqual(missing, []);
 });
 
-test('every Agent CLIs channel the preload invokes is registered for Cats Bot Settings (SPEC-012)', () => {
+test('every Agent CLIs channel the preload invokes is registered for Cats Bot Settings (SPEC-013)', () => {
   const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
   const handlers = read('src', 'shell', 'electron', 'computerSetup.ts');
   const channels = [...read('assets', 'preload.cjs').matchAll(/invoke\('(computer:\w+)'/gu)].map((match) => match[1]!);

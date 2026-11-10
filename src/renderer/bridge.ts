@@ -217,7 +217,7 @@ export interface CatsBotBridge {
     chooseFolder(current: string): Promise<string | null>;
     openDataFolder(): Promise<null>;
     openSettings(tab?: string): Promise<null>;
-    /** SPEC-012 FR-13: from a bot's settings, Cats Bot Settings on its Agent CLIs tab. */
+    /** SPEC-013 FR-13: from a bot's settings, Cats Bot Settings on its Agent CLIs tab. */
     openAgentClis(): Promise<null>;
     setFloatingVisible(visible: boolean): Promise<boolean | null>;
     noteLayers(): Promise<NoteLayersView | null>;
@@ -232,7 +232,7 @@ export interface CatsBotBridge {
     menu(): Promise<null>;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
   };
-  /** SPEC-012: Cats Bot Settings' Agent CLIs tab only; every other window is refused. */
+  /** SPEC-013: Cats Bot Settings' Agent CLIs tab only; every other window is refused. */
   computer: {
     /** What the hub kept from this session's last check, or every row not checked yet. Runs nothing. */
     state(): Promise<import('../shared/providerSetup.ts').ComputerSetupState>;
@@ -260,7 +260,7 @@ export interface CatsBotBridge {
     install(
       provider: string,
       step: import('../shared/providerSetup.ts').SetupStepId,
-      /** SPEC-012 FR-13: `upgrade` from a bot's own settings only. */
+      /** SPEC-013 FR-13: `upgrade` from a bot's own settings only. */
       change?: import('../shared/providerSetup.ts').SetupChange,
     ): Promise<import('../shared/providerSetup.ts').ProviderSetupState>;
     providers(): Promise<ProviderInfo[]>;

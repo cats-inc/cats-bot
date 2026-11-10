@@ -86,7 +86,7 @@ function nativeFacts(provider: string, step: SetupStep<string>, platform: string
   };
 }
 
-/** A row's provider: a bot's chain calls it `provider`, and the Agent CLIs tab (SPEC-012) by its id. */
+/** A row's provider: a bot's chain calls it `provider`, and the Agent CLIs tab (SPEC-013) by its id. */
 const providerOf = (step: SetupStep<string>, provider: string): string => (step.id === 'provider' ? provider : step.id);
 
 export function stepFacts(step: SetupStep<string>, provider: string, platform: string): StepFacts {
@@ -107,7 +107,7 @@ export function stepFacts(step: SetupStep<string>, provider: string, platform: s
 }
 
 /**
- * SPEC-012 FR-8: what an update does. No helper can say read-only whether a newer release
+ * SPEC-013 FR-8: what an update does. No helper can say read-only whether a newer release
  * exists, so the row offers the update and says that, when it is already the newest,
  * nothing changes.
  */

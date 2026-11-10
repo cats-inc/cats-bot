@@ -28,7 +28,7 @@ import {
   type SetupHelperId,
 } from '../../src/shared/providerSetup.ts';
 
-/** SPEC-012: what the Agent CLIs tab and a cat bot's own tab decide, apart from React. */
+/** SPEC-013: what the Agent CLIs tab and a cat bot's own tab decide, apart from React. */
 
 const row = (id: SetupHelperId, status: string, extra: Partial<ComputerStep> = {}): ComputerStep => ({
   id, label: id, status, installed: status === 'ready', version: status === 'ready' ? '1.0.0' : null,
