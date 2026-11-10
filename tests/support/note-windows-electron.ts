@@ -14,6 +14,8 @@ export class BrowserWindow extends EventEmitter {
   private destroyed = false;
   private finishLoad: (() => void) | undefined;
   private readonly bounds: { x: number; y: number; width: number; height: number };
+  /** The bounds a maximized window restores to; null while it is not maximized. */
+  private normal: { x: number; y: number; width: number; height: number } | null = null;
 
   constructor(options: { x?: number; y?: number; width: number; height: number }) {
     super();
@@ -31,6 +33,28 @@ export class BrowserWindow extends EventEmitter {
   isFocused(): boolean { return false; }
   getBounds() { return this.bounds; }
   setBounds(bounds: typeof this.bounds): void { Object.assign(this.bounds, bounds); }
+  isMaximized(): boolean { return this.normal !== null; }
+  isFullScreen(): boolean { return false; }
+  getNormalBounds() { return { ...(this.normal ?? this.bounds) }; }
+  /**
+   * Fills the screen. `zoomFrames` first reports a screen-sized frame while the window is not yet maximized, as
+   * macOS does for the frames of its zoom animation (measured with Electron 41.2.0).
+   */
+  maximize(options: { zoomFrames?: boolean } = {}): void {
+    const normal = { ...this.bounds };
+    Object.assign(this.bounds, { x: 0, y: 30, width: 1920, height: 1050 });
+    if (options.zoomFrames) this.emit('resize');
+    this.normal = normal;
+    this.emit('resize');
+    this.emit('maximize');
+  }
+  unmaximize(): void {
+    if (!this.normal) return;
+    Object.assign(this.bounds, this.normal);
+    this.normal = null;
+    this.emit('resize');
+    this.emit('unmaximize');
+  }
   /** Each window's HWND is its webContents id, so desktop-host calls can be told apart. */
   getNativeWindowHandle(): Buffer {
     const handle = Buffer.alloc(8);
