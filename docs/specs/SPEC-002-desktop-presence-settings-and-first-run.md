@@ -87,8 +87,10 @@ instead of opening the alert.
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer
    restart; when it cannot be found it falls back to `normal` and the reason is recorded, and while a
    note needs that layer it is looked for again at most every 10 seconds (Explorer may create the
-   container a little later); other platforms provide only `normal` and `top`. Dragging works on every
-   layer; the wallpaper layer takes no input. While a note is maximized or full screen (the window system can
+   container a little later). On macOS they are window levels (ADR-016): `desktop` above the desktop
+   icons and below every application window, `wallpaper` below the icons and above the desktop picture,
+   both on every Space and kept in place by Mission Control; Linux provides only `normal` and `top`.
+   Dragging works on every layer; the wallpaper layer takes no input. While a note is maximized or full screen (the window system can
    do this, for example on a header double-click), the shell keeps the position and size it restores to, so a note
    that was maximized when the bot quit reopens at its own size. A desktop-layer note temporarily becomes an ordinary
    window when clicked so that it can be typed into (including IME), and returns to its layer after it
@@ -113,10 +115,13 @@ instead of opening the alert.
   after reopening; it shows thinking while a turn is in progress.
 - A4: On Windows, after a note is switched to the desktop layer, it is still there after Win+D and can
   still be typed into; after switching to the wallpaper layer it is below the icons; after Explorer
-  restarts it returns to its layer.
+  restarts it returns to its layer. On macOS, a desktop-layer note is below every application window and
+  above the icons, can be dragged and typed into (including IME) after a click, and returns below the
+  windows once another window has focus; a wallpaper-layer note is below the icons and takes no input,
+  and opening it from the tray or settings raises it until it loses focus.
 
 ## Non-Goals
 
-- Desktop and wallpaper layers on macOS and Linux.
+- Desktop and wallpaper layers on Linux.
 - Code signing, automatic update and GitHub Release publishing (authorized separately per the release
   SOP).

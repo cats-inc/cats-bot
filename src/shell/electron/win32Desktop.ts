@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import { diagnosticError } from '../../shared/diagnosticLog.ts';
+import { loadMacDesktopHost } from './macDesktop.ts';
 
 import {
   discoverShellHosts,
@@ -36,10 +37,14 @@ export interface ReleasedWindow {
   shown: boolean;
 }
 
+/**
+ * A note's desktop and wallpaper layers: Explorer's hosts on Windows (below), window levels on macOS
+ * (`macDesktop.ts`, ADR-016). A window is its native handle (an HWND, or the NSView on macOS).
+ */
 export interface DesktopHost {
-  /** Puts the window under the layer's host at its current screen rectangle; false when there is no host. */
+  /** Puts the window on the layer at its current screen rectangle; false when there is no host. */
   attach(window: Hwnd, layer: AttachedLayer): boolean;
-  /** Makes an attached window top-level again at the same screen rectangle; also forgets a destroyed one. */
+  /** Makes an attached window an ordinary window again at the same screen rectangle; also forgets a destroyed one. */
   detach(window: Hwnd): void;
   /**
    * Attached windows the shell has just hidden or destroyed. If any of them was
@@ -103,11 +108,14 @@ export interface DesktopWindows extends ShellWindows {
   foreground(window: Hwnd): boolean;
 }
 
-/** Loads the binding on Windows; null elsewhere or when koffi cannot load, so the shell offers normal and top only. */
+/**
+ * Loads the binding on Windows and macOS (ADR-016); null elsewhere or when koffi cannot load, so the shell offers
+ * normal and top only.
+ */
 export function loadDesktopHost(log: (line: string, level?: 'info' | 'warn' | 'error') => void): DesktopHost | null {
-  if (process.platform !== 'win32') return null;
+  if (process.platform !== 'win32' && process.platform !== 'darwin') return null;
   try {
-    return createWin32DesktopHost(log);
+    return process.platform === 'darwin' ? loadMacDesktopHost(log) : createWin32DesktopHost(log);
   } catch (error) {
     log(`desktop layers unavailable: ${diagnosticError(error)}`, 'error');
     return null;

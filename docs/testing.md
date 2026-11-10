@@ -404,6 +404,20 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   check `IsWindowVisible` stays false, and restart Explorer with a wallpaper
   note shown: the note opens again on the wallpaper, and hiding it leaves the
   wallpaper intact.
+- Note layers (ADR-016) on macOS: read each note's level from WindowServer
+  (`CGWindowListCopyWindowInfo`, `kCGWindowLayer`; no Screen Recording needed).
+  - Expect `CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1` on the
+    desktop layer, listed above Finder's icons window and below every
+    application window. Expect `CGWindowLevelForKey(kCGDesktopWindowLevelKey) + 1`
+    on the wallpaper layer, below the icons.
+  - Check the level through a lift (focus the note: the normal level), a settle
+    (focus another window: the layer's level again), hiding and opening, and
+    every layer change.
+  - By hand: click, drag and type (including an IME) into a desktop note. Use
+    Show Desktop, Mission Control, another Space, Stage Manager and Sonoma's
+    click-the-wallpaper. A wallpaper note takes no click.
+  - Run the universal package once on an Intel Mac or under Rosetta, which
+    loads koffi's x64 binary.
 
 ## Running Tests
 
