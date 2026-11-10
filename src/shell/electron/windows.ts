@@ -329,7 +329,8 @@ export class NoteWindows {
     if (isAttachedLayer(view.layer) && desktop) {
       window.setAlwaysOnTop(false);
       if (this.lifted.has(conversationId) || desktop.attachedLayer(handle) === view.layer) return;
-      if (!this.attach(desktop, window, view.layer)) {
+      // attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other.
+      if (!desktop.attach(handle, view.layer)) {
         this.log(
           `conversation ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`,
           'warn',
@@ -339,17 +340,6 @@ export class NoteWindows {
     }
     if (desktop?.isAttached(handle)) desktop.detach(handle);
     window.setAlwaysOnTop(view.layer === 'top', 'floating');
-  }
-
-  /**
-   * attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other. A note that
-   * is an ordinary window for now (lifted, or with no host yet) can be maximized by a header double-click; Explorer's
-   * hosts span every display, and the maximized style and the screen's rectangle would be kept, so the note gets its
-   * own size back first.
-   */
-  private attach(desktop: DesktopHost, window: BrowserWindow, layer: 'desktop' | 'wallpaper'): boolean {
-    if (window.isMaximized()) window.unmaximize();
-    return desktop.attach(handleOf(window), layer);
   }
 
   setLayer(conversationId: string, layer: NoteLayer): NoteLayer {
@@ -418,7 +408,7 @@ export class NoteWindows {
       const handle = handleOf(window);
       if (!desktop.isAttached(handle) || !desktop.hostAlive(handle)) {
         desktop.detach(handle);
-        if (this.attach(desktop, window, view.layer))
+        if (desktop.attach(handle, view.layer))
           this.log(`conversation ${conversationId}: attached to the ${view.layer} layer again`);
       }
     }
