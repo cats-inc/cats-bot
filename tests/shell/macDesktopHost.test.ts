@@ -97,5 +97,15 @@ test('the macOS package keeps only koffi\'s two macOS binaries, allowed in both 
   }
   for (const arch of ['win32_x64', 'linux_x64', 'musl_arm64', 'freebsd_x64', 'openbsd_ia32'])
     assert.equal(excluded(`node_modules/koffi/build/koffi/${arch}/koffi.node`), true, arch);
-  assert.deepEqual(pkg.build.linux.files, ['!node_modules/koffi/**'], 'Linux has no desktop layers yet');
+  assert.equal(pkg.build.linux.files.at(-1), '!node_modules/koffi/**', 'Linux has no desktop layers yet');
+});
+
+test('a platform files list repeats the shared one, which electron-builder replaces rather than extends', async () => {
+  const { readFileSync } = await import('node:fs');
+  const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+  // A list of only exclusions makes electron-builder package the whole checkout (sources, docs, tests, native builds).
+  for (const platform of ['win', 'mac', 'linux']) {
+    const files = pkg.build[platform].files as string[] | undefined;
+    if (files) assert.deepEqual(files.slice(0, pkg.build.files.length), pkg.build.files, platform);
+  }
 });

@@ -37,7 +37,7 @@
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "shell": "electron .",
     "dist:win": "node scripts/windows-desktop-control.mjs publish && electron-builder --win nsis portable --publish never && node scripts/windows-desktop-control.mjs verify",
-    "dist:dir": "node scripts/windows-desktop-control.mjs publish && electron-builder --dir --publish never && node scripts/windows-desktop-control.mjs verify",
+    "dist:dir": "node scripts/windows-desktop-control.mjs publish && node scripts/macos-voice-helper.mjs build --host && electron-builder --dir --publish never && node scripts/windows-desktop-control.mjs verify",
     "dist:preview": "node scripts/build-preview.mjs",
     "icons": "electron scripts/make-icons.mjs",
     "tools:check": "node scripts/sync-shared-tools.mjs",
@@ -110,6 +110,13 @@
           "filter": [
             "**/*"
           ]
+        },
+        {
+          "from": "build/native-windows/${arch}/windows-stt",
+          "to": "native/windows-stt",
+          "filter": [
+            "**/*"
+          ]
         }
       ]
     },
@@ -131,7 +138,30 @@
       "artifactName": "Cats-Bot-${version}-portable-${arch}.${ext}"
     },
     "mac": {
+      "extraResources": [
+        {
+          "from": "build/native-macos/macos-stt",
+          "to": "native/macos-stt",
+          "filter": [
+            "**/*"
+          ]
+        }
+      ],
+      "extendInfo": {
+        "NSSpeechRecognitionUsageDescription": "Cats Bot uses speech recognition for voice input in a note.",
+        "NSMicrophoneUsageDescription": "Cats Bot uses the microphone for voice input in a note."
+      },
       "files": [
+        "dist/**/*",
+        "assets/**/*",
+        "!assets/installer/**",
+        "!node_modules/koffi/src/**",
+        "!node_modules/koffi/vendor/**",
+        "!node_modules/koffi/doc/**",
+        "!node_modules/koffi/lib/**",
+        "!dist/release/**",
+        "package.json",
+        "LICENSE",
         "!node_modules/koffi/build/koffi/{freebsd,linux,musl,openbsd,win32}_*/**"
       ],
       "x64ArchFiles": "**/node_modules/koffi/build/koffi/darwin_*/koffi.node",
@@ -145,6 +175,16 @@
     },
     "linux": {
       "files": [
+        "dist/**/*",
+        "assets/**/*",
+        "!assets/installer/**",
+        "!node_modules/koffi/src/**",
+        "!node_modules/koffi/vendor/**",
+        "!node_modules/koffi/doc/**",
+        "!node_modules/koffi/lib/**",
+        "!dist/release/**",
+        "package.json",
+        "LICENSE",
         "!node_modules/koffi/**"
       ],
       "target": [

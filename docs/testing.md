@@ -418,6 +418,11 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   a normal one, with a floating Cat on screen: neither the note nor the Cat is in the picture, the
   note comes back focused and still on its layer once it loses focus. On every display the overlay
   covers the screen, a drag selects, Escape cancels. On wlroots, check with and without `grim`/`slurp`.
+- Dictation (SPEC-003 FR-10): only a signed and notarized macOS package (hardened runtime, the
+  audio-input entitlement and the usage strings) proves the microphone works as shipped; an unsigned
+  development run proves the helper and the note. Grant the microphone and speech recognition, dictate
+  English and Chinese, cancel with Escape, start in a second note while the first listens (the first
+  stops), and close a listening note. On Windows check the online-speech warning badge.
 - Note layers (ADR-016) on macOS: read each note's level from WindowServer
   (`CGWindowListCopyWindowInfo`, `kCGWindowLayer`; no Screen Recording needed).
   - Expect `CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1` on the
