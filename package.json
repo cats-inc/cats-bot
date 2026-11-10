@@ -132,8 +132,9 @@
     },
     "mac": {
       "files": [
-        "!node_modules/koffi/**"
+        "!node_modules/koffi/build/koffi/{freebsd,linux,musl,openbsd,win32}_*/**"
       ],
+      "x64ArchFiles": "**/node_modules/koffi/build/koffi/darwin_*/koffi.node",
       "target": [
         "dmg",
         "zip"

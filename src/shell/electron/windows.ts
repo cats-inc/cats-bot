@@ -24,12 +24,13 @@ import type { DesktopHost } from './win32Desktop.ts';
  * Closing a note hides it (the conversation and the bot keep running);
  * deleting a conversation and quitting the bot are separate actions.
  *
- * SPEC-002 FR-8: each note has a layer. A desktop or wallpaper note is a
- * child of Explorer's desktop window, which never takes the keyboard, so a
- * desktop note that gets focus is lifted to an ordinary window while it is
- * used and goes back when it loses focus (desktop-work-fleet ADR-030 projects
- * an operated scene to floating the same way). Explorer destroys its children
- * when it restarts; such notes are opened again in their layer. Explorer's
+ * SPEC-002 FR-8: each note has a layer. On Windows a desktop or wallpaper
+ * note is a child of Explorer's desktop window, which never takes the
+ * keyboard; on macOS it sits at a window level below every application
+ * window (ADR-016). Either way a desktop note that gets focus is lifted to an
+ * ordinary window while it is used and goes back when it loses focus.
+ * Explorer destroys its children when it restarts; such notes are opened
+ * again in their layer. Explorer's
  * wallpaper host keeps what a shown note left there (white), so a note the
  * shell hides or destroys is reported to the desktop host with whether it was
  * shown, and the host has the wallpaper drawn again (ADR-011).
@@ -43,7 +44,7 @@ export interface NoteWindowsOptions {
   rendererDir: string;
   iconPath: string;
   isQuitting(): boolean;
-  /** Windows only; without it notes offer the normal and top layers. */
+  /** Windows and macOS; without it notes offer the normal and top layers. */
   desktop?: DesktopHost | null;
   log?(line: string, level?: 'info' | 'warn' | 'error'): void;
   /** SPEC-008 FR-17: the AUMID of this bot's notes. */
@@ -91,13 +92,22 @@ export class NoteWindows {
     this.options = options;
     this.state = readShellState(options.botRoot);
     if (options.desktop) {
-      this.healthTimer = setInterval(() => this.checkDesktopHosts(), HEALTH_MS);
+      this.healthTimer = setInterval(() => this.guarded('the periodic layer check', () => this.checkDesktopHosts()), HEALTH_MS);
       this.healthTimer.unref?.();
     }
   }
 
   private log(line: string, level: 'info' | 'warn' | 'error' = 'info'): void {
     this.options.log?.(line, level);
+  }
+
+  /** A native call failing in a timer would otherwise be uncaught in the main process. */
+  private guarded(what: string, run: () => void): void {
+    try {
+      run();
+    } catch (error) {
+      this.log(`${what} failed: ${error instanceof Error ? error.message : String(error)}`, 'error');
+    }
   }
 
   /** The layers this host can offer. */
@@ -327,12 +337,19 @@ export class NoteWindows {
     const desktop = this.options.desktop;
     const handle = handleOf(window);
     if (isAttachedLayer(view.layer) && desktop) {
-      window.setAlwaysOnTop(false);
+      // On macOS this resets the level an attached note sits at.
+      if (!desktop.isAttached(handle)) window.setAlwaysOnTop(false);
       if (this.lifted.has(conversationId) || desktop.attachedLayer(handle) === view.layer) return;
+      // A full-screen note has a Space of its own: it stays an ordinary window, as if lifted, until it leaves
+      // full screen and then loses focus.
+      if (window.isFullScreen()) {
+        this.lifted.add(conversationId);
+        return;
+      }
       // attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other.
       if (!desktop.attach(handle, view.layer)) {
         this.log(
-          `conversation ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`,
+          `conversation ${conversationId}: no ${view.layer} layer host; shown as an ordinary window until there is one`,
           'warn',
         );
       }
@@ -374,7 +391,7 @@ export class NoteWindows {
     setTimeout(() => {
       if (window.isDestroyed() || window.isFocused() || !this.lifted.has(conversationId)) return;
       this.lifted.delete(conversationId);
-      if (window.isVisible()) this.applyLayer(conversationId, window);
+      if (window.isVisible()) this.guarded(`conversation ${conversationId}: returning to its layer`, () => this.applyLayer(conversationId, window));
     }, SETTLE_MS);
   }
 

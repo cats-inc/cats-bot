@@ -13,6 +13,9 @@ Updated 2026-10-30: under [ADR-008](008-run-every-bot-as-a-headless-core-under-o
 PLAN-009, the settings page, first run and floating Cat (§2–§4) are hosted by one hub for all bots. Each
 bot keeps its own settings window, notes and floating Cat, bound to it; the first run creates the first bot
 and the hub registry.
+Updated 2026-11-10: under [ADR-016](016-put-macos-notes-on-the-desktop-and-wallpaper-through-window-levels.md),
+macOS notes get the desktop and wallpaper layers through window levels; §1's normal and topmost only now
+applies to Linux.
 
 ## Context
 

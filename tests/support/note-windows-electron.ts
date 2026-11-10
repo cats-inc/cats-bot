@@ -34,7 +34,12 @@ export class BrowserWindow extends EventEmitter {
   getBounds() { return this.bounds; }
   setBounds(bounds: typeof this.bounds): void { Object.assign(this.bounds, bounds); }
   isMaximized(): boolean { return this.normal !== null; }
-  isFullScreen(): boolean { return false; }
+  private fullScreen = false;
+  isFullScreen(): boolean { return this.fullScreen; }
+  setFullScreen(flag: boolean): void {
+    this.fullScreen = flag;
+    this.emit(flag ? 'enter-full-screen' : 'leave-full-screen');
+  }
   getNormalBounds() { return { ...(this.normal ?? this.bounds) }; }
   /**
    * Fills the screen. `zoomFrames` first reports a screen-sized frame while the window is not yet maximized, as

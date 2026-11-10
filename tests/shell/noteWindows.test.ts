@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { BotCore } from '../../src/core/bot.ts';
 import type { DesktopHost } from '../../src/shell/electron/win32Desktop.ts';
+import { createMacDesktopHost } from '../../src/shell/electron/macDesktop.ts';
+import { FakeMacWindows, LEVELS, NOTE_BEHAVIOR } from '../support/fake-mac-windows.ts';
 import { BrowserWindow } from '../support/note-windows-electron.ts';
 
 const hooks = registerHooks({
@@ -229,3 +231,52 @@ test('a maximized note keeps the size it restores to, also through macOS zoom fr
 function pick({ x, y, width, height }: { x?: number; y?: number; width: number; height: number }) {
   return { x, y, width, height };
 }
+
+test('ADR-016: applying the layer again keeps a macOS note at its level, and the check puts back a level reset', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const mac = new FakeMacWindows();
+  // Electron's setAlwaysOnTop() on macOS sets the window's level.
+  const onTop = t.mock.method(BrowserWindow.prototype, 'setAlwaysOnTop', function (this: BrowserWindow, flag: boolean) {
+    mac.setLevel(this.webContents.id, flag ? 3 : LEVELS.normal);
+  });
+  const { windows } = fixture(t, createMacDesktopHost(mac));
+  windows.setLayer('home', 'desktop');
+  const opening = windows.open('home', { restore: true });
+  const window = BrowserWindow.instances[0]!;
+  window.loaded();
+  await opening;
+  const view = window.webContents.id;
+  assert.equal(mac.level(view), LEVELS.desktop);
+  const calls = onTop.mock.callCount();
+  windows.setLayer('home', 'desktop');
+  assert.equal(onTop.mock.callCount(), calls, 'an attached note is not taken off its level');
+  assert.equal(mac.level(view), LEVELS.desktop);
+  mac.setLevel(view, LEVELS.normal);
+  t.mock.timers.tick(5_000);
+  assert.equal(mac.level(view), LEVELS.desktop);
+  windows.setLayer('home', 'normal');
+  assert.deepEqual(mac.windows.get(view), { level: LEVELS.normal, behavior: NOTE_BEHAVIOR, ignores: false, fronted: 0 });
+});
+
+test('ADR-016: a full-screen note stays an ordinary window until it leaves full screen and loses focus', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const mac = new FakeMacWindows();
+  const { windows } = fixture(t, createMacDesktopHost(mac));
+  windows.setLayer('home', 'desktop');
+  const opening = windows.open('home');
+  const window = BrowserWindow.instances[0]!;
+  window.loaded();
+  await opening;
+  const view = window.webContents.id;
+  assert.equal(mac.level(view), LEVELS.normal, 'an owner open lifts the note');
+  window.setFullScreen(true);
+  window.emit('blur');
+  t.mock.timers.tick(400);
+  assert.equal(mac.level(view), LEVELS.normal, 'not taken out of its full-screen Space');
+  t.mock.timers.tick(5_000);
+  assert.equal(mac.level(view), LEVELS.normal, 'nor by the periodic check');
+  window.setFullScreen(false);
+  window.emit('blur');
+  t.mock.timers.tick(400);
+  assert.equal(mac.level(view), LEVELS.desktop);
+});
