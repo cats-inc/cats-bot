@@ -1,5 +1,9 @@
 # Implementation Plans
 
+- [PLAN-013: Persistent conversation resume](PLAN-013-persistent-conversation-resume.md)
+  — implemented, unpublished, 2026-11-11; resume saved identities after restart, distinguish terminal
+  loss from temporary failure and validate against an exact Runtime candidate.
+
 - [PLAN-006: Desktop control session MCP](PLAN-006-desktop-control-session-mcp.md)
   — planned, 2026-10-29; contract and profile, observe-only helper, core server,
   note/tray/CLI and native phase A acceptance, then input tools after owner sign-off.

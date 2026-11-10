@@ -52,6 +52,7 @@ export interface RuntimeMcpServer {
 
 export interface CreateSessionRequest {
   provider: string;
+  sessionLabel?: string;
   model?: string;
   modelSelection?: ModelSelection;
   cwd?: string;
@@ -115,6 +116,7 @@ export interface StreamOutcome {
   eventCount: number;
   resultEvent: RuntimeStreamEvent | null;
   errorText: string | null;
+  errorCode?: string;
 }
 
 export interface RuntimeClientOptions {
@@ -194,7 +196,7 @@ export class RuntimeClient {
     return this.request<RuntimeSessionView>('GET', `/sessions/${encodeURIComponent(id)}`);
   }
 
-  resumeSession(id: string, body: Pick<CreateSessionRequest, 'mcpServers' | 'interactionHost' | 'executionPolicy'> = {}): Promise<RuntimeSessionView> {
+  resumeSession(id: string, body: Pick<CreateSessionRequest, 'mcpServers' | 'interactionHost' | 'executionPolicy' | 'sessionLabel'> = {}): Promise<RuntimeSessionView> {
     return this.request<RuntimeSessionView>('POST', `/sessions/${encodeURIComponent(id)}/resume`, body);
   }
 
@@ -354,6 +356,7 @@ export class RuntimeClient {
         outcome.resultEvent = event;
       } else if (event.type === 'error') {
         outcome.errorText = typeof event.text === 'string' ? event.text : 'runtime error';
+        outcome.errorCode = typeof event.code === 'string' ? event.code : undefined;
       }
       onEvent(event);
     };

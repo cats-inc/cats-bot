@@ -173,16 +173,19 @@ does not establish browser/desktop helper availability or successful invocation.
 - **Responsibilities**: the bot-wide serialized queue with owner messages
   first, the per-session gate, and the turn runner that binds a session
   (create, resume or rebuild), streams the turn into the transcript and host
-  events, and turns every runtime answer into a state: 409 waits, 404/400
-  closed resumes, 410 rebuilds, 403/429 fails with the guardrail reason, a
-  stream without `result` is `interrupted`. An unavailable provider session
+  events, and turns every runtime answer into a state: 409 waits, a saved
+  sleeping/closed/failed attachment is inspected and resumed, 403/429 fails
+  with the guardrail reason, and a stream without `result` is `interrupted`.
+  An authoritative missing Runtime session or an unavailable provider session
   (`provider_session_unavailable` or a known provider text such as grok's "No
   saved copy of session", `src/core/runtime/providerSession.ts`) rebuilds from
   the transcript and re-sends a turn that produced nothing, once; the same
   unknown pre-output failure for two different prompts in one session rebuilds
-  for the next turn only. A rebuilt session is not rebuilt again before a turn
-  completes. Heartbeat errors stay out of the conversation; the journal keeps
-  the failed work item's error.
+  for the next turn only. Replacement evidence and its one-attempt fence
+  survive host restarts; a rebuilt session is not rebuilt again before a turn
+  completes. Ambiguous resume failures preserve the saved IDs. Heartbeat
+  errors stay out of the conversation; the journal keeps the failed work
+  item's error.
 
 ### `src/core/bot.ts`
 
@@ -209,7 +212,8 @@ does not establish browser/desktop helper availability or successful invocation.
   pass, never calling the model): restart the runtime with
   backoff, settle and fire schedules, keep the home session attached by the
   runtime's own session status (`initializing`/`ready`/`busy` are live and left
-  alone; `closing`/`closed` resume; 404 rebuilds; unreachable means no action),
+  alone; `closed` inspects/resumes and `closing` waits; an authoritative 404 or typed provider
+  loss permits one fenced replacement; unreachable preserves the attachment),
   or with the heartbeat on put it to sleep in rest hours once it is quiet (SPEC-011),
   put idle notes to sleep, expire unanswered approvals, and decide when a
   heartbeat turn is due. `schedules.ts` and `cron.ts` hold durable one-time and
@@ -299,7 +303,9 @@ does not establish browser/desktop helper availability or successful invocation.
    queue.
 2. The turn runner admits the item (`running`, `configRevision` recorded),
    binds the conversation to a runtime session (creating one with persona plus
-   handoff pack, resuming a sleeping one, or rebuilding a closed or stale one)
+   handoff pack, inspecting and resuming a saved sleeping/closed/failed one,
+   or replacing a stale one after configuration changes or an explicitly
+   unavailable one under its recovery fence)
    and streams `POST /sessions/{id}/messages` as NDJSON. Binding is one pass
    per conversation at a time: the tick and a turn that bind together share
    one result, and a replaced session is closed once no turn runs in it.

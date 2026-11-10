@@ -46,7 +46,7 @@
     "cdp:info": "node scripts/testing/bot-renderer-cdp.mjs info"
   },
   "dependencies": {
-    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-1bbba8d0.tgz",
+    "@cats-inc/cats-runtime": "file:vendor/cats-runtime-0.6.2-fb50e59a.tgz",
     "@cats-inc/platform-ui-web": "file:vendor/platform-ui-web-0.1.0-957e4717942c.tgz",
     "electron-updater": "6.8.9",
     "koffi": "2.16.3"

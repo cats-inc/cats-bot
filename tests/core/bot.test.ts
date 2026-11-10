@@ -130,7 +130,7 @@ test('tool events, errors and interrupted streams are classified (FR-18)', async
   }
 });
 
-test('a busy session is retried, a lost worker is resumed and an exited worker is rebuilt (FR-17, FR-18)', async () => {
+test('a busy session is retried and lost or exited workers resume the same session (FR-17, FR-18)', async () => {
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'recover', core: fastRetries });
   await core.start();
   try {
@@ -149,11 +149,11 @@ test('a busy session is retried, a lost worker is resumed and an exited worker i
     const rebuilt = await sendAndWait(core, 'home', 'exit-once');
     assert.equal(rebuilt.state, 'completed');
     const after1 = (await core.listConversations())[0]!.attachment;
-    assert.notEqual(after1.sessionId, before, 'a 410 replaces the session');
+    assert.equal(after1.sessionId, before, 'a worker exit preserves native history');
     const state2 = await fetchFakeState(core);
     const creates = state2.calls.filter((call) => call.op === 'create') as Array<{ body: Record<string, unknown> }>;
-    assert.equal(creates.length, 2);
-    assert.match(String(creates[1]!.body.instructions), /Owner: busy-once/u, 'the replacement carries the handoff pack');
+    assert.equal(creates.length, 1);
+    assert.equal(state2.calls.filter(call => call.op === 'resume').length, 2);
   } finally {
     await core.stop();
   }
@@ -313,7 +313,7 @@ test('a crashed runtime is restarted with backoff and the home session is rebuil
     const first = await sendAndWait(core, 'home', 'before crash');
     assert.equal(first.state, 'completed');
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'failed', 10_000);
-    assert.equal((await core.listConversations())[0]!.attachment.state, 'closed');
+    assert.equal((await core.listConversations())[0]!.attachment.state, 'sleeping');
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'ready', 10_000);
     const second = await sendAndWait(core, 'home', 'after crash');
     assert.equal(second.state, 'completed', second.error);

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "repository": "cats-inc/cats-runtime",
-  "commit": "1bbba8d0f12450af8c9fcdedcb55d7051fe69f5f",
+  "commit": "fb50e59ab2244bd2c45ae93fa11345cb7507011c",
   "version": "0.6.2",
-  "artifact": "vendor/cats-runtime-0.6.2-1bbba8d0.tgz",
-  "sha256": "22b9116a120d750524fbc1debca8dcf99dbad0865e3790a93547a168b3c349a7"
+  "artifact": "vendor/cats-runtime-0.6.2-fb50e59a.tgz",
+  "sha256": "256fb37a5b218fc9137910969a5d3b4c1e77a138f09273d8caa6018b0d087a76"
 }

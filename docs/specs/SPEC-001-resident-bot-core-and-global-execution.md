@@ -121,7 +121,7 @@ freeze of the storage format.
    and identifies its own sessions only by attachment records, without scanning `GET /sessions`.
    It takes `healthUrl` from `runtime.ready` on stdout, and only a successful `GET /health` counts as ready; on
    timeout (default 60 seconds) it marks `failed` and records the reason.
-6. FR-6: When the runtime exits unexpectedly, the core marks the runtime `failed` and all attachments `closed`,
+6. FR-6: When the runtime exits unexpectedly, the core marks the runtime `failed` and live attachments `sleeping`,
    and the reconciliation tick restarts it with backoff (5 seconds, 30 seconds, 2 minutes, 5 minutes, then a
    fixed 5 minutes), recording each restart in the journal. This differs from platform `processSupervisor`,
    which only marks `failed` without restarting, because the bot's promise is to be alive.
@@ -137,15 +137,21 @@ freeze of the storage format.
    `attachment`, `unreadCount`, `lastOwnerMessageAt`, `lastBotMessageAt`, the handoff checkpoint.
 10. FR-10: Each bot has exactly one home conversation, created on first startup; it can be cleared but not
     deleted.
-11. FR-11: Attachments are created lazily: when a work item is admitted and the attachment is `none` /
-    `closed` / `stale`, `POST /sessions` with `executionTarget`, `instructions` (persona plus handoff pack), the
-    corresponding `permissions` fields and `mcpServers` (the bot tool server of FR-24); when it is `sleeping`,
-    `POST /sessions/{id}/resume`. If resume fails, keep the attachment, mark it `failed` and write the error
-    into the conversation, never silently substituting a blank session. The exception is a resume that fails
-    because the provider session is unavailable (FR-18): no later resume can succeed, so the same bind marks
-    the attachment `failed`, creates a new session from the handoff pack with the same `cwd`, and then writes
-    a notice that the conversation continues in a new session. A notice is written only once the new session
-    exists, so a create that keeps failing does not repeat it. A conversation has only one binding at
+11. FR-11: Attachments are created lazily. A compatible saved `sleeping`, `closed` or `failed` attachment
+    is inspected by its saved Runtime ID first. Keep an existing live worker; otherwise resume that ID with
+    current policy and fresh host/MCP descriptors. Startup and reconcile send no model turn. `none`, an
+    intentional reset or an incompatible configuration creates a session with `executionTarget`,
+    `instructions` (persona plus handoff pack), permissions, `mcpServers` and a bounded `sessionLabel`.
+    Temporary or ambiguous resume failure keeps both IDs and marks `failed`; the next bind still inspects
+    the saved record. Typed `provider_session_unavailable`, the known native missing-history messages,
+    authoritative `404 Session not found`, or FR-18's established repeated-failure detector permit automatic
+    replacement. The visible notice is added only after creation succeeds; the transcript handoff omits
+    errors and rebuild notices. Optional
+    `unavailableReason` and `replacementPending` fields persist the reason and one-attempt fence until a
+    successful turn; even an ambiguous replacement-request failure cannot create again on each tick.
+    An explicit reset/retarget can establish a fresh binding. Old version-1 records load without rewriting;
+    absent optional fields mean no recorded terminal evidence or replacement attempt. Ordinary updates use
+    the existing atomic writer; no mandatory migration is introduced. A conversation has only one binding at
     a time: when the reconciliation tick and a turn bind at the same time they share one result, and do not
     each create a session that overwrites the other's attachment; the handoff pack does not include owner
     messages still `queued` / `running`, which are sent in as messages.
@@ -183,22 +189,16 @@ freeze of the storage format.
     `text`, `tool_use`, `tool_result`, `progress`, `error` and `result` events are appended to the transcript
     and the view in real time, and a failed turn whose stream already wrote its error adds no second error
     entry; receiving `result` marks `completed`; a stream that ends without `result` marks
-    `interrupted`; a 404 "no active worker" resumes first and then retries once; a 410 marks the attachment
-    `closed` and rebuilds it at the next admission; a 403 / 429 guardrail marks `failed` with the runtime's
-    reason and respects `cooldownUntil`. A provider session that is unavailable — Runtime's
-    `provider_session_unavailable` code on an HTTP error or on the stream's `error` event, or for Runtimes
-    without the code a known provider text (grok "No saved copy of session … was found", claude "No
-    conversation found with session ID") — marks the attachment `failed`, rebuilds it per FR-11 with a notice,
-    and sends the same work item again, once. Only a turn that failed before the provider produced any text,
-    tool event, text or tool content block or interaction is sent again, and the errors of the attempt that
-    is sent again are not kept in the conversation. The same unknown failure before output for two different
-    prompts in a row in the same session is treated as the session's, not the turn's: the attachment is
-    marked `failed` so the next turn rebuilds it, without sending the failed turn again; a failure carrying
-    another typed code is never treated so. A session a rebuild produced is not rebuilt again before a turn
-    of the conversation completes, so a failure no rebuild can fix costs one rebuild, not one per turn; a
-    provider that loses every session after a completed turn is rebuilt once for each such turn, each time
-    with a notice. A heartbeat's `error` events are logged and its failed work item keeps the error in the
-    journal; they are never written into the conversation (FR-25).
+    `interrupted`; recognized missing-worker/closed/exited errors inspect and resume first, then retry once.
+    Typed native loss follows FR-11, including when delivered inside the stream. Only a rejection before
+    assistant/tool output may replay the pending turn; partial output is sealed as failed without replay.
+    Other 404/410 errors do not authorize replacement. A 403 / 429 guardrail marks `failed` with the runtime's
+    reason and respects `cooldownUntil`.
+    The same unclassified pre-output failure on two distinct prompts in the same session can request one
+    replacement for the next turn; it never replays the second failed turn. Other typed failures do not
+    trigger this heuristic. `repeated_provider_failure` retains this decision across restart and shares
+    the persisted replacement fence. Interactions and text/tool content blocks count as output; heartbeat
+    errors remain in the journal rather than the conversation.
 19. FR-19: The bot's replies are appended to the destination conversation in order; when a transport is
     attached later, segmentation (Telegram 4,000 characters) must preserve order.
 
@@ -213,8 +213,10 @@ freeze of the storage format.
       - Alive (`initializing` / `ready` / `busy`): leave it alone. `initializing` is brought to ready by the
         next turn (including a heartbeat, same as platform `companion/life/loop.ts`); when the session is
         `busy` or the attachment has a `running` work item, the tick never resumes, rebuilds or cancels.
-      - Closed (`closing` / `closed`) or nonexistent (404): if the attachment is `sleeping`,
-        `POST /sessions/{id}/resume`, otherwise rebuild per FR-11; on failure back off 5 minutes, with the
+      - Closed: inspect/resume the compatible saved attachment per FR-11; `closing` waits. Confirmed missing
+        Runtime/native history allows the bounded replacement from FR-11. Late probe results must match
+        the current attachment ID and configuration, and the tick rechecks running work before binding.
+        On failure back off 5 minutes, with the
         reason recorded as `no_capacity` (`Max sessions (N) reached`), `wake_failed` or `runtime_unavailable`,
         and each stretch of failure is recorded only once.
       - Unknown (unreachable, timeout, 5xx): per FR-8 do nothing, and look again at the next tick.

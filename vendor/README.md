@@ -4,13 +4,20 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `1bbba8d0f12450af8c9fcdedcb55d7051fe69f5f`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-1bbba8d0.tgz`; 1,825,254 bytes.
-SHA-256: `22b9116a120d750524fbc1debca8dcf99dbad0865e3790a93547a168b3c349a7`.
+Source `fb50e59ab2244bd2c45ae93fa11345cb7507011c`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-fb50e59a.tgz`; 1,836,241 bytes.
+SHA-256: `256fb37a5b218fc9137910969a5d3b4c1e77a138f09273d8caa6018b0d087a76`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
 `package-lock.json` records the SHA-512 integrity. This is not an npm publication.
+
+Runtime #214 preserves terminal `provider_session_unavailable` evidence, and
+#215 adds explicit native-history retention and best-effort names for Codex.
+Internal jobs can request ephemeral history; persistent Bot conversations retain
+their native identity and receive a bounded name through Runtime. The Bot restart
+repair resumes its saved Runtime record with fresh host descriptors. Neither the
+pin refresh nor this lifecycle change deletes existing native conversations.
 
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed

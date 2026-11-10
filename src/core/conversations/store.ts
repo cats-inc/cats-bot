@@ -64,6 +64,10 @@ function normalizeAttachment(raw: unknown, now: string): SessionAttachment {
     configRevision: typeof raw.configRevision === 'number' ? raw.configRevision : null,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     ...(typeof raw.lastError === 'string' ? { lastError: raw.lastError } : {}),
+    ...(raw.unavailableReason === 'provider_session_unavailable' || raw.unavailableReason === 'runtime_session_missing'
+      || raw.unavailableReason === 'repeated_provider_failure'
+      ? { unavailableReason: raw.unavailableReason } : {}),
+    ...(raw.replacementPending === true ? { replacementPending: true } : {}),
   };
 }
 

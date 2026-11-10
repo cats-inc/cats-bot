@@ -204,6 +204,13 @@ Where the two documents complement or diverge, this ADR resolves them as follows
   most recently focused note", and it does not inject each note's private context into every heartbeat.
 - Non-home conversations get an idle policy: after idling, close the worker and keep the session id; resume
   natively the next time it is needed.
+- 2026-11-11 continuity amendment ([PLAN-013](../plans/PLAN-013-persistent-conversation-resume.md)):
+  host/runtime restart also preserves the saved Runtime and provider IDs. Inspect compatible sleeping,
+  closed or failed records and resume them with fresh host descriptors. A worker exit alone never proves
+  native history is gone. Only typed native loss or an authoritative missing Runtime record permits one
+  automatic replacement with a visible handoff; optional version-1 attachment fields retain that fence
+  across restart until a successful turn. Temporary failures keep the mapping. No shared thread across
+  conversations, raw native-ID import, profile relocation or bulk data migration is introduced.
 - Bot memory shared across conversations is "selected facts and open commitments", kept separate from each
   conversation's raw transcript; v1 does only each conversation's own handoff pack (12,000-character cap,
   verbatim for short conversations, digest plus recent content for long ones), and shared memory is deferred.

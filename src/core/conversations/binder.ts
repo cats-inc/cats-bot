@@ -61,6 +61,11 @@ export function isNoCapacity(message: string): boolean {
   return /\bmax sessions\b[^.]*\breached\b/iu.test(message);
 }
 
+function sessionLabel(conversation: ConversationRecord, profile: BotProfile): string {
+  return Array.from(`Cats Bot · ${profile.name} · ${conversation.title}`
+    .replace(/[\u0000-\u001f\u007f]/gu, ' ')).slice(0, 160).join('');
+}
+
 export class SessionBinder {
   private readonly deps: SessionBinderDependencies;
   private readonly inFlight = new Map<string, Promise<BindResult>>();
@@ -70,7 +75,7 @@ export class SessionBinder {
   }
 
   /**
-   * Keeps a live attachment, resumes a sleeping one, and otherwise creates a
+   * Keeps a live attachment, inspects/resumes a saved compatible one, and otherwise creates a
    * session with the persona and the handoff pack. A call made while another
    * bind of the same conversation runs joins it, so the tick and a turn never
    * create two sessions and overwrite each other's attachment.
@@ -92,6 +97,9 @@ export class SessionBinder {
     const profile = this.deps.profile();
     const { attachment } = conversation;
     const current = attachmentIsCurrent(conversation, profile);
+    if (current && attachment.sessionId && attachment.unavailableReason) {
+      return this.replaceUnavailable(client, conversation, profile, attachment.unavailableReason);
+    }
     const live = attachment.state === 'ready' || attachment.state === 'initializing';
     if (attachment.sessionId && live && current) {
       return { ok: true, sessionId: attachment.sessionId, how: 'kept' };
@@ -109,56 +117,84 @@ export class SessionBinder {
         origin: 'system',
         text: staleNotice(attachment, profile),
       });
-    } else if (attachment.sessionId && attachment.state === 'sleeping' && current) {
-      try {
-        const view = await client.resumeSession(attachment.sessionId, {
-          ...(await client.sessionControls(
-            profile.executionTarget.provider,
-            profile.providerPolicy,
-          )),
-          ...(this.deps.mcpServers
-            ? { mcpServers: this.deps.mcpServers(conversation.id, attachment.sessionId) }
-            : {}),
-        });
-        this.deps.conversations.setAttachment(conversation.id, {
-          state: view.status === 'ready' ? 'ready' : 'initializing',
-          ...(view.providerSessionId ? { providerSessionId: view.providerSessionId } : {}),
-        });
-        this.deps.log(`conversation ${conversation.id}: resumed session ${attachment.sessionId}`);
-        return { ok: true, sessionId: attachment.sessionId, how: 'resumed' };
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        if (error instanceof RuntimeHttpError && isProviderSessionUnavailable(reason, error.code)) {
-          // The provider session is gone, so no later resume can succeed; the
-          // transcript is ours, so the conversation continues from it at once.
-          this.deps.log(`conversation ${conversation.id}: the provider session of ${attachment.sessionId} is unavailable; rebuilding`);
-          this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
-          return this.create(client, this.deps.conversations.require(conversation.id), profile, REBUILT_SESSION_NOTICE);
-        }
-        this.deps.log(`conversation ${conversation.id}: resume of ${attachment.sessionId} failed`);
-        this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
-        this.deps.conversations.append(conversation.id, {
-          kind: 'error',
-          origin: 'system',
-          text: `Could not resume the previous session: ${reason}`,
-        });
-        return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };
-      }
-    } else if (attachment.state === 'failed' && attachment.sessionId) {
-      return this.create(client, conversation, profile, REBUILT_SESSION_NOTICE);
+    } else if (attachment.sessionId && current && ['sleeping', 'closed', 'failed'].includes(attachment.state)) {
+      return this.resumeSaved(client, conversation, profile);
     }
     return this.create(client, this.deps.conversations.require(conversation.id), profile);
   }
 
-  /**
-   * `notice` is told to the owner once the session exists, so a create that
-   * keeps failing (no capacity, runtime down) does not repeat it every attempt.
-   */
+  private async resumeSaved(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile): Promise<BindResult> {
+    const { attachment } = conversation;
+    const id = attachment.sessionId!;
+    const unchanged = () => this.deps.conversations.get(conversation.id)?.attachment.sessionId === id
+      && this.deps.profile().configRevision === profile.configRevision;
+    try {
+      const observed = await client.getSession(id);
+      if (!unchanged()) throw new Error('Conversation binding changed during resume.');
+      if (observed.id !== id || observed.providerName && observed.providerName !== attachment.provider
+        || observed.providerSessionId && attachment.providerSessionId
+          && observed.providerSessionId !== attachment.providerSessionId) {
+        throw new Error('Saved Runtime session identity no longer matches this conversation.');
+      }
+      if (observed.providerSessionUnavailable) {
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable');
+      }
+      if (observed.status === 'closing') throw new Error('Previous session worker is still closing.');
+      if (['ready', 'initializing', 'busy'].includes(observed.status)) {
+        this.deps.conversations.setAttachment(conversation.id, {
+          state: observed.status === 'initializing' ? 'initializing' : 'ready',
+        });
+        return { ok: true, sessionId: id, how: 'kept' };
+      }
+      const controls = await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy);
+      const servers = this.deps.mcpServers?.(conversation.id, id);
+      const view = await client.resumeSession(id, { ...controls, sessionLabel: sessionLabel(conversation, profile),
+        ...(servers ? { mcpServers: servers } : {}) });
+      if (!unchanged()) throw new Error('Conversation binding changed during resume.');
+      if (view.id !== id || view.providerSessionId && attachment.providerSessionId
+        && view.providerSessionId !== attachment.providerSessionId) throw new Error('Resume changed native session identity.');
+      this.deps.conversations.setAttachment(conversation.id, {
+        state: view.status === 'ready' ? 'ready' : 'initializing',
+        ...(view.providerSessionId ? { providerSessionId: view.providerSessionId } : {}),
+      });
+      if (servers) this.deps.sessionCreated?.(id, servers);
+      this.deps.log(`conversation ${conversation.id}: resumed session ${id}`);
+      return { ok: true, sessionId: id, how: 'resumed' };
+    } catch (error) {
+      if (!unchanged()) return { ok: false, reason: 'Conversation binding changed during resume.', kind: 'resume_failed', noCapacity: false };
+      if (error instanceof RuntimeHttpError && isProviderSessionUnavailable(error.message, error.code)) {
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable');
+      }
+      if (error instanceof RuntimeHttpError && error.status === 404 && error.message === 'Session not found') {
+        return this.replaceUnavailable(client, conversation, profile, 'runtime_session_missing');
+      }
+      const reason = error instanceof Error ? error.message : String(error);
+      this.deps.log(`conversation ${conversation.id}: resume of ${id} failed`);
+      this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
+      if (attachment.lastError !== reason) this.deps.conversations.append(conversation.id, {
+        kind: 'error', origin: 'system', text: `Could not resume the previous session: ${reason}`,
+      });
+      return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };
+    }
+  }
+
+  private replaceUnavailable(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile,
+    reason: NonNullable<SessionAttachment['unavailableReason']>): Promise<BindResult> {
+    if (conversation.attachment.replacementPending) {
+      return Promise.resolve({ ok: false, kind: 'resume_failed', noCapacity: false,
+        reason: 'Automatic session replacement stopped because the previous replacement has not completed a turn.' });
+    }
+    this.deps.conversations.setAttachment(conversation.id, {
+      state: 'failed', unavailableReason: reason, replacementPending: true,
+    });
+    return this.create(client, this.deps.conversations.require(conversation.id), profile, true);
+  }
+
   private async create(
     client: RuntimeClient,
     conversation: ConversationRecord,
     profile: BotProfile,
-    notice: string | null = null,
+    replacementPending = false,
   ): Promise<BindResult> {
     const isPending = this.deps.isPendingWorkItem;
     const pack = buildHandoffPack(
@@ -167,6 +203,7 @@ export class SessionBinder {
     );
     const request: CreateSessionRequest = {
       provider: profile.executionTarget.provider,
+      sessionLabel: sessionLabel(conversation, profile),
       ...(profile.executionTarget.model ? { model: profile.executionTarget.model } : {}),
       cwd: profile.permissions.cwd,
       workspaceKind: 'source',
@@ -196,6 +233,8 @@ export class SessionBinder {
         provider: profile.executionTarget.provider,
         model: profile.executionTarget.model,
         configRevision: profile.configRevision,
+        unavailableReason: undefined,
+        replacementPending: replacementPending || undefined,
       });
       this.deps.sessionCreated?.(view.id, request.mcpServers ?? []);
       if (pack.text) {
@@ -203,7 +242,9 @@ export class SessionBinder {
           record.checkpoint = { digest: pack.text, throughSeq: pack.throughSeq, updatedAt: this.deps.now().toISOString() };
         });
       }
-      if (notice) this.deps.conversations.append(conversation.id, { kind: 'system', origin: 'system', text: notice });
+      if (replacementPending) this.deps.conversations.append(conversation.id, {
+        kind: 'system', origin: 'system', text: REBUILT_SESSION_NOTICE,
+      });
       this.deps.log(`conversation ${conversation.id}: created session ${view.id} (${view.status})`);
       // FR-27: nothing else would ever close the replaced session's worker.
       if (replaced && replaced !== view.id) this.deps.retireSession?.(replaced);
