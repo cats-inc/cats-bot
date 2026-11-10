@@ -80,6 +80,13 @@ for the current-versus-pending boundary.
    at most 8000 px a side and 10 MB on the overlay path, as `grim` writes it on wlroots (where a larger
    picture is refused on send like any file over 10 MB). macOS needs Screen Recording for Cats Bot and says so; wlroots desktops use `grim`
    and `slurp`. Cancelling or a region too small adds nothing; other failures are a line in the note.
+10. FR-10: Dictation, as Cats Desktop's composer "voice input" (ADR-018). On macOS and Windows the composer
+    has a microphone button; it turns speech into text with a native helper (macOS on-device speech
+    recognition, Windows speech recognition, which may be online by Windows settings and is marked so) and
+    inserts each final phrase at the owner's selection, or at the end. No audio is kept or sent. Clicking
+    again stops; Escape, the composer becoming busy, closing the note and another note starting dictation
+    cancel. Helper errors (permission, no microphone, language, unavailable, stopped) are a line in the
+    note. Linux has no helper yet and shows no button.
 
 ## Acceptance
 
@@ -103,6 +110,7 @@ Full final UI-6/package/CI signoff is separate from this implemented cutover.
   `.cats-attachments/`, the bubble shows the picture and the file name, and the reply can refer to them.
 - A4c: "Take screenshot" hides the note, shows the frozen screen, and a dragged region comes back as a
   card in the composer of the note, which is open, visible and focused again; Escape adds nothing.
+- A4d: On macOS and Windows, dictating a sentence (also in Chinese) puts it in the composer; Escape cancels.
 - A5: The existing acceptance scripts (settings-page model race and saving, raising a desktop-layer
   note, unread of a background note) still pass on the new pages.
 - A6: The packaged installer shows the first-run page the first time it is opened, and after the bot is

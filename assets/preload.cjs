@@ -13,7 +13,28 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const params = new URLSearchParams(globalThis.location.search);
 
+// SPEC-003 FR-10: dictation, where a native speech helper exists.
+const voice = process.platform === 'darwin' || process.platform === 'win32'
+  ? {
+    start(options) {
+      return ipcRenderer.invoke('note:voiceStart', options);
+    },
+    stop(sessionId) {
+      return ipcRenderer.invoke('note:voiceStop', sessionId);
+    },
+    cancel(sessionId) {
+      return ipcRenderer.invoke('note:voiceCancel', sessionId);
+    },
+    onEvent(listener) {
+      const wrapped = (_event, payload) => listener(payload);
+      ipcRenderer.on('note:voiceEvent', wrapped);
+      return () => ipcRenderer.removeListener('note:voiceEvent', wrapped);
+    },
+  }
+  : null;
+
 contextBridge.exposeInMainWorld('catsBot', {
+  voice,
   conversationId: params.get('conversation') || 'home',
   language: {
     get() {
