@@ -84,11 +84,11 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
             onChange={(event) => update({ heartbeat: event.target.checked })}
           />
           <span>
-            {t('Heartbeat: on its daily rhythm, the cat bot sometimes reaches out first')}
+            {t('Own initiative: the cat bot stays awake on its daily rhythm and does things on its own now and then')}
           </span>
         </label>
         <label className="field">
-          <span>{t('Heartbeat mode')}</span>
+          <span>{t('What it does on its own initiative')}</span>
           <select
             id="life-mode"
             value={form.mode}
@@ -111,7 +111,7 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
           {clock('wakeWindowEnd', 'life-wake-end', t('Wakes up between'))}
         </div>
         <div className="pair">
-          <span>{t('After waking up, first check in after')}</span>
+          <span>{t('After waking up, first acts on its own after')}</span>
           {number('wakeMin', 'life-wake-min', 1440)} – {number('wakeMax', 'life-wake-max', 1440)}
           {t('minutes')}
         </div>
@@ -127,7 +127,7 @@ export function LifeTab({ onSaved }: { onSaved(profile: BotProfile): void }) {
           {t('idle minutes')}
         </div>
         <p className="hint" id="life-rhythm">
-          {t('The cat bot stays quiet between bedtime and waking up. Each unprompted message you leave unanswered doubles the wait before the next; after 5 in a row it waits until you write.')}
+          {t('Between bedtime and waking up the cat bot sleeps: it takes no initiative, and its direct message falls asleep after 15 quiet minutes. A message from you wakes it to answer. Each unprompted message you leave unanswered doubles the wait before the next; after 5 in a row it waits until you write.')}
         </p>
         <p className="hint" id="life-next">
           {status ? nextHeartbeatText(status) : ''}

@@ -230,7 +230,7 @@ export function buildBotMenuTemplate(
     { label: 'Manage conversations…', click: () => actions.onOpenSettings('notes') },
     { type: 'separator' },
     {
-      label: model.heartbeatEnabled ? 'Pause heartbeat' : 'Resume heartbeat',
+      label: model.heartbeatEnabled ? 'Pause own initiative' : 'Resume own initiative',
       click: () => actions.onToggleHeartbeat(!model.heartbeatEnabled),
     },
   );

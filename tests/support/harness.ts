@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 import { BotCore, initializeBot, type BotCoreOptions, type InitializeBotInput } from '../../src/core/bot.ts';
+import { saveProfile } from '../../src/core/profile/profile.ts';
+import { botPathsFor } from '../../src/core/store/paths.ts';
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 
 /**
@@ -66,17 +68,27 @@ export interface TestBotOptions {
   profile?: Partial<InitializeBotInput>;
   core?: Partial<BotCoreOptions>;
   runtimeEnv?: NodeJS.ProcessEnv;
+  /**
+   * SPEC-011 FR-16: home sleeps in rest hours, so by default the bot's rhythm
+   * puts the real clock in the middle of its awake hours (woke five hours ago,
+   * no morning greeting due, bedtime twelve hours away). False keeps the
+   * profile's own times.
+   */
+  awake?: boolean;
 }
 
 /** A bot on the fake runtime unless `core.runtime.runtimeEntry` says otherwise. */
 export function openTestBot(options: TestBotOptions): { core: BotCore; root: string } {
   const id = options.id ?? 'testbot';
-  const { root } = initializeBot(options.botsHome, {
+  const { profile, root } = initializeBot(options.botsHome, {
     id,
     name: 'Test Bot',
     provider: 'claude',
     ...options.profile,
   });
+  if (options.awake !== false) {
+    saveProfile(botPathsFor(root), { ...profile, heartbeat: { ...profile.heartbeat, ...awakeNow(new Date(), { sinceWake: 5 * 60, untilBed: 12 * 60 }) } });
+  }
   const core = BotCore.open({
     root,
     log: () => {},

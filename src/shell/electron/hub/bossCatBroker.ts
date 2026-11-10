@@ -506,7 +506,7 @@ export class BossCatBroker {
     const core = this.deps.core(target);
     if (!core) return refuse(`${this.name(target)} is not running.`);
     await core.updateProfile({ heartbeat: { enabled: args.enabled } });
-    return ok(`${this.name(target)}'s heartbeat is ${args.enabled ? 'running' : 'paused'}.`);
+    return ok(`${this.name(target)}'s own initiative (heartbeat) is ${args.enabled ? 'running' : 'paused'}.`);
   }
 
   private async transfer(caller: string, args: Record<string, unknown>): Promise<ToolAnswer> {

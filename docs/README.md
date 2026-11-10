@@ -157,7 +157,8 @@ script that changes the computer is ticked by the owner
 [PLAN-011](plans/PLAN-011-setup-wizard.md)).
 
 The heartbeat either keeps the owner company or follows up on unfinished work,
-on Cats Desktop's daily rhythm, and backs off while the owner does not answer
+on Cats Desktop's daily rhythm (the bot sleeps in rest hours, and a message wakes
+it), and backs off while the owner does not answer
 ([SPEC-011](specs/SPEC-011-heartbeat-modes-rhythm-and-backoff.md)).
 
 For complex features, use the spec-plan-implement workflow:
