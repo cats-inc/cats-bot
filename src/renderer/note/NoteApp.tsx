@@ -1,4 +1,4 @@
-import { ConversationMessage, ConversationResponse, ConversationMarkdown } from '@cats-inc/platform-ui-web';
+import { ConversationMessage, ConversationResponse, ConversationMarkdown, RetryActionIcon } from '@cats-inc/platform-ui-web';
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
 import { conversationWorkState } from './workState.ts';
@@ -15,6 +15,7 @@ import {
   addEntry,
   appendDelta,
   buildNoteItems,
+  retryableOwnerEntry,
   entryMeta,
   entryText,
   errorText,
@@ -55,15 +56,24 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
 
 const api = window.catsBot;
 
-function Entry({ entry }: { entry: TranscriptEntry }) {
+/** A failed owner message: the note shows it failed and offers to run its turn again. */
+interface EntryRetry {
+  onRetry: () => void;
+}
+
+function Entry({ entry, retry }: { entry: TranscriptEntry; retry?: EntryRetry }) {
   useI18n();
   const meta = entryMeta(entry);
+  const actions = retry
+    ? [{ key: `retry:${entry.seq}`, title: t('Retry response'), icon: <RetryActionIcon />, onSelect: retry.onRetry }]
+    : undefined;
   return <ConversationMessage senderKind={entry.kind === 'owner' ? 'user' : entry.kind === 'bot' ? 'agent' : 'system'}
     copyLabel={t('Copy')} showCopy={!!entry.text.trim()}
-    onCopy={() => { void navigator.clipboard.writeText(entry.text); }}>
+    onCopy={() => { void navigator.clipboard.writeText(entry.text); }} actions={actions}>
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
       : <p className="messageBody">{entryText(entry)}</p>}
     {meta && <span className="entry-meta">{meta}</span>}
+    {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;
 }
 
@@ -319,6 +329,22 @@ export function NoteApp() {
     }
   };
 
+  const retryable = retryableOwnerEntry(entries, workItems, busy);
+  const retry = async (workItemId: string) => {
+    if (runningRef.current || busy) return;
+    followTranscript.current = true;
+    setRunning(true);
+    try {
+      await api.invoke('retryOwnerMessage', conversation.current, workItemId);
+    } catch (error) {
+      setRunning(false);
+      setEntries((current) => [
+        ...current,
+        localEntry('error', t('Could not retry: {error}', { error: errorText(error) })),
+      ]);
+    }
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter that confirms an IME candidate (Chinese, Japanese, …) is not a send.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -388,7 +414,9 @@ export function NoteApp() {
             onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
           if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
-          return <Entry key={item.key} entry={item.entry} />;
+          const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
+          return <Entry key={item.key} entry={item.entry}
+            retry={failed ? { onRetry: () => void retry(failed) } : undefined} />;
         })}
         {pending && (
           <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>

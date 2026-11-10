@@ -158,6 +158,13 @@ async function handleMessage(req, res, session, body) {
   } else if (message.startsWith('interrupt')) {
     write({ type: 'text', text: 'partial' });
     return finish(true);
+  } else if (message.startsWith('error-once') && !failedOnce.has(message)) {
+    // Fails the first time it is sent, then answers like any other message (a retried turn).
+    failedOnce.add(message);
+    write({ type: 'error', text: 'provider exploded' });
+    return finish(true);
+  } else if (message.startsWith('error-once')) {
+    reply(`echo: ${message}`);
   } else if (message.startsWith('error')) {
     write({ type: 'error', text: 'provider exploded' });
     return finish(true);
@@ -181,6 +188,9 @@ async function handleMessage(req, res, session, body) {
   write({ type: 'result', sessionId: session.providerSessionId, usage: { inputTokens: 1, outputTokens: 1 } });
   finish(true);
 }
+
+/** `error-once` messages that have failed already. */
+const failedOnce = new Set();
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${host}`);

@@ -41,6 +41,7 @@ export interface HostCommands {
   transcript: { args: [conversationId: string]; result: TranscriptEntry[] };
   conversationTranscript: { args: [conversationId: string]; result: TranscriptEntry[] };
   sendOwnerMessage: { args: [conversationId: string, text: string]; result: WorkItem };
+  retryOwnerMessage: { args: [conversationId: string, workItemId: string]; result: WorkItem };
   cancelTurn: { args: [conversationId: string]; result: null };
   markSeen: { args: [conversationId: string]; result: null };
   listSchedules: { args: []; result: ScheduleRecord[] };
@@ -74,6 +75,7 @@ export const BRIDGE_COMMANDS = [
   'transcript',
   'conversationTranscript',
   'sendOwnerMessage',
+  'retryOwnerMessage',
   'cancelTurn',
   'markSeen',
   'listSchedules',

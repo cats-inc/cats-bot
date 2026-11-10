@@ -1625,6 +1625,35 @@ export class BotCore implements BotHostApi {
     return structuredClone(item);
   }
 
+  /**
+   * Runs the conversation's latest owner message again after its turn failed. The owner entry stays the one
+   * message in the transcript; its work item is queued again, as the owner's next turn.
+   */
+  async retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem> {
+    const id = this.resolveConversationId(conversationId);
+    const item = this.workItems.get(workItemId);
+    if (!item || item.conversationId !== id || item.kind !== 'owner_message') {
+      throw new Error(`No owner message ${workItemId} in this conversation`);
+    }
+    if (item.state !== 'failed') throw new Error(`Work item ${workItemId} is ${item.state}; only a failed turn is retried`);
+    const transcript = this.conversations.transcript(id);
+    const latest = transcript.findLast((entry) => entry.kind === 'owner');
+    if (latest?.workItemId !== item.id) throw new Error('Only the latest owner message is retried');
+    const active = this.listWorkItems().some((other) => other.conversationId === id
+      && (other.state === 'queued' || other.state === 'running'));
+    if (active) throw new Error('The conversation is busy; retry once its turn ends');
+    // A fresh busy-retry budget, and recovery that ignores what the failed attempts wrote.
+    const queued = this.record(transitionWorkItem(item, 'queued', this.now(), {
+      error: undefined,
+      attempts: 0,
+      attemptFromSeq: transcript.at(-1)?.seq ?? 0,
+    }));
+    this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
+    this.queue.enqueue(queued);
+    this.pump();
+    return structuredClone(queued);
+  }
+
   /** Enqueues a background work item (schedules, heartbeats and events use this). */
   enqueueWorkItem(item: WorkItem): WorkItem {
     if (!this.workItems.has(item.id)) this.record(item);

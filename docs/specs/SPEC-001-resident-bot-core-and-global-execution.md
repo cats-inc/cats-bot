@@ -294,7 +294,8 @@ freeze of the storage format.
     `listConversations`, `createConversation`, `deleteConversation`, `openView` / `closeView` (change only the
     view), `setViewFocused(conversationId, focused)` (which view the owner is looking at; only a focused view
     keeps new replies from counting as unread, and a note that is open but in the background still accumulates
-    unread), `sendOwnerMessage(conversationId, text)`, `cancelTurn(conversationId)`,
+    unread), `sendOwnerMessage(conversationId, text)`, `retryOwnerMessage(conversationId, workItemId)` (SPEC-003
+    FR-7), `cancelTurn(conversationId)`,
     `markSeen(conversationId)`, `listSchedules`, `cancelSchedule`, `resolveApproval(workItemId, decision)`,
     `quit`. Events: `conversation.updated`, `turn.delta`, `turn.completed`, `work.awaitingOwner`,
     `presence.changed`, `runtime.status`. The renderer never gets the runtime's URL or API key.

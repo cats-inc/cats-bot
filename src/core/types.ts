@@ -231,6 +231,11 @@ export interface WorkItem {
   notification?: NotificationState;
   /** The provider/model/session the run actually used (ADR-001 §3 evidence). */
   run?: WorkRun;
+  /**
+   * SPEC-003 FR-7: a retried owner message's earlier attempts wrote transcript entries up to this `seq`;
+   * recovery reads only the entries after it.
+   */
+  attemptFromSeq?: number;
   error?: string;
   updatedAt: string;
 }
@@ -346,6 +351,8 @@ export interface BotHostApi {
   /** An open view in the background does not read replies; only a focused one does. */
   setViewFocused(conversationId: string, focused: boolean): Promise<void>;
   sendOwnerMessage(conversationId: string, text: string): Promise<WorkItem>;
+  /** The latest owner message's failed turn, queued again; refused while the conversation is busy. */
+  retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem>;
   cancelTurn(conversationId: string): Promise<void>;
   markSeen(conversationId: string): Promise<void>;
   listSchedules(): Promise<ScheduleRecord[]>;
