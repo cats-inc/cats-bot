@@ -202,20 +202,31 @@ test('only Windows packages map the helper, and every Windows packaging path pub
     from: 'build/native-windows/${arch}/windows-desktop-control',
     to: 'native/windows-desktop-control',
     filter: ['**/*'],
+  }, {
+    // SPEC-003 FR-10: the dictation helper beside it.
+    from: 'build/native-windows/${arch}/windows-stt',
+    to: 'native/windows-stt',
+    filter: ['**/*'],
   }]);
-  for (const section of [pkg.build, pkg.build.mac, pkg.build.linux, pkg.build.nsis, pkg.build.portable]) {
+  // SPEC-003 FR-10: macOS maps only its own dictation helper.
+  assert.deepEqual(pkg.build.mac.extraResources, [{ from: 'build/native-macos/macos-stt', to: 'native/macos-stt', filter: ['**/*'] }]);
+  for (const section of [pkg.build, pkg.build.linux, pkg.build.nsis, pkg.build.portable]) {
     assert.equal(JSON.stringify(section.extraResources ?? []).includes('native'), false);
   }
   assert.equal(JSON.stringify(pkg.build.files).includes('build/'), false);
   for (const script of ['dist:win', 'dist:dir']) {
-    const steps = pkg.scripts[script].split(' && ');
+    // SPEC-003 FR-10: a development package on a Mac builds its dictation helper first (skipped elsewhere).
+    const steps = pkg.scripts[script].split(' && ').filter((step: string) => step !== 'node scripts/macos-voice-helper.mjs build --host');
     assert.equal(steps[0], 'node scripts/windows-desktop-control.mjs publish');
     assert.match(steps[1], /^electron-builder /u);
     assert.equal(steps[2], 'node scripts/windows-desktop-control.mjs verify');
   }
+  assert.ok(pkg.scripts['dist:dir'].includes('node scripts/macos-voice-helper.mjs build --host'));
   const preview = await readFile(join(repoRoot, 'scripts', 'build-preview.mjs'), 'utf8');
   assert.match(preview, /publishWindowsDesktopControl\(root, args\.includes\('--dir'\) \? \['x64'\] : \['x64', 'arm64'\]\)/u);
   assert.match(preview, /verifyPackagedWindowsDesktopControl\(resources\)/u);
+  assert.match(preview, /publishWindowsDictation\(root, args\.includes\('--dir'\) \? \['x64'\] : \['x64', 'arm64'\]\)/u);
+  assert.match(preview, /verifyPackagedWindowsDictation\(resources\)/u);
 });
 
 test('the helper keeps the frozen SPEC-133 exclusion lists', async () => {

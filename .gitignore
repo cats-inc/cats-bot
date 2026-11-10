@@ -58,3 +58,6 @@ release/
 # === .NET native helper build output ===
 native/**/bin/
 native/**/obj/
+
+# SPEC-003 FR-10: swift build output of the macOS dictation helper.
+native/macos-stt/.build/

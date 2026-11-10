@@ -12,6 +12,8 @@ import { InteractionCard } from '../interactions/InteractionCard.tsx';
 import type { NoteLayer } from '../bridge.ts';
 import { screenshotOutcome } from './screenshot.ts';
 import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type MessageAttachment } from '../../shared/attachments.ts';
+import { voicePrivacyMessage } from '../../shared/voice.ts';
+import { useDictation } from './dictation.ts';
 import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
   addEntry,
@@ -447,6 +449,13 @@ export function NoteApp() {
     }
   };
 
+  // SPEC-003 FR-10: dictation into the composer.
+  const dictation = useDictation({
+    inputRef, draft, setDraft, disabled: busy,
+    onError: (message) => setEntries((current) => [...current, localEntry('error', t(message))]),
+  });
+  const privacy = voicePrivacyMessage(dictation.privacyMode);
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter that confirms an IME candidate (Chinese, Japanese, …) is not a send.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -569,6 +578,20 @@ export function NoteApp() {
             </svg>
           </button>
           <span className="note-spacer" />
+          {dictation.supported && <button
+            className={`composerIconButton composerVoiceButton${dictation.listening ? ' composerVoiceButtonActive' : ''}`}
+            id="dictate" type="button" aria-pressed={dictation.active} disabled={busy}
+            aria-label={dictation.active ? `${t('Stop voice input')}${privacy ? ` (${t(privacy)})` : ''}` : t('Start voice input')}
+            title={privacy ? t(privacy) : dictation.active ? t('Stop voice input') : t('Start voice input')}
+            onClick={dictation.toggle}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="6" y="2" width="4" height="8" rx="2" />
+              <path d="M3 8a5 5 0 0 0 10 0" />
+              <path d="M8 13v2" />
+              <path d="M6 15h4" />
+            </svg>
+            {privacy && <span className="composerVoicePrivacyBadge" aria-hidden="true">!</span>}
+          </button>}
           <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>
             {t('Send')}
           </button>
