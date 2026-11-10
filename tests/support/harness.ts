@@ -30,6 +30,23 @@ export interface TempHome {
   cleanup(): void;
 }
 
+function localClock(at: Date): string {
+  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+}
+
+/**
+ * SPEC-011: heartbeat times that put `now` in the bot's awake hours,
+ * `sinceWake` minutes after today's wake time and `untilBed` minutes before
+ * bedtime, so a test on the wall clock passes at any hour.
+ */
+export function awakeNow(
+  now = new Date(),
+  { sinceWake = 60, untilBed = 180 }: { sinceWake?: number; untilBed?: number } = {},
+): { bedtime: string; wakeWindowStart: string; wakeWindowEnd: string } {
+  const wake = localClock(new Date(now.getTime() - sinceWake * 60_000));
+  return { wakeWindowStart: wake, wakeWindowEnd: wake, bedtime: localClock(new Date(now.getTime() + untilBed * 60_000)) };
+}
+
 export function makeTempHome(prefix = 'cats-bot-test-'): TempHome {
   const root = mkdtempSync(join(tmpdir(), prefix));
   const botsHome = join(root, 'bots');

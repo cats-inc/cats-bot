@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
-import { fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
+import { awakeNow, fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
  * SPEC-001 A2 against the real pinned cats-runtime: the fixture CLI receives
@@ -89,7 +89,7 @@ test('the fixture CLI schedules through the bot tool server and the schedule fir
       .conversations.update(home1.id, (record) => {
         record.lastOwnerMessageAt = new Date(Date.now() - 11 * 60_000).toISOString();
       });
-    await core.updateProfile({ heartbeat: { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0 } });
+    await core.updateProfile({ heartbeat: { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0, ...awakeNow() } });
     const beforeHeartbeat = core.transcript('home').length;
     const heartbeat = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.kind === 'heartbeat', 60_000);
     const queued = await core.tick();

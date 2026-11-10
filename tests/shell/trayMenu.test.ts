@@ -99,7 +99,7 @@ const status: BotStatus = {
   bossCat: { holder: false, tools: false },
   conversations: 2,
   schedules: 0,
-  heartbeat: { enabled: true, nextAt: null },
+  heartbeat: { enabled: true, nextAt: null, mode: 'companion', phase: 'awake_hours', unanswered: 0, waitingForOwner: false },
   lastTickAt: null,
   lock: null,
   telegram: { enabled: false, polling: false, ownerChatId: null },

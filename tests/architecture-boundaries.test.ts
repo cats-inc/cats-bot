@@ -188,7 +188,10 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const botText = target === join(srcRoot, 'shared', 'botText.ts');
         // SPEC-010 FR-15: creation readiness is one pure rule in the host and page.
         const providerSetup = target === join(srcRoot, 'shared', 'providerSetup.ts');
-        if (!language && !providerTools && !avatars && !botText && !providerSetup && (!typeOnly || !allowed.includes(target)))
+        // SPEC-011 FR-2: the page checks the daily rhythm with the core's rule.
+        const heartbeatRhythm = target === join(srcRoot, 'shared', 'heartbeatRhythm.ts');
+        if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
+          && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
@@ -202,6 +205,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
           );
         if (avatars) assert.deepEqual(importSpecifiers(target), [], 'the Cat looks stay plain data');
         if (providerSetup) assert.deepEqual(importSpecifiers(target), [], 'setup readiness stays browser safe');
+        if (heartbeatRhythm) assert.deepEqual(importSpecifiers(target), [], 'the daily rhythm stays browser safe');
       }
     }
   }
