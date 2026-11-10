@@ -31,7 +31,8 @@ test('the helper is built universal by default and staged where the package maps
   assert.deepEqual(calls, [build, [...build, '--show-bin-path']]);
   assert.equal(built.output, join(root, 'build', 'native-macos', 'macos-stt', 'cats-stt-macos'));
   assert.equal(await readFile(built.output, 'utf8'), 'binary');
-  assert.equal((await stat(built.output)).mode & 0o111, 0o111, 'executable');
+  // Windows has no execute bits; the helper is only built on macOS.
+  if (process.platform !== 'win32') assert.equal((await stat(built.output)).mode & 0o111, 0o111, 'executable');
   await assert.rejects(helper.buildMacosVoiceHelper(root, ['ppc'], { run }), /must be among/u);
 });
 
