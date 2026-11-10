@@ -4,10 +4,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft, 2026-11-11. No phase is authorized. P1 waits for ADR-021; P2–P6 wait for ADR-022 and the security review |
+| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. Not started. P1 may start; P2 onward wait for the security review and the Runtime prerequisites in P0 |
 | **Owner** | Bot core store and memory |
 | **Assigned To** | Unassigned |
-| **Reviewer** | Owner; independent review per phase; independent security review before P3 |
+| **Reviewer** | Owner; independent review per phase; independent security review before P2 |
 
 ## Related Spec
 
@@ -19,23 +19,29 @@
 
 ## Overview
 
-The store comes first, because memory and recall need it. Recall is useful without any
-consolidation. Core memory and owner controls come before the bot writes anything
-automatically. Consolidation waits for a Runtime capability and the security review.
-Embeddings come only if the evaluation asks for them.
+The store comes first, because memory and recall need it, and it is useful on its own. Recall
+tools come before anything automatic. Core memory and owner controls come before the bot
+writes on its own. Consolidation and summaries wait for a Runtime capability and the
+security review. Embeddings come only if the evaluation asks for them.
 
 ## Implementation Phases
 
 ### P0: Decisions and prerequisites
 
-- [ ] Owner decides ADR-021, which unblocks P1.
-- [ ] Owner decides ADR-022's six open decisions, which unblocks P2 onward.
-- [ ] Independent security review of SPEC-015 before P3.
-- [ ] A Runtime tool-free, handoff-free, memory-free session, ephemeral where supported, on
-      the providers bots use (SPEC-012 FR-13, Runtime ADR-050). This blocks P4 only, and it
-      is shared with SPEC-012 Phase 2.
+- [x] Owner decided ADR-021, which unblocks P1 (2026-11-11).
+- [x] Owner chose ADR-022's proposed defaults (2026-11-11).
+- [ ] Independent security review of SPEC-015, before P2.
+- [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
+      adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
+- [ ] Runtime: a **turn-scoped context** field, delivered for one execution and not persisted.
+  - Today a send's `instructions` replaces the session's.
+  - It blocks P2.2, P3.2's live delta and P5.2's one-time handoff.
+- [ ] Runtime: a **tool-free session** on the providers bots use (SPEC-012 FR-13, Runtime
+      ADR-050). It has no MCP, no file or command tools, no handoff and no provider-native
+      project memory; it is deletable with its history and ephemeral where supported.
+  - It blocks P4 and P5, and is shared with SPEC-012 Phase 2.
 
-### P1: State database (SPEC-014), blocked on ADR-021 only
+### P1: State database (SPEC-014), depends only on ADR-021
 
 - [ ] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
       acceptance on Windows, macOS and Linux under the shipped Electron.
@@ -47,63 +53,71 @@ Embeddings come only if the evaluation asks for them.
   - startup without journal replay.
 - [ ] 1.3 Full-text index with the bigram column, query builder, the LIKE path for single
       characters, and a rebuild command.
-- [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript`
-      keeps working.
-- [ ] 1.5 Migration (backup, import, verify, marker, archive), failure report and
-      `cats-bot restore`.
-  - Fixtures: a copied version-1 data root, crash at each step, corrupt lines, an unknown
-    schema.
+- [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
+      working.
+- [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
+      report and `cats-bot restore`.
+  - Fixtures: a copied version-1 data root, crash at each step including after the marker,
+    corrupt lines, an unknown schema, and an older binary refusing the raised profile.
 - [ ] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 
-**Deliverables**: every bot runs on `bot.db`; the version-1 files are archived; search is
-available to the core.
+**Deliverables**: every bot runs on `bot.db`; the version-1 files are archived; older
+binaries stop instead of starting blank; search is available to the core.
 
-### P2: Recall (SPEC-015 FR-10–FR-12, FR-24–FR-27)
+### P2: Recall (SPEC-015 FR-10–FR-12, FR-24–FR-27), after the security review
 
 - [ ] 2.1 Recall service over evidence, with scope and trust filters and fenced rendering
-      with dates.
-- [ ] 2.2 Recall-intent detection (zh-TW and English) and injection into the turn's
-      instructions within budget.
-- [ ] 2.3 `memory_search` / `memory_get` MCP tools for providers that accept session MCP;
-      not offered in contact notes.
-- [ ] 2.4 Evaluation set v1 from fixture conversations, and its runner.
+      with dates. `memory_search` / `memory_get` MCP tools for providers that accept session
+      MCP; not offered in contact notes.
+- [ ] 2.2 Recall-intent detection (zh-TW and English) and core-side injection as
+      turn-scoped context. Blocked on P0's Runtime field.
+- [ ] 2.3 Evaluation set v1 from fixture conversations, and its runner.
 
-**Deliverables**: a bot can find specifics past the handoff pack on every provider.
+**Deliverables**: tool-capable bots can find specifics past the handoff pack; every bot can,
+once 2.2 lands.
 
-### P3: Core memory and owner controls (SPEC-015 FR-1–FR-7, FR-21–FR-23), after the security review
+### P3: Core memory and owner controls (SPEC-015 FR-1–FR-7, FR-21–FR-23, FR-28)
 
-- [ ] 3.1 Records, versions, scope and trust; deletion rules (FR-4).
-- [ ] 3.2 Core-memory rendering in session instructions, and the live-session delta.
-- [ ] 3.3 `remember` / `forget` MCP tools, validated by the core, with the budget refusal.
+- [ ] 3.1 Records, versions, scope and derived trust; deletion rules (FR-4).
+- [ ] 3.2 Core-memory snapshot in session instructions. The live-session delta follows when
+      P0's Runtime field exists.
+- [ ] 3.3 `remember` / `forget` MCP tools as validated proposals (FR-28), with the budget
+      refusal.
 - [ ] 3.4 Settings Memory section: list, search, edit, retire, evidence, versions, restore,
-      switches and export.
+      approval queue, switches and export.
 
 **Deliverables**: the owner and tool-capable bots can maintain core memory, and the owner
 controls all of it.
 
-### P4: Consolidation (SPEC-015 FR-13–FR-20), blocked on the Runtime session in P0
+### P4: Consolidation (SPEC-015 FR-13–FR-20), blocked on P0's tool-free session
 
 - [ ] 4.1 Consolidation work item, scheduling after the direct message sleeps (SPEC-011),
-      the heartbeat-off schedule, and watermarks.
-- [ ] 4.2 Input builder with bounded, fenced evidence (owner and bot lines only).
-- [ ] 4.3 Proposal schema, validation, loss guard, automatic additions and the approval
-      queue.
-- [ ] 4.4 Token caps per run and per day, and usage records.
+      the heartbeat-off schedule, and per-conversation watermarks.
+- [ ] 4.2 Input builder:
+  - token-bounded, single-scope batches;
+  - owner and bot lines only;
+  - contact notes excluded.
+- [ ] 4.3 Proposal schema, validation with derived trust and the day rule, loss guard,
+      automatic additions and the approval queue.
+- [ ] 4.4 Token caps per run and per day, usage records, batch halving and skip listing.
 - [ ] 4.5 Optional dream diary, off by default.
 
-**Deliverables**: bots improve their memory overnight within a known cost.
+**Deliverables**: bots improve their memory overnight within a known cost, and no batch can
+stall them.
 
-### P5: Working summaries and handoff (SPEC-015 FR-8–FR-9)
+### P5: Working summaries and handoff (SPEC-015 FR-8–FR-9), after P4
 
-- [ ] 5.1 Consolidation maintains one working summary per conversation.
-- [ ] 5.2 Handoff pack: summary first, recent entries, stale marker, tool pointer, and a
-      budget scaled to the model's context.
+- [ ] 5.1 Consolidation maintains one working summary per conversation (none for contact
+      notes).
+- [ ] 5.2 The summary replaces the clipped digest in today's pack. With P0's Runtime field,
+      the handoff goes once, on the first turn: summary first, recent entries, stale marker,
+      tool pointer, and a budget scaled to the model's context.
 - [ ] 5.3 The assist-heartbeat review (SPEC-011 FR-13) may use working summaries.
-      Independently, it should stop rendering error lines. That is a small fix that can
-      land earlier.
+      Independently, it should stop rendering error lines. That is a small fix that can land
+      at any time.
 
 **Deliverables**: replacement sessions start from a summary, not from clipped lines.
 
@@ -122,11 +136,12 @@ controls all of it.
   - fixtures of a version-1 data root.
 - **Modify**:
   - `src/core/conversations/store.ts`, `src/core/store/journal.ts`,
-    `src/core/store/presentation.ts`, `src/core/bot.ts`, `src/core/conversations/binder.ts`
-    and `handoff.ts`, `src/core/queue/turnRunner.ts`;
+    `src/core/store/presentation.ts`, `src/core/profile/profile.ts` (schema raise),
+    `src/core/bot.ts`, `src/core/conversations/binder.ts` and `handoff.ts`,
+    `src/core/queue/turnRunner.ts`;
   - `src/core/host-api/commands.ts`, `src/cli/main.ts`;
   - the settings renderer;
-  - `docs/architecture.md`, SPEC-001 FR-2/FR-12 (after acceptance), `docs/testing.md`.
+  - `docs/architecture.md`, SPEC-001 FR-2, FR-3 and FR-12 when P1 lands, `docs/testing.md`.
 
 ## Technical Decisions
 
@@ -135,10 +150,13 @@ controls all of it.
   P2 evaluation set.
 - **Store before memory.** The store change is independently valuable and independently
   reversible through `cats-bot restore`.
+- **One-turn context needs a Runtime field.** Turn `instructions` are persisted by Runtime,
+  so recall, deltas and a one-time handoff wait for the new field. Core memory and MCP tools
+  do not.
 - **Not in this plan**, follow-ups:
-  - Measure the token cost of Runtime re-sending session instructions every turn for
-    per-turn adapters such as legacy grok.
   - Consider hosted grok so that Bot tools reach it.
+  - Consider proactive rotation for providers whose native context management is unknown,
+    as Paperclip does.
   - Record completed actions so that a re-sent turn cannot repeat side effects (Paperclip's
     receipts).
 

@@ -5,12 +5,14 @@
 
 ## Status
 
-Proposed, 2026-11-11. Waiting for the owner's decision. Nothing is implemented.
+Accepted, 2026-11-11. The owner chose the proposed decision. Nothing is implemented; the work
+is [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
 
-If accepted, this changes the storage mechanics of
+When P1 lands, this replaces the storage mechanics of
 [ADR-001](001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) §6
-and the layout of [SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md)
-FR-2. Those documents are annotated only after acceptance.
+and the layout and write rules of
+[SPEC-001](../specs/SPEC-001-resident-bot-core-and-global-execution.md) FR-2 and FR-3. Both
+carry a pending-change note.
 
 ## Context
 
@@ -50,8 +52,8 @@ The following is proposed.
      keep reaching data through `BotHostApi`, not the file.
 2. **Moved into the database**: conversation records and attachments, transcript entries,
    reply presentations, work items, their transitions, and schedules.
-   - Small separately owned files stay as they are: `profile.json`, secrets, locks,
-     `life.json`, shell state and Telegram state.
+   - Small separately owned files stay files: `profile.json` (only its schema version is
+     raised, item 7), secrets, locks, `life.json`, shell state and Telegram state.
 3. **Write rules.**
    - Transcript entries are evidence: appended with a per-conversation `seq`, never updated.
      They are removed only when their conversation is deleted.
@@ -72,12 +74,20 @@ The following is proposed.
    - commit a completion marker;
    - move the originals to an archive (never delete them).
 
-   On failure, the version-1 files remain authoritative, the core refuses to start with a
-   report, and restoring needs the bot to be stopped. The shape follows OpenClaw's
-   verified import and Bot's own `profile.json.v1.bak` precedent.
+   - **Failure**: the version-1 files remain authoritative, the core refuses to start with a
+     report, and restoring needs the bot to be stopped.
+   - **Crash after the marker**: the database is authoritative. Any version-1 files still in
+     place are never read again; the next start finishes moving them to the archive.
+
+   The shape follows OpenClaw's verified import and Bot's own `profile.json.v1.bak`
+   precedent.
 7. **Version boundary.** This is a persisted-data change, so it ships in the next minor
-   version, with release and migration notes in the bump. An older binary cannot read
-   `bot.db`. Returning to one means restoring the archive while stopped.
+   version, with release and migration notes in the bump.
+   - An older binary cannot read `bot.db`. Left alone, it would start a blank bot on the
+     migrated root.
+   - So the migration also raises `profile.json`'s schema version, which older binaries
+     already refuse to load. They stop instead.
+   - Returning to an older version means restoring the archive while stopped.
 8. **No automatic deletion of evidence.** A JSONL export of a conversation stays available
    for portability.
 
@@ -137,5 +147,5 @@ The following is proposed.
 
 ---
 
-*Proposed: 2026-11-11*
-*Decision makers: owner (pending)*
+*Decision made: 2026-11-11*
+*Decision makers: owner (chose the proposed decision); drafted by Claude*

@@ -69,8 +69,8 @@ Use [000-template.md](./000-template.md) as the starting point for new specs.
 | [SPEC-011](./SPEC-011-heartbeat-modes-rhythm-and-backoff.md) | Heartbeat Modes, Daily Rhythm and Back-off | Implemented | - |
 | [SPEC-012](./SPEC-012-boss-cat-status-board-and-contact-notes.md) | Boss Cat Status Board and Contact Notes | Approved in two phases; Phase 1 ready to implement, Phase 2 waits on Runtime | - |
 | [SPEC-013](./SPEC-013-agent-clis-in-cats-bot-settings.md) | Agent CLIs in Cats Bot Settings | Implemented; clean-machine acceptance pending | [PLAN-012](../plans/PLAN-012-agent-clis-in-cats-bot-settings.md) |
-| [SPEC-014](./SPEC-014-bot-state-database-and-migration.md) | Bot State Database and Migration | Draft; waits for ADR-021 | [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) |
-| [SPEC-015](./SPEC-015-bot-memory-layers-recall-and-consolidation.md) | Bot Memory: Layers, Recall and Consolidation | Draft; waits for ADR-022 and a security review | [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) |
+| [SPEC-014](./SPEC-014-bot-state-database-and-migration.md) | Bot State Database and Migration | Approved; not implemented | [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) |
+| [SPEC-015](./SPEC-015-bot-memory-layers-recall-and-consolidation.md) | Bot Memory: Layers, Recall and Consolidation | Approved; implementation waits for a security review and Runtime prerequisites | [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) |
 <!-- Add new specs above this line -->
 
 ## For AI Agents

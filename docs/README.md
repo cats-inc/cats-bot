@@ -1,6 +1,6 @@
 # Documentation Index
 
-Proposed, not decided: [ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md)
+Accepted, not implemented: [ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md)
 moves each bot's state to one SQLite database, and
 [ADR-022](decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) adds
 layered memory consolidated while the bot sleeps

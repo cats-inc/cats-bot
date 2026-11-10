@@ -4,10 +4,10 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Draft, 2026-11-11. Waiting for the owner's decision on [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md). Not implemented |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Not implemented ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
-| **Would update** | SPEC-001 FR-2 (data layout), FR-12 (transcript reads), FR-14 (deletion); ADR-001 §6 mechanics. Annotated only after acceptance |
+| **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
 
 ## Summary
 
@@ -26,7 +26,8 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Non-Goals
 
-- Changing `profile.json`, secrets, locks, `life.json`, shell or Telegram state files.
+- Changing secrets, locks, `life.json`, shell or Telegram state files, or `profile.json`
+  beyond the schema-version raise of FR-11.
 - Changing Runtime's session history or provider CLI files.
 - Memory records and consolidation ([SPEC-015](SPEC-015-bot-memory-layers-recall-and-consolidation.md)).
 - Embeddings or vector search.
@@ -67,9 +68,10 @@ verified migration moves existing bots over without losing or rewriting their hi
 6. FR-6: A presentation checkpoint upserts its one `responses` row. Throttling stays as
    today (100 ms), and the cost no longer grows with the number of past replies.
 7. FR-7: A work-item transition updates `work_items` and appends `work_events` in one
-   transaction. Startup reads `work_items` and `schedules` directly. Transitions of
-   completed items older than 30 days may be compacted to their last row. The rows are
-   never deleted.
+   transaction. Startup reads `work_items` and `schedules` directly.
+   - For items completed more than 30 days ago, all but the last transition row may be
+     pruned.
+   - The `work_items` row itself is never deleted, except with its conversation (FR-5).
 
 #### Search
 
@@ -101,10 +103,16 @@ verified migration moves existing bots over without losing or rewriting their hi
       - counts match per conversation;
       - torn or corrupt source lines are counted and reported, never dropped silently.
     - It writes the completion marker in `meta` in the same transaction as the last import
-      batch.
+      batch, with `synchronous=FULL` for that commit.
+    - It raises `profile.json`'s schema version through the existing validated, backed-up
+      replacement. Older binaries already refuse an unknown profile schema, so they stop
+      instead of starting a blank bot on the migrated root.
     - It then moves the version-1 files to `archive/v1/`.
-    - A crash before the marker leaves the version-1 files authoritative, and the next start
+    - **Crash before the marker**: the version-1 files stay authoritative, and the next start
       repeats the migration from a fresh database.
+    - **Crash after the marker**: the database is authoritative and version-1 files are never
+      read again. The next start finishes the profile raise and the archive move,
+      idempotently.
 12. FR-12: If the import or verification fails:
     - the core writes a JSON and Markdown report beside the backup;
     - the core does not start;
@@ -132,8 +140,10 @@ verified migration moves existing bots over without losing or rewriting their hi
   - newest 50 entries ≤ 20 ms;
   - a 2-character Chinese query over the index ≤ 100 ms.
   - A 20,000-row probe returned the newest 50 in 0.33 ms.
-- **Durability**: a power loss loses at most the last unsynced transaction. It never
-  corrupts earlier entries or leaves a half-applied work-item transition.
+- **Durability**: with WAL and `synchronous=NORMAL`, a power loss may roll back the most
+  recent commits since the last sync, but never corrupts the database or leaves a
+  half-applied transaction. This is no weaker than today's appends without fsync. The
+  migration commit uses `synchronous=FULL`.
 - **Compatibility**: this is a persisted-data change and ships in the next minor version,
   with release and migration notes in the bump. No bump is part of this spec.
 - **Portability**: Windows, macOS and Linux, under the shipped Electron's Node with
@@ -163,12 +173,12 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Open Questions
 
-- [ ] ADR-021 itself (the owner's decision).
-- [ ] `node:sqlite` with an adapter (proposed), or `better-sqlite3` from the start.
-- [ ] Whether completed work-item transitions are compacted after 30 days (FR-7), or kept
-      whole.
-- [ ] Whether old conversations are archived after a period (FR-15). Proposed: no, until a
-      size problem is observed.
+All were answered on 2026-11-11 with the proposed options:
+
+- [x] ADR-021: accepted.
+- [x] Engine: `node:sqlite` behind an adapter; `better-sqlite3` only if acceptance fails.
+- [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
+- [x] No archiving of old conversations until a size problem is observed (FR-15).
 
 ## References
 

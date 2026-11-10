@@ -6,12 +6,27 @@
 
 ## Status
 
-Proposed, 2026-11-11. Waiting for the owner's decisions (see Open Decisions). Nothing is
-implemented.
+Accepted, 2026-11-11. The owner chose every proposed default (see Decisions Taken).
 
-It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md). An independent
-security review is required before any consolidation or memory injection is implemented,
-as it was for SPEC-009 and SPEC-012.
+The independent review of the same day corrected four mechanisms before acceptance was
+recorded; the intent is unchanged:
+
+- **One-turn context.** Runtime persists a send's `instructions` for later turns, so recall
+  results, memory deltas and a one-time handoff need a Runtime turn-scoped field.
+- **Instruction cost.** Session instructions are re-sent with every turn by every adapter,
+  so core memory stays small and the handoff budget only grows once it can be delivered
+  once.
+- **Consolidation target.** Each bot's private Runtime runs one provider, so a cheaper
+  consolidation target means a cheaper model of the same provider.
+- **Bot tool writes** are validated, with trust derived from the cited evidence.
+
+Nothing is implemented. Before any memory injection or consolidation:
+
+- an independent security review is required, as it was for SPEC-009 and SPEC-012;
+- the Runtime prerequisites in [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md)
+  P0 must exist.
+
+It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
 
 ## Context
 
@@ -27,30 +42,34 @@ as it was for SPEC-009 and SPEC-012.
   - OpenClaw consolidates nightly, with provenance, a loss guard and versions, behind a
     conservative promotion gate. Hermes reviews every 10 turns. Paperclip leaves it to
     agents and opt-in routines.
-  - None handles 2-character Chinese queries in keyword search.
+  - None indexes 2-character Chinese words; the two that try fall back to substring scans.
 - **Cats boundaries.**
   - Runtime ADR-012: durable memory is product-owned.
   - Platform SPEC-022 / SPEC-031 (drafts) describe the same layers for Desktop.
   - SPEC-009 FR-6 and SPEC-012: no bot reads another bot's transcripts or memory, and
-    contact-note sessions never carry owner-written entries.
+    contact-note sessions never carry owner-written entries. SPEC-012 notes these are API
+    limits, not an OS security boundary.
 - **Reach.**
   - Bot's MCP tools reach only providers whose Runtime adapter accepts session MCP servers
     (claude, codex, copilot, hosted ACP, muse MSP). Legacy grok gets no Bot tools.
-  - Turn `instructions` reach every provider.
+- **Instructions.**
+  - Session instructions are composed into every turn's message by every adapter, so their
+    size is paid on every turn.
+  - A send's `instructions` replaces the session's persisted instructions for later turns.
+    Runtime has no field for context that should last one turn.
 - **Tool-free sessions.** A session with no tools, no handoff and no provider-native project
-  memory is not yet offered by Runtime. It is the same prerequisite as SPEC-012 FR-13.
-  Runtime ADR-050's ephemeral sessions are verified for Codex only.
+  memory, deletable with its history, is not yet offered by Runtime. It is the same
+  prerequisite as SPEC-012 FR-13. Runtime ADR-050's ephemeral sessions are verified for Codex
+  only.
 
 ## Decision
-
-The following is proposed; the defaults under Open Decisions are part of the proposal.
 
 1. **Layers**, aligned with Platform SPEC-022:
    - **Provider-native session**: a continuity aid only.
    - **Evidence**: ADR-021's transcript entries, complete and append-only. No memory
      process edits them.
-   - **Working summary**: one per conversation, maintained by consolidation. It replaces the
-     clipped digest in handoff packs.
+   - **Working summary**: one per conversation, except contact notes, maintained by
+     consolidation. It replaces the clipped digest in handoff packs.
    - **Durable memory**:
      - *core memory*: small and budgeted, injected into the bot's own conversations;
      - *memory pages*: topic and entity pages made of claims, each linked to the evidence
@@ -60,38 +79,52 @@ The following is proposed; the defaults under Open Decisions are part of the pro
    provenance and versions. Any Markdown is a rendering, never the source. Bot writes no
    memory into the workspace, because CLIs auto-load some file names there and the
    workspace is shared by every session of the bot.
-3. **Reading works for every provider.**
+3. **Reading.**
    - **Core memory** goes into the session instructions as a snapshot taken at session
-     creation. A later change reaches a live session as a short delta in the next turn's
-     instructions.
-   - **Recall** is done by the core before the turn, when the message asks about the past.
-     Results are bounded, fenced as data and marked possibly outdated.
-   - **Tools.** Providers that accept session MCP additionally get `memory_search` and
-     `memory_get`.
+     creation. This works for every provider today. A later change reaches the next new
+     session.
+   - **Turn-scoped context** goes through a Runtime field that is delivered for one execution
+     and not persisted, once Runtime offers it. It carries:
+     - a live-session delta of core memory;
+     - core-side recall results, injected when an owner message asks about the past;
+     - a one-time handoff.
+   - **Tools.** Providers that accept session MCP get `memory_search` and `memory_get` as
+     soon as recall exists.
 4. **Writing.**
    - Consolidation extracts memory from evidence; this works for every provider.
-   - Providers with MCP may propose immediate `remember`/`forget` calls, which the core
-     validates like consolidation output.
+   - Providers with MCP may call `remember`/`forget`.
+     - A call is a proposal, validated like consolidation output.
+     - It applies only when it cites the owner's own recent entries in the same
+       conversation.
+     - Anything else is queued for the owner.
    - The owner edits memory in settings.
 5. **Scope and trust on every record.**
-   - **Trust levels**: owner-stated, bot-inferred, or untrusted. Untrusted covers tool
-     output, web and file content, and other bots' messages.
+   - **Scope** comes from the conversation: `dm`, `note` or `contact`.
+   - **Trust** is derived by the core from the cited evidence, never taken from the
+     proposer:
+     - `owner_stated` only from owner-written entries;
+     - `bot_inferred` from the bot's own lines;
+     - `untrusted` from tool output, web or file content, or another bot's words.
    - Untrusted content is never promoted.
-   - Contact-note content is never promoted, and memory is never injected into contact-note
-     sessions or into answers for another bot.
+   - Contact notes are excluded from consolidation and summaries, and memory is never
+     injected into contact-note sessions or answers for another bot.
 6. **Consolidation ("dreaming").**
    - **When**: once per local day, after the direct message falls asleep in rest hours
-     (SPEC-011), and only when new evidence exists past the bot's watermark.
-   - **Session**: an owner-invisible, low-priority, cancellable work item in a Runtime
-     session that is tool-free, handoff-free and memory-free, and ephemeral where supported.
-     It is not enabled until Runtime offers such a session for the bot's provider; there is
-     no fallback to a tool-capable session.
-   - **Output**: structured proposals (add, merge, supersede, retire) with evidence ids. The
-     core validates scope, trust, evidence, budget and a loss guard.
-   - **Applying**: additions apply automatically; edits and removals wait for the owner.
-     Every change is versioned and restorable.
-   - **Cost**: a per-run and a daily token cap, recorded as usage. Runtime guardrails stop
-     it.
+     (SPEC-011), and only when some conversation has evidence past its watermark.
+   - **Session**: an owner-invisible, low-priority, cancellable work item. The Runtime
+     session is tool-free, handoff-free and memory-free, deletable with its history, and
+     ephemeral where supported. It is not enabled until Runtime offers such a session for
+     the bot's provider; there is no fallback to a tool-capable session.
+   - **Batches**: evidence goes in token-bounded batches, and each conversation's watermark
+     advances per applied batch.
+   - **Output**: structured proposals (add, merge, supersede, retire, summarize) with
+     evidence ids. The core validates scope, derived trust, evidence, budget and a loss
+     guard.
+   - **Applying**: additions and summaries apply automatically; merges, supersessions and
+     retirements wait for the owner. Every change is versioned and restorable.
+   - **Model and cost**: it uses the bot's own provider, optionally with a cheaper model of
+     that provider. There is a per-run and a daily token cap, recorded as usage, and Runtime
+     guardrails stop it.
 7. **Search.**
    - BM25 over the bigram-indexed store, with a recency tie-break. Single CJK characters use
      LIKE.
@@ -101,35 +134,31 @@ The following is proposed; the defaults under Open Decisions are part of the pro
    renderer or Electron. Their data shapes follow Platform SPEC-022 / SPEC-031, so they can
    become a package under Platform ADR-142. Desktop adoption is Platform's decision.
 
-## Open Decisions
+## Decisions Taken
 
-Each item has a proposed default. Answering "as proposed" accepts the default.
+The owner chose the proposed option for each:
 
-1. **Engine placement**: Bot-local, package-ready modules (proposed). The alternatives are
-   a shared package from the start, or a Runtime service, which conflicts with Runtime
-   ADR-012. A change affects SPEC-015 FR-1 and PLAN-014 P2–P5.
-2. **Canonical form and reach**: database records; instructions plus core-side recall for
-   every provider; MCP tools where accepted (proposed). The alternative is Markdown files
-   as the source, as all three peers do. That conflicts with SPEC-012 and auto-loaded
-   names. A change affects SPEC-015 FR-1–FR-12.
-3. **Injection and budget**: about 4,000 characters of core memory; a snapshot at session
-   creation plus a delta on change (proposed). The alternatives are re-reading every turn
-   (OpenClaw), or snapshot-only until the next session (Hermes). A change affects SPEC-015
-   FR-5–FR-7.
+1. **Engine placement**: Bot-local, package-ready modules. Rejected: a shared package from
+   the start, or a Runtime service (which conflicts with Runtime ADR-012). See SPEC-015 FR-1
+   and PLAN-014 P2–P5.
+2. **Canonical form and reach**: database records; session instructions plus core-side
+   recall for every provider; MCP tools where accepted. Rejected: Markdown files as the
+   source, as all three peers do, which conflicts with SPEC-012 and auto-loaded names. See
+   SPEC-015 FR-1–FR-12.
+3. **Injection and budget**: about 4,000 characters of core memory, as a snapshot at session
+   creation, with a delta once Runtime offers turn-scoped context. Rejected: re-reading every
+   turn (OpenClaw), or a snapshot with no delta ever (Hermes). See SPEC-015 FR-5–FR-8 and
+   FR-10.
 4. **Promotion**: owner-stated facts at the next consolidation; inferred patterns only after
-   two distinct days; untrusted never (proposed). OpenClaw's gate of 3 recalls, 3 distinct
-   queries and at most 10 promotions a night is the alternative. A change affects SPEC-015
-   FR-15–FR-16.
+   two distinct days; untrusted never. Rejected: OpenClaw's gate of 3 recalls, 3 distinct
+   queries and at most 10 promotions a night. See SPEC-015 FR-16 and FR-18.
 5. **Consolidation schedule and approval**: nightly after the direct message sleeps;
-   additions automatic; edits and removals approved (proposed). The alternatives are every
-   N turns (Hermes; no shared prompt cache exists for a wrapped CLI), weekly proposals only
-   (Paperclip), or approving everything. A change affects SPEC-015 FR-13–FR-20.
-6. **Consolidation model and cost**: the bot's own execution target, with an optional
-   cheaper target, and per-run and daily token caps (proposed). The alternatives are always
-   a fixed cheap model, or consolidation only on the owner's request. A change affects
-   SPEC-015 FR-19.
-
-ADR-021 is decided on its own, and P1 of PLAN-014 depends only on it.
+   additions automatic; edits and removals approved. Rejected: every N turns (Hermes; no
+   shared prompt cache exists for a wrapped CLI), weekly proposals only (Paperclip), or
+   approving everything. See SPEC-015 FR-13–FR-18, FR-20 and FR-22.
+6. **Consolidation model and cost**: the bot's own provider, optionally a cheaper model of
+   it, with per-run and daily token caps. Rejected: a fixed cheap model, or consolidation
+   only on the owner's request. See SPEC-015 FR-19.
 
 ## Consequences
 
@@ -137,17 +166,21 @@ ADR-021 is decided on its own, and P1 of PLAN-014 depends only on it.
 
 - A bot remembers stated facts across session replacement, provider changes and restarts,
   and can find specifics from long ago.
-- Memory works for providers without tools. Tool-capable providers get more.
+- Core memory and consolidation work for providers without tools. Tool-capable providers get
+  recall at once.
 - Every remembered claim points to its evidence and can be corrected or removed by the
   owner.
-- The SPEC-009 and SPEC-012 privacy rules are enforced by scope, not by prompt wording.
+- The SPEC-009 and SPEC-012 limits are enforced by the core's scope rules, not by prompt
+  wording.
 
 ### Negative
 
 - Consolidation spends model tokens every night a bot has new conversations.
-- Remembered text becomes prompt input, a new injection surface. Hence trust levels,
+- Core memory is paid on every turn, because session instructions are.
+- Remembered text becomes prompt input, a new injection surface. Hence derived trust,
   validation and the security review.
-- Consolidation waits on a Runtime capability that does not exist yet.
+- Two Runtime capabilities do not exist yet: turn-scoped context, and a tool-free deletable
+  session.
 - More owner-facing surface: memory settings and an approval queue.
 
 ### Neutral
@@ -160,15 +193,24 @@ ADR-021 is decided on its own, and P1 of PLAN-014 depends only on it.
 
 - **Pros**: humans and every CLI can read and edit them; no tool needed.
 - **Cons**: they reach every session in the workspace, including contact-note sessions.
-  Auto-loaded names leak into SPEC-012 Phase 2 sessions. Provenance, scope and approval
-  live outside the store.
-- **Why rejected**: the privacy rules must hold by construction.
+  Auto-loaded names leak into SPEC-012 Phase 2 sessions. Provenance, scope and approval live
+  outside the store.
+- **Why rejected**: the scope rules should be enforced by the core, not left to file
+  placement.
+
+### Turn instructions for recall and deltas, without a Runtime change
+
+- **Pros**: no Runtime work.
+- **Cons**: Runtime persists them, so the next turn loses the persona, handoff and memory.
+  Resending everything on every turn doubles the instructions, because the persisted layer
+  is composed in as well.
+- **Why rejected**: correctness and cost.
 
 ### Vector retrieval first
 
 - **Pros**: finds paraphrases; OpenClaw weights vectors at 0.7.
-- **Cons**: an embedding provider (privacy, keys, cost) or a 0.3 GB local model, for a
-  corpus of a few megabytes per bot per year.
+- **Cons**: an embedding provider (privacy, keys, cost) or a 0.3 GB local model, for a corpus
+  of a few megabytes per bot per year.
 - **Why rejected**: bigram BM25 plus curated pages may be enough. An evaluation decides.
 
 ### Review every few turns (Hermes)
@@ -201,5 +243,5 @@ ADR-021 is decided on its own, and P1 of PLAN-014 depends only on it.
 
 ---
 
-*Proposed: 2026-11-11*
-*Decision makers: owner (pending)*
+*Decision made: 2026-11-11*
+*Decision makers: owner (chose every proposed default); drafted by Claude*

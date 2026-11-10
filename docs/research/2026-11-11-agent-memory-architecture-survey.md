@@ -19,11 +19,11 @@ owner across sessions. It is the evidence for
     [skills](https://hermes-agent.nousresearch.com/docs/user-guide/features/skills),
     [memory providers](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory-providers).
     The last three were only partly read.
-- **Source code**, read-only on 2026-11-11, nothing executed. Each checkout is upstream
-  plus, at most, one local commit that does not touch memory:
-  - OpenClaw at `2aaab68a82f`;
+- **Source code**, read-only on 2026-11-11, nothing executed. The local checkouts add at
+  most one commit that does not touch memory, so the upstream commits below are cited:
+  - OpenClaw at `225d2f7d4f1`;
   - Hermes Agent at `acdc8f1ba6`;
-  - Paperclip at `ab967c23d`.
+  - Paperclip at `0c7a628fd`.
   - Paths below are relative to each repository root.
 - **Cats repositories**: cats-bot `main` at `8d9a3db`, cats-runtime `main` at `fb50e59a`,
   cats-platform `main` at `d53b09db0`.
@@ -130,7 +130,7 @@ owner across sessions. It is the evidence for
 - **Wrapped Codex.** When `thread/resume` fails, Hermes:
   - clears the id and tells the user;
   - seeds a fresh thread with its own transcript, up to 32,000 characters
-    (`agent/codex_runtime.py`).
+    (`agent/codex_runtime.py`, `agent/codex_runtime_history_seed.py`).
 
 ## Paperclip
 
@@ -143,8 +143,10 @@ owner across sessions. It is the evidence for
   - injects `paperclip.native-session-handoff.v1`: at most 24,000 bytes, secrets redacted,
     fenced as untrusted evidence, with a pointer to fetch more through tools
     (`server/src/services/native-runtime/native-session-handoff.ts`).
-- **Proactive rotation** applies to grok sessions after 200 runs, 2M input tokens or 72 h. It
-  is disabled for claude and codex (`packages/adapter-utils/src/session-compaction.ts`).
+- **Proactive rotation** after 200 runs, 2M input tokens or 72 h applies to adapters whose
+  native context management is unknown: cursor, gemini, grok, kimi, opencode and pi. It is
+  disabled for claude, codex and hermes, which manage their own context
+  (`packages/adapter-utils/src/session-compaction.ts`).
 - **Continuation summary** is filled from a template without a model, at most 8,000
   characters, after every run.
   - Receipts of completed actions keep a resumed agent from repeating side effects
@@ -173,7 +175,8 @@ owner across sessions. It is the evidence for
   - The two that wrap CLIs do not flush the CLI's context; they work from their own
     history.
 - **Guardrails** on automatic writes: provenance, a loss guard, staged edits, versions.
-- **Chinese keyword search** is weak in all three.
+- **Chinese keyword search** is weak in all three. None indexes 2-character Chinese words;
+  Hermes and OpenClaw fall back to substring scans.
 - **A lost native session** gets a fresh session plus the system's own history.
 
 ## Cats Bot today
@@ -198,7 +201,7 @@ owner across sessions. It is the evidence for
   - transcript and presentation files of about 24 KB each.
 - **What a new session receives** is the handoff pack (`HANDOFF_PACK_LIMIT = 12_000`).
   - Its older part is clipped lines of 160 characters each, not a summary.
-  - Errors and rebuild notices have been left out since #139/#146.
+  - Errors and rebuild notices have been left out since #139.
   - The assist-heartbeat review (`review.ts`) still renders error lines.
 - **Session continuity.**
   - Until 2026-11-10 every core restart created a new session; the log above shows eight
@@ -213,10 +216,16 @@ owner across sessions. It is the evidence for
     and network access), and never to antigravity (`src/shared/providerTools.ts`).
   - A legacy grok bot therefore has no Bot tools. In one such bot, the model correctly said
     no external tool was connected.
-- **Instruction delivery.** For per-turn CLI adapters such as legacy grok, Runtime prepends
-  skills, session instructions and turn instructions to every turn's prompt
-  (`compileRuntimeTurnPrompt`). The handoff pack is therefore re-sent on each turn.
-  Per-turn `instructions` reach every provider.
+- **Instruction delivery.**
+  - Runtime composes skills, the session instructions and the turn's instructions into
+    every turn's message. This holds for the claude, codex, hosted ACP and per-turn adapters
+    (`compileRuntimeTurnPrompt`, `mergeRuntimeInstructionLayers`, `WorkerProcess.ts`).
+    Session instructions, including a handoff pack, are therefore paid on every turn by
+    every provider.
+  - A send's `instructions` also becomes the session's persisted instructions for later
+    turns (`src/http/routes/messages.ts`, `docs/api.md`). Turn instructions therefore cannot
+    carry one-turn context, which is why Bot already keeps its tool guidance out of them
+    (`src/core/desktopControl/tools.ts`).
 - **Telegram** accepts only the owner's private chat; group messages are ignored.
 - **Privacy rules.** SPEC-009 FR-6 and SPEC-012 forbid any bot reading another bot's
   transcripts or memory.
@@ -265,9 +274,11 @@ owner across sessions. It is the evidence for
   upserted presentation rows and current-state work items removes whole-file rewrites and
   replay ([ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md)).
 - **Memory must reach providers without tools.**
-  - Core memory goes through session or turn instructions.
-  - Recall is done by the core before a turn, with MCP tools where the provider accepts
-    them.
+  - Core memory can go into the session instructions at session creation today. It is then
+    paid on every turn, so its budget must stay small.
+  - Context that should last one turn (recall results, a memory delta, a one-time handoff)
+    needs a Runtime turn-scoped field that is not persisted. Until then, recall reaches only
+    providers with MCP tools.
   - Workspace Markdown is risky: CLIs auto-load some file names, and the workspace is shared
     with contact-note sessions.
 - **Consolidate from Bot's own evidence, not from a CLI's context.** It needs a tool-free

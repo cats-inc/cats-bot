@@ -15,6 +15,9 @@ which replaces the §6 data root and the `--managed-by` value. On 2026-10-30 PLA
 [ADR-008](008-run-every-bot-as-a-headless-core-under-one-hub.md), which supersedes §2's mounting (each core
 now runs as a process of its own under the hub) and §8's per-bot single-instance lock and tray (one hub
 lock, one tray). The rest of this record still holds.
+On 2026-11-11 the owner accepted [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md). When
+PLAN-014 P1 lands, it replaces §6's storage mechanics (temp files plus rename, the JSONL journal) with one
+SQLite database per bot. §6's single writer, schema versions and upgrade policy stay.
 
 ## Context
 
