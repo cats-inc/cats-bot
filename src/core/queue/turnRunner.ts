@@ -42,7 +42,8 @@ export function toolInputText(event: { text?: unknown; toolArgs?: unknown }): st
 
 export type TurnOutcome =
   | { kind: 'completed'; text: string; quiet: boolean }
-  | { kind: 'failed'; reason: string; retryAfterMs?: number }
+  /** `reported`: the turn's stream already wrote this failure into the conversation. */
+  | { kind: 'failed'; reason: string; retryAfterMs?: number; reported?: boolean }
   | { kind: 'interrupted' }
   | { kind: 'cancelled' }
   | {
@@ -72,6 +73,8 @@ interface SilentFailure {
   kind: 'failed_before_output';
   reason: string;
   decision: LossDecision;
+  /** Whether the conversation already shows the failure (never when the turn is sent again). */
+  reported: boolean;
 }
 
 export interface TurnRetryDelays {
@@ -199,10 +202,10 @@ export class TurnRunner {
       }
       if (result.decision === 'fail') {
         this.lastSilentFailure.set(item.conversationId, { sessionId: bound.sessionId, reason: result.reason, prompt: item.prompt });
-        return { kind: 'failed', reason: result.reason };
+        return { kind: 'failed', reason: result.reason, reported: result.reported };
       }
       this.requestRebuild(item, bound.sessionId, result.reason);
-      if (result.decision === 'rebuild_next') return { kind: 'failed', reason: result.reason };
+      if (result.decision === 'rebuild_next') return { kind: 'failed', reason: result.reason, reported: result.reported };
       rebuiltAfterExit = true;
     }
     return { kind: 'failed', reason: 'The session could not be re-established after repeated attempts' };
@@ -341,6 +344,8 @@ export class TurnRunner {
     let produced = false;
     // Errors before any output wait: a turn sent again in a rebuilt session leaves them out.
     const pendingErrors: string[] = [];
+    // Whether this attempt wrote an error into the conversation, so the failure is not written twice.
+    let wroteError = false;
     let unavailable = false;
     let errorCode: string | null = null;
     const presentation = heartbeat
@@ -365,6 +370,7 @@ export class TurnRunner {
       });
     };
     const appendError = (text: string) => {
+      wroteError = true;
       const entry = this.deps.conversations.append(conversationId, { kind: 'error', origin, text, workItemId: item.id, isError: true });
       emitDelta(entry, entry.seq);
     };
@@ -526,8 +532,8 @@ export class TurnRunner {
     if (controller.signal.aborted) return { kind: 'cancelled' };
     if (outcome.errorText) {
       return decision === null
-        ? { kind: 'failed', reason: outcome.errorText }
-        : { kind: 'failed_before_output', reason: outcome.errorText, decision };
+        ? { kind: 'failed', reason: outcome.errorText, reported: wroteError }
+        : { kind: 'failed_before_output', reason: outcome.errorText, decision, reported: wroteError };
     }
     this.deps.log(`turn ${item.id}: stream ended without a result`);
     return { kind: 'interrupted' };
