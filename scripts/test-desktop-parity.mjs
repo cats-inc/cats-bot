@@ -131,6 +131,7 @@ function registerShell() {
     return language();
   });
   ipcMain.handle('bot:invoke', (_event, command, args = []) => core[command](...args));
+  ipcMain.handle('setup:environment', () => ({ platform: process.platform, startAtLoginOffered: false }));
   ipcMain.handle('setup:check', (_event, provider) => providers.check(provider));
   ipcMain.handle('setup:install', (_event, provider, step) => providers.install(provider, step));
   ipcMain.handle('window:state', (event) => {

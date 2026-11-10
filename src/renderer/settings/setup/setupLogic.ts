@@ -274,6 +274,14 @@ export const neededTickable = (steps: readonly ComputerStep[], needed: ReadonlyS
 export const computerChecks = (state: ComputerSetupState): number =>
   state.steps.length + (state.platform === 'win32' ? 1 : 0);
 
+/**
+ * What Try again runs. An update starts from something that works, so a row its update left
+ * broken is installed again instead; the shell would refuse to update it.
+ */
+export function retryChange(step: SetupStep<string>, attempted: SetupChange): SetupChange {
+  return attempted === 'upgrade' && !step.installed ? 'apply' : attempted;
+}
+
 /** FR-9: what the last update found, in a few words. */
 export function updateNote(step: SetupStep<string>): { text: string; values?: Record<string, string>; tone: 'ok' | 'danger' } | null {
   const update = step.lastUpdate;
@@ -285,6 +293,8 @@ export function updateNote(step: SetupStep<string>): { text: string; values?: Re
         : { text: 'Updated to {to}', values: { to: update.to ?? '' }, tone: 'ok' };
     case 'current':
       return { text: 'Already the newest', tone: 'ok' };
+    case 'restart':
+      return { text: 'Installed. It finishes after a restart; the version you had works until then.', tone: 'ok' };
     case 'declined':
       return { text: 'You chose No in the Windows prompt, so nothing changed.', tone: 'danger' };
     default:

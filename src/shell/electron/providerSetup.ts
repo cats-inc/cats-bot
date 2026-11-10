@@ -734,12 +734,17 @@ function plannedBy(result: HelperResult): string[] {
   return [...(result.plannedActions ?? []), ...(result.plannedChanges ?? [])];
 }
 
-/** A few at a time, in order. */
+/**
+ * A few at a time, in order. It settles only once every probe has ended, so a stopped check
+ * releases the operation after the last process tree is gone, never while one is still closing.
+ */
 async function eachBounded<T>(items: readonly T[], limit: number, work: (item: T) => Promise<void>): Promise<void> {
   const queue = [...items];
-  await Promise.all(Array.from({ length: Math.min(limit, queue.length) }, async () => {
+  const results = await Promise.allSettled(Array.from({ length: Math.min(limit, queue.length) }, async () => {
     while (queue.length) await work(queue.shift()!);
   }));
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+  if (failure) throw failure.reason;
 }
 
 /**
@@ -769,11 +774,15 @@ function settleChange<Id extends string>(target: SetupStep<Id>, applied: HelperR
   if (interrupted || !done)
     target.warnings = distinctLines([...target.warnings, ...(applied.warnings ?? [])]);
   if (change === 'upgrade' && done) {
-    const updated = Boolean(target.version && (from ? from !== target.version : target.applied.length > 0));
+    // Node's helper reports `already_up_to_date_*` when nothing changed, which is not an update.
+    const changes = target.applied.filter((entry) => !/^already_/u.test(entry));
+    const updated = Boolean(target.version && (from ? from !== target.version : changes.length > 0));
+    // An installer that asks for a restart (MSI 3010) finishes its update afterwards.
+    const restarting = !updated && (applied.restartRequired === true || ['restart_required', 'relaunch_required'].includes(status));
     target.lastUpdate = {
       from,
       to: target.version,
-      outcome: status === 'elevation_required' ? 'declined' : refused ? 'failed' : updated ? 'updated' : 'current',
+      outcome: status === 'elevation_required' ? 'declined' : refused ? 'failed' : updated ? 'updated' : restarting ? 'restart' : 'current',
     };
     return refused;
   }

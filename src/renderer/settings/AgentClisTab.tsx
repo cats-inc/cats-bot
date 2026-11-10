@@ -17,6 +17,7 @@ import {
   neededHelpers,
   neededPending,
   neededTickable,
+  retryChange,
   rowKind,
   shortClock,
   stemClass,
@@ -67,11 +68,20 @@ export function AgentClisTab() {
   const elapsed = useElapsed(runStart);
 
   // FR-3: what the hub kept from this session, and who uses which CLI. Neither starts a process.
+  // FR-13: a cat bot's tab can read its CLI meanwhile, so coming back to this window reads again,
+  // unless a check or a change runs here.
+  const idle = useRef(true);
+  idle.current = phase === 'idle';
   useEffect(() => {
     let live = true;
-    void api.computer.state()
-      .then((next) => { if (live) setState(next); })
-      .catch((failure: unknown) => { if (live) setError(errorText(failure)); });
+    const readState = () => {
+      if (!idle.current) return;
+      void api.computer.state()
+        .then((next) => { if (live && idle.current) setState(next); })
+        .catch((failure: unknown) => { if (live) setError(errorText(failure)); });
+    };
+    readState();
+    window.addEventListener('focus', readState);
     const readBots = () => {
       void api.hub.bots().then((listing) => { if (live) setUsers(usersByProvider(listing.bots)); }).catch(() => {});
     };
@@ -80,6 +90,7 @@ export function AgentClisTab() {
     return () => {
       live = false;
       off();
+      window.removeEventListener('focus', readState);
     };
   }, []);
 
@@ -101,7 +112,7 @@ export function AgentClisTab() {
   // FR-7: a row the owner ran that stopped the queue, which the foot speaks to.
   const stopped = steps.find((step) => attempted.has(step.id) && ['failed', 'declined', 'restart'].includes(rowKind(step))) ?? null;
   const retry: Item[] = stopped && rowKind(stopped) !== 'restart'
-    ? [{ id: stopped.id, change: attempted.get(stopped.id)! }, ...queued.filter((item) => item.id !== stopped.id)]
+    ? [{ id: stopped.id, change: retryChange(stopped, attempted.get(stopped.id)!) }, ...queued.filter((item) => item.id !== stopped.id)]
     : [];
 
   const setTick = (step: ComputerStep, value: boolean) => setTicked((current) => {

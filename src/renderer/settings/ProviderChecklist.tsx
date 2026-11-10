@@ -3,7 +3,7 @@ import type { ProviderSetupState, SetupChange, SetupStepId } from '../../shared/
 import { errorText } from '../errors.ts';
 import { useI18n } from '../i18n.ts';
 import { SetupLog } from './setup/SetupLog.tsx';
-import { changeFor, liveRow, pendingSteps, rowKind, stoppedStep } from './setup/setupLogic.ts';
+import { changeFor, liveRow, pendingSteps, retryChange, rowKind, stoppedStep } from './setup/setupLogic.ts';
 import { CheckIcon, PlainRow, QueuedRow, RunningRow, StepRow, WaitIcon } from './setup/StepRow.tsx';
 import { useElapsed, useSetupLog } from './setup/useSetupLog.ts';
 
@@ -53,6 +53,11 @@ export function ProviderChecklist({
 
   useEffect(() => {
     void api.setup.environment().then((environment) => setPlatform(environment.platform)).catch(() => {});
+    // Leaving the tab stops the queue after the install that runs now, which cannot be interrupted.
+    return () => {
+      generation.current += 1;
+      stopRequested.current = true;
+    };
   }, []);
   // SPEC-010 FR-21: choosing another provider drops what was read and starts nothing.
   useEffect(() => {
@@ -193,7 +198,7 @@ export function ProviderChecklist({
   const queued: Item[] = steps.filter(isTicked).map((step) => ({ id: step.id, change: changeFor(step)! }));
   const stopped = state?.provider === provider ? stoppedStep(state) : null;
   const retry: Item[] = stopped && rowKind(stopped) !== 'restart' && attempted.has(stopped.id)
-    ? [{ id: stopped.id, change: attempted.get(stopped.id)! }, ...queued.filter((item) => item.id !== stopped.id)]
+    ? [{ id: stopped.id, change: retryChange(stopped, attempted.get(stopped.id)!) }, ...queued.filter((item) => item.id !== stopped.id)]
     : [];
   const windows = platform === 'win32';
 

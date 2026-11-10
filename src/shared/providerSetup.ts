@@ -43,7 +43,7 @@ export interface SetupScript {
 export interface SetupUpdateResult {
   from: string | null;
   to: string | null;
-  outcome: 'updated' | 'current' | 'failed' | 'declined';
+  outcome: 'updated' | 'current' | 'restart' | 'failed' | 'declined';
 }
 
 export interface SetupStep<Id extends string = SetupStepId> {

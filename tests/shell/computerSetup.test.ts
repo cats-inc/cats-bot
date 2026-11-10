@@ -192,6 +192,45 @@ test('an update that did not finish leaves the working version, and the row says
   await assert.rejects(setup.changeComputer('grok', 'upgrade'), /Install it before updating it/u);
 });
 
+test('an update that changed nothing, or that finishes after a restart, says so', async () => {
+  // Node's helper reports already_up_to_date_* when the version is current, and the check before had no version.
+  let setup = new ProviderSetup(async (_helper, change) => (change === 'upgrade'
+    ? { status: 'ready', installed: true, appliedChanges: ['already_up_to_date_node'] }
+    : { status: 'ready', installed: true }), { windows: false });
+  let node = (await setup.changeComputer('node', 'upgrade')).steps.find((step) => step.id === 'node')!;
+  assert.equal(node.lastUpdate?.outcome, 'current');
+  // An MSI that asks for a restart (3010) finishes its update afterwards.
+  setup = new ProviderSetup(async (_helper, change) => (change === 'upgrade'
+    ? { status: 'restart_required', restartRequired: true, interruptions: [{ kind: 'restart_required', requiresRestart: true }], appliedChanges: ['msi_install'] }
+    : ready('22.11.0')), { windows: true });
+  node = (await setup.changeComputer('node', 'upgrade')).steps.find((step) => step.id === 'node')!;
+  assert.equal(node.lastUpdate?.outcome, 'restart');
+});
+
+test('a stopped check releases the hub only once every probe has ended', async () => {
+  let running = 0;
+  const setup = new ProviderSetup(async (helper, _change, signal) => {
+    running += 1;
+    try {
+      await new Promise((done) => setTimeout(done, helper === 'node' ? 1 : 30));
+      if (signal?.aborted) {
+        // Ending a probe's process tree takes a while, and some take longer than others.
+        await new Promise((done) => setTimeout(done, helper.length % 2 ? 5 : 40));
+        throw new Error('Stopped');
+      }
+      return ready();
+    } finally {
+      running -= 1;
+    }
+  }, { windows: false });
+  const checking = setup.checkComputer();
+  await new Promise((done) => setTimeout(done, 15));
+  setup.cancelCheck();
+  await assert.rejects(checking);
+  assert.equal(running, 0, 'a probe was still closing when the check gave up');
+  assert.equal(setup.busy, false);
+});
+
 test('one setup operation at a time across the hub, whichever page started it', async () => {
   let release!: () => void;
   const gate = new Promise<void>((done) => { release = done; });

@@ -15,6 +15,7 @@ import {
   shortClock,
   stemClass,
   updatableSteps,
+  retryChange,
   updateNote,
   usersByProvider,
   type ComputerStep,
@@ -107,6 +108,7 @@ test('an update says what it found, or that it did not finish (FR-9)', () => {
   assert.equal(updateNote(row('claude', 'ready', { lastUpdate: { from: '2.0.20', to: '2.0.20', outcome: 'current' } }))?.text, 'Already the newest');
   assert.equal(updateNote(row('node', 'ready', { lastUpdate: { from: '22', to: '22', outcome: 'declined' } }))?.tone, 'danger');
   assert.match(updateNote(row('node', 'ready', { lastUpdate: { from: '22', to: '22', outcome: 'failed' } }))!.text, /still works/u);
+  assert.match(updateNote(row('node', 'ready', { lastUpdate: { from: '22', to: '22', outcome: 'restart' } }))!.text, /after a restart/u);
   assert.equal(shortClock('2026-11-11T09:05:07.000Z').length, 5);
 });
 
@@ -127,11 +129,18 @@ test('an update is worded for what it really runs, on each operating system (FR-
   assert.equal(stepFacts(row('grok', 'changes_required'), 'grok', 'win32').manual, 'irm https://x.ai/cli/install.ps1 | iex');
 });
 
+test('Try again installs a row its update left broken, and repeats anything else', () => {
+  assert.equal(retryChange(row('claude', 'failed', { installed: false }), 'upgrade'), 'apply');
+  assert.equal(retryChange(row('claude', 'failed', { installed: true }), 'upgrade'), 'upgrade');
+  assert.equal(retryChange(row('claude', 'failed', { installed: false }), 'apply'), 'apply');
+});
+
 test('every new line of the Agent CLIs tab reads in Traditional Chinese', () => {
   for (const text of [
     'Agent CLIs', 'Installed through Node.js', 'With their own installer', 'Optional, and fine to leave for later',
     'Updated {from} → {to}', 'Updated to {to}', 'Already the newest',
     'The update did not finish, and the version you had still works. The log below says why.',
+    'Installed. It finishes after a restart; the version you had works until then.',
     UPDATE_SUMMARY, 'Also updates npm to its newest release',
   ]) {
     assert.notEqual(translate('zh-TW', text), text, text);

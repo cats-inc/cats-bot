@@ -659,6 +659,7 @@ export const zhTW: Record<string, string> = {
   'Updated {from} → {to}': '已從 {from} 更新到 {to}',
   'Updated to {to}': '已更新到 {to}',
   'Already the newest': '已經是最新版',
+  'Installed. It finishes after a restart; the version you had works until then.': '已經安裝，重新啟動後才會完成；在那之前原本的版本照常可用。',
   'The update did not finish, and the version you had still works. The log below says why.': '更新沒有完成，原本的版本還能用。原因在下方的紀錄。',
   'Installs the newest release if there is one. If this is already the newest, nothing changes.': '有新版就安裝新版；如果已經是最新版，什麼都不會改。',
   'Also updates npm to its newest release': '也會把 npm 更新到最新版',
