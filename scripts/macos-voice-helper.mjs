@@ -35,10 +35,22 @@ function runSwift(args, cwd) {
   return result.stdout;
 }
 
-function runLipo(file) {
+/**
+ * A Mach-O file's architectures, from `lipo -archs`. Not `-verify_arch`: newer lipo (Command Line
+ * Tools on macOS 27) takes only one architecture after it and reads the rest as input files.
+ */
+export function macArchitectures(file) {
   const result = spawnSync('lipo', ['-archs', file], { encoding: 'utf8' });
   if (result.error || result.status !== 0) throw result.error ?? new Error(`lipo could not read ${file}`);
   return result.stdout.trim().split(/\s+/u);
+}
+
+/** Throws unless `file` has every required architecture; returns the ones it has. */
+export function requireMacArchitectures(file, required, { lipo = macArchitectures, what = file } = {}) {
+  const present = lipo(file);
+  const missing = required.filter((arch) => !present.includes(arch));
+  if (missing.length > 0) throw new Error(`${what} lacks ${missing.join(', ')} (has ${present.join(', ')})`);
+  return present;
 }
 
 /** Builds the helper and stages it; the staging directory is cleared first, so no stale helper is packaged. */
@@ -56,17 +68,14 @@ export async function buildMacosVoiceHelper(root, arches = MAC_ARCHES, { run = r
 }
 
 /** A packaged macOS app's resources must carry the helper with every architecture the app has. */
-export async function verifyPackagedMacosVoiceHelper(resourcesDir, arches = MAC_ARCHES, { lipo = runLipo } = {}) {
+export async function verifyPackagedMacosVoiceHelper(resourcesDir, arches = MAC_ARCHES, { lipo = macArchitectures } = {}) {
   const helper = join(resourcesDir, PACKAGED_HELPER);
   try {
     await access(helper);
   } catch {
     throw new Error(`The macOS package lacks the dictation helper at ${helper}`);
   }
-  const present = lipo(helper);
-  const missing = checkArches(arches).filter((arch) => !present.includes(arch));
-  if (missing.length > 0) throw new Error(`The macOS dictation helper lacks ${missing.join(', ')} (has ${present.join(', ')})`);
-  return { arches: present };
+  return { arches: requireMacArchitectures(helper, checkArches(arches), { lipo, what: 'The macOS dictation helper' }) };
 }
 
 /** CLI entry; returns what it did so tests can check the other platforms. */
