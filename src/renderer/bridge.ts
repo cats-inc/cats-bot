@@ -20,6 +20,7 @@ import type {
 import type { DesktopScreenshotCaptureResult } from '../shared/screenshot/contracts.ts';
 import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 import type { VoiceCaptureEvent, VoiceCaptureStartOptions } from '../shared/voice.ts';
+import type { SystemSettingsPane } from '../shared/systemSettings.ts';
 
 /**
  * ADR-003: the type of `window.catsBot`, which `assets/preload.cjs` exposes.
@@ -119,6 +120,8 @@ export interface ShellStateView {
   botId: string | null;
   openAtLogin: boolean;
   openAtLoginAvailable: boolean;
+  /** ADR-020: macOS registered the login item but wants the owner's approval in Login Items. */
+  loginItemNeedsApproval: boolean;
   floatingVisible: boolean;
   version: string;
   /** The bot's folder, or the Cats Bot root in Cats Bot Settings. */
@@ -193,6 +196,10 @@ export interface CatsBotBridge {
     stop(sessionId: string): Promise<void>;
     cancel(sessionId: string): Promise<void>;
     onEvent(listener: (event: VoiceCaptureEvent) => void): Unsubscribe;
+  } | null;
+  /** ADR-020: opens a macOS System Settings pane from a note or Settings; null off macOS. */
+  systemSettings: {
+    open(pane: SystemSettingsPane): Promise<null>;
   } | null;
   invoke<C extends HostCommandName>(command: C, ...args: HostCommands[C]['args']): Promise<HostCommands[C]['result']>;
   onEvent(listener: (event: BotHostEvent) => void): Unsubscribe;

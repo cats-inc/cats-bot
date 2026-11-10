@@ -234,7 +234,10 @@ descriptions for the model and this documentation say "bot".
     ticked checkbox and turns it on once if it stays ticked (SPEC-010 FR-17), except
     in a development shell, a portable copy, a Mac app outside Applications or a copy
     run with `CATS_BOT_HOME`, which are not offered it; existing installations and
-    adopted bots keep their setting.
+    adopted bots keep their setting. On macOS, when the login item is on but macOS reports
+    `requires-approval`, Cats Bot Settings > General shows a line under the checkbox with
+    "Open System Settings" for General > Login Items
+    ([ADR-020](../decisions/020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md)).
 24. FR-24: Each bot profile records `environment: { kind: 'native' }`. In this
     version the registry's `environmentProfile` and every binding must be
     native, and anything else is refused (ADR-010).

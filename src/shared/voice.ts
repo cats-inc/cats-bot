@@ -7,7 +7,10 @@
 
 export const VOICE_CAPTURE_MODES = ['on-device', 'cloud', 'unknown'] as const;
 export const VOICE_CAPTURE_ERROR_REASONS = [
+  // Microphone (macOS and Windows).
   'permission_denied',
+  // macOS Speech Recognition, a System Settings pane of its own (ADR-020).
+  'speech_permission_denied',
   'permission_not_determined',
   'mic_unavailable',
   'language_not_supported',
@@ -38,6 +41,8 @@ export type VoiceCaptureEvent =
 export function voiceErrorMessage(reason: VoiceCaptureErrorReason): string | null {
   switch (reason) {
     case 'permission_denied': return 'Microphone access was denied. Check your system voice permissions.';
+    case 'speech_permission_denied':
+      return 'Speech Recognition access was denied. Allow Cats Bot in System Settings > Privacy & Security > Speech Recognition.';
     case 'permission_not_determined': return 'Voice input needs system microphone and speech permissions.';
     case 'mic_unavailable': return 'No microphone was detected.';
     case 'language_not_supported': return 'Voice input does not support the current language.';
@@ -47,6 +52,13 @@ export function voiceErrorMessage(reason: VoiceCaptureErrorReason): string | nul
     case 'aborted':
       return null;
   }
+}
+
+/** ADR-020: the macOS System Settings pane that fixes a denied permission (a `SystemSettingsPane`). */
+export function voiceErrorSystemSettingsPane(reason: VoiceCaptureErrorReason): 'microphone' | 'speech_recognition' | null {
+  if (reason === 'permission_denied') return 'microphone';
+  if (reason === 'speech_permission_denied') return 'speech_recognition';
+  return null;
 }
 
 /** A warning for a recognizer that may send speech online, as Cats Desktop shows it. */

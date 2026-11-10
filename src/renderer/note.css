@@ -571,3 +571,18 @@ html { font-size: 16px; }
   0%, 100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45); }
   50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
 }
+
+/* ADR-020: the button on a line about a missing macOS permission. */
+.entry-settings-action {
+  align-self: flex-start;
+  margin-top: 6px;
+  padding: 4px 10px;
+  border: 1px solid #d9cc92;
+  border-radius: 6px;
+  background: #fffdf2;
+  color: var(--ink);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.entry-settings-action:hover { background: rgba(0, 0, 0, 0.06); }
