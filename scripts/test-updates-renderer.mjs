@@ -16,8 +16,9 @@ app.setPath('appData', evidence);
 app.setPath('userData', evidence);
 async function main() {
   await app.whenReady();
-  const settings = new SettingsWindow({ preloadPath: join(root, 'assets/preload.cjs'), rendererDir: join(root, 'dist/renderer'), iconPath: join(root, 'assets/icon.png') });
+  const settings = new SettingsWindow({ preloadPath: join(root, 'assets/preload.cjs'), rendererDir: join(root, 'dist/renderer'), iconPath: join(root, 'assets/icon.png') }, { scope: 'hub' });
   ipcMain.handle('ui:language', () => ({ preference: 'en', locale: 'en' }));
+  ipcMain.handle('ui:replyLanguage', () => 'unspecified');
   const calls = [];
   let failCheck = true, finishDownload, allowed = false;
   const controller = new BotUpdateController({ phase: 'idle', currentVersion: '0.2.0', version: null,
@@ -41,7 +42,8 @@ async function main() {
   assert.ok(isUpdateSender(event, id => settings.owns(id))); return updateAction(controller, action, async () => allowed);
 });
   try {
-    await settings.open('app');
+    // Updates live on Cats Bot Settings' General tab (D20).
+    await settings.open('general');
     const contents = settings.browserWindow.webContents;
     contents.debugger.attach('1.3');
     const evaluate = async expression => {
