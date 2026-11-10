@@ -78,6 +78,12 @@
 - Prepare version fields, release notes, exact source/artifact pins, compatibility
   and migration notes, and the applicable signing profile in the original bump
   commit/PR before publication. Do not claim future verification has passed.
+- Freeze the selected source and all pins after preparing the bump. "Latest"
+  means latest at selection; later PRs do not reopen it. Use `release/vX.Y.Z`
+  with exact-source CI and dispatch; main's up-to-date merge work belongs on a
+  separate integration branch. Reopen only for an explicit owner addition or a
+  concrete release defect, then revalidate the changed inputs. Follow the
+  frozen source/baseline procedure in `docs/deployment.md`.
 - After publication, verify the required workflow and public assets/registry,
   report the results in the final response, and stop. Actions run results/logs
   and release assets are the hosted evidence; do not create a GitHub Release for

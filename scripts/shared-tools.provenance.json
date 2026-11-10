@@ -63,7 +63,7 @@
     },
     {
       "repository": "cats-inc/cats-platform",
-      "commit": "12c305458a860d4a474174ca2ac3c298d49517ba",
+      "commit": "7fbc2be8e20a19fe47999e28af5af5a36c7089e3",
       "files": [
         {
           "source": "scripts/shared/renderer-cdp.mjs",
@@ -128,7 +128,7 @@
         {
           "source": "scripts/shared/source-selection.mjs",
           "path": "scripts/shared/source-selection.mjs",
-          "sha256": "690b5593eb6862413c5b01164dcea7b7272937b12d525075c3e9341ecc76af2f",
+          "sha256": "868c1eb67c85aa39c73a7e4e1c11760a9dc236abf4f6a24ac24842267955b0e6",
           "executable": false
         }
       ]
