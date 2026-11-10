@@ -2,13 +2,13 @@ import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
 import { BotCore } from '../../src/core/bot.ts';
-import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
+import type { BotHostEvent, ConversationRecord, WorkItem } from '../../src/core/types.ts';
 import { awakeNow, fakeRuntimeEntry, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
- * SPEC-011 on the fake runtime: the heartbeat's daily rhythm, its back-off
- * while the owner does not answer (kept across a restart), and `assist`
- * reviewing the bot's own notes into its direct message.
+ * SPEC-011 on the fake runtime: the heartbeat's daily rhythm and home's sleep
+ * in rest hours, its back-off while the owner does not answer (kept across a
+ * restart), and `assist` reviewing the bot's own notes into its direct message.
  */
 
 let home: TempHome;
@@ -37,6 +37,10 @@ function clock(start: number) {
 function heartbeatDone(core: BotCore): Promise<WorkItem> {
   return waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.kind === 'heartbeat')
     .then((event) => (event as Extract<BotHostEvent, { type: 'turn.completed' }>).workItem);
+}
+
+async function homeOf(core: BotCore): Promise<ConversationRecord> {
+  return (await core.listConversations()).find((record) => record.role === 'home')!;
 }
 
 /** One tick that queues a heartbeat, and the finished heartbeat. */
@@ -107,7 +111,7 @@ test('unanswered messages double the wait, survive a restart, and stop after fiv
   }
 });
 
-test('rest hours hold heartbeats until the wake time; companion says good night once and greets in the morning (SPEC-011 FR-5 to FR-8)', async () => {
+test('home sleeps in rest hours after one good night, a message wakes it, and it wakes on its own in the morning (SPEC-011 FR-5, FR-16 to FR-18)', async () => {
   const time = clock(Date.now());
   // Bedtime in 30 minutes, the wake time five hours ago: no greeting is due now.
   const rhythm = awakeNow(time.now(), { sinceWake: 5 * 60, untilBed: 30 });
@@ -125,30 +129,60 @@ test('rest hours hold heartbeats until the wake time; companion says good night 
     const awake = await core.tick();
     assert.equal(awake.heartbeat, undefined, 'the next heartbeat is ten hours away');
     assert.equal(core.status().heartbeat.phase, 'awake_hours');
+    const sessionId = (await homeOf(core)).attachment.sessionId;
+    assert.ok(sessionId, 'awake hours keep home awake');
 
     time.advance(35 * MINUTE);
     assert.equal(core.status().heartbeat.phase, 'rest_hours');
-    const night = await beat(core);
-    assert.equal(night.kind, 'bedtime');
+    const done = heartbeatDone(core);
+    const night = await core.tick();
+    assert.equal(night.outcome, 'sleep_deferred');
+    assert.deepEqual(night.heartbeat, { kind: 'bedtime', action: 'queued' }, 'it says good night before it sleeps');
+    await done;
     assert.equal(core.transcript('home').filter((entry) => entry.origin === 'heartbeat').length, 1, 'it said good night');
     assert.equal(core.status().heartbeat.unanswered, 0, 'a good night expects no answer');
-    time.advance(5 * MINUTE);
-    assert.equal((await core.tick()).heartbeat, undefined, 'one good night a night');
 
-    time.advance(10 * 60 * MINUTE);
-    const held = await core.tick();
-    assert.equal(held.heartbeat?.action, 'deferred_rest', 'a heartbeat due in rest hours waits');
+    const slept = await core.tick();
+    assert.equal(slept.outcome, 'slept', 'its own good night does not keep it up');
+    assert.equal(slept.reason, 'rest');
+    const attachment = (await homeOf(core)).attachment;
+    assert.equal(attachment.state, 'sleeping');
+    assert.equal(attachment.sessionId, sessionId, 'the session id is kept for the morning');
     const wakeAt = Date.parse(core.status().heartbeat.nextAt!);
-    // Tomorrow's wake time falls at the same minute of the window, plus the wake delay.
-    assert.ok(wakeAt > time.now().getTime());
+    assert.ok(wakeAt - time.now().getTime() > 6 * 60 * MINUTE, 'the heartbeat sleeps until the wake time too');
 
-    time.advance(wakeAt - time.now().getTime() + MINUTE);
-    const morning = await beat(core);
-    assert.equal(morning.kind, 'wake', 'the morning greeting');
+    time.advance(60 * MINUTE);
+    const asleep = await core.tick();
+    assert.equal(asleep.outcome, 'asleep');
+    assert.equal(asleep.heartbeat, undefined);
+
+    // A message at night wakes it as usual; once it is quiet again it dozes off, with no second good night.
+    await sendAndWait(core, 'home', 'still up? one quick question');
+    assert.equal((await homeOf(core)).attachment.sessionId, sessionId, 'woken by resuming the same session');
+    assert.equal((await core.tick()).outcome, 'sleep_deferred', 'a conversation keeps it up');
+    time.advance(16 * MINUTE);
+    const dozed = await core.tick();
+    assert.equal(dozed.outcome, 'slept');
+    assert.equal(dozed.reason, 'idle');
+    assert.equal(core.transcript('home').filter((entry) => entry.origin === 'heartbeat').length, 1, 'one good night a night');
+    assert.equal(Date.parse(core.status().heartbeat.nextAt!), wakeAt, 'the morning heartbeat keeps its time');
+
+    // The day's wake time wakes it on its own; the greeting follows the wake delay.
+    time.advance(wakeAt - 3 * MINUTE - time.now().getTime() + 30_000);
+    const morning = await core.tick();
+    assert.equal(morning.outcome, 'resumed');
+    assert.equal(morning.reason, 'rhythm');
+    assert.equal(morning.heartbeat, undefined, 'the greeting waits the wake delay');
+    time.advance(3 * MINUTE);
+    const greeting = await beat(core);
+    assert.equal(greeting.kind, 'wake', 'the morning greeting');
   } finally {
     await core.stop();
   }
+});
 
+test('assist sleeps without a good night; talking past bedtime means no good night (SPEC-011 FR-17)', async () => {
+  const time = clock(Date.now());
   const { core: assist } = openTestBot({
     botsHome: home.botsHome,
     id: 'rhythm-assist',
@@ -156,13 +190,86 @@ test('rest hours hold heartbeats until the wake time; companion says good night 
   });
   await assist.start();
   try {
-    const rest = awakeNow(time.now(), { sinceWake: 5 * 60, untilBed: 1 });
-    await assist.updateProfile({ heartbeat: { mode: 'assist', regularMinMinutes: 600, regularMaxMinutes: 600, ...rest } });
-    await assist.tick();
+    await assist.updateProfile({
+      heartbeat: { mode: 'assist', regularMinMinutes: 600, regularMaxMinutes: 600, ...awakeNow(time.now(), { sinceWake: 5 * 60, untilBed: 1 }) },
+    });
+    assert.ok((await assist.tick()).outcome !== 'slept');
     time.advance(5 * MINUTE);
-    assert.equal((await assist.tick()).heartbeat, undefined, 'assist does not say good night');
+    const slept = await assist.tick();
+    assert.equal(slept.heartbeat, undefined, 'assist does not say good night');
+    assert.equal(slept.outcome, 'slept');
+    assert.equal(slept.reason, 'rest');
   } finally {
     await assist.stop();
+  }
+
+  const { core: chatty } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'rhythm-chatty',
+    core: { ...fast, now: time.now, life: { random: () => 0 } },
+    runtimeEnv: { FAKE_HEARTBEAT_REPLY: 'Good night!' },
+  });
+  await chatty.start();
+  try {
+    await chatty.updateProfile({
+      heartbeat: { mode: 'companion', regularMinMinutes: 600, regularMaxMinutes: 600, ...awakeNow(time.now(), { sinceWake: 5 * 60, untilBed: 2 }) },
+    });
+    await chatty.tick();
+    time.advance(5 * MINUTE);
+    await sendAndWait(chatty, 'home', 'one more thing before bed');
+    assert.equal((await chatty.tick()).outcome, 'sleep_deferred');
+    time.advance(16 * MINUTE);
+    const dozed = await chatty.tick();
+    assert.equal(dozed.heartbeat, undefined, 'the owner was still talking after bedtime: no good night');
+    assert.equal(dozed.outcome, 'slept');
+    assert.equal(dozed.reason, 'idle');
+  } finally {
+    await chatty.stop();
+  }
+});
+
+test('a bot started in rest hours stays asleep until a message; with the heartbeat off home stays awake all night (SPEC-011 FR-16)', async () => {
+  const time = clock(Date.now());
+  const night = awakeNow(time.now(), { sinceWake: 16 * 60, untilBed: -60 });
+  const { core: late } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'rhythm-late',
+    awake: false,
+    core: { ...fast, now: time.now, life: { random: () => 0 } },
+  });
+  await late.updateProfile({ heartbeat: { mode: 'companion', ...night } });
+  await late.start();
+  try {
+    assert.equal(late.status().heartbeat.phase, 'rest_hours');
+    const first = await late.tick();
+    assert.equal(first.outcome, 'asleep', 'nothing wakes home at night on its own');
+    assert.equal((await homeOf(late)).attachment.sessionId, null);
+    await sendAndWait(late, 'home', 'hello?');
+    assert.ok((await homeOf(late)).attachment.sessionId, 'a message wakes it');
+    time.advance(16 * MINUTE);
+    const dozed = await late.tick();
+    assert.equal(dozed.outcome, 'slept');
+    assert.equal(dozed.reason, 'idle', 'woken after bedtime: it dozes off again');
+    assert.equal(dozed.heartbeat, undefined, 'and says no good night');
+  } finally {
+    await late.stop();
+  }
+
+  const { core: off } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'rhythm-off',
+    awake: false,
+    core: { ...fast, now: time.now, life: { random: () => 0 } },
+  });
+  await off.updateProfile({ heartbeat: { enabled: false, ...night } });
+  await off.start();
+  try {
+    const first = await off.tick();
+    assert.equal(first.outcome, 'rebuilt', 'without the heartbeat there is no rhythm: home is kept awake');
+    time.advance(60 * MINUTE);
+    assert.equal((await off.tick()).outcome, 'awake');
+  } finally {
+    await off.stop();
   }
 });
 

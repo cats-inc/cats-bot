@@ -464,16 +464,16 @@ export function nextHeartbeatText(
   formatTime = (at: Date) => at.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
 ): string {
   if (status.heartbeat.enabled && status.heartbeat.waitingForOwner)
-    return t('Heartbeat is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.', {
+    return t('Own initiative is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.', {
       value0: String(status.heartbeat.unanswered),
     });
   if (status.heartbeat.enabled && status.heartbeat.nextAt)
-    return t('Next heartbeat around {value0}.', {
+    return t('Next activity on its own around {value0}.', {
       value0: formatTime(new Date(status.heartbeat.nextAt)),
     });
   return status.heartbeat.enabled
-    ? t('The next heartbeat is drawn once the cat bot is up.')
-    : t('Heartbeat is paused.');
+    ? t('The next activity is planned once the cat bot is up.')
+    : t('Own initiative is paused.');
 }
 
 export type Fact = [label: string, value: string];

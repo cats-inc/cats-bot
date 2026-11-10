@@ -132,7 +132,7 @@ test('the Cat menu operates on its own conversations, settings and heartbeat', (
     'New conversation',
     'Manage conversations…',
     'separator',
-    'Pause heartbeat',
+    'Pause own initiative',
     'Show floating cat',
     'Cat bot settings…',
   ]);
@@ -152,7 +152,7 @@ test('the Cat menu operates on its own conversations, settings and heartbeat', (
     onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {}, onToggleFloating: () => {}, onStopDesktopControl: () => {},
   });
   assert.equal(paused[0]?.label, 'Mochi: runtime failed, retrying');
-  assert.ok(paused.some((item) => item.label === 'Resume heartbeat'));
+  assert.ok(paused.some((item) => item.label === 'Resume own initiative'));
   assert.ok(!paused.some((item) => item.label === 'Start at login'));
 });
 
@@ -186,7 +186,7 @@ test('the Cat menu opens its waiting note and stops only that Cat’s conversati
     'Open direct message',
     'Desktop control requests (2)',
   ]);
-  assert.ok(labels.indexOf('Stop desktop control') > labels.indexOf('Pause heartbeat'));
+  assert.ok(labels.indexOf('Stop desktop control') > labels.indexOf('Pause own initiative'));
   template[3]!.click!();
   assert.equal(buildTrayTooltip(waiting), 'Mochi (runtime ready) - desktop control request waiting');
   const unknown = buildBotMenuTemplate({ ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: null,
