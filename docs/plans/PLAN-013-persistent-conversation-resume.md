@@ -166,6 +166,13 @@ and rebuild-next outcomes. All 52 selected Bot, busy-retry, loss and continuity
 tests and type checks passed after that merge; independent review found no code
 issues and its closing-versus-closed documentation correction was applied.
 
+The first three-platform CI run had one failure per platform: the native-tools
+test still expected a worker exit to replace its session. It now requires both
+saved IDs and the create count to stay unchanged, and additionally verifies that
+the descriptor from the exited worker is rejected after resume. Fresh
+authenticated discovery is still required. All 20 selected native-tools and
+continuity tests passed with this updated lifecycle expectation.
+
 ## Progress Log
 
 | Date | Update |
