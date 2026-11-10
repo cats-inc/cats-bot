@@ -1,10 +1,10 @@
 import type { NoteLayer } from '../bridge.ts';
 
 /**
- * SPEC-002 FR-8: the note header's layer button draws three plates stacked
- * back to front: always on top, the desktop, the wallpaper. The plate of the
- * note's layer is filled. An ordinary window rests on none of them: its top
- * plate is a full-strength outline and the two below are faint.
+ * The note header's layer button draws three plates stacked back to front:
+ * always on top, the desktop, the wallpaper. The plate of the note's layer is
+ * filled. An ordinary window rests on none of them: its top plate is a
+ * full-strength outline and the two below are faint.
  */
 export const LAYER_PLATES = [
   { layer: 'top', path: 'M12 2.5 20 5.5 12 8.5 4 5.5Z' },

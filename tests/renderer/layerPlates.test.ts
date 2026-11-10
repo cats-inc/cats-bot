@@ -3,7 +3,7 @@ import { test } from 'node:test';
 
 import { LAYER_PLATES, layerPlateStates } from '../../src/renderer/note/layerPlates.ts';
 
-/** SPEC-002 FR-8: the note's layer button. */
+/** The note header's layer button. */
 
 test('the layer button fills the plate of the note layer, stacked back to front', () => {
   assert.deepEqual(LAYER_PLATES.map((plate) => plate.layer), ['top', 'desktop', 'wallpaper']);
