@@ -275,7 +275,8 @@ async function main() {
       );
       if (provider === 'codex')
         await uiSettings.wait(
-          "document.querySelectorAll('.setup-step').length === 3 && document.querySelector('.provider-installation').getAttribute('aria-busy') === 'false'",
+          // SPEC-012 FR-13: Codex's chain, not checked yet: nothing runs until the owner asks.
+          `document.querySelectorAll('.provider-checklist .setup-row').length === ${process.platform === 'win32' ? 4 : 3} && document.querySelector('.provider-checklist').getAttribute('aria-busy') === 'false'`,
         );
       await uiSettings.input('#bot-name', `Parity ${provider}`);
       await uiSettings.wait("!document.querySelector('#bot-save').disabled");

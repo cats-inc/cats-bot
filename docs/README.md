@@ -154,7 +154,12 @@ Creating a cat bot is a three-page wizard: nothing runs until asked, and every
 script that changes the computer is ticked by the owner
 ([ADR-015](decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md),
 [SPEC-010](specs/SPEC-010-setup-wizard.md),
-[PLAN-011](plans/PLAN-011-setup-wizard.md)).
+[PLAN-011](plans/PLAN-011-setup-wizard.md)). Cats Bot Settings' Agent CLIs tab
+installs, updates and signs in to the CLIs every cat bot shares, in the same
+rows and under the same rules
+([ADR-019](decisions/019-manage-agent-clis-from-cats-bot-settings-with-the-wizard-rows.md),
+[SPEC-012](specs/SPEC-012-agent-clis-in-cats-bot-settings.md),
+[PLAN-012](plans/PLAN-012-agent-clis-in-cats-bot-settings.md)).
 
 The heartbeat either keeps the owner company or follows up on unfinished work,
 on Cats Desktop's daily rhythm (the bot sleeps in rest hours, and a message wakes

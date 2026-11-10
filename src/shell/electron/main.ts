@@ -62,7 +62,8 @@ import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSe
 import { probeCodexInitialization } from './codexSetup.ts';
 import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
 import { openCodexInitializationTerminal, openSignInTerminal } from './setupTerminal.ts';
-import type { SetupEnvironment, SetupLogEntry } from '../../shared/providerSetup.ts';
+import { isSetupChange, type SetupEnvironment, type SetupLogEntry } from '../../shared/providerSetup.ts';
+import { registerComputerSetupIpc } from './computerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
 import { SETUP_WINDOW_SIZE, createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { popupMenu } from './popupMenu.ts';
@@ -299,7 +300,7 @@ async function main(): Promise<void> {
     }
   }), {
     codexInitialization: (commandPath, signal, onCommand) => probeCodexInitialization(commandPath, signal, { onCommand }),
-    describe: (helper, apply) => describeHelperRun(join(assetsDir, 'setup'), process.platform, helper, apply),
+    describe: (helper, change) => describeHelperRun(join(assetsDir, 'setup'), process.platform, helper, change),
     identify: createScriptIdentity(join(assetsDir, 'setup'), process.platform),
     onRun: (entry) => {
       const line = setupRunDiagnostic(entry);
@@ -983,8 +984,9 @@ async function main(): Promise<void> {
         showMessageBox: (options) => dialog.showMessageBox(options),
       }),
   });
-  // D20: the hub's Settings: the app language, start at login, version and updates, and the Bots tab.
-  const openHubSettings = (tab?: 'general' | 'bots') => {
+  // D20: the hub's Settings: the app language, start at login, version and updates, the Bots tab,
+  // and the agent CLIs every cat bot shares (SPEC-012).
+  const openHubSettings = (tab?: 'general' | 'bots' | 'clis') => {
     void hubSettings.open(tab).catch((error: unknown) => log(`open settings failed: ${diagnosticError(error)}`, 'error'));
   };
   // The floating Cat menu can act only on its own bot.
@@ -1090,11 +1092,19 @@ async function main(): Promise<void> {
       throw new Error('Provider setup is available only from Settings');
     return providerSetup.check(provider, fromCreate(event) ? createChecks?.signal : undefined, setupLogTo(event));
   });
-  ipcMain.handle('setup:install', (event, provider: unknown, step: unknown) => {
+  ipcMain.handle('setup:install', (event, provider: unknown, step: unknown, change: unknown = 'apply') => {
     if (quitting) throw new Error('Cats Bot is stopping');
     if (!ownedMainFrame(event) || (!fromSettings(event) && !fromCreate(event)))
       throw new Error('Provider setup is available only from Settings');
-    return providerSetup.install(provider, step, setupLogTo(event));
+    // SPEC-012 FR-13: a bot's own tab may also update its CLI; the New cat bot window only installs.
+    if (!isSetupChange(change) || (change === 'upgrade' && !fromSettings(event))) throw new Error('Invalid setup change');
+    return providerSetup.install(provider, step, setupLogTo(event), change);
+  });
+  // SPEC-012: Cats Bot Settings' Agent CLIs tab, for the hub's own settings window only.
+  registerComputerSetupIpc({
+    providers: providerSetup,
+    fromHub: (event) => ownedMainFrame(event) && fromHubSettings(event),
+    stopping: () => quitting,
   });
   ipcMain.handle('setup:cancel', async (event) => {
     if (!ownedMainFrame(event) || !fromCreate(event)) return;
@@ -1108,7 +1118,8 @@ async function main(): Promise<void> {
     return result;
   });
   ipcMain.handle('setup:environment', (event): SetupEnvironment => {
-    if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');
+    // SPEC-012 FR-13: a bot's own tab words its rows for this operating system too.
+    if (!ownedMainFrame(event) || (!fromCreate(event) && !fromSettings(event))) throw new Error('Provider setup is available only from Settings');
     return { platform: process.platform, startAtLoginOffered: false };
   });
   ipcMain.handle('setup:openCodexInitialization', async (event) => {
@@ -1582,6 +1593,12 @@ async function main(): Promise<void> {
     const from = senderOf(event);
     if (!from || from.role === 'floating') return null;
     from.presenter.openSettings(typeof tab === 'string' ? tab : undefined);
+    return null;
+  });
+  // SPEC-012 FR-13: a bot's Cat bot tab links to the agent CLIs every cat bot shares.
+  ipcMain.handle('shell:openAgentClis', (event) => {
+    if (!ownedMainFrame(event) || !fromSettings(event)) return null;
+    openHubSettings('clis');
     return null;
   });
 

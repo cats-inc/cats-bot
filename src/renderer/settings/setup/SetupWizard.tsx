@@ -36,7 +36,8 @@ import {
   type LogRun,
 } from './setupLogic.ts';
 import { SetupLog } from './SetupLog.tsx';
-import { CheckIcon, CommandSnippet, PlainRow, StepRow, WaitIcon } from './StepRow.tsx';
+import { useElapsed, useSetupLog } from './useSetupLog.ts';
+import { CheckIcon, CodexSetupRow, PlainRow, QueuedRow, RunningRow, SignInRow, StepRow, WaitIcon } from './StepRow.tsx';
 
 /**
  * SPEC-010: creating a cat bot, in three pages. Each page touches more than the one
@@ -46,21 +47,8 @@ import { CheckIcon, CommandSnippet, PlainRow, StepRow, WaitIcon } from './StepRo
 
 const api = window.catsBot;
 const fetchModels = (provider: string): Promise<ModelCatalog> => api.setup.models(provider);
-/** FR-14: how long a finished run's log stays open before it gives the room back. */
-const LOG_SETTLE_MS = 1400;
 
 type Phase = 'idle' | 'checking' | 'applying' | 'creating';
-
-function useElapsed(since: number | null): string | null {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (since === null) return undefined;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 500);
-    return () => clearInterval(timer);
-  }, [since]);
-  return since === null ? null : elapsedLabel(now - since);
-}
 
 /** The owner's Cat, sitting on the log. The markup is constant art, chosen by a checked id. */
 function Perch({ avatar, name, provider, busy }: { avatar: BotAvatar; name: string; provider: string | null; busy: boolean }) {
@@ -120,14 +108,9 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const [error, setError] = useState<string | null>(null);
 
   // The log
-  const [runs, setRuns] = useState<LogRun[]>([]);
-  const runsRef = useRef<LogRun[]>([]);
+  const log = useSetupLog();
+  const { runs, runsRef, openForRun: openLogForRun, settle: settleLog } = log;
   const [checkFrom, setCheckFrom] = useState(0);
-  const [logOpen, setLogOpen] = useState(false);
-  const logChoice = useRef<'open' | 'closed' | null>(null);
-  const hovering = useRef(false);
-  const closeOnLeave = useRef(false);
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Page 3
   const [modelProvider, setModelProvider] = useState('');
@@ -144,11 +127,6 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   useEffect(() => {
     document.title = purpose === 'create' ? t('New cat bot') : t('Set up Cats Bot');
   }, [locale, purpose, t]);
-
-  useEffect(() => api.setup.onLog((entry) => {
-    runsRef.current = addLogEntry(runsRef.current, entry);
-    setRuns(runsRef.current);
-  }), []);
 
   // FR-3: none of this starts a process or looks at PATH.
   useEffect(() => {
@@ -193,46 +171,15 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     heading.current?.focus();
   }, [step]);
 
-  // FR-14: any script run opens the log, unless the owner closed it themselves.
-  const openLogForRun = useCallback(() => {
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = null;
-    closeOnLeave.current = false;
-    setLogOpen(logChoice.current !== 'closed');
-  }, []);
-  const settleLog = useCallback(() => {
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = setTimeout(() => {
-      settleTimer.current = null;
-      if (logChoice.current) return;
-      if (hovering.current) {
-        closeOnLeave.current = true;
-        return;
-      }
-      setLogOpen(false);
-    }, LOG_SETTLE_MS);
-  }, []);
-  useEffect(() => () => {
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-  }, []);
-  const toggleLog = () => {
-    if (settleTimer.current) clearTimeout(settleTimer.current);
-    settleTimer.current = null;
-    closeOnLeave.current = false;
-    setLogOpen((open) => {
-      logChoice.current = open ? 'closed' : 'open';
-      return !open;
-    });
-  };
-
   /** FR-10, FR-14: a check can fail too, and then that row's details and the log stay open. */
+  const openLogForFailure = log.openForFailure;
   const showBroken = useCallback((next: ProviderSetupState): boolean => {
     const broken = next.steps.filter((item) => ['failed', 'declined'].includes(rowKind(item))).map((item) => item.id);
     if (broken.length === 0) return false;
     setDetails((current) => new Set([...current, ...broken]));
-    setLogOpen(true);
+    openLogForFailure();
     return true;
-  }, []);
+  }, [openLogForFailure]);
 
   const runCheck = useCallback(async (): Promise<void> => {
     const mine = ++ticket.current;
@@ -255,12 +202,12 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       if (mine !== ticket.current) return;
       failed = true;
       setError(errorText(failure));
-      setLogOpen(true);
+      openLogForFailure();
     }
     setPhase('idle');
     setRunStart(null);
     if (!failed) settleLog();
-  }, [openLogForRun, provider, settleLog, showBroken]);
+  }, [openLogForFailure, openLogForRun, provider, settleLog, showBroken]);
 
   const startCheck = () => {
     if (state?.provider !== provider) {
@@ -337,20 +284,20 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
           // FR-13: a failure stops the queue, and only then do the details open by themselves.
           stopped = true;
           if (kind !== 'restart') setDetails((current) => new Set(current).add(id));
-          setLogOpen(true);
+          openLogForFailure();
           break;
         } else if (done) {
           stopped = true;
           setError(t('{label} ran, but it is not done yet. The log below has its result.', { label: t(done.label) }));
           setDetails((current) => new Set(current).add(id));
-          setLogOpen(true);
+          openLogForFailure();
           break;
         }
       }
     } catch (failure) {
       stopped = true;
       setError(errorText(failure));
-      setLogOpen(true);
+      openLogForFailure();
     }
     setRunningStep(null);
     setRunStart(null);
@@ -386,10 +333,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     else setTerminal(opened ? 'opened' : 'missing');
     if (!opened) {
       // FR-14: a failure opens the log, and a close still waiting from an earlier run must not undo that.
-      if (settleTimer.current) clearTimeout(settleTimer.current);
-      settleTimer.current = null;
-      closeOnLeave.current = false;
-      setLogOpen(true);
+      openLogForFailure();
     }
     setOpeningTerminal(false);
   };
@@ -412,7 +356,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
     } catch (failure) {
       setError(errorText(failure));
       setPhase('idle');
-      setLogOpen(true);
+      openLogForFailure();
     }
   };
 
@@ -578,25 +522,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
             })
           : state!.steps.flatMap((item, index) => {
               const row = (() => {
-              if (item.id === runningStep) {
-                const adminPrompt = item.id === 'node' && windows;
-                return (
-                  <PlainRow
-                    key={item.id}
-                    id={item.id}
-                    label={item.label}
-                    optional={item.optional}
-                    glyph={<span className="setup-spinner" />}
-                    state={elapsed ?? '00:00'}
-                    note={adminPrompt
-                      ? t('Windows asks for permission; choose Yes. The installer runs in that process, so this updates when it ends.')
-                      : t('Running {file}', { file: item.script?.file ?? item.label })}
-                  />
-                );
-              }
-              if (queue.includes(item.id)) {
-                return <PlainRow key={item.id} id={item.id} label={item.label} optional={item.optional} glyph={<WaitIcon />} state={t('Queued')} />;
-              }
+              if (item.id === runningStep) return <RunningRow key={item.id} step={item} windows={windows} elapsed={elapsed} />;
+              if (queue.includes(item.id)) return <QueuedRow key={item.id} step={item} />;
               return (
                 <StepRow
                   key={item.id}
@@ -701,8 +628,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   }
 
   /* ---- Page 3 ---- */
-  const powerShellLeft = provider === 'codex' && windows && state?.steps.some((item) => item.id === 'shell' && rowKind(item) !== 'ready');
-  const openTerminalNote = changes > 0 ? t('Terminals already open need reopening to see the new PATH; this button opens a new one.') : '';
+  const powerShellLeft = provider === 'codex' && windows && Boolean(state?.steps.some((item) => item.id === 'shell' && rowKind(item) !== 'ready'));
   const signIn = state?.signIn ?? 'unknown';
   const pageThree = (
     <>
@@ -710,46 +636,26 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       <p className="lead">{t('Nothing is created yet. The button below starts it.')}</p>
       {error && <p className="error" id="setup-error" role="alert">{t(error)}</p>}
       <ul className="setup-rows">
-        <li className={signIn === 'signed_in' ? 'setup-row is-ready' : 'setup-row'} data-row="sign-in">
-          <div className="setup-row-top">
-            <span className="setup-glyph">{signIn === 'signed_in' ? <CheckIcon /> : <WaitIcon />}</span>
-            <div className="setup-row-text">
-              <strong>{t('Sign in to {provider}', { provider: label })}</strong>
-              {signIn === 'required' && <p>{t('Sign in in a real terminal. Cats Bot only asks the CLI whether it is signed in and reads no credential files. You can skip this, but {name} cannot answer until you do.', { name: displayName })} {openTerminalNote}</p>}
-              {signIn === 'unknown' && <p>{t('This CLI does not report whether it is signed in. Run this once if it is not; if it is, you need not.')} {powerShellLeft ? t('PowerShell scripts is not set up, so this opens in Command Prompt.') : ''} {openTerminalNote}</p>}
-            </div>
-            <span className={signIn === 'required' ? 'setup-row-state is-attention' : 'setup-row-state'}>
-              {t(signIn === 'signed_in' ? 'Signed in' : signIn === 'required' ? 'Not signed in' : 'Cannot tell')}
-            </span>
-          </div>
-          {signIn !== 'signed_in' && (
-            <div className="setup-row-actions">
-              {state?.signInCommand && <CommandSnippet command={state.signInCommand} copyable />}
-              <button type="button" id="setup-open-terminal" disabled={busy || openingTerminal} onClick={() => void openTerminal()}>{t('Open terminal and run')}</button>
-              {terminal === 'opened' && <span className="hint">{t('Terminal opened.')}</span>}
-              {terminal === 'missing' && <span className="hint warn" role="alert">{t('No terminal was found. Copy the command and run it in yours.')}</span>}
-            </div>
-          )}
-        </li>
+        <SignInRow
+          id="provider"
+          label={label}
+          signIn={signIn}
+          command={state?.signInCommand ?? null}
+          who={displayName}
+          busy={busy || openingTerminal}
+          terminal={terminal}
+          powerShellLeft={powerShellLeft}
+          changedPath={changes > 0}
+          onOpen={() => void openTerminal()}
+        />
         {provider === 'codex' && windows && (
-          <li className={state?.codexInitialization?.status === 'ready' ? 'setup-row is-ready' : 'setup-row'} data-row="codex-initialization">
-            <div className="setup-row-top">
-              <span className="setup-glyph">{state?.codexInitialization?.status === 'ready' ? <CheckIcon /> : <WaitIcon />}</span>
-              <div className="setup-row-text">
-                <strong>{t('Complete Codex first-time setup')}</strong>
-                {state?.codexInitialization?.status !== 'ready' && <p>{t('After signing in, open Codex and complete its Windows sandbox prompts. Exit Codex, then check again. Codex handles any administrator prompt and sandbox choices.')}</p>}
-                {state?.codexInitialization?.status === 'unavailable' && <p className="warn">{t('Could not verify Codex setup. Complete it in the terminal, then check again.')}</p>}
-                {state?.codexInitialization?.status !== 'ready' && <p>{t('You can create {name} now. If Codex setup is incomplete, finish it before chatting.', { name: displayName })}</p>}
-              </div>
-              <span className={state?.codexInitialization?.status === 'ready' ? 'setup-row-state' : 'setup-row-state is-attention'}>{t(state?.codexInitialization?.status === 'ready' ? 'Ready' : state?.codexInitialization?.status === 'unavailable' ? 'Cannot tell' : 'First-time setup needed')}</span>
-            </div>
-            {state?.codexInitialization?.status !== 'ready' && <div className="setup-row-actions">
-              <CommandSnippet command="codex" copyable />
-              <button type="button" id="setup-open-codex" disabled={busy || openingTerminal} onClick={() => void openTerminal(true)}>{t('Open Codex first-time setup')}</button>
-              {codexTerminal === 'opened' && <span className="hint">{t('Terminal opened. Complete setup there, exit Codex, then check again.')}</span>}
-              {codexTerminal === 'missing' && <span className="hint warn" role="alert">{t('No terminal was found. Open Command Prompt in a working folder you trust and run codex.')}</span>}
-            </div>}
-          </li>
+          <CodexSetupRow
+            status={state?.codexInitialization?.status}
+            who={displayName}
+            busy={busy || openingTerminal}
+            terminal={codexTerminal}
+            onOpen={() => void openTerminal(true)}
+          />
         )}
         {environment.startAtLoginOffered && (
           <li className="setup-row is-needs" data-row="start-at-login">
@@ -838,17 +744,11 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
       </div>
       <SetupLog
         runs={runs}
-        open={logOpen}
+        open={log.open}
         running={runningLine}
         elapsed={elapsed}
-        onToggle={toggleLog}
-        onHover={(value) => {
-          hovering.current = value;
-          if (!value && closeOnLeave.current) {
-            closeOnLeave.current = false;
-            settleLog();
-          }
-        }}
+        onToggle={log.toggle}
+        onHover={log.hover}
       />
     </div>
   );

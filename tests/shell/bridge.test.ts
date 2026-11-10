@@ -5,6 +5,7 @@ import { test } from 'node:test';
 
 import { BRIDGE_COMMANDS, BRIDGE_NOTE_LAYERS } from '../../src/renderer/bridge.ts';
 import { HOST_COMMANDS } from '../../src/shell/electron/ipc.ts';
+import { COMPUTER_SETUP_CHANNELS } from '../../src/shell/electron/computerSetupChannels.ts';
 import { NOTE_LAYERS } from '../../src/shell/electron/viewState.ts';
 
 /**
@@ -37,4 +38,21 @@ test('every bridge namespace method exists in the preload script', () => {
   assert.ok(methods.length > 20, `found only ${methods.length} bridge methods`);
   const missing = methods.filter((name) => !new RegExp(`^\\s+${name}\\(`, 'mu').test(preload));
   assert.deepEqual(missing, []);
+});
+
+test('every Agent CLIs channel the preload invokes is registered for Cats Bot Settings (SPEC-012)', () => {
+  const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
+  const handlers = read('src', 'shell', 'electron', 'computerSetup.ts');
+  const channels = [...read('assets', 'preload.cjs').matchAll(/invoke\('(computer:\w+)'/gu)].map((match) => match[1]!);
+  assert.deepEqual(channels.sort(), [...COMPUTER_SETUP_CHANNELS].sort());
+  assert.deepEqual(channels.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
+  assert.match(read('src', 'shell', 'electron', 'main.ts'), /registerComputerSetupIpc\(\{/u);
+});
+
+test('every shell channel the preload invokes has a handler in the hub', () => {
+  const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
+  const handlers = read('src', 'shell', 'electron', 'main.ts');
+  const channels = [...read('assets', 'preload.cjs').matchAll(/invoke\('(shell:\w+)'/gu)].map((match) => match[1]!);
+  assert.ok(channels.includes('shell:openAgentClis'));
+  assert.deepEqual(channels.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
 });

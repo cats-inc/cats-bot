@@ -134,6 +134,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     openSettings(tab) {
       return ipcRenderer.invoke('shell:openSettings', tab);
     },
+    openAgentClis() {
+      return ipcRenderer.invoke('shell:openAgentClis');
+    },
     setFloatingVisible(visible) {
       return ipcRenderer.invoke('shell:setFloatingVisible', visible);
     },
@@ -175,8 +178,8 @@ contextBridge.exposeInMainWorld('catsBot', {
     check(provider) {
       return ipcRenderer.invoke('setup:check', provider);
     },
-    install(provider, step) {
-      return ipcRenderer.invoke('setup:install', provider, step);
+    install(provider, step, change) {
+      return ipcRenderer.invoke('setup:install', provider, step, change);
     },
     providers() {
       return ipcRenderer.invoke('setup:providers');
@@ -220,6 +223,24 @@ contextBridge.exposeInMainWorld('catsBot', {
       return () => {
         ipcRenderer.removeListener('setup:log', wrapped);
       };
+    },
+  },
+  // SPEC-012: Cats Bot Settings' Agent CLIs tab. Its runs report on `setup:log`.
+  computer: {
+    state() {
+      return ipcRenderer.invoke('computer:state');
+    },
+    check() {
+      return ipcRenderer.invoke('computer:check');
+    },
+    change(helper, change) {
+      return ipcRenderer.invoke('computer:change', helper, change);
+    },
+    openTerminal(provider) {
+      return ipcRenderer.invoke('computer:openTerminal', provider);
+    },
+    openCodexInitialization() {
+      return ipcRenderer.invoke('computer:openCodexInitialization');
     },
   },
   // SPEC-008 FR-5: Settings → Bots; the hub asks before archiving or deleting.

@@ -63,7 +63,7 @@ function npmFacts(platform: string): StepFacts {
   };
 }
 
-function nativeFacts(provider: string, step: SetupStep, platform: string): StepFacts {
+function nativeFacts(provider: string, step: SetupStep<string>, platform: string): StepFacts {
   // The state Install-ClaudeCode calls changes_required: an old npm shim hides the native CLI.
   if (provider === 'claude' && step.planned.includes('remove_legacy_npm_claude_shim') && !step.planned.includes('install_claude_code_native')) {
     return {
@@ -86,7 +86,10 @@ function nativeFacts(provider: string, step: SetupStep, platform: string): StepF
   };
 }
 
-export function stepFacts(step: SetupStep, provider: string, platform: string): StepFacts {
+/** A row's provider: a bot's chain calls it `provider`, and the Agent CLIs tab (SPEC-012) by its id. */
+const providerOf = (step: SetupStep<string>, provider: string): string => (step.id === 'provider' ? provider : step.id);
+
+export function stepFacts(step: SetupStep<string>, provider: string, platform: string): StepFacts {
   switch (step.id) {
     case 'node': return nodeFacts(platform);
     case 'npm': return npmFacts(platform);
@@ -97,8 +100,37 @@ export function stepFacts(step: SetupStep, provider: string, platform: string): 
         manual: 'Set-ExecutionPolicy -Scope CurrentUser RemoteSigned',
       };
     default:
-      return provider === 'codex'
+      return providerOf(step, provider) === 'codex'
         ? { summary: 'Installs @openai/codex globally with npm.', tags: [{ text: 'Downloads from npm' }], manual: 'npm install -g @openai/codex' }
-        : nativeFacts(provider, step, platform);
+        : nativeFacts(providerOf(step, provider), step, platform);
   }
+}
+
+/**
+ * SPEC-012 FR-8: what an update does. No helper can say read-only whether a newer release
+ * exists, so the row offers the update and says that, when it is already the newest,
+ * nothing changes.
+ */
+export const UPDATE_SUMMARY = 'Installs the newest release if there is one. If this is already the newest, nothing changes.';
+
+export function updateFacts(step: SetupStep<string>, provider: string, platform: string): StepFacts {
+  if (step.id === 'node') {
+    return platform === 'win32'
+      ? {
+          summary: UPDATE_SUMMARY,
+          tags: [{ text: 'Needs administrator rights' }, { text: 'Downloads and installs' }, { text: "Accepts winget's agreements for you" }],
+          manual: 'winget upgrade --id OpenJS.NodeJS.LTS -e',
+        }
+      : { summary: UPDATE_SUMMARY, tags: [{ text: 'Downloads and installs' }], manual: 'nvm install --lts' };
+  }
+  const id = providerOf(step, provider);
+  if (id === 'codex') {
+    return {
+      summary: UPDATE_SUMMARY,
+      tags: [{ text: 'Downloads from npm' }, { text: 'Also updates npm to its newest release' }],
+      manual: 'npm install -g @openai/codex@latest',
+    };
+  }
+  const install = nativeFacts(id, { ...step, planned: [] }, platform);
+  return { summary: UPDATE_SUMMARY, tags: install.tags, manual: install.manual };
 }
