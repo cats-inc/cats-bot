@@ -196,8 +196,10 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const screenshot = dirname(target) === join(srcRoot, 'shared', 'screenshot');
         // SPEC-003 FR-10: the dictation contract and its pure rules, shared by the shell and the note.
         const voice = target === join(srcRoot, 'shared', 'voice.ts');
+        // ADR-020: the System Settings pane names a note or Settings may ask the shell to open.
+        const systemSettings = target === join(srcRoot, 'shared', 'systemSettings.ts');
         if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
-          && !attachments && !screenshot && !voice && (!typeOnly || !allowed.includes(target)))
+          && !attachments && !screenshot && !voice && !systemSettings && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
@@ -218,6 +220,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
             assert.ok(specifier.startsWith('./') && specifier.endsWith('.ts'), `${relative(repoRoot, target)} imports only its own module (${specifier})`);
         }
         if (voice) assert.deepEqual(importSpecifiers(target), [], 'the dictation contract stays browser safe');
+        if (systemSettings) assert.deepEqual(importSpecifiers(target), [], 'the pane names stay browser safe');
       }
     }
   }

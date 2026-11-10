@@ -199,8 +199,14 @@ export const zhTW: Record<string, string> = {
   'A screenshot is already being taken.': '已經在截圖了。',
   'Could not take a screenshot: {error}': '無法截圖：{error}',
   'Failed to capture screenshot.': '擷取截圖失敗。',
-  'Screen Recording permission is required to capture a screenshot. Grant Cats Bot screen access in macOS System Settings, then restart Cats Bot.':
-    '需要螢幕錄製權限才能擷取截圖。請在 macOS「系統設定」授予 Cats Bot 螢幕存取權，然後重新啟動 Cats Bot。',
+  'Screen Recording permission is required to capture a screenshot. Turn on Cats Bot in System Settings > Privacy & Security > Screen & System Audio Recording (add it with + if it is not listed), then restart Cats Bot.':
+    '需要螢幕錄製權限才能擷取截圖。請在「系統設定 > 隱私權與安全性 > 螢幕與系統錄音」開啟 Cats Bot（清單裡沒有就按 + 加入），然後重新啟動 Cats Bot。',
+  // ADR-020: the button on a missing macOS permission.
+  'Open System Settings': '開啟系統設定',
+  'Speech Recognition access was denied. Allow Cats Bot in System Settings > Privacy & Security > Speech Recognition.':
+    '語音辨識存取遭拒。請在「系統設定 > 隱私權與安全性 > 語音辨識」允許 Cats Bot。',
+  'macOS needs your approval to open Cats Bot at sign-in. Turn on Cats Bot in System Settings > General > Login Items.':
+    'macOS 需要你核准，Cats Bot 才能在登入時開啟。請在「系統設定 > 一般 > 登入項目」開啟 Cats Bot。',
   'Screenshot failed: the selected display is no longer available.': '截圖失敗：選取的顯示器已無法使用。',
   'Region screenshot capture is unavailable on this desktop environment.': '此桌面環境無法使用區域截圖。',
   'No displays are available for screenshot capture.': '沒有可用於截圖的顯示器。',

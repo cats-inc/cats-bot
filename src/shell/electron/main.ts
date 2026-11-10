@@ -57,7 +57,13 @@ import {
   NOTE_VOICE_STOP_CHANNEL,
   parseVoiceCaptureSessionId,
   parseVoiceCaptureStartOptions,
+  resolveVoiceCaptureHelperPath,
 } from './voiceCapture.ts';
+import {
+  createScreenCaptureAccessRequester,
+  loginItemNeedsApproval,
+  resolveMacosSystemSettingsUrl,
+} from './systemSettings.ts';
 import { createHelperRunner, createScriptIdentity, describeHelperRun, ProviderSetup, setupRunDiagnostic } from './providerSetup.ts';
 import { probeCodexInitialization } from './codexSetup.ts';
 import { takeSetupDraft, writeSetupDraft } from './setupDraft.ts';
@@ -1400,6 +1406,16 @@ async function main(): Promise<void> {
   const screenshots = new RegionScreenshots({
     overlayPage: join(rendererDir, 'screenshotOverlay.html'),
     overlayPreload: join(assetsDir, 'screenshotOverlayPreload.cjs'),
+    // ADR-020: once per run, an unanswered Screen Recording is asked for through the dictation helper.
+    requestScreenCaptureAccess: createScreenCaptureAccessRequester({
+      resolveHelperPath: () => {
+        const helper = resolveVoiceCaptureHelperPath({
+          config: { packaged: app.isPackaged, appPath, resourcesPath: process.resourcesPath },
+        });
+        return helper && existsSync(helper) ? helper : null;
+      },
+      log: (line) => log(line),
+    }),
   });
   ipcMain.handle(NOTE_SCREENSHOT_IPC_CHANNEL, async (event, payload: unknown) => {
     const from = senderOf(event);
@@ -1525,6 +1541,7 @@ async function main(): Promise<void> {
       botId: presenter?.botId ?? null,
       openAtLogin: hubState.openAtLogin,
       openAtLoginAvailable,
+      loginItemNeedsApproval: openAtLoginAvailable && hubState.openAtLogin && loginItemNeedsApproval(app),
       floatingVisible: presenter ? presenter.windows.shellState.floatingBot.visible : false,
       version: app.getVersion(),
       root: presenter ? presenter.root : home,
@@ -1587,6 +1604,14 @@ async function main(): Promise<void> {
     const presenter = fromSettings(event);
     if (!presenter && !fromHubSettings(event)) return null;
     await shell.openPath(presenter ? presenter.root : home);
+    return null;
+  });
+  // ADR-020: a note or Settings opens the macOS pane a missing permission needs; the URL is the shell's.
+  ipcMain.handle('shell:openSystemSettings', async (event, pane: unknown) => {
+    const from = senderOf(event);
+    const allowed = (from && from.role !== 'floating') || fromHubSettings(event);
+    if (!allowed || process.platform !== 'darwin') return null;
+    await shell.openExternal(resolveMacosSystemSettingsUrl(pane));
     return null;
   });
   ipcMain.handle('shell:openSettings', (event, tab: unknown) => {

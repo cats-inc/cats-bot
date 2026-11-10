@@ -267,6 +267,20 @@ export function GeneralTab() {
           />
           <span>{t('Start Cats Bot when I sign in')}</span>
         </label>
+        {/* ADR-020: macOS registered the login item but waits for the owner's approval. */}
+        {shell?.loginItemNeedsApproval && (
+          <div className="row" id="app-login-approval">
+            <p className="hint">
+              {t('macOS needs your approval to open Cats Bot at sign-in. Turn on Cats Bot in System Settings > General > Login Items.')}
+            </p>
+            {api.systemSettings && (
+              <button type="button" id="app-login-approval-open"
+                onClick={() => { void api.systemSettings?.open('login_items').catch(() => undefined); }}>
+                {t('Open System Settings')}
+              </button>
+            )}
+          </div>
+        )}
         {shell && <Facts id="general-facts" facts={[['Data folder', shell.root]]} />}
         <Updates />
         <div className="row">

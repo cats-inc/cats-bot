@@ -13,6 +13,7 @@ import type { NoteLayer } from '../bridge.ts';
 import { screenshotOutcome } from './screenshot.ts';
 import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type MessageAttachment } from '../../shared/attachments.ts';
 import { voicePrivacyMessage } from '../../shared/voice.ts';
+import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
@@ -102,7 +103,13 @@ interface EntryRetry {
   onRetry: () => void;
 }
 
-function Entry({ entry, conversationId, retry }: { entry: TranscriptEntry; conversationId: string; retry?: EntryRetry }) {
+function Entry({ entry, conversationId, retry, settingsPane }: {
+  entry: TranscriptEntry;
+  conversationId: string;
+  retry?: EntryRetry;
+  /** ADR-020: the macOS pane that fixes this line's missing permission. */
+  settingsPane?: SystemSettingsPane;
+}) {
   useI18n();
   const meta = entryMeta(entry);
   const copyText = entry.kind === 'owner' ? extractAttachments(entry.text).text : entry.text;
@@ -117,6 +124,10 @@ function Entry({ entry, conversationId, retry }: { entry: TranscriptEntry; conve
         : <p className="messageBody">{entryText(entry)}</p>}
     {meta && <span className="entry-meta">{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
+    {settingsPane && <button type="button" className="entry-settings-action"
+      onClick={() => { void api.systemSettings?.open(settingsPane).catch(() => undefined); }}>
+      {t('Open System Settings')}
+    </button>}
   </ConversationMessage>;
 }
 
@@ -225,6 +236,13 @@ export function NoteApp() {
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  // ADR-020: a line about a missing macOS permission offers its System Settings pane.
+  const settingsPanes = useRef(new Map<number, SystemSettingsPane>());
+  const noteError = useCallback((text: string, pane?: SystemSettingsPane | null) => {
+    const entry = localEntry('error', text);
+    if (pane && api.systemSettings) settingsPanes.current.set(entry.seq, pane);
+    setEntries((current) => [...current, entry]);
+  }, []);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [pending, setPending] = useState<PendingReply | null>(null);
   const [running, setRunningState] = useState(false);
@@ -241,7 +259,7 @@ export function NoteApp() {
     try {
       const outcome = screenshotOutcome(await api.window.captureScreenshot());
       if (outcome.kind === 'file') setFiles((current) => [...current, outcome.file]);
-      else if (outcome.kind === 'error') setEntries((current) => [...current, localEntry('error', t(outcome.message))]);
+      else if (outcome.kind === 'error') noteError(t(outcome.message), outcome.systemSettingsPane);
     } catch (error) {
       setEntries((current) => [...current, localEntry('error', t('Could not take a screenshot: {error}', { error: errorText(error) }))]);
     } finally {
@@ -452,7 +470,7 @@ export function NoteApp() {
   // SPEC-003 FR-10: dictation into the composer.
   const dictation = useDictation({
     inputRef, draft, setDraft, disabled: busy,
-    onError: (message) => setEntries((current) => [...current, localEntry('error', t(message))]),
+    onError: (message, pane) => noteError(t(message), pane),
   });
   const privacy = voicePrivacyMessage(dictation.privacyMode);
 
@@ -527,7 +545,8 @@ export function NoteApp() {
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
           const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
           return <Entry key={item.key} entry={item.entry} conversationId={conversation.current}
-            retry={failed ? { onRetry: () => void retry(failed) } : undefined} />;
+            retry={failed ? { onRetry: () => void retry(failed) } : undefined}
+            settingsPane={settingsPanes.current.get(item.entry.seq)} />;
         })}
         {pending && (
           <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>

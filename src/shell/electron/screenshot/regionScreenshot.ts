@@ -25,6 +25,7 @@ import { buildScreenshotOverlayWindowPlans } from './screenshotOverlayWindows.ts
 import { resolveDesktopScreenshotPermissionResult, type DesktopScreenshotMediaAccessStatus } from './screenshotPermission.ts';
 import { runDesktopScreenshotRegionCapture, type DesktopScreenshotOverlayController } from './screenshotRegionCapture.ts';
 import { captureWlrootsNativeScreenshotRegion, isLikelyWlrootsScreenshotSession } from './screenshotWlrootsCapture.ts';
+import { shouldRequestScreenCaptureAccess } from '../systemSettings.ts';
 
 /**
  * SPEC-003 FR-9: the region screenshot behind the composer's "Take
@@ -41,6 +42,8 @@ export interface RegionScreenshotOptions {
   overlayPage: string;
   /** `assets/screenshotOverlayPreload.cjs`. */
   overlayPreload: string;
+  /** ADR-020: asks macOS once for Screen Recording, so Cats Bot is listed in System Settings. */
+  requestScreenCaptureAccess?: () => Promise<boolean>;
 }
 
 export class RegionScreenshots {
@@ -77,11 +80,14 @@ export class RegionScreenshots {
     if (this.capturing) return { outcome: 'error', message: 'A screenshot is already being taken.' };
     this.capturing = true;
     try {
-      const permission = process.platform === 'darwin'
-        ? resolveDesktopScreenshotPermissionResult({
-          platform: process.platform,
-          mediaAccessStatus: systemPreferences.getMediaAccessStatus('screen') as DesktopScreenshotMediaAccessStatus,
-        })
+      const mediaAccessStatus = process.platform === 'darwin'
+        ? systemPreferences.getMediaAccessStatus('screen') as DesktopScreenshotMediaAccessStatus
+        : null;
+      // Any refusal asks (a never-asked app reads as `denied`); macOS applies a grant after a restart,
+      // so the capture is still refused.
+      if (shouldRequestScreenCaptureAccess(mediaAccessStatus)) await this.options.requestScreenCaptureAccess?.();
+      const permission = mediaAccessStatus
+        ? resolveDesktopScreenshotPermissionResult({ platform: process.platform, mediaAccessStatus })
         : null;
       if (permission) return permission;
       if (isLikelyWlrootsScreenshotSession({ platform: process.platform, env: process.env })) {

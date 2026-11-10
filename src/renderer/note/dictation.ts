@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import {
   insertTranscript,
   voiceErrorMessage,
+  voiceErrorSystemSettingsPane,
   type VoiceCaptureErrorReason,
   type VoiceCaptureMode,
 } from '../../shared/voice.ts';
@@ -40,8 +41,8 @@ export function useDictation(options: {
   draft: string;
   setDraft: (next: string) => void;
   disabled: boolean;
-  /** An English message for the note to show. */
-  onError: (message: string) => void;
+  /** An English message for the note to show, and the macOS pane that fixes it (ADR-020). */
+  onError: (message: string, pane: 'microphone' | 'speech_recognition' | null) => void;
 }): Dictation {
   const voice = window.catsBot.voice;
   const [status, setStatus] = useState<Status>('idle');
@@ -95,7 +96,7 @@ export function useDictation(options: {
           break;
         case 'error': {
           const message = voiceErrorMessage(event.reason);
-          if (message) latest.current.onError(message);
+          if (message) latest.current.onError(message, voiceErrorSystemSettingsPane(event.reason));
           reset(event.sessionId);
           break;
         }
@@ -112,7 +113,7 @@ export function useDictation(options: {
     if (active.current !== id) return;
     reset(id);
     const message = voiceErrorMessage(reason);
-    if (message) latest.current.onError(message);
+    if (message) latest.current.onError(message, voiceErrorSystemSettingsPane(reason));
   }, [reset]);
 
   const start = useCallback(() => {

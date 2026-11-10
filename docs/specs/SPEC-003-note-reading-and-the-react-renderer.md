@@ -78,15 +78,20 @@ for the current-versus-pending boundary.
    each display under an overlay window where the owner drags out a region (Escape cancels), and gives
    the windows back. The region waits in the composer as a PNG file like a picked one: scaled down to
    at most 8000 px a side and 10 MB on the overlay path, as `grim` writes it on wlroots (where a larger
-   picture is refused on send like any file over 10 MB). macOS needs Screen Recording for Cats Bot and says so; wlroots desktops use `grim`
-   and `slurp`. Cancelling or a region too small adds nothing; other failures are a line in the note.
+   picture is refused on send like any file over 10 MB). macOS needs Screen Recording for Cats Bot: while it is
+   not granted the shell asks once per run through the dictation helper, so Cats Bot is listed in Privacy &
+   Security > Screen & System Audio Recording; the refusal is a line naming that pane, with "Open System
+   Settings" ([ADR-020](../decisions/020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md)).
+   wlroots desktops use `grim` and `slurp`. Cancelling or a region too small adds nothing; other failures are
+   a line in the note.
 10. FR-10: Dictation, as Cats Desktop's composer "voice input" (ADR-018). On macOS and Windows the composer
     has a microphone button; it turns speech into text with a native helper (macOS on-device speech
     recognition, Windows speech recognition, which may be online by Windows settings and is marked so) and
     inserts each final phrase at the owner's selection, or at the end. No audio is kept or sent. Clicking
     again stops; Escape, the composer becoming busy, closing the note and another note starting dictation
     cancel. Helper errors (permission, no microphone, language, unavailable, stopped) are a line in the
-    note. Linux has no helper yet and shows no button.
+    note. A denied microphone and a denied Speech Recognition are separate lines, each with "Open System
+    Settings" for its macOS pane (ADR-020). Linux has no helper yet and shows no button.
 
 ## Acceptance
 

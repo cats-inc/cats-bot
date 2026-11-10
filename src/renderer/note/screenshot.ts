@@ -12,7 +12,8 @@ import type { DesktopScreenshotCaptureResult } from '../../shared/screenshot/con
 export type ScreenshotOutcome =
   | { kind: 'file'; file: File }
   | { kind: 'none' }
-  | { kind: 'error'; message: string };
+  /** ADR-020: `systemSettingsPane` is the macOS pane that fixes it. */
+  | { kind: 'error'; message: string; systemSettingsPane?: 'screen_recording' };
 
 export function screenshotOutcome(result: DesktopScreenshotCaptureResult): ScreenshotOutcome {
   if (result.outcome === 'ok') {
@@ -25,10 +26,10 @@ export function screenshotOutcome(result: DesktopScreenshotCaptureResult): Scree
       ? { kind: 'error', message: 'Screenshot failed: the selected display is no longer available.' }
       : { kind: 'none' };
   }
-  if (result.message) return { kind: 'error', message: result.message };
   if (result.outcome === 'permission_denied') {
-    return { kind: 'error', message: 'Screen Recording permission is required to capture a screenshot. Grant Cats Bot screen access in macOS System Settings, then restart Cats Bot.' };
+    return { kind: 'error', message: result.message ?? 'Screen Recording permission is required to capture a screenshot. Turn on Cats Bot in System Settings > Privacy & Security > Screen & System Audio Recording (add it with + if it is not listed), then restart Cats Bot.', systemSettingsPane: 'screen_recording' };
   }
+  if (result.message) return { kind: 'error', message: result.message };
   if (result.outcome === 'platform_unsupported') {
     return { kind: 'error', message: 'Region screenshot capture is unavailable on this desktop environment.' };
   }
