@@ -114,6 +114,10 @@ export interface SessionAttachment {
   configRevision: number | null;
   updatedAt: string;
   lastError?: string;
+  /** Confirmed loss of this attachment, never inferred from a process exit. */
+  unavailableReason?: 'provider_session_unavailable' | 'runtime_session_missing' | 'repeated_provider_failure';
+  /** One automatic replacement is allowed until it completes a turn. */
+  replacementPending?: boolean;
 }
 
 export type ConversationRole = 'home' | 'note';

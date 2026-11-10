@@ -51,7 +51,7 @@ test('the tick keeps the home session alive: creates it, leaves a live one alone
     assert.ok(readJournal(core.paths).entries.some((entry) => entry.type === 'presence' && entry.presence === 'awake'));
 
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'failed', 10_000);
-    assert.equal((await core.listConversations())[0]!.attachment.state, 'closed');
+    assert.equal((await core.listConversations())[0]!.attachment.state, 'sleeping');
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'ready', 10_000);
     const [revived, joined] = await Promise.all([core.tick(), core.tick()]);
     assert.equal(revived.outcome, 'rebuilt', 'the new runtime has no sessions, so home is rebuilt');

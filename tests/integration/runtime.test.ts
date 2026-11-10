@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import type { RuntimeClient } from '../../src/core/runtime/client.ts';
+import { BotCore, type BotCoreOptions } from '../../src/core/bot.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { fixtureCliCommand, fixtureCliLaunchArgs, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
@@ -23,11 +24,59 @@ before(() => {
   mkdirSync(projectsDir, { recursive: true });
   fixtureLog = join(home.botsHome, 'fixture.log');
 });
+
+test('a host restart reuses home and note identities from the real Runtime registry without sending during startup', async () => {
+  const restartLog = join(home.botsHome, 'restart-fixture.log');
+  const turns = () => fixtureTurns(restartLog);
+  const options: Partial<BotCoreOptions> = {
+    log: () => {}, life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
+    runtime: {
+      runtimeEntry: resolveRuntimeEntry(), providerCommand: fixtureCliCommand, providerLaunchArgs: fixtureCliLaunchArgs,
+      instanceExtras: { projects_dir: projectsDir }, readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+      env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome,
+        APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+        XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
+        CATS_BOT_FIXTURE_LOG: restartLog },
+    },
+  };
+  const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'restart', core: options });
+  let before: Awaited<ReturnType<BotCore['listConversations']>>;
+  await core.start();
+  try {
+    const note = await core.createConversation('Independent note');
+    for (const id of ['home', note.id]) {
+      const turn = await sendAndWait(core, id, `hello ${id}`, 60_000);
+      assert.equal(turn.state, 'completed', turn.error);
+    }
+    before = await core.listConversations();
+    assert.equal(new Set(before.map(item => item.attachment.sessionId)).size, 2);
+    assert.equal(new Set(before.map(item => item.attachment.providerSessionId)).size, 2);
+  } finally { await core.stop(); }
+  const turnsBeforeRestart = turns().length;
+  const reopened = BotCore.open({ root, ...options });
+  await reopened.start();
+  try {
+    assert.equal(reopened.runtimeState(), 'ready');
+    const tick = await reopened.tick();
+    assert.equal(tick.outcome, 'resumed');
+    assert.equal(turns().length, turnsBeforeRestart, 'startup and wake send no persona/model turn');
+    for (const old of before!) {
+      const turn = await sendAndWait(reopened, old.id, 'resumed?', 60_000);
+      assert.equal(turn.state, 'completed', turn.error);
+      assert.equal(turn.result?.text, 'resumed=yes');
+      const current = (await reopened.listConversations()).find(item => item.id === old.id)!;
+      assert.equal(current.attachment.sessionId, old.attachment.sessionId);
+      assert.equal(current.attachment.providerSessionId, old.attachment.providerSessionId);
+      assert.ok(reopened.transcript(old.id).some(entry => entry.text === `echo: hello ${old.id}`));
+    }
+    assert.equal(turns().length, turnsBeforeRestart + 2);
+  } finally { await reopened.stop(); }
+});
 after(() => home.cleanup());
 
-function fixtureTurns(): Array<{ message: string; resumed: boolean; args: string[] }> {
+function fixtureTurns(file = fixtureLog): Array<{ message: string; resumed: boolean; args: string[] }> {
   try {
-    return readFileSync(fixtureLog, 'utf8')
+    return readFileSync(file, 'utf8')
       .split('\n')
       .filter(Boolean)
       .map((line) => JSON.parse(line) as { message: string; resumed: boolean; args: string[] });

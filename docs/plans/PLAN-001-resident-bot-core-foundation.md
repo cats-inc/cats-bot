@@ -16,6 +16,10 @@
 
 ## Overview
 
+The restart/closed-attachment behavior was amended by
+[PLAN-013](PLAN-013-persistent-conversation-resume.md) on 2026-11-11. Its governing
+SPEC-001 now resumes compatible saved identities before considering replacement.
+
 One toolchain prerequisite phase plus five phases that can each be demonstrated on their own. The order follows
 the priority the two research documents share: first a headless resident core, then make it alive, and only
 then add the shell; multiple notes and global changes come after the shell; the desktop layer and the character

@@ -3,7 +3,7 @@ import type { ConversationStore } from '../conversations/store.ts';
 import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
 import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
-import { isProviderSessionUnavailable, PROVIDER_SESSION_UNAVAILABLE } from '../runtime/providerSession.ts';
+import { isProviderSessionUnavailable } from '../runtime/providerSession.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
 import { ResponsePresentation } from './responsePresentation.ts';
@@ -197,14 +197,21 @@ export class TurnRunner {
       }
       if (result.kind !== 'failed_before_output') {
         this.lastSilentFailure.delete(item.conversationId);
-        if (result.kind === 'completed') this.rebuiltSession.delete(item.conversationId);
+        if (result.kind === 'completed'
+          && this.deps.conversations.get(item.conversationId)?.attachment.sessionId === bound.sessionId) {
+          this.rebuiltSession.delete(item.conversationId);
+          this.deps.conversations.setAttachment(item.conversationId, {
+            replacementPending: undefined, unavailableReason: undefined,
+          });
+        }
         return result;
       }
       if (result.decision === 'fail') {
         this.lastSilentFailure.set(item.conversationId, { sessionId: bound.sessionId, reason: result.reason, prompt: item.prompt });
         return { kind: 'failed', reason: result.reason, reported: result.reported };
       }
-      this.requestRebuild(item, bound.sessionId, result.reason);
+      this.requestRebuild(item, bound.sessionId, result.reason,
+        result.decision === 'rebuild_next' ? 'repeated_provider_failure' : 'provider_session_unavailable');
       if (result.decision === 'rebuild_next') return { kind: 'failed', reason: result.reason, reported: result.reported };
       rebuiltAfterExit = true;
     }
@@ -230,7 +237,9 @@ export class TurnRunner {
    */
   private decideLoss(item: WorkItem, sessionId: string, failure: FailureSignal, rebuiltAlready: boolean): LossDecision {
     const { conversationId } = item;
-    if (rebuiltAlready || this.rebuiltSession.get(conversationId) === sessionId) return 'fail';
+    const attachment = this.deps.conversations.get(conversationId)?.attachment;
+    if (attachment?.sessionId !== sessionId || attachment.replacementPending
+      || rebuiltAlready || this.rebuiltSession.get(conversationId) === sessionId) return 'fail';
     if (failure.unavailable) return 'resend';
     // Runtime classified this failure as something else.
     if (failure.code !== null) return 'fail';
@@ -244,11 +253,13 @@ export class TurnRunner {
   }
 
   /** `failed` makes the next bind tell the owner, hand the transcript on and retire the old session. */
-  private requestRebuild(item: WorkItem, sessionId: string, reason: string): void {
+  private requestRebuild(item: WorkItem, sessionId: string, reason: string,
+    unavailableReason: 'provider_session_unavailable' | 'repeated_provider_failure' = 'provider_session_unavailable'): void {
+    if (this.deps.conversations.get(item.conversationId)?.attachment.sessionId !== sessionId) return;
     this.deps.log(`turn ${item.id}: the provider session behind ${sessionId} cannot be continued; rebuilding from the transcript`);
     this.lastSilentFailure.delete(item.conversationId);
     this.rebuildRequested.set(item.conversationId, sessionId);
-    this.deps.conversations.setAttachment(item.conversationId, { state: 'failed', lastError: reason });
+    this.deps.conversations.setAttachment(item.conversationId, { state: 'failed', unavailableReason, lastError: reason });
   }
 
   /** The session's history length before this turn's prompt; null when the runtime cannot say. */
@@ -270,28 +281,24 @@ export class TurnRunner {
     rebuiltAlready: boolean,
   ): TurnOutcome | 'resume' | 'rebuild' {
     const { conversationId } = item;
-    if (error.code === PROVIDER_SESSION_UNAVAILABLE && !rebuiltAlready && this.rebuiltSession.get(conversationId) !== sessionId) {
-      this.requestRebuild(item, sessionId, error.message);
-      return 'rebuild';
+    const attachment = this.deps.conversations.get(conversationId)?.attachment;
+    if (attachment?.sessionId !== sessionId) return { kind: 'failed', reason: error.message };
+    if (isProviderSessionUnavailable(error.message, error.code)) {
+      if (!rebuiltAlready && !attachment.replacementPending && this.rebuiltSession.get(conversationId) !== sessionId) {
+        this.requestRebuild(item, sessionId, error.message);
+        return 'rebuild';
+      }
+      if (error.code === 'provider_session_unavailable') this.requestRebuild(item, sessionId, error.message);
+      return { kind: 'failed', reason: error.message };
     }
-    // A rebuilt session that lost its provider session before any turn completed: another rebuild would not help.
-    if (error.code === PROVIDER_SESSION_UNAVAILABLE) return { kind: 'failed', reason: error.message };
     const noWorker = error.status === 404 && /no active worker/iu.test(error.message);
     const closed = error.status === 400 && /closed/iu.test(error.message);
-    if ((noWorker || closed) && !resumedAlready) {
+    const exited = error.status === 410 && error.message === 'Worker process has exited';
+    const missing = error.status === 404 && error.message === 'Session not found';
+    if ((noWorker || closed || exited || missing) && !resumedAlready) {
       this.deps.log(`turn ${item.id}: session ${sessionId} has no worker; resuming`);
       this.deps.conversations.setAttachment(conversationId, { state: 'sleeping' });
       return 'resume';
-    }
-    if (error.status === 404 && !rebuiltAlready) {
-      this.deps.log(`turn ${item.id}: session ${sessionId} is unknown to the runtime; rebuilding`);
-      this.deps.conversations.setAttachment(conversationId, { state: 'closed', lastError: error.message });
-      return 'rebuild';
-    }
-    if (error.status === 410 && !rebuiltAlready) {
-      this.deps.log(`turn ${item.id}: worker of session ${sessionId} exited; rebuilding`);
-      this.deps.conversations.setAttachment(conversationId, { state: 'closed', lastError: error.message });
-      return 'rebuild';
     }
     if (error.status === 409) {
       // 409 also covers provider-selection and routing conflicts; retrying
@@ -501,6 +508,8 @@ export class TurnRunner {
       publishPresentation();
       throw error;
     }
+    errorCode ??= outcome.errorCode ?? null;
+    unavailable ||= isProviderSessionUnavailable(outcome.errorText, outcome.errorCode);
     const failedSilently = !outcome.completed && !controller.signal.aborted && outcome.errorText !== null && !produced;
     const decision = failedSilently ? decide({ reason: outcome.errorText!, code: errorCode, unavailable }) : null;
     if (decision === 'resend') {
@@ -510,6 +519,18 @@ export class TurnRunner {
       for (const pending of pendingErrors.splice(0)) appendError(pending);
     }
     const text = textParts.join('').trim();
+    if (!outcome.completed && !controller.signal.aborted && unavailable) {
+      const attachment = this.deps.conversations.get(conversationId)?.attachment;
+      // Known provider text on a fenced replacement may be retried in that same
+      // live worker after repair. Runtime's typed terminal evidence may not.
+      if (attachment?.sessionId === sessionId
+        && (!attachment.replacementPending || errorCode === 'provider_session_unavailable')) this.deps.conversations.setAttachment(conversationId, {
+        state: 'failed', unavailableReason: 'provider_session_unavailable',
+        lastError: outcome.errorText ?? 'Native session unavailable',
+      });
+      // The shared tail seals/publishes failures. Partial work is never re-sent;
+      // the next bind may replace it once, subject to the persisted fence.
+    }
     if (outcome.completed) {
       // SPEC-001 FR-25: a quiet heartbeat leaves no message behind.
       if (heartbeat) {

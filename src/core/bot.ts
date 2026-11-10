@@ -755,9 +755,9 @@ export class BotCore implements BotHostApi {
     }
     for (const conversation of this.conversations.list()) {
       const { attachment } = conversation;
-      // Sessions of the previous runtime are gone with it; resume or rebuild lazily (FR-6).
+      // Runtime persists the mapping; only its worker is gone. Readmit lazily (FR-6).
       if (!this.options.runtimeClient && attachment.sessionId && (attachment.state === 'ready' || attachment.state === 'initializing')) {
-        this.conversations.setAttachment(conversation.id, { state: 'closed' });
+        this.conversations.setAttachment(conversation.id, { state: 'sleeping' });
       }
     }
     for (const item of pending.sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
@@ -945,7 +945,7 @@ export class BotCore implements BotHostApi {
         for (const conversation of this.conversations.list()) {
           const { attachment } = conversation;
           if (attachment.sessionId && (attachment.state === 'ready' || attachment.state === 'initializing')) {
-            const updated = this.conversations.setAttachment(conversation.id, { state: 'closed' });
+            const updated = this.conversations.setAttachment(conversation.id, { state: 'sleeping' });
             this.bus.emit({ type: 'conversation.updated', conversation: updated });
           }
         }

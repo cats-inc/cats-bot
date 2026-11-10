@@ -392,11 +392,24 @@ export class LifeLoop {
       return 'busy_turn';
     }
     const { attachment } = home;
+    const configRevision = this.deps.profile().configRevision;
+    const stillCurrent = () => {
+      const current = this.deps.conversations.get(home.id)?.attachment;
+      return current?.sessionId === attachment.sessionId
+        && current?.configRevision === attachment.configRevision
+        && this.deps.profile().configRevision === configRevision;
+    };
     let needsBind = true;
     if (attachment.sessionId && (attachment.state === 'ready' || attachment.state === 'initializing')) {
       try {
         const view = await client.getSession(attachment.sessionId);
-        if (view.status === 'initializing' || view.status === 'ready' || view.status === 'busy') {
+        if (this.deps.isTurnRunning(home.id)) return 'busy_turn';
+        if (!stillCurrent()) return 'runtime_unknown';
+        if (view.providerSessionUnavailable) {
+          this.deps.conversations.setAttachment(home.id, {
+            state: 'failed', unavailableReason: 'provider_session_unavailable',
+          });
+        } else if (view.status === 'initializing' || view.status === 'ready' || view.status === 'busy') {
           needsBind = false;
           if (view.status === 'busy') return 'busy_turn';
         } else {
@@ -405,9 +418,13 @@ export class LifeLoop {
           this.deps.conversations.setAttachment(home.id, { state: 'sleeping' });
         }
       } catch (error) {
-        if (error instanceof RuntimeHttpError && error.status === 404) {
+        if (this.deps.isTurnRunning(home.id)) return 'busy_turn';
+        if (!stillCurrent()) return 'runtime_unknown';
+        if (error instanceof RuntimeHttpError && error.status === 404 && error.message === 'Session not found') {
           this.deps.log(`home session ${attachment.sessionId} is unknown to the runtime`);
-          this.deps.conversations.setAttachment(home.id, { state: 'closed', lastError: error.message });
+          this.deps.conversations.setAttachment(home.id, {
+            state: 'failed', unavailableReason: 'runtime_session_missing', lastError: error.message,
+          });
         } else {
           return 'runtime_unknown';
         }
@@ -422,6 +439,8 @@ export class LifeLoop {
       return 'awake';
     }
     if (this.memory.backoffUntil > now.getTime()) return 'backoff';
+    if (this.deps.isTurnRunning(home.id)) return 'busy_turn';
+    if (!stillCurrent()) return 'runtime_unknown';
     const bound = await this.deps.binder.bind(home.id);
     if (!bound.ok) {
       const reason: PresenceReason = bound.noCapacity
@@ -448,9 +467,10 @@ export class LifeLoop {
     } else {
       this.memory.awakeSince ??= now.getTime();
     }
+    if (bound.how === 'kept' && reason !== 'rhythm') return 'awake';
     this.presence(home.id, 'awake', reason, now);
     report.reason = reason;
-    return bound.how === 'resumed' ? 'resumed' : 'rebuilt';
+    return bound.how === 'kept' ? 'awake' : bound.how === 'resumed' ? 'resumed' : 'rebuilt';
   }
 
   /**
