@@ -9,7 +9,8 @@ import type { TrayMenuItem } from './trayMenu.ts';
  * Cat-specific actions belong to each floating Cat's menu.
  *
  * Tray creation adapted from cats-platform `desktop/host/tray.ts` at revision
- * 595e9ca (MIT), per ADR-001 §1.
+ * 595e9ca (MIT), per ADR-001 §1; the macOS template icon follows its later
+ * `tray-iconTemplate.png` handling.
  */
 
 export interface BotTrayOptions {
@@ -18,23 +19,25 @@ export interface BotTrayOptions {
   onClick(): void;
 }
 
+/**
+ * macOS gets a template image, as Desktop's tray does: a 20pt silhouette (the
+ * @2x file loads with it) that the menu bar draws in its own colour for light
+ * and dark bars. Windows and Linux get the full-colour tile.
+ */
 function loadTrayIcon(assetsDir: string): Electron.NativeImage {
-  const bundled = nativeImage.createFromPath(join(assetsDir, 'tray-icon.png'));
-  if (!bundled.isEmpty()) {
-    if (process.platform === 'darwin') {
-      // Match Desktop's 20pt macOS tray canvas and retain a real Retina image.
-      const icon = nativeImage.createEmpty();
-      for (const scaleFactor of [1, 2]) {
-        const pixels = 20 * scaleFactor;
-        const representation = nativeImage.createFromBuffer(bundled.toPNG({ scaleFactor }))
-          .resize({ width: pixels, height: pixels, quality: 'best' });
-        icon.addRepresentation({ scaleFactor, buffer: representation.toPNG() });
-      }
-      return icon;
+  if (process.platform === 'darwin') {
+    const template = nativeImage.createFromPath(join(assetsDir, 'tray-iconTemplate.png'));
+    if (!template.isEmpty()) {
+      template.setTemplateImage(true);
+      return template;
     }
-    return process.platform === 'linux' ? bundled.resize({ width: 22, height: 22 }) : bundled;
   }
-  return nativeImage.createEmpty();
+  const bundled = nativeImage.createFromPath(join(assetsDir, 'tray-icon.png'));
+  if (bundled.isEmpty()) return bundled;
+  if (process.platform === 'linux') return bundled.resize({ width: 22, height: 22 });
+  // Only a package missing its template reaches this on macOS; keep the 20pt canvas.
+  if (process.platform === 'darwin') return bundled.resize({ width: 20, height: 20, quality: 'best' });
+  return bundled;
 }
 
 export class BotTray {

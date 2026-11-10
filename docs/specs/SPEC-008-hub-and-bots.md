@@ -320,7 +320,8 @@ descriptions for the model and this documentation say "bot".
     `avatar`.
     - The first-run page, the New bot page and the Bot tab offer all ten. A
       bot's floating Cat, its settings window and its replies in a note show
-      its look; Cats Bot Settings and the app and tray icons keep the default.
+      its look; Cats Bot Settings and the app and tray icons keep the default
+      (the tray as a plain silhouette of it).
     - A bot created without a choice (the New bot page left as it opened, a
       Boss Cat's request, `cats-bot init`) gets the first look in that order
       that no bot uses when it is created. When it can, the look is also one no

@@ -252,7 +252,13 @@ starts the app; a bot that was never set up opens the first-run page
 unchecked "Remove all user data" box for `~/.catsbot`, `%APPDATA%\Cats Bot` and
 the update cache, which never follows links inside them (SPEC-007 FR-9);
 installing over a copy, updates included, removes neither. Icons come from `src/renderer/cat.svg` through
-`npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself).
+`npm run icons` (`scripts/make-icons.mjs`, rendered by Electron itself). The
+tray icons have their own drawings, rendered by the same command: on macOS a
+menu-bar template (`src/shell/electron/tray-icon-template.svg`, the Cat's
+silhouette, which macOS draws in the menu bar's colour as it does Cats Desktop's),
+and on Windows and Linux that silhouette in white on an amber tile
+(`src/shell/electron/tray-icon.svg`). The command rewrites every icon, so commit
+only the files whose drawing changed.
 Linux packages use the generated `assets/installer/linux/` icon set at standard
 hicolor sizes (16, 24, 32, 48, 64, 128, 256 and 512 pixels). A single 1024-pixel
 PNG is not discoverable in standard hicolor themes and leaves the taskbar with a
