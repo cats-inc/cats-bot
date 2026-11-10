@@ -88,7 +88,10 @@ instead of opening the alert.
    restart; when it cannot be found it falls back to `normal` and the reason is recorded, and while a
    note needs that layer it is looked for again at most every 10 seconds (Explorer may create the
    container a little later); other platforms provide only `normal` and `top`. Dragging works on every
-   layer; the wallpaper layer takes no input. A desktop-layer note temporarily becomes an ordinary
+   layer; the wallpaper layer takes no input. While a note is maximized or full screen (the window system can
+   do this, for example on a header double-click), the shell keeps the position and size it restores to, so a note
+   that was maximized when the bot quit reopens at its own size; a maximized note is restored before it is attached
+   to the desktop or wallpaper layer, whose hosts span every display. A desktop-layer note temporarily becomes an ordinary
    window when clicked so that it can be typed into (including IME), and returns to its layer after it
    loses focus. When the owner opens a desktop- or wallpaper-layer note from bot settings or the
    floating bot, it is likewise raised and given focus, whether or not it was attached at the time and

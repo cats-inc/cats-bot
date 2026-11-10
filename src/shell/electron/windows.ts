@@ -136,10 +136,12 @@ export class NoteWindows {
 
   private rememberBounds(conversationId: string, window: BrowserWindow): void {
     if (window.isDestroyed() || window.isMinimized()) return;
+    // A header double-click maximizes a note on every platform; a maximized or
+    // full-screen note keeps the size it restores to, not the screen's.
     // Electron reports logical bounds even for Explorer-attached windows.
     // GetWindowRect includes invisible Windows resize borders and would shift
     // and grow the saved window at fractional display scaling.
-    const bounds = window.getBounds();
+    const bounds = window.isMaximized() || window.isFullScreen() ? window.getNormalBounds() : window.getBounds();
     Object.assign(this.viewState(conversationId), bounds);
   }
 
@@ -276,6 +278,11 @@ export class NoteWindows {
     };
     window.on('move', remember);
     window.on('resize', remember);
+    // macOS reports the zoom animation's frames as not maximized; these come after its last frame.
+    window.on('maximize', remember);
+    window.on('unmaximize', remember);
+    window.on('enter-full-screen', remember);
+    window.on('leave-full-screen', remember);
     window.on('show', () => {
       view.open = true;
       this.rememberBounds(conversationId, window);
@@ -322,8 +329,7 @@ export class NoteWindows {
     if (isAttachedLayer(view.layer) && desktop) {
       window.setAlwaysOnTop(false);
       if (this.lifted.has(conversationId) || desktop.attachedLayer(handle) === view.layer) return;
-      // attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other.
-      if (!desktop.attach(handle, view.layer)) {
+      if (!this.attach(desktop, window, view.layer)) {
         this.log(
           `conversation ${conversationId}: no Explorer ${view.layer} host; shown as an ordinary window until there is one`,
           'warn',
@@ -333,6 +339,17 @@ export class NoteWindows {
     }
     if (desktop?.isAttached(handle)) desktop.detach(handle);
     window.setAlwaysOnTop(view.layer === 'top', 'floating');
+  }
+
+  /**
+   * attach() keeps the window's screen rectangle, also when it moves from one layer's host to the other. A note that
+   * is an ordinary window for now (lifted, or with no host yet) can be maximized by a header double-click; Explorer's
+   * hosts span every display, and the maximized style and the screen's rectangle would be kept, so the note gets its
+   * own size back first.
+   */
+  private attach(desktop: DesktopHost, window: BrowserWindow, layer: 'desktop' | 'wallpaper'): boolean {
+    if (window.isMaximized()) window.unmaximize();
+    return desktop.attach(handleOf(window), layer);
   }
 
   setLayer(conversationId: string, layer: NoteLayer): NoteLayer {
@@ -401,7 +418,7 @@ export class NoteWindows {
       const handle = handleOf(window);
       if (!desktop.isAttached(handle) || !desktop.hostAlive(handle)) {
         desktop.detach(handle);
-        if (desktop.attach(handle, view.layer))
+        if (this.attach(desktop, window, view.layer))
           this.log(`conversation ${conversationId}: attached to the ${view.layer} layer again`);
       }
     }
