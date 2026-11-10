@@ -764,7 +764,7 @@ export const zhTW: Record<string, string> = {
   'The response was not confirmed. Refresh this request before retrying.':
     '回覆尚未確認，請重新整理此要求再試一次。',
   'This URL request is no longer available.': '這個網址要求已無法使用。',
-  'it works only on Windows': '僅支援 Windows',
+  'the macOS and Linux versions are not built yet': 'macOS 與 Linux 版本尚未完成',
   'this build has no desktop control helper': '這個版本沒有桌面控制輔助程式',
   'the desktop control helper is missing from this installation': '安裝中缺少桌面控制輔助程式',
   'the desktop control helper did not answer correctly; turn desktop control off and on in Settings to retry':

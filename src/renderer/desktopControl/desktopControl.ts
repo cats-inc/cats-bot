@@ -7,7 +7,7 @@ import type { DesktopControlState, DesktopGrantRequest } from '../../core/types.
  */
 
 const REASONS: Record<string, string> = {
-  not_windows: 'it works only on Windows',
+  not_windows: 'the macOS and Linux versions are not built yet',
   no_helper: 'this build has no desktop control helper',
   helper_missing: 'the desktop control helper is missing from this installation',
   handshake_failed:

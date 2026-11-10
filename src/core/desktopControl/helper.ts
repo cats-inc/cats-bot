@@ -306,7 +306,7 @@ export interface DesktopControlHelperResolution {
   unavailableReason: string | null;
 }
 
-/** BDC-01: Windows only, and only when the helper file exists. */
+/** BDC-01: only where a helper is built (Windows so far), and only when the helper file exists. */
 export function resolveDesktopControlHelper(options: {
   platform?: NodeJS.Platform;
   /** An explicit path; null means this host offers no helper. Defaults to the development build. */
