@@ -1,6 +1,7 @@
 import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
+import { readAttachmentImage, storeAttachment, type StoredAttachment } from './conversations/attachmentStore.ts';
 import { ConversationStore } from './conversations/store.ts';
 import {
   catsDesktopExecutables,
@@ -1652,6 +1653,21 @@ export class BotCore implements BotHostApi {
     this.queue.enqueue(queued);
     this.pump();
     return structuredClone(queued);
+  }
+
+  /**
+   * SPEC-003 FR-8: one file the owner attaches to their next message, stored in the bot's working directory
+   * for the provider CLI to read. The note then sends the message with the file's path in front of the text.
+   */
+  async addOwnerAttachment(conversationId: string, name: string, data: string): Promise<StoredAttachment> {
+    this.resolveConversationId(conversationId);
+    return storeAttachment(this.profile.permissions.cwd, name, Buffer.from(data, 'base64'));
+  }
+
+  /** SPEC-003 FR-8: an attached image for the note to show, or null when it is gone or not an image. */
+  async attachmentPreview(conversationId: string, relativePath: string): Promise<{ mimeType: string; data: string } | null> {
+    this.resolveConversationId(conversationId);
+    return readAttachmentImage(this.profile.permissions.cwd, relativePath);
   }
 
   /** Enqueues a background work item (schedules, heartbeats and events use this). */

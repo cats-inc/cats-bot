@@ -280,3 +280,26 @@ test('ADR-016: a full-screen note stays an ordinary window until it leaves full 
   t.mock.timers.tick(400);
   assert.equal(mac.level(view), LEVELS.desktop);
 });
+
+test('SPEC-003 FR-9: a lifted desktop note hidden for a screenshot stays lifted, and settles once it is back without the focus', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const mac = new FakeMacWindows();
+  const { windows } = fixture(t, createMacDesktopHost(mac));
+  windows.setLayer('home', 'desktop');
+  const opening = windows.open('home');
+  const window = BrowserWindow.instances[0]!;
+  window.loaded();
+  await opening;
+  const view = window.webContents.id;
+  assert.equal(mac.level(view), LEVELS.normal, 'an owner open lifts the note');
+  const restore = windows.hideForScreenshot('home');
+  assert.equal(window.isVisible(), false);
+  assert.equal(windows.shellState.views.home!.open, true, 'hidden, not closed');
+  window.emit('blur');
+  t.mock.timers.tick(5_400);
+  assert.equal(mac.level(view), LEVELS.normal, 'not returned to its layer while hidden');
+  restore();
+  assert.equal(window.isVisible(), true);
+  t.mock.timers.tick(400);
+  assert.equal(mac.level(view), LEVELS.desktop, 'the focus did not come back, so it settles');
+});
