@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!--
+    Windows and Linux tray icon: the macOS template's silhouette in white on an
+    amber rounded tile, the way Cats Desktop puts its silhouette on a navy tile.
+    The tile keeps it legible on light and dark taskbars and panels, and its
+    colour tells it apart from Desktop's. The nested drawing is
+    src/shell/electron/tray-icon-template.svg verbatim, with only the colour
+    changed, so the knocked-out eyes, nose and mouth show the tile; keep the two
+    in sync. Regenerate with `npm run icons`.
+  -->
+  <rect width="128" height="128" rx="29" fill="#C9771F"/>
+  <svg x="11" y="13" width="106" height="106" viewBox="-2.25 -5.25 132.5 132.5" color="#fff">
+  <defs>
+    <mask id="tray-holes" maskUnits="userSpaceOnUse" x="0" y="0" width="128" height="128">
+      <rect width="128" height="128" fill="#fff"/>
+      <ellipse cx="44" cy="70" rx="9.5" ry="11.5" fill="#000"/>
+      <ellipse cx="84" cy="70" rx="9.5" ry="11.5" fill="#000"/>
+      <path d="M58 82 L70 82 L64 89 Z" fill="#000" stroke="#000" stroke-width="2" stroke-linejoin="round"/>
+      <path d="M64 88 L64 91 M64 91 Q60 98 53 95 M64 91 Q68 98 75 95" fill="none" stroke="#000" stroke-width="5" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <g mask="url(#tray-holes)" fill="currentColor">
+    <path d="M22 54 L26 14 Q28 8 34 12 L58 32 Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M106 54 L102 14 Q100 8 94 12 L70 32 Z" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/>
+    <ellipse cx="64" cy="72" rx="48" ry="42"/>
+  </g>
+  </svg>
+</svg>
