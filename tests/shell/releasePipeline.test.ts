@@ -76,23 +76,33 @@ test('release guard only resumes its own draft and rejects reused tags, publicat
   releases = [{ ...draft, draft: false }]; await assert.rejects(guard(), /must exceed/u);
 });
 
-test('the preview needs main CI to have passed on its commit and does not rerun the tests', async () => {
-  let runs: object[] = [], asked: Record<string, unknown> = {};
+test('the preview requires CI at its frozen source and does not rerun the tests', async () => {
+  let runs: object[] = [];
+  const asked: Record<string, unknown>[] = [];
   const github = { rest: { actions: { listWorkflowRuns: async (params: Record<string, unknown>) => {
-    asked = params; return { data: { workflow_runs: runs } };
+    asked.push(params); return { data: { workflow_runs: runs } };
   } } } };
-  const check = () => requireTestedSource({ github, owner: 'cats-inc', repo: 'cats-bot', sourceCommit });
+  const check = (sourceRef = 'refs/heads/release/v0.3.0') => requireTestedSource({ github, owner: 'cats-inc', repo: 'cats-bot', sourceCommit, sourceRef, tag: 'v0.3.0' });
   await assert.rejects(check(), /CI has not passed/u);
-  assert.deepEqual([asked.workflow_id, asked.head_sha, asked.event, asked.branch], ['ci.yaml', sourceCommit, 'push', 'main']);
-  runs = [{ head_sha: sourceCommit, conclusion: 'failure' }]; await assert.rejects(check(), /CI has not passed/u);
-  runs = [{ head_sha: 'c'.repeat(40), conclusion: 'success' }]; await assert.rejects(check(), /CI has not passed/u);
-  runs = [{ head_sha: sourceCommit, conclusion: 'failure' }, { head_sha: sourceCommit, conclusion: 'success' }]; await check();
+  assert.deepEqual(asked.map(item => [item.workflow_id, item.head_sha, item.event, item.branch]), [
+    ['ci.yaml', sourceCommit, 'push', 'main'], ['ci.yaml', sourceCommit, 'workflow_dispatch', 'release/v0.3.0'],
+  ]);
+  const passed = { head_sha: sourceCommit, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', head_repository: { full_name: 'cats-inc/cats-bot' } };
+  runs = [{ ...passed, conclusion: 'failure' }]; await assert.rejects(check(), /CI has not passed/u);
+  runs = [{ ...passed, head_sha: 'c'.repeat(40) }]; await assert.rejects(check(), /CI has not passed/u);
+  runs = [passed]; await check('refs/heads/main');
+  runs = [{ ...passed, event: 'workflow_dispatch', head_branch: 'release/v0.3.0' }]; await check();
+  await assert.rejects(check('refs/heads/feature/test'), /ordinary feature branches/u);
+  runs = [{ ...passed, event: 'pull_request' }]; await assert.rejects(check(), /CI has not passed/u);
+  runs = [{ ...passed, head_repository: { full_name: 'fork/cats-bot' } }]; await assert.rejects(check(), /CI has not passed/u);
   const workflow = parse(await readFile(new URL('../../.github/workflows/bot-preview.yml', import.meta.url), 'utf8'));
   assert.deepEqual(workflow.jobs.guard.permissions, { contents: 'read', actions: 'read' });
   assert.match(workflow.jobs.guard.steps.at(-1).with.script, /requireTestedSource/u);
   const commands = workflow.jobs.build.steps.map((step: { run?: string }) => step.run ?? '');
   assert.ok(commands.includes('npm run build'));
   assert.ok(!commands.some((run: string) => /npm (test|run typecheck)/u.test(run)));
+  const ci = parse(await readFile(new URL('../../.github/workflows/ci.yaml', import.meta.url), 'utf8'));
+  assert.ok(Object.hasOwn(ci.on, 'workflow_dispatch'));
 });
 
 test('the preview refuses a Runtime pin off main, or one leaving out changes its notes do not list', async t => {
@@ -106,17 +116,20 @@ test('the preview refuses a Runtime pin off main, or one leaving out changes its
   };
   await git('init', '-q', '-b', 'main');
   const pin = await commit('feat: base (#1)', 'src/a.ts');
-  await commit('docs: only docs (#2)', 'docs/a.md');
-  const check = (notes: string, at = pin) => requireCurrentRuntime({ runtimeRoot, commit: at, notes });
+  let baseline = await commit('docs: only docs (#2)', 'docs/a.md');
+  const check = (notes: string, at = pin) => requireCurrentRuntime({ runtimeRoot, commit: at,
+    notes: `- **Source selection:** cats-runtime@${at}; main@${baseline}.\n${notes}` });
   await git('update-ref', 'refs/remotes/origin/main', 'HEAD');
   assert.deepEqual(await check(''), []);
-  await commit('fix: Grok (#212)', 'src/b.ts');
+  const later = await commit('fix: Grok (#212)', 'src/b.ts');
   await git('update-ref', 'refs/remotes/origin/main', 'HEAD');
+  assert.deepEqual(await check(''), [], 'a later Runtime PR must not invalidate the frozen bump');
+  baseline = later;
   await assert.rejects(check('Bot #212 is unrelated.'), /cats-runtime#212 fix: Grok/u);
   await assert.rejects(check('This release carries cats-runtime#212.'), /cats-runtime#212 fix: Grok/u);
   assert.equal((await check('- **Left out of this release:** cats-runtime#212, until it has more testing.')).length, 1);
   await git('switch', '-q', '-c', 'fix/branch');
-  await assert.rejects(check('', await commit('fix: on a branch', 'src/c.ts')), /is not on origin\/main/u);
+  await assert.rejects(check('', await commit('fix: on a branch', 'src/c.ts')), /is not on/u);
 
   const workflow = parse(await readFile(new URL('../../.github/workflows/bot-preview.yml', import.meta.url), 'utf8'));
   const steps = workflow.jobs.guard.steps as { uses?: string; with?: Record<string, unknown> }[];

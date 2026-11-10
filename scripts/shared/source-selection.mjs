@@ -1,6 +1,6 @@
 /**
  * How a release selects a source from another repository. Cats Desktop and Cats Bot share this on purpose, so one rule applies:
- * the source must be on that repository's main, and the release notes must list whatever on main it leaves out.
+ * selection checks current main; publication checks the main baseline recorded when the bump was prepared.
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -62,4 +62,48 @@ export async function assertSelectedSource({ root, commit, notes, repository, ma
       `Select a newer ${repository} commit, or list each of these on a "${LEFT_OUT}" line, with the reason.`].join('\n'));
   }
   return missing;
+}
+
+/** One machine-readable selection in the current version's notes, committed with the bump. */
+export function frozenSourceSelection(notes, repository) {
+  const lines = notes.split(/\r?\n/u).filter(line => line.includes('**Source selection:**') && line.includes(`${repository}@`));
+  const match = lines.length === 1
+    ? /^- \*\*Source selection:\*\* ([\w-]+)@([a-f0-9]{40}); main@([a-f0-9]{40})\.$/u.exec(lines[0])
+    : null;
+  if (!match || match[1] !== repository) {
+    throw new Error(`Record exactly one "- **Source selection:** ${repository}@FULL_COMMIT_SHA; main@FULL_BASELINE_SHA." line in this version's notes before freezing the bump.`);
+  }
+  return { commit: match[2], baseline: match[3] };
+}
+
+/** Later main commits do not change a frozen release's inputs or omission list. */
+export async function assertFrozenSource({ root, commit, notes, repository }) {
+  const selection = frozenSourceSelection(notes, repository);
+  if (commit !== selection.commit) throw new Error(`Selected ${repository} ${commit} differs from the frozen source ${selection.commit}.`);
+  // The baseline must have landed, even when a caller supplies an invented or PR-only baseline.
+  if ((await git(root, 'rev-parse', '--is-shallow-repository')).stdout.trim() === 'true') {
+    throw new Error(`The checkout at ${root} is shallow; validating the frozen baseline needs its full history.`);
+  }
+  await git(root, 'merge-base', '--is-ancestor', selection.baseline, MAIN).catch(() => {
+    throw new Error(`Frozen ${repository} baseline ${selection.baseline} is not on origin/main.`);
+  });
+  return assertSelectedSource({ root, commit, notes, repository, main: selection.baseline });
+}
+
+/** Release CI belongs to the exact source, not whichever commit main names later. */
+export async function requireTestedReleaseSource({ github, owner, repo, sourceCommit, sourceRef, tag }) {
+  if (!/^[a-f0-9]{40}$/u.test(sourceCommit) || !/^v\d+\.\d+\.\d+$/u.test(tag)) throw new Error('Invalid release source identity.');
+  const releaseBranch = `release/${tag}`;
+  if (!['refs/heads/main', `refs/heads/${releaseBranch}`, `refs/tags/${tag}`].includes(sourceRef)) {
+    throw new Error(`Publish from main or the frozen ${releaseBranch} branch; ordinary feature branches are not release sources.`);
+  }
+  const candidates = [{ event: 'push', branch: 'main' }, { event: 'workflow_dispatch', branch: releaseBranch }];
+  for (const candidate of candidates) {
+    const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yaml', head_sha: sourceCommit,
+      ...candidate, status: 'completed', per_page: 100 });
+    if (data.workflow_runs.some(run => run.head_sha === sourceCommit && run.head_branch === candidate.branch
+      && run.event === candidate.event && run.status === 'completed' && run.conclusion === 'success'
+      && run.head_repository?.full_name === `${owner}/${repo}`)) return;
+  }
+  throw new Error(`CI has not passed on frozen source ${sourceCommit}; run ci.yaml manually on ${releaseBranch}, or wait for this exact main push's CI. Do not advance the release source.`);
 }
