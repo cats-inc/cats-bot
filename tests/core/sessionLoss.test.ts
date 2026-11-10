@@ -108,6 +108,8 @@ test('Runtime\'s typed code rebuilds at once, in the stream, on a send and on a 
     assert.equal(creates(await calls(core)).length, 3, 'the 410 rebuilt the session');
 
     // The tick finds the session closed, resumes it, and Runtime's 410 on the resume rebuilds it.
+    // Without a heartbeat there are no rest hours (SPEC-011 FR-16), so the time of day cannot put home to sleep.
+    await core.updateProfile({ heartbeat: { enabled: false } });
     await sendAndWait(core, 'home', 'gone-after-reply');
     const closed = (await homeAttachment(core)).sessionId;
     await core.tick();
