@@ -90,7 +90,11 @@ export function ProviderChecklist({
     let failed = false;
     try {
       const next = await api.setup.check(provider);
-      if (mine !== generation.current) return;
+      // Another provider was chosen meanwhile: what this read found is not its own.
+      if (mine !== generation.current) {
+        end(true);
+        return;
+      }
       setState(next);
       callbacks.current.onState?.(next);
       setTicked((current) => new Map([...current].filter(([id, change]) => {
@@ -104,7 +108,10 @@ export function ProviderChecklist({
         log.openForFailure();
       }
     } catch (failure) {
-      if (mine !== generation.current) return;
+      if (mine !== generation.current) {
+        end(true);
+        return;
+      }
       failed = true;
       setError(errorText(failure));
       log.openForFailure();
@@ -128,7 +135,12 @@ export function ProviderChecklist({
         setRunStart(Date.now());
         setAttempted((current) => new Map(current).set(item.id, item.change));
         const next = await api.setup.install(provider, item.id, item.change);
-        if (mine !== generation.current) return;
+        if (mine !== generation.current) {
+          setRunning(null);
+          setQueue([]);
+          end(true);
+          return;
+        }
         setState(next);
         callbacks.current.onState?.(next);
         setTicked((current) => {
