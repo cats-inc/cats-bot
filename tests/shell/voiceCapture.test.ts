@@ -18,7 +18,7 @@ import {
 test('the dictation contract has the modes and closed errors Cats Desktop has', () => {
   assert.deepEqual(VOICE_CAPTURE_MODES, ['on-device', 'cloud', 'unknown']);
   assert.deepEqual(VOICE_CAPTURE_ERROR_REASONS, [
-    'permission_denied', 'permission_not_determined', 'mic_unavailable', 'language_not_supported',
+    'permission_denied', 'speech_permission_denied', 'permission_not_determined', 'mic_unavailable', 'language_not_supported',
     'engine_unavailable', 'helper_crashed', 'cancelled', 'aborted',
   ]);
 });

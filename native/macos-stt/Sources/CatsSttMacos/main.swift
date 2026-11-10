@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreGraphics
 import Darwin
 import Foundation
 import Speech
@@ -175,7 +176,8 @@ func awaitMicrophoneAuthorization() -> AVAuthorizationStatus {
 func preflightPermissions(options: CliOptions, emitter: JsonEmitter) -> Bool {
   let speechStatus = awaitSpeechAuthorization()
   if speechStatus == .denied || speechStatus == .restricted {
-    emitter.error("permission_denied")
+    // Speech Recognition has its own System Settings pane, apart from the microphone.
+    emitter.error("speech_permission_denied")
     emitter.end()
     return false
   }
@@ -371,8 +373,17 @@ func runMicrophoneRecognition(
   semaphore.wait()
 }
 
+// The host asks macOS for Screen Recording access through this helper, which the app
+// already ships; macOS attributes the request to the app that started it. The request
+// lists the app in System Settings and may prompt; access applies after a restart.
+if CommandLine.arguments.count == 2 && CommandLine.arguments[1] == "--request-screen-capture" {
+  let granted = CGPreflightScreenCaptureAccess() || CGRequestScreenCaptureAccess()
+  print("{\"type\":\"screen_capture\",\"granted\":\(granted)}")
+  exit(0)
+}
+
 guard let options = parseOptions(CommandLine.arguments) else {
-  fputs("Usage: cats-stt-macos --session-id <id> [--locale <bcp47>] [--input <wav>]\n", stderr)
+  fputs("Usage: cats-stt-macos --session-id <id> [--locale <bcp47>] [--input <wav>] | --request-screen-capture\n", stderr)
   exit(2)
 }
 

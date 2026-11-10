@@ -10,7 +10,7 @@ export type DesktopScreenshotMediaAccessStatus =
   | 'unknown';
 
 const MACOS_SCREEN_RECORDING_PERMISSION_MESSAGE =
-  'Screen Recording permission is required to capture a screenshot. Grant Cats Bot screen access in macOS System Settings, then restart Cats Bot.';
+  'Screen Recording permission is required to capture a screenshot. Turn on Cats Bot in System Settings > Privacy & Security > Screen & System Audio Recording (add it with + if it is not listed), then restart Cats Bot.';
 
 export function resolveDesktopScreenshotPermissionResult(input: {
   platform: NodeJS.Platform;

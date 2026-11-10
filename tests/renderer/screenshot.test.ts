@@ -19,6 +19,13 @@ test('a picture becomes a waiting file, a cancelled one nothing, and anything el
   assert.equal(screenshotOutcome({ outcome: 'cancelled', reason: 'unknown_display' }).kind, 'error');
   assert.deepEqual(screenshotOutcome({ outcome: 'error', message: 'No displays are available for screenshot capture.' }),
     { kind: 'error', message: 'No displays are available for screenshot capture.' });
-  assert.match(screenshotOutcome({ outcome: 'permission_denied' }).kind === 'error' ? (screenshotOutcome({ outcome: 'permission_denied' }) as { message: string }).message : '', /Screen Recording/u);
+  // ADR-020: a missing Screen Recording names its pane and offers to open it.
+  assert.deepEqual(screenshotOutcome({ outcome: 'permission_denied' }), {
+    kind: 'error',
+    message: 'Screen Recording permission is required to capture a screenshot. Turn on Cats Bot in System Settings > Privacy & Security > Screen & System Audio Recording (add it with + if it is not listed), then restart Cats Bot.',
+    systemSettingsPane: 'screen_recording',
+  });
+  assert.deepEqual(screenshotOutcome({ outcome: 'permission_denied', message: 'from the shell' }),
+    { kind: 'error', message: 'from the shell', systemSettingsPane: 'screen_recording' });
   assert.match((screenshotOutcome({ outcome: 'platform_unsupported' }) as { message: string }).message, /unavailable/u);
 });

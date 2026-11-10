@@ -418,6 +418,14 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   a normal one, with a floating Cat on screen: neither the note nor the Cat is in the picture, the
   note comes back focused and still on its layer once it loses focus. On every display the overlay
   covers the screen, a drag selects, Escape cancels. On wlroots, check with and without `grim`/`slurp`.
+- System Settings panes (ADR-020), on a fresh macOS profile with a signed package:
+  - The first screenshot is refused with a line naming Screen & System Audio Recording. Cats Bot (not
+    `cats-stt-macos`) is now listed there, and "Open System Settings" opens that pane. A grant works after
+    restarting Cats Bot.
+  - Deny Speech Recognition, then the microphone, and dictate: each line names its own pane and its button
+    opens it.
+  - Switch Cats Bot off in General > Login Items with start at login on. Cats Bot Settings > General shows the
+    approval line, and its button opens Login Items.
 - Dictation (SPEC-003 FR-10): only a signed and notarized macOS package (hardened runtime, the
   audio-input entitlement and the usage strings) proves the microphone works as shipped; an unsigned
   development run proves the helper and the note. Grant the microphone and speech recognition, dictate

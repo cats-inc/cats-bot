@@ -33,8 +33,18 @@ const voice = process.platform === 'darwin' || process.platform === 'win32'
   }
   : null;
 
+// ADR-020: the macOS System Settings pane for a missing permission; the shell owns the URLs.
+const systemSettings = process.platform === 'darwin'
+  ? {
+    open(pane) {
+      return ipcRenderer.invoke('shell:openSystemSettings', pane);
+    },
+  }
+  : null;
+
 contextBridge.exposeInMainWorld('catsBot', {
   voice,
+  systemSettings,
   conversationId: params.get('conversation') || 'home',
   language: {
     get() {
