@@ -55,6 +55,14 @@ for the current-versus-pending boundary.
    not possible while loading, the model can still be left empty or a model id typed when the query
    fails, switching back to the saved provider preselects the saved model, the Notes tab refreshes when
    the window gains focus, and a rename in progress is not interrupted by an event redraw.
+7. FR-7: Retrying a failed reply, as in Cats Desktop. When the latest owner message's work item has
+   failed and nothing runs, its bubble shows "Response failed" and a retry action. `retryOwnerMessage`
+   queues the same work item again: no second owner entry is added, and the failure stays in the
+   transcript. The retry starts a fresh busy-retry budget, and recovery after a crash reads only the
+   transcript entries written after the retry (`attemptFromSeq`). The core refuses a work item that is not the conversation's latest
+   owner message, not failed, or in a conversation with a queued or running turn. Cancelled and
+   interrupted turns are not offered, and a send the note could not deliver (shown only in the note) has
+   no work item to retry.
 
 ## Acceptance
 
@@ -72,6 +80,8 @@ Full final UI-6/package/CI signoff is separate from this implemented cutover.
   and result.
 - A4: A question from `ask_owner` has buttons on the note, and after pressing Approve the work item
   completes and the buttons disappear.
+- A4a: A message whose turn failed shows "Response failed" and a retry action; retrying runs the turn
+  again without a second owner bubble, and the label and action go away once the reply arrives.
 - A5: The existing acceptance scripts (settings-page model race and saving, raising a desktop-layer
   note, unread of a background note) still pass on the new pages.
 - A6: The packaged installer shows the first-run page the first time it is opened, and after the bot is

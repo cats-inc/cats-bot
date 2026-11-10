@@ -22,7 +22,7 @@ import type {
 export const CORE_COMMANDS = [
   'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities',
   'getProfile', 'updateProfile', 'listConversations', 'createConversation', 'deleteConversation',
-  'transcript', 'conversationTranscript', 'sendOwnerMessage', 'cancelTurn', 'markSeen',
+  'transcript', 'conversationTranscript', 'sendOwnerMessage', 'retryOwnerMessage', 'cancelTurn', 'markSeen',
   'listSchedules', 'cancelSchedule', 'listWorkItems', 'resolveApproval', 'status',
   'listProviders', 'listModels', 'renameConversation', 'telegramStatus', 'setTelegramToken',
   'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
@@ -157,6 +157,8 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'transcript': return recentEntries(await target.transcript(asString(args[0], 'conversationId')));
     case 'conversationTranscript': return recentEntries(await target.conversationTranscript(asString(args[0], 'conversationId')));
     case 'sendOwnerMessage': return target.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text', MAX_TEXT));
+    case 'retryOwnerMessage':
+      return target.retryOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'workItemId'));
     case 'cancelTurn':
       await target.cancelTurn(asString(args[0], 'conversationId'));
       return null;

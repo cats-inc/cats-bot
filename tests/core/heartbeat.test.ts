@@ -135,3 +135,16 @@ test('recovery only counts messages of this run and earns completion (FR-28)', a
   ]));
   assert.deepEqual(tied, { verdict: 'completed', text: 'Backup finished.' });
 });
+
+test('recovery of a retried owner message ignores what its failed attempts wrote (SPEC-003 FR-7)', async () => {
+  const item = { ...interruptedItem('back up the photos'), attemptFromSeq: 4 };
+  const history = [
+    { role: 'user', text: 'back up the photos', timestamp: '2026-10-28T09:00:02.000Z' },
+    { role: 'assistant', text: 'Backup finished.', timestamp: '2026-10-28T09:04:00.000Z' },
+  ];
+  // The failed attempt left a tool call without its result.
+  const earlier = { ...toolEntry(item, 'tool_use', '2026-10-28T08:00:00.000Z', 'old'), seq: 3 };
+  assert.deepEqual(await reconcileInterrupted(item, clientWith(history), [earlier]), { verdict: 'completed', text: 'Backup finished.' });
+  const unretried = await reconcileInterrupted({ ...item, attemptFromSeq: undefined }, clientWith(history), [earlier]);
+  assert.equal(unretried.verdict, 'awaiting_owner', 'without the mark, the old tool call still counts');
+});

@@ -79,7 +79,7 @@ export async function reconcileInterrupted(
     return { verdict: 'awaiting_owner', evidence: 'the runtime transcript has the prompt but no reply' };
   }
   const last = replies.at(-1)!;
-  const tools = ownTranscript.filter((entry) => entry.workItemId === item.id
+  const tools = ownTranscript.filter((entry) => entry.workItemId === item.id && afterRetry(item, entry)
     && (entry.kind === 'tool_use' || entry.kind === 'tool_result'));
   const finished = new Set(tools.filter((entry) => entry.kind === 'tool_result').map((entry) => entry.toolId));
   const open = tools.find((entry) => entry.kind === 'tool_use' && !finished.has(entry.toolId));
@@ -103,10 +103,15 @@ export async function reconcileInterrupted(
   return { verdict: 'completed', text: replies.map((message) => message.text.trim()).join('\n\n') };
 }
 
+/** SPEC-003 FR-7: an entry of the current attempt, not of a failed one before the owner retried. */
+function afterRetry(item: WorkItem, entry: TranscriptEntry): boolean {
+  return item.attemptFromSeq === undefined || entry.seq > item.attemptFromSeq;
+}
+
 /** Appends the recovered reply unless the transcript already carries it. */
 export function recordRecoveredReply(conversations: ConversationStore, item: WorkItem, text: string): void {
   const existing = conversations.transcript(item.conversationId)
-    .some((entry) => entry.workItemId === item.id && entry.kind === 'bot');
+    .some((entry) => entry.workItemId === item.id && afterRetry(item, entry) && entry.kind === 'bot');
   if (existing) return;
   conversations.append(item.conversationId, { kind: 'bot', origin: 'system', text, workItemId: item.id });
 }

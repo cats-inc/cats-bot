@@ -275,3 +275,19 @@ export function mergeWorkItems(current: readonly WorkItem[], snapshot: readonly 
     return upsertWorkItem(items, item);
   }, [...current]);
 }
+
+/**
+ * The owner entry the note offers to retry, as Cats Desktop does: the latest owner message, when its turn
+ * failed and nothing runs. Cancelled turns are the owner's choice, and interrupted ones ask to run again.
+ */
+export function retryableOwnerEntry(
+  entries: readonly TranscriptEntry[],
+  workItems: readonly WorkItem[],
+  busy: boolean,
+): TranscriptEntry | null {
+  if (busy) return null;
+  const latest = entries.findLast((entry) => entry.kind === 'owner');
+  if (!latest?.workItemId) return null;
+  const item = workItems.find((candidate) => candidate.id === latest.workItemId);
+  return item?.kind === 'owner_message' && item.state === 'failed' ? latest : null;
+}
