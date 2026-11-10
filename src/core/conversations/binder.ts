@@ -2,7 +2,8 @@ import type { ConversationStore } from './store.ts';
 import { buildHandoffPack, composeInstructions } from './handoff.ts';
 import { effectiveReplyLanguage } from '../profile/profile.ts';
 import { replyLanguageInstruction } from '../../shared/language.ts';
-import type { CreateSessionRequest, RuntimeClient, RuntimeMcpServer } from '../runtime/client.ts';
+import { RuntimeHttpError, type CreateSessionRequest, type RuntimeClient, type RuntimeMcpServer } from '../runtime/client.ts';
+import { isProviderSessionUnavailable, REBUILT_SESSION_NOTICE } from '../runtime/providerSession.ts';
 import type { BotProfile, ConversationRecord, SessionAttachment } from '../types.ts';
 
 /**
@@ -127,6 +128,13 @@ export class SessionBinder {
         return { ok: true, sessionId: attachment.sessionId, how: 'resumed' };
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);
+        if (error instanceof RuntimeHttpError && isProviderSessionUnavailable(reason, error.code)) {
+          // The provider session is gone, so no later resume can succeed; the
+          // transcript is ours, so the conversation continues from it at once.
+          this.deps.log(`conversation ${conversation.id}: the provider session of ${attachment.sessionId} is unavailable; rebuilding`);
+          this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
+          return this.create(client, this.deps.conversations.require(conversation.id), profile, REBUILT_SESSION_NOTICE);
+        }
         this.deps.log(`conversation ${conversation.id}: resume of ${attachment.sessionId} failed`);
         this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
         this.deps.conversations.append(conversation.id, {
@@ -137,19 +145,20 @@ export class SessionBinder {
         return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };
       }
     } else if (attachment.state === 'failed' && attachment.sessionId) {
-      this.deps.conversations.append(conversation.id, {
-        kind: 'system',
-        origin: 'system',
-        text: 'The previous session could not be continued; a new session starts with a handoff of what was said so far.',
-      });
+      return this.create(client, conversation, profile, REBUILT_SESSION_NOTICE);
     }
     return this.create(client, this.deps.conversations.require(conversation.id), profile);
   }
 
+  /**
+   * `notice` is told to the owner once the session exists, so a create that
+   * keeps failing (no capacity, runtime down) does not repeat it every attempt.
+   */
   private async create(
     client: RuntimeClient,
     conversation: ConversationRecord,
     profile: BotProfile,
+    notice: string | null = null,
   ): Promise<BindResult> {
     const isPending = this.deps.isPendingWorkItem;
     const pack = buildHandoffPack(
@@ -194,6 +203,7 @@ export class SessionBinder {
           record.checkpoint = { digest: pack.text, throughSeq: pack.throughSeq, updatedAt: this.deps.now().toISOString() };
         });
       }
+      if (notice) this.deps.conversations.append(conversation.id, { kind: 'system', origin: 'system', text: notice });
       this.deps.log(`conversation ${conversation.id}: created session ${view.id} (${view.status})`);
       // FR-27: nothing else would ever close the replaced session's worker.
       if (replaced && replaced !== view.id) this.deps.retireSession?.(replaced);

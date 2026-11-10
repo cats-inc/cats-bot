@@ -3,6 +3,7 @@ import type { ConversationStore } from '../conversations/store.ts';
 import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
 import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
+import { isProviderSessionUnavailable, PROVIDER_SESSION_UNAVAILABLE } from '../runtime/providerSession.ts';
 import type { BotHostEvent, MessageOrigin, WorkItem } from '../types.ts';
 import { runWithSessionGate } from './gate.ts';
 import { ResponsePresentation } from './responsePresentation.ts';
@@ -49,6 +50,29 @@ export type TurnOutcome =
     reason: 'runtime_unavailable' | 'session_busy' | 'no_capacity';
     retryAfterMs: number;
   };
+
+/** What a turn that failed before any output tells about its session (SPEC-001 FR-18). */
+interface FailureSignal {
+  reason: string;
+  /** The last typed code any `error` event carried. */
+  code: string | null;
+  /** Whether any `error` event said the provider session is unavailable. */
+  unavailable: boolean;
+}
+
+/** `resend`: rebuild and send the turn again; `rebuild_next`: rebuild for the next turn; `fail`: neither. */
+type LossDecision = 'resend' | 'rebuild_next' | 'fail';
+
+/**
+ * A turn that ended on an error before the provider produced anything: no
+ * text, no tool call, no interaction. Only such a turn may be re-sent in a
+ * rebuilt session, since nothing of it can have happened yet.
+ */
+interface SilentFailure {
+  kind: 'failed_before_output';
+  reason: string;
+  decision: LossDecision;
+}
 
 export interface TurnRetryDelays {
   ownerBusyMs: number;
@@ -101,6 +125,12 @@ export function originForKind(kind: WorkItem['kind']): MessageOrigin {
 export class TurnRunner {
   private readonly deps: TurnRunnerDependencies;
   private readonly delays: TurnRetryDelays;
+  /** Per conversation: the last turn that failed before any output, in which session and with which prompt. */
+  private readonly lastSilentFailure = new Map<string, { sessionId: string; reason: string; prompt: string }>();
+  /** Per conversation: a rebuild was asked for; the value is the session being replaced. */
+  private readonly rebuildRequested = new Map<string, string>();
+  /** Per conversation: the session a rebuild produced, until a turn completes in that conversation. */
+  private readonly rebuiltSession = new Map<string, string>();
 
   constructor(deps: TurnRunnerDependencies) {
     this.deps = deps;
@@ -123,6 +153,13 @@ export class TurnRunner {
         }
         return { kind: 'failed', reason: bound.reason };
       }
+      // Whoever bound it (this turn or the reconcile tick), a session other than the one
+      // a rebuild replaced is the rebuilt one.
+      const replaced = this.rebuildRequested.get(item.conversationId);
+      if (replaced !== undefined && replaced !== bound.sessionId) {
+        this.rebuildRequested.delete(item.conversationId);
+        this.rebuiltSession.set(item.conversationId, bound.sessionId);
+      }
       const attachment = this.deps.conversations.require(item.conversationId).attachment;
       item.run = {
         provider: attachment.provider ?? '',
@@ -132,10 +169,14 @@ export class TurnRunner {
         historyBaseline: bound.how === 'created' ? 0 : await this.historyLength(client, bound.sessionId),
       };
       this.deps.persistRun(item);
+      let result: TurnOutcome | SilentFailure;
+      const rebuiltAlready = rebuiltAfterExit;
+      const decide = (failure: FailureSignal) => this.decideLoss(item, bound.sessionId, failure, rebuiltAlready);
       try {
-        return await runWithSessionGate(bound.sessionId, () =>
-          this.stream(client, bound.sessionId, item, controller));
+        result = await runWithSessionGate(bound.sessionId, () =>
+          this.stream(client, bound.sessionId, item, controller, decide));
       } catch (error) {
+        this.lastSilentFailure.delete(item.conversationId);
         if (controller.signal.aborted) return { kind: 'cancelled' };
         if (!(error instanceof RuntimeHttpError)) {
           return { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
@@ -151,8 +192,60 @@ export class TurnRunner {
         }
         return classified;
       }
+      if (result.kind !== 'failed_before_output') {
+        this.lastSilentFailure.delete(item.conversationId);
+        if (result.kind === 'completed') this.rebuiltSession.delete(item.conversationId);
+        return result;
+      }
+      if (result.decision === 'fail') {
+        this.lastSilentFailure.set(item.conversationId, { sessionId: bound.sessionId, reason: result.reason, prompt: item.prompt });
+        return { kind: 'failed', reason: result.reason };
+      }
+      this.requestRebuild(item, bound.sessionId, result.reason);
+      if (result.decision === 'rebuild_next') return { kind: 'failed', reason: result.reason };
+      rebuiltAfterExit = true;
     }
     return { kind: 'failed', reason: 'The session could not be re-established after repeated attempts' };
+  }
+
+  /** Called when a conversation is deleted, so nothing about it outlives it. */
+  forget(conversationId: string): void {
+    this.lastSilentFailure.delete(conversationId);
+    this.rebuildRequested.delete(conversationId);
+    this.rebuiltSession.delete(conversationId);
+  }
+
+  /**
+   * SPEC-001 FR-18: what a turn that failed before any output means for its
+   * session. Runtime's typed code or a known provider text says the provider
+   * session is gone: rebuild and send the turn again. Otherwise the same
+   * failure for two different prompts in a row in the same session says the
+   * failure is the session's rather than the turn's: rebuild for the next
+   * turn, without sending this one again. A session a rebuild produced is
+   * never rebuilt again before a turn of the conversation completes, so a
+   * failure no rebuild can fix costs one rebuild, not one per turn.
+   */
+  private decideLoss(item: WorkItem, sessionId: string, failure: FailureSignal, rebuiltAlready: boolean): LossDecision {
+    const { conversationId } = item;
+    if (rebuiltAlready || this.rebuiltSession.get(conversationId) === sessionId) return 'fail';
+    if (failure.unavailable) return 'resend';
+    // Runtime classified this failure as something else.
+    if (failure.code !== null) return 'fail';
+    const previous = this.lastSilentFailure.get(conversationId);
+    return previous !== undefined
+      && previous.sessionId === sessionId
+      && previous.reason === failure.reason
+      && previous.prompt !== item.prompt
+      ? 'rebuild_next'
+      : 'fail';
+  }
+
+  /** `failed` makes the next bind tell the owner, hand the transcript on and retire the old session. */
+  private requestRebuild(item: WorkItem, sessionId: string, reason: string): void {
+    this.deps.log(`turn ${item.id}: the provider session behind ${sessionId} cannot be continued; rebuilding from the transcript`);
+    this.lastSilentFailure.delete(item.conversationId);
+    this.rebuildRequested.set(item.conversationId, sessionId);
+    this.deps.conversations.setAttachment(item.conversationId, { state: 'failed', lastError: reason });
   }
 
   /** The session's history length before this turn's prompt; null when the runtime cannot say. */
@@ -174,6 +267,12 @@ export class TurnRunner {
     rebuiltAlready: boolean,
   ): TurnOutcome | 'resume' | 'rebuild' {
     const { conversationId } = item;
+    if (error.code === PROVIDER_SESSION_UNAVAILABLE && !rebuiltAlready && this.rebuiltSession.get(conversationId) !== sessionId) {
+      this.requestRebuild(item, sessionId, error.message);
+      return 'rebuild';
+    }
+    // A rebuilt session that lost its provider session before any turn completed: another rebuild would not help.
+    if (error.code === PROVIDER_SESSION_UNAVAILABLE) return { kind: 'failed', reason: error.message };
     const noWorker = error.status === 404 && /no active worker/iu.test(error.message);
     const closed = error.status === 400 && /closed/iu.test(error.message);
     if ((noWorker || closed) && !resumedAlready) {
@@ -232,11 +331,19 @@ export class TurnRunner {
     sessionId: string,
     item: WorkItem,
     controller: AbortController,
-  ): Promise<TurnOutcome> {
+    decide: (failure: FailureSignal) => LossDecision,
+  ): Promise<TurnOutcome | SilentFailure> {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
-    const presentation = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt)
+    const heartbeat = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt);
+    // Whether the provider did anything this turn; a turn that did is never re-sent.
+    let produced = false;
+    // Errors before any output wait: a turn sent again in a rebuilt session leaves them out.
+    const pendingErrors: string[] = [];
+    let unavailable = false;
+    let errorCode: string | null = null;
+    const presentation = heartbeat
       ? null : new ResponsePresentation(this.deps.conversations, item, origin, this.deps.now());
     // SPEC-006 BDC-12: desktop tool results (images, UI values, titles) and typed or clipboard
     // text in their inputs never reach the transcript.
@@ -257,8 +364,18 @@ export class TurnRunner {
         entry: { seq, at: this.deps.now().toISOString(), ...entry },
       });
     };
+    const appendError = (text: string) => {
+      const entry = this.deps.conversations.append(conversationId, { kind: 'error', origin, text, workItemId: item.id, isError: true });
+      emitDelta(entry, entry.seq);
+    };
+    const markProduced = () => {
+      if (produced) return;
+      produced = true;
+      for (const text of pendingErrors.splice(0)) appendError(text);
+    };
     const onEvent = (event: RuntimeStreamEvent) => {
       if (event.metadata?.kind === 'interaction_requested' || event.metadata?.kind === 'interaction_updated') {
+        markProduced();
         this.deps.providerEvent?.(item, event);
         return;
       }
@@ -285,6 +402,7 @@ export class TurnRunner {
         }
         case 'text': {
           if (typeof event.text === 'string' && event.text) {
+            markProduced();
             textParts.push(event.text);
             if (item.kind !== 'heartbeat') {
               if (presentation) {
@@ -297,6 +415,7 @@ export class TurnRunner {
           break;
         }
         case 'tool_use': {
+          markProduced();
           const desktopTool = typeof event.toolName === 'string' && isDesktopControlToolName(event.toolName);
           if (desktopTool && typeof event.toolId === 'string') desktopTools.set(event.toolId, event.toolName as string);
           const entry = this.deps.conversations.append(conversationId, {
@@ -311,6 +430,7 @@ export class TurnRunner {
           break;
         }
         case 'tool_result': {
+          markProduced();
           const name = typeof event.toolName === 'string' ? event.toolName
             : typeof event.toolId === 'string' ? desktopTools.get(event.toolId) : undefined;
           const raw = typeof event.text === 'string' ? event.text : '';
@@ -329,14 +449,23 @@ export class TurnRunner {
           break;
         }
         case 'error': {
-          const entry = this.deps.conversations.append(conversationId, {
-            kind: 'error',
-            origin,
-            text: typeof event.text === 'string' ? event.text : 'runtime error',
-            workItemId: item.id,
-            isError: true,
-          });
-          emitDelta(entry, entry.seq);
+          const text = typeof event.text === 'string' ? event.text : 'runtime error';
+          const code = typeof event.code === 'string' ? event.code : null;
+          if (code !== null) errorCode = code;
+          if (isProviderSessionUnavailable(text, code)) unavailable = true;
+          // FR-25: a heartbeat the owner never asked for leaves no message behind, failed or not;
+          // the journal keeps the failed work item's error.
+          if (heartbeat) {
+            this.deps.log(`turn ${item.id}: heartbeat error${code ? ` (${code.replace(/[^a-zA-Z0-9_-]/gu, '').slice(0, 80)})` : ''}`);
+            break;
+          }
+          if (produced) appendError(text);
+          else pendingErrors.push(text);
+          break;
+        }
+        case 'content_block': {
+          const block = typeof event.block === 'object' && event.block !== null ? (event.block as Record<string, unknown>) : {};
+          if (block.kind === 'text' || block.kind === 'tool') markProduced();
           break;
         }
         case 'progress': {
@@ -361,14 +490,23 @@ export class TurnRunner {
     try {
       outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal, () => this.deps.accepted?.(item));
     } catch (error) {
+      for (const pending of pendingErrors.splice(0)) appendError(pending);
       presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed');
       publishPresentation();
       throw error;
     }
+    const failedSilently = !outcome.completed && !controller.signal.aborted && outcome.errorText !== null && !produced;
+    const decision = failedSilently ? decide({ reason: outcome.errorText!, code: errorCode, unavailable }) : null;
+    if (decision === 'resend') {
+      this.deps.log(`turn ${item.id}: ${pendingErrors.length} error(s) before any output are not kept; the turn is sent again`);
+      pendingErrors.length = 0;
+    } else {
+      for (const pending of pendingErrors.splice(0)) appendError(pending);
+    }
     const text = textParts.join('').trim();
     if (outcome.completed) {
       // SPEC-001 FR-25: a quiet heartbeat leaves no message behind.
-      if (item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt)) {
+      if (heartbeat) {
         const parsed = parseHeartbeatReply(text);
         if (parsed.quiet) return { kind: 'completed', text: '', quiet: true };
         this.deps.conversations.append(conversationId, { kind: 'bot', origin: 'heartbeat', text: parsed.body, workItemId: item.id });
@@ -387,7 +525,9 @@ export class TurnRunner {
     publishPresentation();
     if (controller.signal.aborted) return { kind: 'cancelled' };
     if (outcome.errorText) {
-      return { kind: 'failed', reason: outcome.errorText };
+      return decision === null
+        ? { kind: 'failed', reason: outcome.errorText }
+        : { kind: 'failed_before_output', reason: outcome.errorText, decision };
     }
     this.deps.log(`turn ${item.id}: stream ended without a result`);
     return { kind: 'interrupted' };

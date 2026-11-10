@@ -141,14 +141,22 @@ freeze of the storage format.
     `closed` / `stale`, `POST /sessions` with `executionTarget`, `instructions` (persona plus handoff pack), the
     corresponding `permissions` fields and `mcpServers` (the bot tool server of FR-24); when it is `sleeping`,
     `POST /sessions/{id}/resume`. If resume fails, keep the attachment, mark it `failed` and write the error
-    into the conversation, never silently substituting a blank session. A conversation has only one binding at
+    into the conversation, never silently substituting a blank session. The exception is a resume that fails
+    because the provider session is unavailable (FR-18): no later resume can succeed, so the same bind marks
+    the attachment `failed`, creates a new session from the handoff pack with the same `cwd`, and then writes
+    a notice that the conversation continues in a new session. A notice is written only once the new session
+    exists, so a create that keeps failing does not repeat it. A conversation has only one binding at
     a time: when the reconciliation tick and a turn bind at the same time they share one result, and do not
     each create a session that overwrites the other's attachment; the handoff pack does not include owner
     messages still `queued` / `running`, which are sent in as messages.
 12. FR-12: Handoff context: the CLI provider's native transcript is kept by the CLI; the core additionally keeps
     its own transcript and, when creating or replacing a session, sends the handoff pack in the instructions:
     12,000-character cap, verbatim for short conversations, digest plus recent content for long ones. The
-    digest is lossy, and lossless recall is not claimed.
+    digest is lossy, and lossless recall is not claimed. Errors and rebuild notices are not part of the pack:
+    they describe the execution path, not the conversation, and repeated ones would otherwise crowd the
+    budget. The
+    provider-native session is a way to continue a conversation, never its record: one conversation spans as
+    many sessions as provider changes, configuration changes, restarts and lost provider sessions require.
 13. FR-13: Idle policy: a non-home conversation's attachment with no turn within `idleSleepMinutes` has its
     worker closed (`POST /sessions/{id}/close`), its status becomes `sleeping` and the session id is kept. The
     home conversation is not subject to the idle policy.
@@ -176,7 +184,20 @@ freeze of the storage format.
     and the view in real time; receiving `result` marks `completed`; a stream that ends without `result` marks
     `interrupted`; a 404 "no active worker" resumes first and then retries once; a 410 marks the attachment
     `closed` and rebuilds it at the next admission; a 403 / 429 guardrail marks `failed` with the runtime's
-    reason and respects `cooldownUntil`.
+    reason and respects `cooldownUntil`. A provider session that is unavailable — Runtime's
+    `provider_session_unavailable` code on an HTTP error or on the stream's `error` event, or for Runtimes
+    without the code a known provider text (grok "No saved copy of session … was found", claude "No
+    conversation found with session ID") — marks the attachment `failed`, rebuilds it per FR-11 with a notice,
+    and sends the same work item again, once. Only a turn that failed before the provider produced any text,
+    tool event, text or tool content block or interaction is sent again, and the errors of the attempt that
+    is sent again are not kept in the conversation. The same unknown failure before output for two different
+    prompts in a row in the same session is treated as the session's, not the turn's: the attachment is
+    marked `failed` so the next turn rebuilds it, without sending the failed turn again; a failure carrying
+    another typed code is never treated so. A session a rebuild produced is not rebuilt again before a turn
+    of the conversation completes, so a failure no rebuild can fix costs one rebuild, not one per turn; a
+    provider that loses every session after a completed turn is rebuilt once for each such turn, each time
+    with a notice. A heartbeat's `error` events are logged and its failed work item keeps the error in the
+    journal; they are never written into the conversation (FR-25).
 19. FR-19: The bot's replies are appended to the destination conversation in order; when a transport is
     attached later, segmentation (Telegram 4,000 characters) must preserve order.
 

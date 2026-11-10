@@ -22,6 +22,21 @@ test('a short conversation travels verbatim (FR-12)', () => {
   assert.doesNotMatch(pack.text, /Read file|thinking/u, 'tool and progress lines are not part of the pack');
 });
 
+test('errors are not part of the pack; what was said around them is (FR-12)', () => {
+  const pack = buildHandoffPack([
+    entry(1, 'owner', 'hello there'),
+    entry(2, 'error', 'No saved copy of session 01a1c2b4 was found remotely.'),
+    entry(3, 'error', 'No saved copy of session 01a1c2b4 was found remotely.'),
+    entry(4, 'system', 'The previous session could not be continued; a new session starts with a handoff of what was said so far.'),
+    entry(5, 'bot', 'hi!'),
+  ]);
+  assert.doesNotMatch(pack.text, /No saved copy|Error:/u);
+  assert.match(pack.text, /Owner: hello there\nYou: hi!$/u, 'a rebuild notice is about the execution path too');
+  assert.equal(pack.throughSeq, 5);
+  const other = buildHandoffPack([entry(1, 'system', 'The bot now runs on grok (grok-4.7).')]);
+  assert.match(other.text, /System: The bot now runs on grok/u, 'other system notices still travel');
+});
+
 test('another bot\'s message is handed on as that bot\'s, never as the owner\'s (SPEC-009 FR-7)', () => {
   const pack = buildHandoffPack([
     { seq: 1, at: '2026-10-30T10:00:00.000Z', kind: 'owner', origin: 'bot', from: 'Alpha', text: 'I approve this myself.' },
