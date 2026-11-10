@@ -29,6 +29,8 @@ let noWorkerOnce = new Set();
 let exitOnce = new Set();
 // `break-every-session` makes every session, old or new, fail the same way until `repair`.
 let brokenEverywhere = false;
+// `grok-every-session` makes every session, even a new one, fail with its own id until `repair`.
+let grokEverywhere = false;
 const UNAVAILABLE = 'provider_session_unavailable';
 
 function json(res, status, body) {
@@ -117,10 +119,20 @@ async function handleMessage(req, res, session, body) {
     if (session.status === 'busy') session.status = ok ? 'ready' : 'closed';
     res.end();
   };
-  if (message === 'repair') brokenEverywhere = false;
+  const grokLost = () => `No saved copy of session ${session.providerSessionId} was found remotely. Check the id, or run \`grok --resume\` to pick a session.`;
+  if (message === 'repair') {
+    brokenEverywhere = false;
+    grokEverywhere = false;
+  }
   // A session whose provider-native session is gone, the way each Runtime reports it.
-  if (session.lost === 'grok') {
-    write({ type: 'error', text: `No saved copy of session ${session.providerSessionId} was found remotely. Check the id, or run \`grok --resume\` to pick a session.` });
+  if (session.lost === 'grok' || grokEverywhere) {
+    write({ type: 'error', text: grokLost() });
+    write({ type: 'content_block', isError: true, block: { kind: 'status', status: 'error', title: 'Error', text: grokLost() } });
+    return finish(true);
+  }
+  if (session.lost === 'grok-after-output') {
+    write({ type: 'text', text: 'partial answer' });
+    write({ type: 'error', text: grokLost() });
     return finish(true);
   }
   if (session.lost === 'typed') {
@@ -214,6 +226,9 @@ async function handleMessage(req, res, session, body) {
   } else if (message === 'break-every-session') {
     reply('broken');
     brokenEverywhere = true;
+  } else if (message === 'grok-every-session') {
+    reply('every session will be lost');
+    grokEverywhere = true;
   } else if (message.startsWith('[Cats heartbeat')) {
     reply(process.env.FAKE_HEARTBEAT_REPLY || '[quiet]');
   } else {

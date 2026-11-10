@@ -111,8 +111,6 @@ export interface StreamOutcome {
   eventCount: number;
   resultEvent: RuntimeStreamEvent | null;
   errorText: string | null;
-  /** The typed `code` of the last `error` event, when Runtime sends one. */
-  errorCode: string | null;
 }
 
 export interface RuntimeClientOptions {
@@ -330,7 +328,7 @@ export class RuntimeClient {
       const code = typeof record.code === 'string' ? record.code : undefined;
       throw new RuntimeHttpError(response.status, message, parsed, code);
     }
-    const outcome: StreamOutcome = { completed: false, eventCount: 0, resultEvent: null, errorText: null, errorCode: null };
+    const outcome: StreamOutcome = { completed: false, eventCount: 0, resultEvent: null, errorText: null };
     if (!response.body) return outcome;
     onAccepted?.();
     const reader = response.body.getReader();
@@ -352,7 +350,6 @@ export class RuntimeClient {
         outcome.resultEvent = event;
       } else if (event.type === 'error') {
         outcome.errorText = typeof event.text === 'string' ? event.text : 'runtime error';
-        outcome.errorCode = typeof event.code === 'string' ? event.code : null;
       }
       onEvent(event);
     };

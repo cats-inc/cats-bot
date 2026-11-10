@@ -158,7 +158,7 @@ does not establish browser/desktop helper availability or successful invocation.
 - **Responsibilities**: the home conversation that always exists, note
   conversations, attachment state transitions, and the handoff pack a new or
   replacement session receives (12,000 characters; verbatim when short, lossy
-  digest plus recent part when long; errors are left out).
+  digest plus recent part when long; errors and rebuild notices are left out).
 - **Layering**: the conversation and its transcript are the core's record.
   A Runtime session is the disposable binding that runs it (provider, model,
   `cwd`, permissions, MCP servers), and the provider-native session behind it
@@ -176,10 +176,13 @@ does not establish browser/desktop helper availability or successful invocation.
   events, and turns every runtime answer into a state: 409 waits, 404/400
   closed resumes, 410 rebuilds, 403/429 fails with the guardrail reason, a
   stream without `result` is `interrupted`. An unavailable provider session
-  (`provider_session_unavailable`, a known provider text such as grok's "No
-  saved copy of session", or the same pre-output failure twice in one session)
-  rebuilds from the transcript and re-sends the turn once
-  (`src/core/runtime/providerSession.ts`). Heartbeat errors stay in the log.
+  (`provider_session_unavailable` or a known provider text such as grok's "No
+  saved copy of session", `src/core/runtime/providerSession.ts`) rebuilds from
+  the transcript and re-sends a turn that produced nothing, once; the same
+  unknown pre-output failure for two different prompts in one session rebuilds
+  for the next turn only. A rebuilt session is not rebuilt again before a turn
+  completes. Heartbeat errors stay out of the conversation; the journal keeps
+  the failed work item's error.
 
 ### `src/core/bot.ts`
 

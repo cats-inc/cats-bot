@@ -85,6 +85,7 @@ test('a session the CLI can no longer find is rebuilt from the transcript in the
     assert.equal(transcript.filter((entry) => entry.kind === 'owner' && entry.text === 'are you there').length, 1);
     assert.equal(transcript.filter((entry) => entry.kind === 'system' && entry.text === REBUILT_SESSION_NOTICE).length, 1);
     assert.equal(transcript.at(-1)?.text, 'echo: are you there');
+    assert.deepEqual(transcript.filter((entry) => entry.kind === 'error'), [], 'the errors of an attempt that was sent again are not kept');
   } finally {
     await core.stop();
   }
@@ -120,12 +121,13 @@ test('Runtime\'s typed code rebuilds at once, in the stream, on a send and on a 
     assert.equal(transcript.filter((entry) => entry.kind === 'system' && entry.text === REBUILT_SESSION_NOTICE).length, 3);
     assert.equal(transcript.some((entry) => entry.kind === 'error' && /Could not resume/u.test(entry.text)), false,
       'a gone provider session is not reported as a resume failure');
+    assert.deepEqual(transcript.filter((entry) => entry.kind === 'error'), [], 'every loss was recovered, so no error remains');
   } finally {
     await core.stop();
   }
 });
 
-test('the same failure twice in one session rebuilds it even when the error is unknown', async () => {
+test('the same unknown failure for two different prompts rebuilds the session for the next turn, without sending again', async () => {
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'lost-opaque', core: fastRetries });
   await core.start();
   try {
@@ -133,12 +135,70 @@ test('the same failure twice in one session rebuilds it even when the error is u
     const first = await sendAndWait(core, 'home', 'first');
     assert.equal(first.state, 'failed');
     assert.equal(first.error, 'provider transport reset');
-    assert.equal(creates(await calls(core)).length, 1, 'one failure is the turn\'s, not yet the session\'s');
+    assert.equal((await homeAttachment(core)).state, 'ready', 'one failure is the turn\'s, not yet the session\'s');
 
     const second = await sendAndWait(core, 'home', 'second');
-    assert.equal(second.state, 'completed', second.error);
-    assert.equal(second.result?.text, 'echo: second');
+    assert.equal(second.state, 'failed', 'an unknown failure is never sent again');
+    assert.equal((await homeAttachment(core)).state, 'failed', 'the next turn gets a new session');
+    assert.equal((await calls(core)).filter((call) => call.op === 'message' && call.message === 'second').length, 1);
+
+    const third = await sendAndWait(core, 'home', 'third');
+    assert.equal(third.state, 'completed', third.error);
+    assert.equal(third.result?.text, 'echo: third');
     assert.equal(creates(await calls(core)).length, 2);
+    assert.equal(core.transcript('home').filter((entry) => entry.kind === 'system' && entry.text === REBUILT_SESSION_NOTICE).length, 1);
+  } finally {
+    await core.stop();
+  }
+});
+
+test('the owner retrying the same message is not taken for a lost session', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'same-prompt', core: fastRetries });
+  await core.start();
+  try {
+    await sendAndWait(core, 'home', 'forget-session:opaque');
+    assert.equal((await sendAndWait(core, 'home', 'retry me')).state, 'failed');
+    assert.equal((await sendAndWait(core, 'home', 'retry me')).state, 'failed');
+    assert.equal((await homeAttachment(core)).state, 'ready', 'a prompt that fails twice may be the prompt\'s fault');
+    assert.equal(creates(await calls(core)).length, 1);
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a turn that produced output before the error is never sent again', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'output-first', core: fastRetries });
+  await core.start();
+  try {
+    await sendAndWait(core, 'home', 'forget-session:grok-after-output');
+    const item = await sendAndWait(core, 'home', 'go');
+    assert.equal(item.state, 'failed');
+    const all = await calls(core);
+    assert.equal(all.filter((call) => call.op === 'message' && call.message === 'go').length, 1);
+    assert.equal(creates(all).length, 1);
+    assert.ok(core.transcript('home').some((entry) => entry.kind === 'error' && /No saved copy/u.test(entry.text)),
+      'the error of a turn that is not sent again stays visible');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a rebuilt session that fails before any turn completes is not rebuilt again (no session per turn)', async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'grok-everywhere', core: fastRetries });
+  await core.start();
+  try {
+    await sendAndWait(core, 'home', 'grok-every-session');
+    assert.equal((await sendAndWait(core, 'home', 'a')).state, 'failed');
+    assert.equal(creates(await calls(core)).length, 2, 'rebuilt once and sent again once');
+    // Each session's text names its own id, so only the session, not the text, can stop the loop.
+    for (const prompt of ['b', 'c', 'd']) assert.equal((await sendAndWait(core, 'home', prompt)).state, 'failed');
+    assert.equal(creates(await calls(core)).length, 2, 'never again before a turn completes');
+    assert.equal(core.transcript('home').filter((entry) => entry.kind === 'system' && entry.text === REBUILT_SESSION_NOTICE).length, 1);
+
+    assert.equal((await sendAndWait(core, 'home', 'repair')).state, 'completed');
+    await sendAndWait(core, 'home', 'forget-session:grok');
+    assert.equal((await sendAndWait(core, 'home', 'after repair')).state, 'completed', 'a completed turn re-arms the rebuild');
+    assert.equal(creates(await calls(core)).length, 3);
   } finally {
     await core.stop();
   }
@@ -150,18 +210,17 @@ test('a failure a rebuilt session repeats is not rebuilt again until a turn comp
   try {
     await sendAndWait(core, 'home', 'break-every-session');
     assert.equal((await sendAndWait(core, 'home', 'a')).state, 'failed');
-    assert.equal(creates(await calls(core)).length, 1);
     assert.equal((await sendAndWait(core, 'home', 'b')).state, 'failed');
-    assert.equal(creates(await calls(core)).length, 2, 'rebuilt once');
-    assert.equal((await sendAndWait(core, 'home', 'c')).state, 'failed');
-    assert.equal((await sendAndWait(core, 'home', 'd')).state, 'failed');
-    assert.equal(creates(await calls(core)).length, 2, 'never again while the failure lasts');
+    assert.equal((await homeAttachment(core)).state, 'failed', 'two prompts, one failure: rebuild for the next turn');
+    for (const prompt of ['c', 'd', 'e']) assert.equal((await sendAndWait(core, 'home', prompt)).state, 'failed');
+    assert.equal(creates(await calls(core)).length, 2, 'rebuilt once, never again while the failure lasts');
     assert.equal(core.transcript('home').filter((entry) => entry.kind === 'system' && entry.text === REBUILT_SESSION_NOTICE).length, 1);
 
     assert.equal((await sendAndWait(core, 'home', 'repair')).state, 'completed');
     await sendAndWait(core, 'home', 'forget-session:opaque');
     await sendAndWait(core, 'home', 'x');
-    assert.equal((await sendAndWait(core, 'home', 'y')).state, 'completed', 'a completed turn re-arms the rebuild');
+    await sendAndWait(core, 'home', 'y');
+    assert.equal((await sendAndWait(core, 'home', 'z')).state, 'completed', 'a completed turn re-arms the rebuild');
     assert.equal(creates(await calls(core)).length, 3);
   } finally {
     await core.stop();

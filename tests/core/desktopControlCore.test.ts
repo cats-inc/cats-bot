@@ -112,7 +112,7 @@ async function harness(t: TestContext, options: { platform?: NodeJS.Platform; he
       }
       onEvent({ type: 'text', text: 'done' });
       onEvent({ type: 'result' });
-      return { completed: true, eventCount: 2, resultEvent: { type: 'result' }, errorText: null, errorCode: null };
+      return { completed: true, eventCount: 2, resultEvent: { type: 'result' }, errorText: null };
     },
   } as unknown as RuntimeClient;
   const logs: string[] = [];

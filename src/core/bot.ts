@@ -1553,6 +1553,7 @@ export class BotCore implements BotHostApi {
       this.log(`desktop control switch of deleted conversation ${record.id} kept: ${error instanceof Error ? error.message : 'error'}`);
     }
     this.conversations.remove(record.id);
+    this.runner.forget(record.id);
     this.views.delete(record.id);
     this.focusedViews.delete(record.id);
     this.log(`conversation ${record.id} deleted`);

@@ -1,4 +1,5 @@
 import type { TranscriptEntry } from '../types.ts';
+import { REBUILT_SESSION_NOTICE } from '../runtime/providerSession.ts';
 
 /**
  * SPEC-001 FR-12: what a new or replacement session receives about the
@@ -21,7 +22,8 @@ function speaker(entry: TranscriptEntry): string | null {
     case 'bot':
       return entry.origin === 'heartbeat' ? 'You (unprompted)' : 'You';
     case 'system':
-      return 'System';
+      // Like an error, a rebuild notice is about the execution path.
+      return entry.text === REBUILT_SESSION_NOTICE ? null : 'System';
     // An error is about the execution path, not the conversation: handing it on
     // would teach the next session that a stale session or a failed turn is
     // something said, and repeated failures would crowd the budget.
