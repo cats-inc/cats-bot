@@ -1,5 +1,14 @@
 # Documentation Index
 
+Accepted, not implemented: [ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md)
+moves each bot's state to one SQLite database, and
+[ADR-022](decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) adds
+layered memory consolidated while the bot sleeps
+([SPEC-014](specs/SPEC-014-bot-state-database-and-migration.md),
+[SPEC-015](specs/SPEC-015-bot-memory-layers-recall-and-consolidation.md),
+[PLAN-014](plans/PLAN-014-bot-state-database-and-memory.md); evidence in the
+[agent memory architecture survey](research/2026-11-11-agent-memory-architecture-survey.md)).
+
 [Persistent conversation resume](plans/PLAN-013-persistent-conversation-resume.md)
 implements reuse of saved Runtime/native identities after Bot restart, bounded recovery
 for confirmed loss and recognizable names. Scoped and real-Runtime restart acceptance passed; unpublished.

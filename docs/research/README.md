@@ -6,6 +6,7 @@
 
 | Document | Date | Topic | Summary |
 |----------|------|-------|---------|
+| [Agent memory architecture survey](2026-11-11-agent-memory-architecture-survey.md) | 2026-11-11 | Conversation storage and long-term memory | Source read of OpenClaw, Hermes Agent and Paperclip; Bot's JSONL access patterns, tool reach and privacy constraints; node:sqlite, CJK bigram and Windows WAL probes; evidence for ADR-021/022 |
 | [Avatar menu focus](2026-11-02-avatar-menu-focus.md) | 2026-11-02 | Outside-click dismissal | Windows native reproduction, temporary menu-owner focus and the macOS validation boundary |
 | [Runtime catalog consumer validation](2026-11-01-runtime-catalog-consumer-validation.md) | 2026-11-01 | Five-provider Runtime catalog consumer | New Terra, exact shared labels/controls, isolated candidate package and 18 focused tests |
 | [Linux input and busy retry](./2026-11-01-linux-input-and-busy-retry.md) | 2026-11-01 | Linux avatar and deferred messages | XWayland/native input acceptance, bounded conflicts and HTTP admission ownership |
