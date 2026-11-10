@@ -206,7 +206,9 @@ freeze of the storage format.
 20. FR-20: The reconciliation tick runs every 60 seconds, first run 5 seconds after startup, non-overlapping,
     and never calls the model:
     - Check runtime health, and restart per FR-6 when `failed`.
-    - Reconcile the home conversation's attachment using the classification in Definitions:
+    - Reconcile the home conversation's attachment using the classification in Definitions (SPEC-011
+      FR-16 updates this: with the heartbeat on, rest hours put home to sleep instead, and the day's wake
+      time wakes it with reason `rhythm`):
       - Alive (`initializing` / `ready` / `busy`): leave it alone. `initializing` is brought to ready by the
         next turn (including a heartbeat, same as platform `companion/life/loop.ts`); when the session is
         `busy` or the attachment has a `running` work item, the tick never resumes, rebuilds or cancels.

@@ -55,9 +55,13 @@ last step, not the first.
   due schedules and coalescing, missed policies after downtime, approvals and
   their timeout, idle notes. `tests/core/heartbeatLife.test.ts` covers SPEC-011:
   the back-off and its stop after five unanswered messages across a restart,
-  rest hours, the good night and the morning greeting, and `assist` reviewing
-  notes into the direct message. Tests on the wall clock set the rhythm with
-  `awakeNow()` so they pass at any hour.
+  home sleeping in rest hours (the good night, a message at night, dozing off
+  again, waking at the wake time, a start at night, the heartbeat off) and the
+  morning greeting, and `assist` reviewing notes into the direct message.
+  `openTestBot` puts the wall clock in the bot's awake hours unless a test
+  passes `awake: false`, and tests on the wall clock set the rhythm with
+  `awakeNow()`, so the suite passes at any hour; run it with `TZ` set to a
+  night, just-after-bedtime and wake-window local time after changing the rhythm.
 
 ### Integration tests
 

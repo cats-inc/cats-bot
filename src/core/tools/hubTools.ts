@@ -68,7 +68,7 @@ const DEFINITIONS: ToolDefinition[] = [
   },
   {
     name: 'hub_set_heartbeat',
-    description: 'Pause or resume another bot\'s heartbeat.',
+    description: 'Pause or resume another bot\'s heartbeat, which the owner sees as its own initiative (zh-TW 自主活動).',
     inputSchema: {
       type: 'object',
       properties: { bot, enabled: { type: 'boolean', description: 'true resumes the heartbeat, false pauses it.' } },

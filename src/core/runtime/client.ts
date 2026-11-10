@@ -14,6 +14,10 @@ import type {
   SessionExecutionPolicy,
 } from '../types.ts';
 import { INTERACTION_HOST } from './providerPolicy.ts';
+import { ignoreTypeOfServiceErrors } from './socketTypeOfService.ts';
+
+// Before any request: Node 24.21-24.22 on macOS would otherwise end the process on a lost runtime socket.
+ignoreTypeOfServiceErrors();
 
 export type RuntimeSessionStatus = 'initializing' | 'ready' | 'busy' | 'closing' | 'closed';
 

@@ -107,6 +107,7 @@ export interface BotLifeOptions {
   awaitingOwnerTimeoutMs?: number;
   busyRetryMs?: number;
   failedRetryMs?: number;
+  restIdleMs?: number;
   random?: () => number;
 }
 
@@ -355,6 +356,7 @@ export class BotCore implements BotHostApi {
       hasQueuedWork: (key) => this.queue.findByCoalesceKey(key) !== undefined
         || this.running?.item.coalesceKey === key
         || [...this.deferred.values()].some((entry) => entry.item.coalesceKey === key),
+      hasQueuedWorkIn: (conversationId) => this.queue.list().some((item) => item.conversationId === conversationId),
       enqueue: (item) => {
         this.enqueueWorkItem(item);
       },
@@ -373,6 +375,7 @@ export class BotCore implements BotHostApi {
       ...(life.awaitingOwnerTimeoutMs !== undefined ? { awaitingOwnerTimeoutMs: life.awaitingOwnerTimeoutMs } : {}),
       ...(life.busyRetryMs !== undefined ? { busyRetryMs: life.busyRetryMs } : {}),
       ...(life.failedRetryMs !== undefined ? { failedRetryMs: life.failedRetryMs } : {}),
+      ...(life.restIdleMs !== undefined ? { restIdleMs: life.restIdleMs } : {}),
     });
   }
 

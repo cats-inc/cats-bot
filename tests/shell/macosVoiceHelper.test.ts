@@ -45,6 +45,20 @@ test('a package without the helper, or with an architecture missing, is refused'
   await assert.rejects(helper.verifyPackagedMacosVoiceHelper(resources, undefined, { lipo: () => ['arm64'] }), /lacks x86_64/u);
 });
 
+test('architectures are read with lipo -archs, so every required one is checked in one call (newer lipo takes one after -verify_arch)', async (t) => {
+  const files: string[] = [];
+  const lipo = (file: string) => { files.push(file); return ['x86_64', 'arm64']; };
+  assert.deepEqual(helper.requireMacArchitectures('Cats Bot', ['x86_64', 'arm64'], { lipo }), ['x86_64', 'arm64']);
+  assert.throws(() => helper.requireMacArchitectures('Cats Bot', ['x86_64'], { lipo: () => ['arm64'], what: 'The packaged macOS app' }),
+    /^Error: The packaged macOS app lacks x86_64 \(has arm64\)$/u);
+  assert.deepEqual(files, ['Cats Bot']);
+  if (process.platform !== 'darwin') return t.skip('lipo is a macOS tool');
+  // The real tool, on this test's own Node binary (thin or universal, whichever this Mac has).
+  const present = helper.macArchitectures(process.execPath);
+  assert.ok(present.length > 0 && present.every((arch: string) => /^[a-z0-9_.]+$/u.test(arch)), present.join(' '));
+  assert.deepEqual(helper.requireMacArchitectures(process.execPath, present), present);
+});
+
 test('Windows and Linux packaging never runs swift', async (t) => {
   const root = await temporary(t);
   for (const platform of ['win32', 'linux']) {
