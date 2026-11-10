@@ -1,6 +1,6 @@
 # Feature Specifications
 
-- [SPEC-006: Desktop control session MCP (Windows)](SPEC-006-desktop-control-session-mcp.md)
+- [SPEC-006: Desktop control session MCP (Windows first)](SPEC-006-desktop-control-session-mcp.md)
   — draft, 2026-10-29; a Bot-served `cats-desktop` session MCP and its own native helper,
   following Platform SPEC-133's cross-implementation contract. Owner-present turns only,
   grants in the note and CLI. Implementation not authorized.

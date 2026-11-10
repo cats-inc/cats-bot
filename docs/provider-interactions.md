@@ -29,7 +29,7 @@ permission requests use an explicit subset in `grants` and an offered `scope`;
 Expired requests and different work/generation/conversation identities cannot
 reach a new worker. URL opening is separate from completion.
 
-Desktop control (SPEC-006, Windows) has its own command; `respond` and `approve`
+Desktop control (SPEC-006; only the Windows helper is built so far) has its own command; `respond` and `approve`
 never answer an app grant request:
 
 ```text

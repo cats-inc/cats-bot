@@ -239,7 +239,9 @@ does not establish browser/desktop helper availability or successful invocation.
 
 ### `src/core/desktopControl`
 
-- **Purpose**: owner-consented desktop control on Windows (ADR-005, SPEC-006 phases A and B).
+- **Purpose**: owner-consented desktop control (ADR-005, SPEC-006 phases A and B). Only the
+  Windows helper is built; macOS and Linux are not built yet and report `unavailable`
+  (`not_windows`).
 - **Responsibilities**: `helper.ts` supervises the native helper
   (`native/windows-desktop-control/`): lazy start, `hello` with the Bot's own process and
   executables plus Cats Desktop's install paths, idle exit, crash limit, and where the helper

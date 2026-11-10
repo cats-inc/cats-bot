@@ -19,7 +19,8 @@ Amends [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) FR-9
   - Cats Bot refused a screenshot without Screen Recording, as Desktop does, and never asked, so it was not
     listed in the pane.
   - "Start Cats Bot when I sign in" showed on while macOS reported `requires-approval`.
-- Desktop control (computer use) is Windows-only (SPEC-006), so Accessibility is not needed yet.
+- Desktop control (SPEC-006) has no macOS helper yet, so Accessibility is not needed yet. The macOS
+  helper adds that pane when it is built.
 
 ## Decision
 
