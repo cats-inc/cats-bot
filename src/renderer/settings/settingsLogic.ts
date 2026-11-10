@@ -27,6 +27,7 @@ import type {
   ProviderInfo,
   TelegramSettingsStatus,
 } from '../../core/types.ts';
+import type { BotAction, BotRow } from '../bridge.ts';
 
 /**
  * SPEC-002 FR-1–FR-6, SPEC-003 FR-6: what the settings and first-run pages
@@ -515,4 +516,34 @@ export function appFacts(status: BotStatus, version: string): Fact[] {
     ],
     ['Version', version],
   ];
+}
+
+// ---- Cats Bot Settings → Bots ------------------------------------------------------
+
+export const BOT_STATE_LABELS: Record<BotRow['state'], string> = {
+  starting: 'Starting',
+  running: 'Running',
+  stopped: 'Stopped',
+  failed: 'Failed',
+  external: 'Running in another program',
+  archived: 'Archived',
+  missing: 'Folder missing',
+};
+
+/** A row's second line: the provider and the state, and the pid only of another program's process. */
+export function botStateLine(bot: Pick<BotRow, 'state' | 'pid' | 'provider' | 'providerLabel'>): string {
+  const state = t(BOT_STATE_LABELS[bot.state]);
+  const detail = bot.state === 'external' && bot.pid ? ` (pid ${bot.pid})` : '';
+  const provider = bot.providerLabel ?? bot.provider;
+  return provider ? `${provider} · ${state}${detail}` : `${state}${detail}`;
+}
+
+/**
+ * SPEC-009 FR-2: the Boss Cat menu assigns, moves or clears the role. An empty
+ * choice clears it from the holder; choosing the holder again changes nothing.
+ */
+export function bossCatChoice(holder: string | null, chosen: string): { id: string; action: Extract<BotAction, 'makeBossCat' | 'clearBossCat'> } | null {
+  if (chosen === (holder ?? '')) return null;
+  if (chosen) return { id: chosen, action: 'makeBossCat' };
+  return holder ? { id: holder, action: 'clearBossCat' } : null;
 }

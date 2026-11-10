@@ -8,6 +8,9 @@ locally. This accepts the direction only; implementation is not yet authorized.
 Spec: [SPEC-006](../specs/SPEC-006-desktop-control-session-mcp.md). Plan:
 [PLAN-006](../plans/PLAN-006-desktop-control-session-mcp.md).
 
+Amended 2026-11-11: Windows is the first platform, not the only one. The owner wants desktop
+control on macOS and Linux too, in both Cats Bot and Cats Desktop; they are not built yet.
+
 ## Context
 
 Runtime launches the Bot's provider CLI as a local process. On Windows, neither Claude
@@ -27,7 +30,7 @@ so the Bot cannot reuse Desktop's implementation.
 ## Decision
 
 - **Own implementation, shared contract.** The Bot core serves a second session MCP,
-  `cats-desktop`, beside `cats-bot`, and runs its own native Windows helper. Nothing is
+  `cats-desktop`, beside `cats-bot`, and runs its own native helper, Windows first. Nothing is
   imported from Platform. Tool names, schemas, error codes, exclusion categories, and the
   injection, turn, grant and stop rules follow SPEC-133's cross-implementation contract; a
   change to that contract updates both SPECs.
@@ -66,6 +69,8 @@ so the Bot cannot reuse Desktop's implementation.
 
 - Background work keeps running as before; it just cannot use desktop tools.
 - Desktop and a Bot may each hold grants for the same app in their own sessions.
+- macOS and Linux each need a helper of their own. Until one is built there, desktop control
+  reports `unavailable` on that platform.
 
 ## Alternatives Considered
 

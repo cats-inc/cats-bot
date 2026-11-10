@@ -21,8 +21,8 @@ import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '.
 import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
-import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
-import { fixedProviders, listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
+import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
+import { CLI_PROVIDERS, fixedProviders, listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
@@ -157,7 +157,11 @@ function errorMessage(error: unknown): string {
 interface BotRow {
   id: string;
   name: string;
+  /** The bot's look, so the list shows each cat by its own face (SPEC-008 FR-29). */
+  avatar: BotAvatar | null;
   provider: string | null;
+  /** The provider as the owner knows it, such as Claude or Codex. */
+  providerLabel: string | null;
   state: 'starting' | 'running' | 'stopped' | 'failed' | 'external' | 'archived' | 'missing';
   error: string | null;
   pid: number | null;
@@ -498,7 +502,9 @@ async function main(): Promise<void> {
       return {
         id: bot.id,
         name: profile?.name ?? bot.id,
+        avatar: profile?.avatar ?? null,
         provider: profile?.executionTarget.provider ?? null,
+        providerLabel: profile ? CLI_PROVIDERS.find((item) => item.id === profile.executionTarget.provider)?.label ?? profile.executionTarget.provider : null,
         state,
         error: runner?.error ?? null,
         pid: runner?.handle?.hosted.pid ?? external,

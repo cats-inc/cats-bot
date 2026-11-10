@@ -27,59 +27,55 @@ export function Updates() {
     installing: 'Stopping the cat bots and opening the installer…', error: 'The update could not be completed.', unavailable: 'Updates are unavailable for this build.',
   };
   return (
-    <section className="update-panel" aria-label={t('App updates')}>
+    <section className="group update-panel" aria-label={t('App updates')}>
       <h3>{t('Updates')}</h3>
-      {state && (
-        <>
-          <p>
-            {t('Version')} {state.currentVersion}
-            {state.distribution === 'standard-preview' ? t(' · Standard Preview') : ''}
-          </p>
-          <p role="status">
-            {t(messages[state.phase])}
-            {state.version ? ` ${t('Version')} ${state.version}.` : ''}
-          </p>
-          {state.phase === 'downloading' && (
-            <progress max={100} value={state.percent ?? 0} aria-label={t('Download progress')} />
-          )}
-          {state.reason && <p className="hint">{t(state.reason)}</p>}
-          <div className="row">
-            <button
-              type="button"
-              disabled={busy || !state.canCheck || state.phase === 'downloaded'}
-              onClick={() => void action('check')}
-            >
-              {t('Check for Updates')}
-            </button>
-            {state.phase === 'available' && state.canInstall && (
-              <button
-                type="button"
-                className="primary"
-                disabled={busy}
-                onClick={() => void action('download')}
-              >
-                {t('Download update')}
-              </button>
+      <div className="rows">
+        <div className="set-row">
+          <div className="set-row-text">
+            <span>
+              {t('Version')} {state?.currentVersion ?? '…'}
+              {state?.distribution === 'standard-preview' ? t(' · Standard Preview') : ''}
+            </span>
+            {state && (
+              <small className="hint" role="status">
+                {t(messages[state.phase])}
+                {state.version ? ` ${t('Version')} ${state.version}.` : ''}
+              </small>
             )}
-            {state.phase === 'downloaded' && state.canInstall && (
-              <button
-                type="button"
-                className="primary"
-                disabled={busy}
-                onClick={() => void action('install')}
-              >
-                {t('Restart and install')}
-              </button>
+            {state?.phase === 'downloading' && (
+              <progress max={100} value={state.percent ?? 0} aria-label={t('Download progress')} />
             )}
-            {state.version && (
-              <button type="button" disabled={busy} onClick={() => void action('release')}>
-                {t('Open release page')}
-              </button>
-            )}
+            {state?.reason && <small className="hint">{t(state.reason)}</small>}
+            {(error || state?.error) && <small className="hint warn" role="alert">{error ?? state?.error}</small>}
           </div>
-        </>
-      )}
-      {(error || state?.error) && <p role="alert">{error ?? state?.error}</p>}
+          {state && (
+            <div className="set-row-control">
+              {state.version && (
+                <button type="button" className="quiet" disabled={busy} onClick={() => void action('release')}>
+                  {t('Open release page')}
+                </button>
+              )}
+              {state.phase === 'available' && state.canInstall ? (
+                <button type="button" className="primary" disabled={busy} onClick={() => void action('download')}>
+                  {t('Download update')}
+                </button>
+              ) : state.phase === 'downloaded' && state.canInstall ? (
+                <button type="button" className="primary" disabled={busy} onClick={() => void action('install')}>
+                  {t('Restart and install')}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  disabled={busy || !state.canCheck || state.phase === 'downloaded'}
+                  onClick={() => void action('check')}
+                >
+                  {t('Check for Updates')}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
     </section>
   );
 }

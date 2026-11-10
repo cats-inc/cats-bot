@@ -18,6 +18,9 @@ capability plumbing, the global gate and ADR-004's packaging and signing. Nothin
 imported from Platform; the shared behavior comes from Platform SPEC-133's
 cross-implementation contract. This plan includes no version bump or release.
 
+This plan delivers Windows. macOS and Linux are wanted too; their helpers are not built yet
+and need a plan of their own (SPEC-006 Platform Coverage).
+
 ## Slices
 
 ### P0 — Contract and profile

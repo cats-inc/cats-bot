@@ -12,7 +12,7 @@
   reads the CLI's credential files; setup queries the CLI's status, and agent
   execution runs through cats-runtime.
 - For Windows packaging only: the .NET 8 SDK or newer (`dotnet`), which
-  publishes the desktop control helper. macOS and Linux never need it.
+  publishes the Windows desktop control helper. macOS and Linux builds don't use it.
 
 ## Installation
 
