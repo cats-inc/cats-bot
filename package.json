@@ -152,6 +152,16 @@
         "NSMicrophoneUsageDescription": "Cats Bot uses the microphone for voice input in a note."
       },
       "files": [
+        "dist/**/*",
+        "assets/**/*",
+        "!assets/installer/**",
+        "!node_modules/koffi/src/**",
+        "!node_modules/koffi/vendor/**",
+        "!node_modules/koffi/doc/**",
+        "!node_modules/koffi/lib/**",
+        "!dist/release/**",
+        "package.json",
+        "LICENSE",
         "!node_modules/koffi/build/koffi/{freebsd,linux,musl,openbsd,win32}_*/**"
       ],
       "x64ArchFiles": "**/node_modules/koffi/build/koffi/darwin_*/koffi.node",
@@ -165,6 +175,16 @@
     },
     "linux": {
       "files": [
+        "dist/**/*",
+        "assets/**/*",
+        "!assets/installer/**",
+        "!node_modules/koffi/src/**",
+        "!node_modules/koffi/vendor/**",
+        "!node_modules/koffi/doc/**",
+        "!node_modules/koffi/lib/**",
+        "!dist/release/**",
+        "package.json",
+        "LICENSE",
         "!node_modules/koffi/**"
       ],
       "target": [
