@@ -5,7 +5,7 @@ import { createRequire } from 'node:module';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { descriptor, repository, signingTrust, validateInputs, workflowName } from './release-contract.mjs';
-import { buildMacosVoiceHelper, verifyPackagedMacosVoiceHelper } from './macos-voice-helper.mjs';
+import { buildMacosVoiceHelper, requireMacArchitectures, verifyPackagedMacosVoiceHelper } from './macos-voice-helper.mjs';
 import { publishWindowsDesktopControl, publishWindowsDictation, verifyPackagedWindowsDesktopControl, verifyPackagedWindowsDictation } from './windows-desktop-control.mjs';
 
 const require = createRequire(import.meta.url);
@@ -64,11 +64,10 @@ if (packaged.length !== (args.includes('--dir') || platform === 'macos' ? 1 : 2)
 for (const directory of packaged) {
   const resources = platform === 'macos' ? join(root, 'release', directory.name, 'Cats Bot.app', 'Contents', 'Resources') : join(root, 'release', directory.name, 'resources');
   if (platform === 'macos') {
-    // lipo consumes every argument after -verify_arch as an architecture name.
     // Verify here so unsigned candidate CI exercises the same native check.
-    const architectures = spawnSync('lipo', [join(resources, '..', 'MacOS', 'Cats Bot'), '-verify_arch',
-      ...(args.includes('--dir') ? ['x86_64'] : ['x86_64', 'arm64'])], { stdio: 'inherit' });
-    if (architectures.error || architectures.status !== 0) throw architectures.error ?? new Error('Packaged macOS app lacks the required architectures.');
+    const architectures = requireMacArchitectures(join(resources, '..', 'MacOS', 'Cats Bot'),
+      args.includes('--dir') ? ['x86_64'] : ['x86_64', 'arm64'], { what: 'The packaged macOS app' });
+    console.log(`Verified the packaged macOS app (${architectures.join(', ')})`);
   }
   const actual = JSON.parse(await readFile(join(resources, 'bot-release.json'), 'utf8'));
   if (JSON.stringify(actual) !== JSON.stringify(release)) throw new Error('Packaged descriptor differs from the release identity.');
