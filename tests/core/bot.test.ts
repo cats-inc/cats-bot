@@ -117,6 +117,11 @@ test('tool events, errors and interrupted streams are classified (FR-18)', async
     const failed = await sendAndWait(core, 'home', 'error now');
     assert.equal(failed.state, 'failed');
     assert.equal(failed.error, 'provider exploded');
+    assert.deepEqual(
+      core.transcript('home').filter((entry) => entry.workItemId === failed.id && entry.kind === 'error').map((entry) => entry.text),
+      ['provider exploded'],
+      'a failure the stream already wrote is shown once',
+    );
 
     const interrupted = await sendAndWait(core, 'home', 'interrupt');
     assert.equal(interrupted.state, 'interrupted');

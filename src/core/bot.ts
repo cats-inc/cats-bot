@@ -1847,7 +1847,8 @@ export class BotCore implements BotHostApi {
           error: outcome.reason,
           ...(admitted.run ? { run: admitted.run } : {}),
         }));
-        if (conversation && !isHeartbeat) {
+        // FR-18: a failure the turn's stream already wrote is not written a second time.
+        if (conversation && !isHeartbeat && !outcome.reported) {
           this.conversations.append(conversation.id, {
             kind: 'error',
             origin: 'system',
