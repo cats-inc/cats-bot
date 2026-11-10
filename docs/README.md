@@ -156,6 +156,10 @@ script that changes the computer is ticked by the owner
 [SPEC-010](specs/SPEC-010-setup-wizard.md),
 [PLAN-011](plans/PLAN-011-setup-wizard.md)).
 
+The heartbeat either keeps the owner company or follows up on unfinished work,
+on Cats Desktop's daily rhythm, and backs off while the owner does not answer
+([SPEC-011](specs/SPEC-011-heartbeat-modes-rhythm-and-backoff.md)).
+
 For complex features, use the spec-plan-implement workflow:
 
 1. **Spec** (`specs/SPEC-NNN-title.md`): Define what to build and why

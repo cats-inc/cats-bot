@@ -5,6 +5,7 @@ import { parseModelSelection } from '../providers/selection.ts';
 
 import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import { checkedBotName, checkedBotPersona, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
+import { clockOr, HEARTBEAT_RHYTHM_DEFAULTS, heartbeatRhythmProblem, parseClockMinutes } from '../../shared/heartbeatRhythm.ts';
 import {
   BOT_REPLY_LANGUAGE_DEFAULT,
   isBotReplyLanguage,
@@ -23,15 +24,18 @@ import type {
   BotProfilePatch,
   DesktopControlPolicy,
   ExecutionTarget,
+  HeartbeatMode,
   HeartbeatPolicy,
   PermissionMode,
   TelegramPolicy,
   WorkspaceAccess,
 } from '../types.ts';
 
-/** SPEC-001 FR-1 defaults. */
+/** SPEC-001 FR-1 and SPEC-011 FR-1 defaults; the rhythm is Cats Desktop's. */
 export const HEARTBEAT_DEFAULTS: HeartbeatPolicy = {
   enabled: true,
+  mode: 'auto',
+  ...HEARTBEAT_RHYTHM_DEFAULTS,
   wakeMinMinutes: 2,
   wakeMaxMinutes: 10,
   regularMinMinutes: 30,
@@ -175,10 +179,21 @@ function normalizePermissions(value: unknown, fallback: BotPermissions): BotPerm
   };
 }
 
+const HEARTBEAT_MODES: readonly HeartbeatMode[] = ['auto', 'assist', 'companion'];
+
+export function isHeartbeatMode(value: unknown): value is HeartbeatMode {
+  return HEARTBEAT_MODES.includes(value as HeartbeatMode);
+}
+
+/** SPEC-011 FR-2: a profile written before SPEC-011 reads as `auto` on Desktop's rhythm. */
 function normalizeHeartbeat(value: unknown, fallback: HeartbeatPolicy): HeartbeatPolicy {
   if (!isRecord(value)) return { ...fallback };
   const policy: HeartbeatPolicy = {
     enabled: booleanOr(value.enabled, fallback.enabled),
+    mode: isHeartbeatMode(value.mode) ? value.mode : fallback.mode,
+    bedtime: clockOr(value.bedtime, fallback.bedtime),
+    wakeWindowStart: clockOr(value.wakeWindowStart, fallback.wakeWindowStart),
+    wakeWindowEnd: clockOr(value.wakeWindowEnd, fallback.wakeWindowEnd),
     wakeMinMinutes: positiveNumberOr(value.wakeMinMinutes, fallback.wakeMinMinutes),
     wakeMaxMinutes: positiveNumberOr(value.wakeMaxMinutes, fallback.wakeMaxMinutes),
     regularMinMinutes: positiveNumberOr(value.regularMinMinutes, fallback.regularMinMinutes),
@@ -325,6 +340,27 @@ function sameText(value: unknown, stored: string, normalize: (text: string) => s
 }
 
 /**
+ * SPEC-011 FR-2: an owner's change is refused rather than silently replaced,
+ * with Cats Desktop's rules for the rhythm (its SPEC-124 FR-3).
+ */
+function checkedHeartbeatPatch(current: HeartbeatPolicy, patch: Partial<HeartbeatPolicy>): HeartbeatPolicy {
+  if (patch.mode !== undefined && !isHeartbeatMode(patch.mode)) {
+    throw new Error('heartbeat mode must be auto, assist or companion');
+  }
+  for (const key of ['bedtime', 'wakeWindowStart', 'wakeWindowEnd'] as const) {
+    if (patch[key] !== undefined && parseClockMinutes(patch[key]) === null) throw new Error(`${key} must be HH:MM`);
+  }
+  const next = normalizeHeartbeat({ ...current, ...patch }, current);
+  // Only a change to the times is checked, so pausing never fails over a hand-edited file.
+  const timesChanged = next.bedtime !== current.bedtime
+    || next.wakeWindowStart !== current.wakeWindowStart
+    || next.wakeWindowEnd !== current.wakeWindowEnd;
+  const problem = timesChanged ? heartbeatRhythmProblem(next) : null;
+  if (problem) throw new Error(problem);
+  return next;
+}
+
+/**
  * SPEC-001 FR-27: a change to anything a session is created with (execution
  * target, instructions, permissions, cwd, the reply language it is told)
  * bumps `configRevision`, so sessions of the old revision are replaced; an
@@ -356,6 +392,7 @@ export function applyProfilePatch(
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
   }
   if (patch.avatar !== undefined && !isBotAvatar(patch.avatar)) throw new Error('avatar must be one of the Cat looks');
+  const nextHeartbeat = patch.heartbeat ? checkedHeartbeatPatch(profile.heartbeat, patch.heartbeat) : profile.heartbeat;
   const nextReplyLanguage = patch.replyLanguage ?? profile.replyLanguage;
   const replyLanguageChanged = effectiveReplyLanguage({ replyLanguage: nextReplyLanguage, hubLanguage: profile.hubLanguage })
     !== effectiveReplyLanguage(profile);
@@ -374,9 +411,7 @@ export function applyProfilePatch(
     configRevision: sessionChanged ? profile.configRevision + 1 : profile.configRevision,
     permissions: nextPermissions,
     providerPolicy: nextProviderPolicy,
-    heartbeat: patch.heartbeat
-      ? normalizeHeartbeat({ ...profile.heartbeat, ...patch.heartbeat }, profile.heartbeat)
-      : profile.heartbeat,
+    heartbeat: nextHeartbeat,
     idleSleepMinutes: patch.idleSleepMinutes ?? profile.idleSleepMinutes,
     telegram: patch.telegram
       ? normalizeTelegram({ ...profile.telegram, ...patch.telegram }, profile.telegram)

@@ -79,7 +79,8 @@ freeze of the storage format.
    `executionTarget: { provider, model | null }`, `configRevision`,
    `permissions: { workspaceAccess, permissionMode, allowedTools?, cwd }`,
    `heartbeat: { enabled, wakeMinMinutes, wakeMaxMinutes, regularMinMinutes, regularMaxMinutes }`
-   (defaults `true`, 2, 10, 30, 120), `idleSleepMinutes` (default 15), `updatedAt`.
+   (defaults `true`, 2, 10, 30, 120; SPEC-011 FR-1 adds `mode` and the daily rhythm),
+   `idleSleepMinutes` (default 15), `updatedAt`.
 2. FR-2: The data root defaults to `~/.catsbot/bots/<id>/`; `CATS_BOT_HOME` moves the whole `~/.catsbot` root
    (SPEC-007 FR-3, FR-4). Layout:
    `profile.json`, `conversations/<conversationId>.json` (conversation metadata and attachment),
@@ -218,8 +219,10 @@ freeze of the storage format.
     `schedule_list` and `schedule_cancel` can see only the schedules of the conversation the caller is in; a
     schedule id from another conversation and a nonexistent id return the same error, neither leaking contents
     nor allowing cancellation.
-25. FR-25: The heartbeat is scheduled only when `heartbeat.enabled` and the home attachment is alive; the timer
-    lives in memory and is redrawn after a restart:
+25. FR-25: The heartbeat is scheduled only when `heartbeat.enabled` and the home attachment is alive. SPEC-011
+    updates this requirement: the schedule and the unanswered count are kept in `life.json` and are not redrawn
+    after a restart, heartbeats follow the daily rhythm and back off while the owner does not answer, and the
+    mode decides the prompt (`assist` carries a bounded review of the bot's own conversations). The original rule:
     - The first one after waking is within 2–10 minutes, `kind: wake`; if a `wake` heartbeat already happened
       within 3 hours of waking, it becomes a regular heartbeat.
     - After that, one at a random time every 30–120 minutes, `kind: regular`.

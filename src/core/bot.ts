@@ -66,6 +66,7 @@ import type {
   BotProfile,
   BotProfilePatch,
   BotStatus,
+  EffectiveHeartbeatMode,
   ConversationRecord,
   HandoffMessage,
   JournalEntry,
@@ -341,6 +342,7 @@ export class BotCore implements BotHostApi {
       now: this.now,
       random: life.random ?? Math.random,
       profile: () => this.profile,
+      heartbeatMode: () => this.heartbeatMode(),
       conversations: this.conversations,
       binder: this.binder,
       client: () => this.client(),
@@ -457,6 +459,12 @@ export class BotCore implements BotHostApi {
    */
   private hubToolsOffered(): boolean {
     return this.bossCatRole && providerCanOfferSessionTools(this.profile.executionTarget.provider, this.profile.providerPolicy);
+  }
+
+  /** SPEC-011 FR-1: `auto` assists for the Boss Cat and keeps company for every other cat bot. */
+  private heartbeatMode(): EffectiveHeartbeatMode {
+    const { mode } = this.profile.heartbeat;
+    return mode === 'auto' ? (this.bossCatRole ? 'assist' : 'companion') : mode;
   }
 
   /** SPEC-009 FR-3: the hub's word on whether this bot holds the Boss Cat role. */
@@ -1077,7 +1085,12 @@ export class BotCore implements BotHostApi {
           && ['ready', 'initializing'].includes(conversation.attachment.state) && this.hubTools?.hasDiscovered(conversation.id)) },
       conversations: this.conversations.list().length,
       schedules: this.scheduleRecords().filter((schedule) => schedule.state === 'active').length,
-      heartbeat: { enabled: this.profile.heartbeat.enabled, nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null },
+      heartbeat: {
+        enabled: this.profile.heartbeat.enabled,
+        nextAt: this.life.nextHeartbeatAt?.toISOString() ?? null,
+        mode: this.heartbeatMode(),
+        ...this.life.heartbeatStatus(this.now()),
+      },
       lastTickAt: this.readLifeState()?.lastTickAt ?? null,
       lock: readInstanceLock(this.paths),
       telegram: {
@@ -1412,6 +1425,7 @@ export class BotCore implements BotHostApi {
       await client.sessionControls(result.profile.executionTarget.provider, policy);
     }
     const desktopWas = this.profile.desktopControl.enabled;
+    const heartbeatWas = this.profile.heartbeat.enabled;
     const presentationChanged = result.profile.name !== this.profile.name || result.profile.avatar !== this.profile.avatar;
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
@@ -1453,8 +1467,10 @@ export class BotCore implements BotHostApi {
       }
     }
     if (patch.heartbeat) {
-      this.life.resetHeartbeatSchedule();
-      this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'}; next interval is re-drawn`);
+      const resumed = !heartbeatWas && this.profile.heartbeat.enabled;
+      this.life.resetHeartbeatSchedule({ resumed });
+      this.log(`heartbeat ${this.profile.heartbeat.enabled ? 'enabled' : 'paused'} (${this.heartbeatMode()}); next interval is re-drawn${
+        resumed ? ', unanswered count cleared' : ''}`);
     }
     if (patch.telegram) {
       await this.stopTelegram();

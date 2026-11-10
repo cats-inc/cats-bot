@@ -1,12 +1,21 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { buildHeartbeatPrompt, isHeartbeatPrompt, parseHeartbeatReply, pickHeartbeatDelayMs } from '../../src/core/life/heartbeat.ts';
+import {
+  buildHeartbeatPrompt,
+  HEARTBEAT_MAX_UNANSWERED,
+  isHeartbeatPrompt,
+  parseHeartbeatReply,
+  pickHeartbeatDelayMs,
+} from '../../src/core/life/heartbeat.ts';
+import { buildWorkReview, REVIEW_TEXT_LIMIT, type ReviewSource } from '../../src/core/life/review.ts';
+import { createProfile } from '../../src/core/profile/profile.ts';
+import { heartbeatRhythmProblem, resolveHeartbeatRhythm, resolveWakeTime } from '../../src/shared/heartbeatRhythm.ts';
 import { HEARTBEAT_DEFAULTS } from '../../src/core/profile/profile.ts';
 import { reconcileInterrupted } from '../../src/core/life/recovery.ts';
 import type { RuntimeClient } from '../../src/core/runtime/client.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
-import type { TranscriptEntry, WorkItem } from '../../src/core/types.ts';
+import type { ConversationRecord, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
 
 test('heartbeat delays follow the profile bounds (FR-25)', () => {
   assert.equal(pickHeartbeatDelayMs('wake', HEARTBEAT_DEFAULTS, () => 0), 2 * 60_000);
@@ -35,6 +44,106 @@ test('the heartbeat prompt states the facts and the quiet rule, and replies are 
   assert.deepEqual(parseHeartbeatReply('  [QUIET] '), { quiet: true });
   assert.deepEqual(parseHeartbeatReply(''), { quiet: true });
   assert.deepEqual(parseHeartbeatReply(' Good morning! '), { quiet: false, body: 'Good morning!' });
+});
+
+test('each unanswered message doubles the regular wait; the fifth stops it (SPEC-011 FR-10)', () => {
+  const policy = { ...HEARTBEAT_DEFAULTS, regularMinMinutes: 30, regularMaxMinutes: 30 };
+  assert.deepEqual([0, 1, 2, 3, 4].map((count) => pickHeartbeatDelayMs('regular', policy, () => 0, count) / 60_000), [30, 60, 120, 240, 480]);
+  assert.equal(pickHeartbeatDelayMs('wake', policy, () => 0, 3), 2 * 60_000, 'a wake wait is not backed off');
+  assert.equal(HEARTBEAT_MAX_UNANSWERED, 5);
+});
+
+test('the rhythm matches Cats Desktop: one wake minute a day, rest across midnight, and its time rules (SPEC-011 FR-3 to FR-5)', () => {
+  const times = { bedtime: '23:00', wakeWindowStart: '07:00', wakeWindowEnd: '09:00' };
+  const day = new Date(2026, 10, 10, 12, 0);
+  const wake = resolveWakeTime(times, 'mochi', day);
+  assert.equal(resolveWakeTime(times, 'mochi', new Date(2026, 10, 10, 18, 0)).getTime(), wake.getTime(), 'a restart never re-rolls it');
+  assert.ok(wake.getHours() * 60 + wake.getMinutes() >= 7 * 60 && wake.getHours() * 60 + wake.getMinutes() <= 9 * 60);
+  assert.equal(resolveHeartbeatRhythm(times, 'mochi', day).phase, 'awake_hours');
+  assert.equal(resolveHeartbeatRhythm(times, 'mochi', new Date(2026, 10, 10, 23, 30)).phase, 'rest_hours');
+  assert.equal(resolveHeartbeatRhythm(times, 'mochi', new Date(2026, 10, 10, 3, 0)).phase, 'rest_hours');
+  const late = { ...times, bedtime: '01:00' };
+  assert.equal(resolveHeartbeatRhythm(late, 'mochi', new Date(2026, 10, 10, 0, 30)).phase, 'awake_hours', 'a bedtime after midnight');
+  const night = resolveHeartbeatRhythm(times, 'mochi', new Date(2026, 10, 10, 23, 30));
+  assert.equal(night.nextWakeAt.getDate(), 11);
+  assert.equal(night.restStartedAt.getHours(), 23);
+  assert.equal(heartbeatRhythmProblem(times), null);
+  assert.match(heartbeatRhythmProblem({ ...times, bedtime: '08:00' }) ?? '', /outside the wake window/u);
+  assert.match(heartbeatRhythmProblem({ ...times, wakeWindowEnd: '06:00' }) ?? '', /must not end before it starts/u);
+  assert.equal(heartbeatRhythmProblem({ ...times, bedtime: 'late' }), 'Times must be HH:MM');
+});
+
+test('assist and companion prompts: assist works from the review, both know how much went unanswered (SPEC-011 FR-13)', () => {
+  const base = {
+    now: new Date('2026-11-10T10:00:00.000Z'),
+    awakeSince: new Date('2026-11-10T08:00:00.000Z'),
+    lastOwnerMessageAt: new Date('2026-11-08T10:00:00.000Z'),
+    botName: 'Mochi',
+  };
+  const assist = buildHeartbeatPrompt({ ...base, kind: 'regular', mode: 'assist', unanswered: 2, review: 'REVIEW BLOCK' });
+  assert.ok(isHeartbeatPrompt(assist));
+  assert.match(assist, /not for small talk/u);
+  assert.match(assist, /REVIEW BLOCK/u);
+  assert.match(assist, /last wrote to you 2 days ago/u);
+  assert.match(assist, /not answered the last 2 unprompted messages/u);
+  assert.match(assist, /Do not start the work now/u);
+  const companion = buildHeartbeatPrompt({ ...base, kind: 'bedtime', mode: 'companion', unanswered: 0 });
+  assert.match(companion, /your bedtime/u);
+  assert.doesNotMatch(companion, /unprompted messages you sent/u);
+  assert.doesNotMatch(companion, /small talk/u);
+});
+
+function conversation(id: string, role: 'home' | 'note', title: string, lastOwnerMessageAt: string | null): ConversationRecord {
+  return { id, role, title, lastOwnerMessageAt } as ConversationRecord;
+}
+
+function line(seq: number, kind: TranscriptEntry['kind'], text: string, origin: TranscriptEntry['origin'] = kind === 'owner' ? 'owner' : 'bot'): TranscriptEntry {
+  return { seq, at: '2026-11-10T09:00:00.000Z', kind, origin, text };
+}
+
+test('the work review covers recent conversations only, newest first, and its fingerprint ignores unprompted lines (SPEC-011 FR-13, FR-14)', () => {
+  const now = new Date('2026-11-10T10:00:00.000Z');
+  const transcripts: Record<string, TranscriptEntry[]> = {
+    home: [line(1, 'owner', 'hello'), line(2, 'bot', 'hi'), line(3, 'bot', 'Shall we finish the parser?', 'heartbeat')],
+    parser: [line(1, 'owner', 'split the parser'), line(2, 'tool_use', 'Bash'), line(3, 'error', 'the turn ended without a result')],
+    old: [line(1, 'owner', 'ancient request')],
+  };
+  const sources: ReviewSource[] = [
+    conversation('home', 'home', 'Direct message', '2026-11-10T08:00:00.000Z'),
+    conversation('parser', 'note', 'Parser\nrefactor', '2026-11-10T09:00:00.000Z'),
+    conversation('old', 'note', 'Old', '2026-10-01T09:00:00.000Z'),
+    conversation('never', 'note', 'Never', null),
+  ].map((record) => ({ record, transcript: () => transcripts[record.id] ?? [] }));
+  const review = buildWorkReview(sources, [], now)!;
+  assert.ok(review.text.indexOf('Note "Parser refactor"') < review.text.indexOf('Your direct message'), 'newest first, titles on one line');
+  assert.match(review.text, /Error: the turn ended without a result/u);
+  assert.match(review.text, /You \(unprompted\): Shall we finish the parser\?/u);
+  assert.doesNotMatch(review.text, /ancient request|Bash/u, 'older than a week and tool lines are left out');
+
+  transcripts.home!.push(line(4, 'bot', 'Another nudge', 'heartbeat'));
+  assert.equal(buildWorkReview(sources, [], now)!.fingerprint, review.fingerprint, 'its own unprompted messages are not news');
+  transcripts.parser!.push(line(4, 'owner', 'and add tests'));
+  assert.notEqual(buildWorkReview(sources, [], now)!.fingerprint, review.fingerprint);
+
+  assert.equal(buildWorkReview(sources.slice(2), [], now), null, 'nothing recent, nothing waiting: nothing to review');
+  const waiting = buildWorkReview(sources.slice(2), [{ id: 'w1' } as WorkItem], now)!;
+  assert.match(waiting.text, /One question you asked your owner is still waiting/u);
+
+  const long = Array.from({ length: 40 }, (_, index) => line(index + 1, index % 2 ? 'bot' : 'owner', 'x'.repeat(400)));
+  const many = Array.from({ length: 30 }, (_, index) => ({
+    record: conversation(`n${index}`, 'note', `Note ${index}`, new Date(now.getTime() - (index + 1) * 60_000).toISOString()),
+    transcript: () => long,
+  }));
+  const bounded = buildWorkReview(many, [], now)!;
+  assert.ok(bounded.text.length <= REVIEW_TEXT_LIMIT + 200, 'bounded');
+  assert.match(bounded.text, /Note "Note 0"[^\n]*\n( {3}(Owner|You): x+…\n){6}/u, 'the newest note keeps its last lines');
+  assert.match(bounded.text, /Note "Note 3"[^\n]*\n {3}Owner: x+…\n\d/u, 'a later note keeps its heading and the owner\'s last line');
+  assert.match(bounded.text, /\(\d+ more conversations with recent messages left out\.\)/u);
+  assert.equal(bounded.fingerprint.split(',').length, 30, 'every recent conversation is seen');
+});
+
+test('createProfile starts the heartbeat on auto', () => {
+  assert.equal(createProfile({ id: 'b', name: 'Bot', provider: 'claude', cwd: 'C:/w' }).heartbeat.mode, 'auto');
 });
 
 function clientWith(messages: Array<{ role: string; text: string; timestamp?: string }> | Error): RuntimeClient {
