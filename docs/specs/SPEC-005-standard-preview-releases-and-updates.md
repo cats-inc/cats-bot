@@ -29,6 +29,10 @@ Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-ho
    background checks, automatic download or install on ordinary quit.
    A timed-out request retains its native-operation fence until it actually ends;
    downloaded bytes and completion events must match the selected version.
+   The download timeout measures inactivity: advancing transferred bytes (or an
+   advancing percentage when byte counts are unavailable) renew the deadline.
+   Repeated unchanged progress must not keep a stalled download alive. Check and
+   installer handoff deadlines remain bounded independently.
 6. Portable/unsigned macOS packages offer the official release page for manual
    installation. Source and unofficial packages explain why updating is disabled.
 7. Drain Bot core, ongoing provider work and Runtime before installation. Reject
