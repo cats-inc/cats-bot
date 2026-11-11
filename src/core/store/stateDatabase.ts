@@ -85,15 +85,15 @@ export interface StateDatabase {
   readonly mode: StateDatabaseMode;
   readonly isOpen: boolean;
   /**
-   * The first row of a query, or undefined. `get` and `all` take a `select` or a `with`
+   * The first row of a query, or undefined. `get` and `all` are for a `select` or a `with`
    * that changes nothing; a writer also reads `pragma application_id`, `journal_mode` and
-   * `synchronous` by name.
+   * `synchronous` by name. They refuse a statement whose text shows a change (`reads`).
    */
   get(sql: string, ...parameters: SqliteInput[]): StateRow | undefined;
   all(sql: string, ...parameters: SqliteInput[]): StateRow[];
   /**
-   * An insert, an update or a delete, and nothing else; returns how many rows it changed.
-   * Refused on a reader.
+   * An insert, an update or a delete, and nothing else (`changesRows`); returns how many
+   * rows it changed. Refused on a reader.
    */
   run(sql: string, ...parameters: SqliteInput[]): number;
   /** An insert of exactly one row into an ordinary table; returns its row id. Refused on a reader. */
@@ -133,13 +133,18 @@ const READABLE_SETTINGS = new Set(['application_id', 'journal_mode', 'synchronou
 /**
  * What makes a statement a change of rows wherever it stands, as in `with ... delete`.
  * SQLite reserves the first three words, so that outside a string or a quoted name they
- * are never a table, a column or a function; `replace` is also a function.
+ * are never a table, a column or a function, though a parameter may carry one as its
+ * name; `replace` is also a function.
  */
 const ROW_WORD = /\b(?:insert|update|delete)\b|\breplace\s+into\b/iu;
 const ROW_CHANGE = /^\s*(?:insert|replace|update|delete)\b/iu;
 /** A pragma called as a table inside a query. `pragma_optimize` writes statistics there too. */
 const PRAGMA_FUNCTION = /\bpragma_\w+/iu;
-/** Where a word is not a keyword: strings, quoted names and comments. */
+/**
+ * Where a word is not a keyword: strings, quoted names and comments. Read from the text
+ * alone, and so not always as SQLite reads it: a comment left open, or a parameter written
+ * `$name(...)` with a quote or a dash inside, is taken for something else.
+ */
 const QUOTED =
   /'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//gu;
 const INSERT = /^\s*insert\b/iu;
@@ -623,6 +628,12 @@ class Connection implements StateDatabase {
 function holds(pattern: RegExp, sql: string): boolean {
   return pattern.test(sql) && pattern.test(sql.replace(QUOTED, ' '));
 }
+
+/*
+ * `reads` and `changesRows` catch a statement given to the wrong call in the store's own
+ * source, where every statement is a constant with its values bound. They read the text
+ * and are not a parser: SQL written to get past them can (PLAN-014 task 1.1).
+ */
 
 /** What `get` and `all` take: a query that changes nothing, or the name of a setting. */
 function reads(sql: string): boolean {

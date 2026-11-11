@@ -51,7 +51,7 @@ The following is proposed.
    - Mode: WAL, `synchronous=NORMAL`, a busy timeout.
    - The core holding the instance lock is the only writer. Hosts and the `cats-bot` CLI
      keep reaching data through `BotHostApi`, not the file.
-   - Proposed clarification, 2026-11-11, waiting for the owner (SPEC-014 Open Questions): a
+   - Clarification accepted by the owner, 2026-11-11 (SPEC-014 Open Questions): a
      core opened without the lock, as the CLI's read commands open one, reads the database
      through a reader connection that accepts only queries and never creates the file.
 2. **Moved into the database**: conversation records and attachments, transcript entries,
@@ -64,7 +64,7 @@ The following is proposed.
    - A presentation is one row per reply, upserted.
    - A work item is one current-state row plus an appended transition row, written in one
      transaction.
-   - Proposed clarification, 2026-11-11, waiting for the owner (SPEC-014 Open Questions):
+   - Clarification accepted by the owner, 2026-11-11 (SPEC-014 Open Questions):
      the transition rows are lines of one journal table that keeps every journal line in
      order, a schedule's among them, and every table keeps its record as JSON text.
    - Startup reads current rows instead of replaying history.

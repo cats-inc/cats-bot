@@ -30,6 +30,16 @@ security review. Embeddings come only if the evaluation asks for them.
 
 - [x] Owner decided ADR-021, which unblocks P1 (2026-11-11).
 - [x] Owner chose ADR-022's proposed defaults (2026-11-11).
+- [x] Owner accepted the amendments to SPEC-014 and ADR-021 that building P1 found: a
+      reader connection for a core opened without the lock, JSON records and one
+      `journal` table, and the search index of FR-8 and FR-9 (2026-11-11).
+- [x] Owner: the next release from `main` is 0.6, the next minor line, so the cutover
+      (1.6) may land on `main` when it is ready. The version bump and the publication
+      still need the owner's release authorization (2026-11-11).
+- [x] Owner: a slice nothing in the core uses yet merges once an independent review
+      finds nothing that blocks it and CI passes on the three platforms. The cutover
+      pull request waits for the owner's go, because it carries decisions of its own
+      (2026-11-11).
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
@@ -80,10 +90,10 @@ security review. Embeddings come only if the evaluation asks for them.
     - Open for the importer (1.5): a version-1 transcript with a repeated `seq`. The
       schema keeps `(conversation, seq)` unique; one local data root had no repeat, gap
       or unreadable line, which is not proof that none exists elsewhere.
-  - What the acceptance run found, and the defaults it proposes for the adapter. The ones
-    that change SPEC-014 are in its Open Questions and wait for the owner.
+  - What the acceptance run found, and the defaults it proposed for the adapter. The ones
+    that change SPEC-014 are in its Open Questions, accepted by the owner on 2026-11-11.
     - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
-      without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
+      without the lock (the CLI's `status`, `conversations` and `schedule list`). Accepted:
       such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
       - The same host also writes while the bot is stopped: `schedule add` and
         `schedule cancel` take the instance lock for the write. The adapter has to give
@@ -96,7 +106,7 @@ security review. Embeddings come only if the evaluation asks for them.
       - The driver's read-only open left `-shm` and `-wal` files beside a cleanly stopped
         bot. An immutable open does no locking or change detection, which is unsafe when
         a writer may start at any time.
-      - This touches SPEC-014 FR-1 and ADR-021 decision 1, which say other hosts reach
+      - This amended SPEC-014 FR-1 and ADR-021 decision 1, which said other hosts reach
         data through `BotHostApi` and not the file.
     - **The record is JSON text**, and other columns only index it. JSON escapes NUL
       characters and lone surrogates. As raw TEXT, the Node.js 24.14 driver in Electron 41
@@ -135,7 +145,20 @@ security review. Embeddings come only if the evaluation asks for them.
       statistics, also when a query calls it as a table, and `wal_checkpoint` moves the
       log into the file. The adapter's `get` and `all` read three settings by name, and
       refuse a query that holds an insert, an update, a delete or a pragma called as a
-      table, however the table it changes is written.
+      table.
+    - **The adapter's statement rules read text, and are not a parser.** They catch a
+      statement given to the wrong call in the store's own source, where every
+      statement is a constant with its values bound. The fourth review of the store got
+      eleven statements past `get` and `all` on a writer, each written to do so: a
+      comment between `replace` and `into`, a parameter written `$a(--)` before a
+      `delete`, and a quoted `"pragma_optimize"`. A reader refused every one. `run`
+      likewise took a query that only names a change, through a parameter called
+      `:update`, and returned an earlier statement's count; and `or/**/fail` passed.
+      - A later pull request, with its own review, can replace the rules with the
+        driver's authorizer (`setAuthorizer`, present on both runtimes), which judges
+        what SQLite compiled instead of the text. The review found that its allow-list
+        has to let FTS5 run `pragma data_version`; the store's tests have not run
+        under it.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.
