@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 interface TapSummary {
   tests: number;
@@ -11,9 +13,10 @@ interface TapSummary {
 }
 
 // The script is plain JavaScript, like the other CI scripts.
-const { electronRunProblem, filesWithoutTests, readTapSummary } = (await import(
+const { electronRunProblem, filesWithoutTests, missingFiles, readTapSummary } = (await import(
   new URL('../../scripts/test-in-electron.mjs', import.meta.url).href
 )) as {
+  missingFiles(files: string[]): string[];
   readTapSummary(output: string): TapSummary | null;
   filesWithoutTests(output: string, files: string[]): string[];
   electronRunProblem(run: {
@@ -61,20 +64,18 @@ test('the summary is read from the end of a TAP report', () => {
 
 test('a file that defined no test is named, although the runner counts it as a pass', () => {
   const files = ['tests/core/sqliteDriver.test.ts', 'tests/core/stateDatabase.test.ts'];
+  // The runner names such a file by its path, with every backslash escaped.
+  const asReported = (file: string): string => resolve(file).replaceAll('\\', '\\\\');
   const empty = report([
     'ok 1 - the driver loads',
-    '# Subtest: C:\\\\repo\\\\tests\\\\core\\\\stateDatabase.test.ts',
-    'ok 2 - C:\\\\repo\\\\tests\\\\core\\\\stateDatabase.test.ts',
+    `# Subtest: ${asReported(files[1]!)}`,
+    `ok 2 - ${asReported(files[1]!)}`,
     ...counts(2, 2),
   ]);
   assert.deepEqual(filesWithoutTests(empty, files), ['tests/core/stateDatabase.test.ts']);
-  assert.deepEqual(
-    filesWithoutTests(
-      report(['ok 1 - /repo/tests/core/sqliteDriver.test.ts', ...counts(1, 1)]),
-      files,
-    ),
-    ['tests/core/sqliteDriver.test.ts'],
-  );
+  assert.deepEqual(filesWithoutTests(report([`ok 1 - ${files[0]!}`, ...counts(1, 1)]), files), [
+    'tests/core/sqliteDriver.test.ts',
+  ]);
   assert.deepEqual(
     filesWithoutTests(
       report(['ok 1 - the driver loads', 'ok 2 - a writer creates', ...counts(2, 2)]),
@@ -82,6 +83,27 @@ test('a file that defined no test is named, although the runner counts it as a p
     ),
     [],
   );
+  // A test that only mentions a file is a test.
+  assert.deepEqual(
+    filesWithoutTests(
+      report(['ok 1 - what tests/core/stateDatabase.test.ts is about', ...counts(1, 1)]),
+      files,
+    ),
+    [],
+  );
+});
+
+test('an argument that is not an existing file is refused, so nothing is skipped quietly', () => {
+  const here = fileURLToPath(import.meta.url);
+  assert.deepEqual(missingFiles([here]), []);
+  assert.deepEqual(missingFiles([here, 'tests/core/renamed-away.test.ts']), [
+    'tests/core/renamed-away.test.ts',
+  ]);
+  // A pattern is not expanded, and a directory is not a test file.
+  assert.deepEqual(missingFiles(['tests/core/*.test.ts', dirname(here)]), [
+    'tests/core/*.test.ts',
+    dirname(here),
+  ]);
 });
 
 test('only a clean run with tests in every file counts as a pass', () => {

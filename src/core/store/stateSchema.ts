@@ -75,7 +75,7 @@ create table work_events(
   state text,
   json text not null
 ) strict;
-create index work_events_by_item on work_events(work_item_id, id);
+create index work_events_by_item on work_events(work_item_id);
 
 create table schedules(
   id text primary key not null,

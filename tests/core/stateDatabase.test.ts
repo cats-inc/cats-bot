@@ -268,49 +268,120 @@ test('a file that is not a bot state database is refused and left as it was', ()
   throwsCode(() => reader(text), 'not_a_bot_database');
   assert.equal(readFileSync(text, 'utf8'), words);
 
+  // Someone else's database, in the journal mode SQLite gives a new file. Neither its bytes
+  // nor that mode may change: a writer switches to write-ahead logging only once it knows
+  // the file is a bot's.
+  const refusedUntouched = (file: string): void => {
+    const before = digest(file);
+    throwsCode(() => writer(file), 'not_a_bot_database');
+    throwsCode(() => reader(file), 'not_a_bot_database');
+    assert.equal(digest(file), before);
+    assert.equal(
+      raw(file, (database) => database.prepare('pragma journal_mode').get()?.journal_mode),
+      'delete',
+    );
+  };
+
   const foreign = join(directory, 'foreign.db');
   raw(foreign, (database) =>
     database.exec(`create table theirs(a); insert into theirs values ('kept')`),
   );
-  throwsCode(() => writer(foreign), 'not_a_bot_database');
-  throwsCode(() => reader(foreign), 'not_a_bot_database');
-  assert.deepEqual(
-    raw(foreign, (database) =>
-      database
-        .prepare('select name from sqlite_master order by name')
-        .all()
-        .map((row) => row.name),
-    ),
-    ['theirs'],
-  );
+  refusedUntouched(foreign);
 
   const unversioned = join(directory, 'unversioned.db');
   raw(unversioned, (database) =>
     database.exec(`pragma application_id=${STATE_APPLICATION_ID}; create table other(a)`),
   );
-  throwsCode(() => writer(unversioned), 'not_a_bot_database');
+  refusedUntouched(unversioned);
+
+  // The right mark, and a table of the right name that is something else.
+  const misshapen = join(directory, 'misshapen.db');
+  raw(misshapen, (database) =>
+    database.exec(`pragma application_id=${STATE_APPLICATION_ID}; create table meta(k, v)`),
+  );
+  refusedUntouched(misshapen);
 
   const garbled = join(directory, 'garbled.db');
   writer(garbled).close();
   raw(garbled, (database) =>
     database.exec(`update meta set value = 'one' where key = 'schema_version'`),
   );
+  const before = digest(garbled);
   throwsCode(() => writer(garbled), 'not_a_bot_database');
   throwsCode(() => reader(garbled), 'not_a_bot_database');
-  assert.deepEqual(files(directory), ['foreign.db', 'garbled.db', 'text.db', 'unversioned.db']);
+  assert.equal(digest(garbled), before);
+  assert.deepEqual(files(directory), [
+    'foreign.db',
+    'garbled.db',
+    'misshapen.db',
+    'text.db',
+    'unversioned.db',
+  ]);
 });
 
-test('a reader never creates a database', () => {
+test('a reader never creates a database, and reads none that a writer has not finished', () => {
   const directory = freshDirectory();
   throwsCode(() => reader(join(directory, 'bot.db')), 'missing');
   assert.deepEqual(files(directory), []);
 
-  // What a writer leaves if it stops before the schema is committed.
+  // What a writer leaves if it stops before anything is written.
   const empty = join(directory, 'empty.db');
   writeFileSync(empty, '');
   throwsCode(() => reader(empty), 'missing');
   assert.equal(statSync(empty).size, 0);
-  assert.deepEqual(files(directory), ['empty.db']);
+
+  // And if it stops after switching to write-ahead logging, before the schema.
+  const started = join(directory, 'started.db');
+  raw(started, (database) => database.exec('pragma journal_mode=wal'));
+  assert.ok(statSync(started).size > 0);
+  throwsCode(() => reader(started), 'missing');
+  assert.deepEqual(files(directory), ['empty.db', 'started.db']);
+
+  // The next writer finishes both.
+  for (const file of [empty, started]) {
+    writer(file).close();
+    const reading = reader(file);
+    try {
+      assert.equal(reading.meta('schema_version'), String(STATE_SCHEMA_VERSION));
+    } finally {
+      reading.close();
+    }
+  }
+  assert.deepEqual(files(directory), ['empty.db', 'started.db']);
+});
+
+test('a schema that could not be finished leaves nothing behind', () => {
+  const directory = freshDirectory();
+  const file = join(directory, 'bot.db');
+  // The clock is read after the tables are made, inside the same transaction.
+  assert.throws(
+    () =>
+      openStateDatabase({
+        file,
+        mode: 'writer',
+        now: () => {
+          throw new Error('stopped half-way');
+        },
+      }),
+    /stopped half-way/u,
+  );
+  assert.deepEqual(files(directory), ['bot.db']);
+  assert.deepEqual(
+    raw(file, (database) => [
+      database.prepare('select count(*) as n from sqlite_master').get()?.n,
+      database.prepare('pragma application_id').get()?.application_id,
+    ]),
+    [0, 0],
+  );
+  throwsCode(() => reader(file), 'missing');
+
+  const database = writer(file);
+  try {
+    assert.equal(database.meta('schema_version'), String(STATE_SCHEMA_VERSION));
+    assert.equal(database.get('pragma application_id')?.application_id, STATE_APPLICATION_ID);
+  } finally {
+    database.close();
+  }
 });
 
 test('a reader beside the writer sees its commits and accepts only queries', () => {
@@ -377,7 +448,7 @@ test('a change reports its rows even when the index leaves a row id no number ca
     // afterwards makes SQLite's last row id one of the index's own, beyond 2^53: with the
     // driver's default the second delete throws on Node.js 26 and is rounded on Node.js 24.
     database.transaction(() => {
-      for (let rowid = 1; rowid <= 4; rowid += 1) {
+      for (let rowid = 1; rowid <= 6; rowid += 1) {
         database.run(
           'insert into entries_fts(rowid, terms) values (?, ?)',
           rowid,
@@ -385,9 +456,17 @@ test('a change reports its rows even when the index leaves a row id no number ca
         );
       }
     });
-    for (let rowid = 1; rowid <= 4; rowid += 1) {
+    for (let rowid = 1; rowid <= 3; rowid += 1) {
       assert.equal(database.run('delete from entries_fts where rowid = ?', rowid), 1);
     }
+    // And inside one transaction, where a throw would have undone the deletes: the way a
+    // conversation's index rows go, followed by a statement that is not an insert.
+    database.run('insert into conversations(id, json) values (?, ?)', 'gone', '{}');
+    database.transaction(() => {
+      assert.equal(database.run('delete from entries_fts where rowid in (4, 5, 6)'), 3);
+      assert.equal(database.run('delete from conversations where id = ?', 'gone'), 1);
+    });
+    assert.deepEqual(conversations(database), []);
     assert.equal(
       database.get(`select count(*) as n from entries_fts where entries_fts match 'common'`)?.n,
       0,
@@ -461,9 +540,29 @@ test('a transaction is all or nothing', () => {
     );
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
 
-    // Work that returns a promise would commit before it had finished.
+    // The failure the caller did not see is what the error carries.
+    try {
+      database.transaction(() => {
+        try {
+          database.snapshot(() => {
+            throw new Error('inner read');
+          });
+        } catch {
+          // carried on regardless
+        }
+        add('g');
+      });
+      assert.fail('the transaction should have failed');
+    } catch (error) {
+      assert.match(String((error as Error).cause), /inner read/u);
+    }
+    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
+
+    // Work that returns a promise would commit before it had finished. The types refuse it,
+    // and so does the adapter when the types are not looking.
     assert.throws(
       () =>
+        // @ts-expect-error a transaction's work may not be asynchronous
         database.transaction(async () => {
           add('h');
         }),
@@ -483,6 +582,89 @@ test('a transaction is all or nothing', () => {
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
     database.transaction(() => add('i'));
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd', 'i']);
+  } finally {
+    database.close();
+  }
+});
+
+test('a transaction SQLite ended by itself keeps nothing, and nothing written after it', () => {
+  const database = writer(join(freshDirectory(), 'bot.db'));
+  const add = (id: string): number =>
+    database.run('insert into conversations(id, json) values (?, ?)', id, '{}');
+  const lost = (work: () => unknown): void => throwsCode(work, 'transaction_lost');
+  try {
+    add('kept');
+    // `or rollback` ends the whole transaction on a conflict, as a full disk would. Code
+    // that catches the error and carries on must not have its next statements committed
+    // one by one outside any transaction.
+    lost(() =>
+      database.transaction(() => {
+        add('a');
+        try {
+          database.run(
+            'insert or rollback into conversations(id, json) values (?, ?)',
+            'kept',
+            '{}',
+          );
+        } catch {
+          // carried on regardless
+        }
+        lost(() => add('b'));
+        lost(() => database.get('select count(*) as n from conversations'));
+        lost(() => database.transaction(() => add('c')));
+      }),
+    );
+    assert.deepEqual(conversations(database), ['kept']);
+    // The database is usable afterwards.
+    database.transaction(() => add('next'));
+    assert.deepEqual(conversations(database), ['kept', 'next']);
+  } finally {
+    database.close();
+  }
+});
+
+test('one statement at a time, and transactions only through the adapter', () => {
+  const database = writer(join(freshDirectory(), 'bot.db'));
+  try {
+    // The driver would run the first statement and drop the second without a word.
+    assert.throws(
+      () =>
+        database.run(
+          `insert into conversations(id, json) values ('a', '{}'); delete from conversations`,
+        ),
+      /One statement at a time/u,
+    );
+    assert.throws(
+      () => database.get('select 1 as one; select 2 as two'),
+      /One statement at a time/u,
+    );
+    assert.deepEqual(conversations(database), []);
+    for (const sql of [
+      'begin',
+      'BEGIN IMMEDIATE',
+      ' commit',
+      'rollback',
+      'savepoint here',
+      'release here',
+      'end',
+    ]) {
+      assert.throws(() => database.run(sql), /Transactions are opened with/u, sql);
+    }
+    database.transaction(() => {
+      database.run('insert into conversations(id, json) values (?, ?)', 'a', '{}');
+      assert.throws(() => database.run('commit'), /Transactions are opened with/u);
+    });
+    assert.deepEqual(conversations(database), ['a']);
+
+    // `insert` is for one new row: without one, the row id would be some earlier statement's.
+    const insert = 'insert or ignore into conversations(id, json) values (?, ?)';
+    assert.equal(typeof database.insert(insert, 'b', '{}'), 'number');
+    assert.throws(() => database.insert(insert, 'b', '{}'), /exactly one row/u);
+    assert.throws(
+      () => database.insert('delete from conversations where id = ?', 'a'),
+      /exactly one row/u,
+    );
+    assert.deepEqual(conversations(database), ['a', 'b']);
   } finally {
     database.close();
   }
@@ -555,6 +737,19 @@ test('the URI for an existing database encodes the path and handles UNC roots', 
   assert.equal(
     existingDatabaseUri('\\\\?\\UNC\\server\\share\\bot.db', true),
     'file:////server/share/bot.db?mode=rw',
+  );
+  // The same roots however they were typed.
+  assert.equal(
+    existingDatabaseUri('//server/share/bots/bot.db', true),
+    'file:////server/share/bots/bot.db?mode=rw',
+  );
+  assert.equal(
+    existingDatabaseUri('\\\\?\\unc\\server\\share\\bot.db', true),
+    'file:////server/share/bot.db?mode=rw',
+  );
+  assert.equal(
+    existingDatabaseUri('C:/bots/a b/bot.db', true),
+    'file:///C:/bots/a%20b/bot.db?mode=rw',
   );
   // A device path to a drive is not a UNC root.
   const device = existingDatabaseUri('\\\\?\\C:\\bots\\bot.db', true);

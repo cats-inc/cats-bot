@@ -76,20 +76,24 @@ FR-2).
   - each table keeping a JSON record with index columns that may be empty, and an entry's
     row id never being reused;
   - a database from a newer version, and a file that is not a bot state database, refused
-    and left as they were;
+    with their bytes and journal mode as they were;
+  - a schema that could not be finished leaving nothing behind, and a reader reading no
+    database a writer has not finished;
   - a reader that never creates a file, sees the writer's commits, reads one snapshot
     taken before its work starts, and accepts only queries;
   - a change reporting its rows, and an insert its row id, whatever row id the index
     left behind;
   - transactions that are all or nothing, including a nested failure the outer code
-    catches and work that returns a promise;
+    catches, work that returns a promise, and a transaction SQLite ended by itself;
+  - one statement at a time, transactions opened only through the adapter, and an insert
+    that must add exactly one row;
   - closing twice, a closed database saying so, and Windows refusing a rename while a
     connection is open;
   - the URI for an existing database, including UNC roots, and on Windows a read through
     a share of the local drive.
 
-The architecture boundary test keeps the adapter out of every module outside
-`src/core/store/`.
+The architecture boundary test keeps the driver and the adapter out of every module
+outside `src/core/store/`.
 
 ### Store tests inside Electron
 
@@ -102,8 +106,10 @@ npm run test:electron
 ```
 
 `scripts/test-in-electron.mjs` starts the Electron dependency in its Node.js mode with the
-test runner. It fails when Electron is not installed, when a test fails or is cancelled,
-and when a file defined no test, which the runner would otherwise count as a pass.
+test runner. It first asks that binary for its Electron version and requires the
+dependency's. It fails when Electron is not installed, when an argument is not an
+existing file, when a test fails or is cancelled, and when a file defined no test, which
+the runner would otherwise count as a pass.
 `tests/shell/testInElectron.test.ts` covers how it reads the report and that CI runs it
 on every platform. It also requires the `test:electron` script to name every test file
 under `tests/core/` that loads the driver, the adapter or a store module built on them.

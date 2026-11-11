@@ -5,8 +5,9 @@
 
 ## Status
 
-Accepted, 2026-11-11. The owner chose the proposed decision. Nothing is implemented; the work
-is [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
+Accepted, 2026-11-11. The owner chose the proposed decision. The work is
+[PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1 and is in progress: the store
+is being built beside the files, and nothing in the core uses it yet.
 
 When P1 lands, this replaces the storage mechanics of
 [ADR-001](001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) §6

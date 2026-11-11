@@ -1,4 +1,5 @@
-import { existsSync } from 'node:fs';
+import { statSync } from 'node:fs';
+import { posix, win32 } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import {
@@ -13,9 +14,10 @@ import { STATE_APPLICATION_ID, STATE_SCHEMA_SQL, STATE_SCHEMA_VERSION } from './
 /**
  * SPEC-014 FR-1, FR-2 and FR-4: the storage adapter over a bot's `bot.db`.
  *
- * It hands out no SQLite connection. The store modules beside it get `get`, `all`, `run` and
- * the two transaction helpers, and the rest of the bot gets what those modules build; the
- * architecture boundary test keeps this file out of every other directory.
+ * It hands out no SQLite connection. The store modules beside it get `get`, `all`, `run`,
+ * `insert` and the two transaction helpers, and the rest of the bot gets what those modules
+ * build. The architecture boundary test keeps this file and the driver out of every other
+ * directory.
  *
  * A **writer** is the core that holds the instance lock: WAL, `synchronous=NORMAL`, and the
  * schema created on a new file. A **reader** is a host without the lock, such as a CLI
@@ -30,21 +32,23 @@ export type StateDatabaseMode = 'writer' | 'reader';
 export type StateDatabaseErrorCode =
   /** A reader found no database, or one a writer has not finished creating. */
   | 'missing'
-  /** The file is not a SQLite database, or not one a bot wrote. */
+  /** The file is not a SQLite database, or not one a bot wrote. No row or table is changed. */
   | 'not_a_bot_database'
-  /** A newer Cats Bot wrote it. Nothing is changed. */
+  /** A newer Cats Bot wrote it. No row or table is changed. */
   | 'newer_schema'
-  /** The SQLite built into this runtime lacks what the schema needs. */
+  /** This runtime has no SQLite, or one that lacks what the schema needs. */
   | 'unsupported_sqlite'
   /** A change was asked of a reader. */
   | 'read_only'
+  /** SQLite ended the transaction itself, as it does after a full disk. None of it was kept. */
+  | 'transaction_lost'
   | 'closed';
 
 export class StateDatabaseError extends Error {
   readonly code: StateDatabaseErrorCode;
 
-  constructor(code: StateDatabaseErrorCode, message: string) {
-    super(message);
+  constructor(code: StateDatabaseErrorCode, message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = 'StateDatabaseError';
     this.code = code;
   }
@@ -67,6 +71,13 @@ export interface StateRuntime {
   sqlite: string;
 }
 
+/** What a transaction's work may return: anything but a promise. */
+export type Synchronous<T> = T extends PromiseLike<unknown> ? never : T;
+
+/**
+ * Each of `get`, `all`, `run` and `insert` takes one statement with its values bound as
+ * parameters. Transactions are opened with `transaction` and `snapshot` only.
+ */
 export interface StateDatabase {
   readonly file: string;
   readonly mode: StateDatabaseMode;
@@ -74,21 +85,23 @@ export interface StateDatabase {
   /** The first row of a query, or undefined. A reader accepts only `select` and `with`. */
   get(sql: string, ...parameters: SqliteInput[]): StateRow | undefined;
   all(sql: string, ...parameters: SqliteInput[]): StateRow[];
-  /** One statement that changes rows; returns how many it changed. Refused on a reader. */
+  /** A statement that changes rows; returns how many it changed. Refused on a reader. */
   run(sql: string, ...parameters: SqliteInput[]): number;
-  /** An insert into an ordinary table; returns the new row's id. Refused on a reader. */
+  /** An insert of exactly one row into an ordinary table; returns its row id. Refused on a reader. */
   insert(sql: string, ...parameters: SqliteInput[]): number;
   /**
-   * All of `work` or none of it. `work` is synchronous. A nested call joins the outer
-   * transaction, and a failure inside it rolls the whole transaction back even when the
-   * outer code catches the error. Refused on a reader.
+   * All of `work` or none of it. `work` is synchronous: a function that awaits would write
+   * after the transaction had ended. A nested call joins the outer transaction, and a
+   * failure inside it fails the whole transaction even when the outer code catches the
+   * error. Refused on a reader.
    */
-  transaction<T>(work: () => T): T;
+  transaction<T>(work: () => Synchronous<T>): T;
   /**
    * Runs `work` against one snapshot, taken before `work` starts, so that several queries
-   * agree with each other whatever is committed meanwhile.
+   * agree with each other whatever is committed meanwhile. Inside a transaction it joins
+   * it, and a failure in it fails that transaction.
    */
-  snapshot<T>(work: () => T): T;
+  snapshot<T>(work: () => Synchronous<T>): T;
   meta(key: string): string | undefined;
   setMeta(key: string, value: string): void;
   /** Safe to call twice. An open transaction is rolled back. */
@@ -96,7 +109,11 @@ export interface StateDatabase {
 }
 
 const DEFAULT_BUSY_TIMEOUT_MS = 5000;
+/** Statements are compiled once and kept. Past this many, the cache starts again. */
+const STATEMENT_CACHE_LIMIT = 256;
 const QUERY = /^\s*(?:select|with)\b/iu;
+const INSERT = /^\s*insert\b/iu;
+const TRANSACTION_CONTROL = /^\s*(?:begin|commit|end|rollback|savepoint|release)\b/iu;
 /** SQLite's primary result codes, as the driver reports them in `errcode`. */
 const SQLITE_CANTOPEN = 14;
 const SQLITE_NOTADB = 26;
@@ -118,12 +135,14 @@ export function openStateDatabase(options: OpenStateDatabaseOptions): StateDatab
  * shape is built by hand.
  */
 export function existingDatabaseUri(file: string, windows = process.platform === 'win32'): string {
-  const unc = windows ? /^\\\\(?:\?\\UNC\\)?([^\\?.][^\\]*)\\(.+)$/u.exec(file) : null;
+  // Also turns forward slashes into the platform's separator before the shapes are told apart.
+  const absolute = (windows ? win32 : posix).resolve(file);
+  const unc = windows ? /^\\\\(?:\?\\UNC\\)?([^\\?.][^\\]*)\\(.+)$/iu.exec(absolute) : null;
   if (unc) {
     const path = unc[2]!.split('\\').map(encodeURIComponent).join('/');
     return `file:////${unc[1]!}/${path}?mode=rw`;
   }
-  const url = pathToFileURL(file, { windows });
+  const url = pathToFileURL(absolute, { windows });
   url.searchParams.set('mode', 'rw');
   return url.href;
 }
@@ -137,8 +156,8 @@ function openWriter(
   const connection = new DatabaseSync(options.file);
   try {
     connection.exec(`pragma busy_timeout=${busyTimeoutMs}`);
-    // Before anything that changes the file: a database from a newer version, or a file
-    // that is not ours, is left exactly as it was found (FR-4).
+    // Before anything that changes a row, a table or a setting: a database from a newer
+    // version, or a file that is not ours, keeps all of them as they were found (FR-4).
     const found = inspect(connection, options.file);
     const journal = connection.prepare('pragma journal_mode=wal').get()?.journal_mode;
     if (journal !== 'wal') {
@@ -147,7 +166,7 @@ function openWriter(
       );
     }
     connection.exec('pragma synchronous=normal');
-    if (found === 'empty') createSchema(connection, (options.now ?? (() => new Date()))());
+    if (found === 'empty') createSchema(connection, options.now ?? (() => new Date()));
     const database = new Connection(options.file, 'writer', connection);
     recordRuntime(database, sqlite);
     return database;
@@ -161,13 +180,13 @@ function openReader(options: OpenStateDatabaseOptions, busyTimeoutMs: number): S
   const { DatabaseSync } = sqliteDriver();
   const missing = (): StateDatabaseError =>
     new StateDatabaseError('missing', `${options.file} holds no bot state yet`);
-  if (!existsSync(options.file)) throw missing();
+  if (!exists(options.file)) throw missing();
   let connection: SqliteDatabase;
   try {
     connection = new DatabaseSync(existingDatabaseUri(options.file));
   } catch (error) {
     // Removed between the check and the open.
-    if (sqliteCode(error) === SQLITE_CANTOPEN && !existsSync(options.file)) throw missing();
+    if (sqliteCode(error) === SQLITE_CANTOPEN && !exists(options.file)) throw missing();
     throw error;
   }
   try {
@@ -180,50 +199,73 @@ function openReader(options: OpenStateDatabaseOptions, busyTimeoutMs: number): S
   }
 }
 
-/** Reads what the file is without changing it. */
+/** Whether there is something at `file`. Any other failure to look, such as no permission, is thrown. */
+function exists(file: string): boolean {
+  try {
+    statSync(file);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return false;
+    throw error;
+  }
+}
+
+/**
+ * Reads what the file is. All of it is read in one transaction, so that a writer creating
+ * the schema at that moment is seen either before or after, never half-way.
+ */
 function inspect(connection: SqliteDatabase, file: string): 'empty' | 'current' {
   const notOurs = (why: string): StateDatabaseError =>
     new StateDatabaseError(
       'not_a_bot_database',
-      `${file} is not a Cats Bot state database: ${why}. Nothing was changed.`,
+      `${file} is not a Cats Bot state database: ${why}. No row or table was changed.`,
     );
-  let applicationId: number;
-  let objects: number;
+  connection.exec('begin');
   try {
-    applicationId = Number(connection.prepare('pragma application_id').get()?.application_id);
-    objects = Number(connection.prepare('select count(*) as n from sqlite_master').get()?.n);
-  } catch (error) {
-    if (sqliteCode(error) === SQLITE_NOTADB) throw notOurs('it is not a SQLite database');
-    throw error;
+    let applicationId: number;
+    let objects: number;
+    try {
+      applicationId = Number(connection.prepare('pragma application_id').get()?.application_id);
+      objects = Number(connection.prepare('select count(*) as n from sqlite_master').get()?.n);
+    } catch (error) {
+      if (sqliteCode(error) === SQLITE_NOTADB) throw notOurs('it is not a SQLite database');
+      throw error;
+    }
+    if (objects === 0 && applicationId === 0) return 'empty';
+    if (applicationId !== STATE_APPLICATION_ID) throw notOurs('another application wrote it');
+    let stored: SqliteOutput | undefined;
+    try {
+      stored = connection
+        .prepare(`select value from meta where key = 'schema_version'`)
+        .get()?.value;
+    } catch {
+      throw notOurs('it has no table of schema information');
+    }
+    const version =
+      typeof stored === 'string' && /^[1-9]\d*$/u.test(stored) ? Number(stored) : Number.NaN;
+    if (!Number.isSafeInteger(version)) throw notOurs('it has no schema version');
+    if (version > STATE_SCHEMA_VERSION) {
+      throw new StateDatabaseError(
+        'newer_schema',
+        `${file} was written by a newer Cats Bot (schema ${version}; this version reads up to ${STATE_SCHEMA_VERSION}). No row or table was changed.`,
+      );
+    }
+    return 'current';
+  } finally {
+    rollback(connection);
   }
-  if (objects === 0 && applicationId === 0) return 'empty';
-  if (applicationId !== STATE_APPLICATION_ID) throw notOurs('another application wrote it');
-  const hasMeta = connection
-    .prepare(`select 1 as found from sqlite_master where type = 'table' and name = 'meta'`)
-    .get();
-  const stored = hasMeta
-    ? connection.prepare(`select value from meta where key = 'schema_version'`).get()?.value
-    : undefined;
-  const version =
-    typeof stored === 'string' && /^[1-9]\d*$/u.test(stored) ? Number(stored) : Number.NaN;
-  if (!Number.isSafeInteger(version)) throw notOurs('it has no schema version');
-  if (version > STATE_SCHEMA_VERSION) {
-    throw new StateDatabaseError(
-      'newer_schema',
-      `${file} was written by a newer Cats Bot (schema ${version}; this version reads up to ${STATE_SCHEMA_VERSION}). Nothing was changed.`,
-    );
-  }
-  return 'current';
 }
 
-function createSchema(connection: SqliteDatabase, now: Date): void {
+/** The whole schema, or none of it. */
+function createSchema(connection: SqliteDatabase, now: () => Date): void {
   connection.exec('begin immediate');
   try {
     connection.exec(`pragma application_id=${STATE_APPLICATION_ID}`);
     connection.exec(STATE_SCHEMA_SQL);
     const insert = connection.prepare('insert into meta(key, value) values (?, ?)');
     insert.run('schema_version', String(STATE_SCHEMA_VERSION));
-    insert.run('created_at', now.toISOString());
+    insert.run('created_at', now().toISOString());
     connection.exec('commit');
   } catch (error) {
     rollback(connection);
@@ -246,23 +288,27 @@ let supported: { version: string } | { error: string } | undefined;
 /** `contentless_delete` needs SQLite 3.43, and the index needs FTS5. Checked once. */
 function supportedSqliteVersion(): string {
   if (!supported) {
-    const { DatabaseSync } = sqliteDriver();
-    const probe = new DatabaseSync(':memory:');
     try {
-      const version = String(probe.prepare('select sqlite_version() as version').get()?.version);
-      const [major = 0, minor = 0] = version.split('.').map(Number);
-      const fts5 = probe
-        .prepare('pragma compile_options')
-        .all()
-        .some((row) => row.compile_options === 'ENABLE_FTS5');
-      supported =
-        (major > 3 || (major === 3 && minor >= 43)) && fts5
-          ? { version }
-          : {
-              error: `The SQLite built into this Node.js (${version}${fts5 ? '' : ', without FTS5'}) cannot hold the bot state database, which needs SQLite 3.43 or later with FTS5.`,
-            };
-    } finally {
-      probe.close();
+      const { DatabaseSync } = sqliteDriver();
+      const probe = new DatabaseSync(':memory:');
+      try {
+        const version = String(probe.prepare('select sqlite_version() as version').get()?.version);
+        const [major = 0, minor = 0] = version.split('.').map(Number);
+        const fts5 = probe
+          .prepare('pragma compile_options')
+          .all()
+          .some((row) => row.compile_options === 'ENABLE_FTS5');
+        supported =
+          (major > 3 || (major === 3 && minor >= 43)) && fts5
+            ? { version }
+            : {
+                error: `The SQLite built into this Node.js (${version}${fts5 ? '' : ', without FTS5'}) cannot hold the bot state database, which needs SQLite 3.43 or later with FTS5.`,
+              };
+      } finally {
+        probe.close();
+      }
+    } catch (error) {
+      supported = { error: error instanceof Error ? error.message : String(error) };
     }
   }
   if ('error' in supported) throw new StateDatabaseError('unsupported_sqlite', supported.error);
@@ -286,51 +332,55 @@ function rollback(connection: SqliteDatabase): void {
 class Connection implements StateDatabase {
   readonly file: string;
   readonly mode: StateDatabaseMode;
-  private connection: SqliteDatabase | null;
-  private readonly statements = new Map<string, SqliteStatement>();
-  private readonly changes = new Map<string, SqliteStatement>();
-  private depth = 0;
-  private doomed = false;
+  // Private at run time too: nothing outside this class can reach the connection.
+  #connection: SqliteDatabase | null;
+  readonly #queries = new Map<string, SqliteStatement>();
+  readonly #changes = new Map<string, SqliteStatement>();
+  #depth = 0;
+  /** Set when a nested piece of work failed: the transaction can only be rolled back. */
+  #failure: { cause: unknown } | null = null;
 
   constructor(file: string, mode: StateDatabaseMode, connection: SqliteDatabase) {
     this.file = file;
     this.mode = mode;
-    this.connection = connection;
+    this.#connection = connection;
   }
 
   get isOpen(): boolean {
-    return this.connection !== null;
+    return this.#connection !== null;
   }
 
   get(sql: string, ...parameters: SqliteInput[]): StateRow | undefined {
-    return this.query(sql).get(...parameters);
+    return this.#query(sql).get(...parameters);
   }
 
   all(sql: string, ...parameters: SqliteInput[]): StateRow[] {
-    return this.query(sql).all(...parameters);
+    return this.#query(sql).all(...parameters);
   }
 
   run(sql: string, ...parameters: SqliteInput[]): number {
-    return Number(this.change(sql).run(...parameters).changes);
+    return Number(this.#change(sql).run(...parameters).changes);
   }
 
   insert(sql: string, ...parameters: SqliteInput[]): number {
-    const { lastInsertRowid } = this.change(sql).run(...parameters);
-    if (lastInsertRowid > Number.MAX_SAFE_INTEGER) {
-      throw new RangeError(
-        `The row id ${lastInsertRowid} is not that of a row in an ordinary table`,
+    const misuse = (): Error =>
+      new TypeError(
+        `insert() is for a statement that adds exactly one row to an ordinary table: ${sql}`,
       );
-    }
+    if (!INSERT.test(sql)) throw misuse();
+    const { changes, lastInsertRowid } = this.#change(sql).run(...parameters);
+    // Without a new row, SQLite's last row id is still that of some earlier statement.
+    if (Number(changes) !== 1 || lastInsertRowid > Number.MAX_SAFE_INTEGER) throw misuse();
     return Number(lastInsertRowid);
   }
 
-  transaction<T>(work: () => T): T {
-    this.assertWriter();
-    return this.within('begin immediate', work);
+  transaction<T>(work: () => Synchronous<T>): T {
+    this.#assertWriter();
+    return this.#within('begin immediate', work, false);
   }
 
-  snapshot<T>(work: () => T): T {
-    return this.within('begin', work, true);
+  snapshot<T>(work: () => Synchronous<T>): T {
+    return this.#within('begin', work, true);
   }
 
   meta(key: string): string | undefined {
@@ -347,22 +397,22 @@ class Connection implements StateDatabase {
   }
 
   close(): void {
-    const connection = this.connection;
+    const connection = this.#connection;
     if (!connection) return;
-    this.connection = null;
-    this.statements.clear();
-    this.changes.clear();
-    this.depth = 0;
+    this.#connection = null;
+    this.#queries.clear();
+    this.#changes.clear();
+    this.#depth = 0;
     connection.close();
   }
 
-  private open(): SqliteDatabase {
-    if (!this.connection) throw new StateDatabaseError('closed', `${this.file} is closed`);
-    return this.connection;
+  #open(): SqliteDatabase {
+    if (!this.#connection) throw new StateDatabaseError('closed', `${this.file} is closed`);
+    return this.#connection;
   }
 
-  private assertWriter(): void {
-    this.open();
+  #assertWriter(): void {
+    this.#open();
     if (this.mode !== 'writer') {
       throw new StateDatabaseError(
         'read_only',
@@ -371,27 +421,33 @@ class Connection implements StateDatabase {
     }
   }
 
-  private query(sql: string): SqliteStatement {
+  /**
+   * Inside `transaction` or `snapshot`, SQLite's own transaction must still be open. It
+   * ends by itself after some failures, such as a full disk; a statement run after that
+   * would be committed on its own.
+   */
+  #assertTransaction(connection: SqliteDatabase): void {
+    if (this.#depth > 0 && !connection.isTransaction) {
+      throw new StateDatabaseError(
+        'transaction_lost',
+        `SQLite ended the transaction on ${this.file} after a failure; none of it was kept`,
+      );
+    }
+  }
+
+  #query(sql: string): SqliteStatement {
+    const connection = this.#open();
     // `query_only` already rejects a change. This keeps pragmas, checkpoints and the like
     // away from a reader's connection as well.
     if (this.mode === 'reader' && !QUERY.test(sql)) {
-      this.open();
       throw new StateDatabaseError(
         'read_only',
         `${this.file} is open for reading and accepts only queries`,
       );
     }
-    return this.statement(sql);
-  }
-
-  private statement(sql: string): SqliteStatement {
-    const connection = this.open();
-    let statement = this.statements.get(sql);
-    if (!statement) {
-      statement = connection.prepare(sql);
-      this.statements.set(sql, statement);
-    }
-    return statement;
+    assertOneStatement(sql);
+    this.#assertTransaction(connection);
+    return this.#prepared(this.#queries, connection, sql, false);
   }
 
   /**
@@ -400,29 +456,43 @@ class Connection implements StateDatabase {
    * beyond what a number holds. With the default setting the driver then throws on
    * Node.js 26 and returns a rounded number on Node.js 24, although the statement ran.
    */
-  private change(sql: string): SqliteStatement {
-    this.assertWriter();
-    const connection = this.open();
-    let statement = this.changes.get(sql);
+  #change(sql: string): SqliteStatement {
+    this.#assertWriter();
+    const connection = this.#open();
+    assertOneStatement(sql);
+    this.#assertTransaction(connection);
+    return this.#prepared(this.#changes, connection, sql, true);
+  }
+
+  #prepared(
+    cache: Map<string, SqliteStatement>,
+    connection: SqliteDatabase,
+    sql: string,
+    bigIntegers: boolean,
+  ): SqliteStatement {
+    let statement = cache.get(sql);
     if (!statement) {
       statement = connection.prepare(sql);
-      statement.setReadBigInts(true);
-      this.changes.set(sql, statement);
+      if (bigIntegers) statement.setReadBigInts(true);
+      if (cache.size >= STATEMENT_CACHE_LIMIT) cache.clear();
+      cache.set(sql, statement);
     }
     return statement;
   }
 
-  private within<T>(begin: string, work: () => T, readNow = false): T {
-    const connection = this.open();
-    if (this.depth > 0) {
-      this.depth += 1;
+  #within<T>(begin: string, work: () => Synchronous<T>, readNow: boolean): T {
+    const connection = this.#open();
+    if (this.#depth > 0) {
+      this.#assertTransaction(connection);
+      this.#depth += 1;
       try {
         return synchronous(work());
       } catch (error) {
-        this.doomed = true;
+        this.#failure ??= { cause: error };
         throw error;
       } finally {
-        this.depth -= 1;
+        // `close()` inside the work has already set the depth to nothing.
+        this.#depth = Math.max(0, this.#depth - 1);
       }
     }
     connection.exec(begin);
@@ -435,24 +505,33 @@ class Connection implements StateDatabase {
         throw error;
       }
     }
-    this.depth = 1;
-    this.doomed = false;
+    this.#depth = 1;
+    this.#failure = null;
     let result: T;
     try {
       result = synchronous(work());
     } catch (error) {
-      this.depth = 0;
-      if (this.connection) rollback(connection);
+      this.#depth = 0;
+      if (this.#connection) rollback(connection);
       throw error;
     }
-    this.depth = 0;
+    this.#depth = 0;
     // `work` may have closed the database, which rolled the transaction back.
-    if (!this.connection)
+    if (!this.#connection) {
       throw new StateDatabaseError('closed', `${this.file} was closed inside a transaction`);
-    if (this.doomed) {
+    }
+    if (!connection.isTransaction) {
+      throw new StateDatabaseError(
+        'transaction_lost',
+        `SQLite ended the transaction on ${this.file} after a failure; none of it was kept`,
+      );
+    }
+    const failure = this.#failure as { cause: unknown } | null;
+    if (failure) {
       rollback(connection);
       throw new Error(
         'A nested transaction failed and its error was caught; the whole transaction was rolled back.',
+        { cause: failure.cause },
       );
     }
     try {
@@ -465,11 +544,21 @@ class Connection implements StateDatabase {
   }
 }
 
-function synchronous<T>(value: T): T {
+/** The driver compiles only the first statement of a text and says nothing about the rest. */
+function assertOneStatement(sql: string): void {
+  if (sql.includes(';')) {
+    throw new TypeError(`One statement at a time, with its values as parameters: ${sql}`);
+  }
+  if (TRANSACTION_CONTROL.test(sql)) {
+    throw new TypeError(`Transactions are opened with transaction() and snapshot(): ${sql}`);
+  }
+}
+
+function synchronous<T>(value: Synchronous<T>): T {
   if (typeof (value as { then?: unknown } | null)?.then === 'function') {
     throw new TypeError(
       'A state database transaction must be synchronous; its work returned a promise.',
     );
   }
-  return value;
+  return value as T;
 }
