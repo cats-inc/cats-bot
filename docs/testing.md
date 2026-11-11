@@ -201,7 +201,8 @@ outside `src/core/store/`.
     read-only file removed under a path with Korean, an emoji and simplified Chinese;
   - restoring, then today's code writing, then migrating again, with what was written in
     between found; restoring refused while the bot runs or when an item is in both
-    places; a restore stopped before each step leaving a root one version starts on;
+    places; a restore stopped before each step leaving a root the new version starts on,
+    or one that a second restore finishes;
   - a restore folding the log of a killed core into the database it sets aside, stopping
     while another program holds the database, stopping with nothing to put back, and
     naming what it leaves in the archive.

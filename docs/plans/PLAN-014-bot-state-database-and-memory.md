@@ -390,6 +390,25 @@ security review. Embeddings come only if the evaluation asks for them.
       directory and its first file leaves an empty directory, which the next run
       removes; a temporary file of an interrupted profile write can stay beside the
       profile, as today; an error's message is written to the report as it is.
+    - For the cutover, from the second review:
+      - A new bot's first start: the migration stops on a profile already at the raised
+        version with no finished database. Once the core writes the raised version,
+        `cats-bot init` makes such a profile, so the cutover has to make a new bot's
+        database at init, or tell a new bot from a migrated one, and raise a schema-1
+        profile to 2 before the migration, not straight to 3.
+      - A restore stopped before it lowers the profile leaves the new version refusing
+        to import again; its message should name the set-aside database, and say the
+        files are back.
+    - For `cats-bot restore`, from the second review: a newer or foreign `bot.db` makes
+      the restore stop after it has put the files back, and no second run gets further;
+      it should check the database first, and set such a one aside whole. A read-only
+      `bot.db` is reported as held by another program.
+    - Left as they are, from the second review: a copy used again is judged by its
+      manifest, not by reading it again, so a copy someone emptied is used again and
+      named by the marker; a file changed after it was copied, which only a writer that
+      ignores the lock can do, leaves a copy one line short of what was imported; a
+      profile another program holds open passes the writable check and fails the raise
+      after the import, until that program lets it go.
     - Measured on Windows: 9 s for 100,000 made-up entries and 25,000 journal lines, on
       Node.js 26 and inside Electron 41 alike, whatever the batch size between 500 and
       10,000; a million entries would take about a minute and a half. A copy of one local

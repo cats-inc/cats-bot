@@ -653,7 +653,7 @@ test('restoring refuses while the bot runs, and when an item is in both places',
   assert.equal(profileOf(paths).schemaVersion, 3);
 });
 
-test('a restore stopped before any step leaves a root one of the versions starts on', () => {
+test('a restore stopped before any step leaves a root the new version starts on, or one a second restore finishes', () => {
   for (const step of ['files', 'database', 'profile'] as const) {
     const paths = versionOneBot();
     const before = versionOneFiles(paths);
@@ -672,8 +672,8 @@ test('a restore stopped before any step leaves a root one of the versions starts
       /stopped before/u,
     );
     if (step === 'profile') {
-      // The files are back and the database aside: the new version migrates them again,
-      // and today's Bot starts once a second restore has lowered the profile.
+      // The files are back and the database aside, and the profile still says migrated:
+      // the new version refuses to import again, and a second restore finishes.
       assert.deepEqual(versionOneFiles(paths), before);
       assert.equal(existsSync(stateDatabaseFile(paths)), false);
       assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), {
