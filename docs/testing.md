@@ -175,6 +175,31 @@ outside `src/core/store/`.
   the conversation holds, a batch all or nothing, the entries indexed, and nothing
   appended after the largest `seq` a number holds.
 
+### Version-1 migration
+
+- **Location**: `tests/core/version1Migration.test.ts`
+- **Scope**: `src/core/store/version1Migration.ts` (SPEC-014 FR-11 and FR-12). Nothing
+  calls it yet.
+  - a root copied aside with a manifest, imported, its profile raised after a copy of it
+    and its files archived, and a second run finding nothing to do;
+  - the raised profile refused by today's `loadProfile`;
+  - no run without the bot's lock;
+  - an import that does not finish, or fails, leaving the version-1 files and the
+    profile as they were, a JSON and a Markdown report beside the copy, and no database;
+  - a run stopped before each step, each archive move included, finished by the next;
+  - a database without the marker removed, a log without its database removed, and a
+    newer database or a file that is not one kept and refused;
+  - a profile a power cut left unreadable raised from its copy, and none raised without
+    one or from another version;
+  - what is made again after the archive kept beside it, an empty directory removed;
+  - an archive move that fails reported and done at the next start;
+  - a copy an earlier run could not finish removed, a finished one kept;
+  - restoring, then today's code writing, then migrating again, with what was written in
+    between found; restoring refused while the bot runs or when an item is in both
+    places; and a restore stopped before each step leaving a root one version starts on.
+- The root of every case has CJK characters and a space in its path, which is how running
+  these inside Electron found that its `fs.cpSync` ends the process on such a path.
+
 ### Store tests inside Electron
 
 `npm test` runs the store's test files above under Node.js. The core runs inside
