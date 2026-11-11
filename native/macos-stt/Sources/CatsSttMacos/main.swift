@@ -216,6 +216,12 @@ func resolveRecognizer(locale: String, emitter: JsonEmitter) -> SFSpeechRecogniz
     emitter.end()
     return nil
   }
+  // The CLI blocks its main thread until recognition ends. Speech defaults to
+  // delivering results on the main queue, which would never get to run.
+  let callbackQueue = OperationQueue()
+  callbackQueue.name = "cats-stt-macos.recognition"
+  callbackQueue.maxConcurrentOperationCount = 1
+  recognizer.queue = callbackQueue
   return recognizer
 }
 
@@ -269,6 +275,16 @@ func runMicrophoneRecognition(
   emitter: JsonEmitter
 ) {
   let audioEngine = AVAudioEngine()
+  let inputNode = audioEngine.inputNode
+  // The output scope can report a default format even when no input device exists.
+  // Check the hardware scope before installTap, which otherwise raises an Obj-C exception.
+  let format = inputNode.inputFormat(forBus: 0)
+  guard format.sampleRate > 0, format.channelCount > 0 else {
+    emitter.error("mic_unavailable")
+    emitter.end()
+    return
+  }
+
   let request = SFSpeechAudioBufferRecognitionRequest()
   configureOnDevice(request)
 
@@ -313,6 +329,10 @@ func runMicrophoneRecognition(
     semaphore.signal()
   }
 
+  // A fast error callback must not tear down audio while the tap is still being
+  // installed. Release callbacks only after startup has succeeded or cleaned up.
+  let callbackQueue = recognizer.queue
+  callbackQueue.isSuspended = true
   task = recognizer.recognitionTask(with: request) { result, error in
     if let result {
       let text = result.bestTranscription.formattedString
@@ -330,8 +350,6 @@ func runMicrophoneRecognition(
     }
   }
 
-  let inputNode = audioEngine.inputNode
-  let format = inputNode.outputFormat(forBus: 0)
   inputNode.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
     request.append(buffer)
   }
@@ -342,10 +360,12 @@ func runMicrophoneRecognition(
   } catch {
     emitter.error("mic_unavailable")
     finishSession(cancelTask: true)
+    callbackQueue.isSuspended = false
     return
   }
 
   emitter.ready(locale: options.locale)
+  callbackQueue.isSuspended = false
 
   DispatchQueue.global(qos: .userInitiated).async {
     while let line = readLine() {
