@@ -28,6 +28,7 @@ import {
 } from '../support/desktopControl.ts';
 import { makeTempHome } from '../support/harness.ts';
 import { createDesktopLease } from '../../src/core/desktopControl/lease.ts';
+import { withStateStore } from '../support/stateData.ts';
 
 let leases = 0;
 /** Each core here takes a lease of its own, never the account's (SPEC-008 FR-26). */
@@ -422,9 +423,13 @@ test('B8: screenshots, UI values, window titles, typed and clipboard text reach 
   assert.match(transcript, /Desktop control type_text input; its text is not kept/u);
   assert.match(transcript, /Desktop control clipboard_write input; its text is not kept/u);
   const deltas = JSON.stringify(h.events.filter((event) => event.type === 'turn.delta'));
-  const files = ['journal.jsonl', 'desktop-control.json', 'profile.json', ...readdirSync(join(h.root, 'logs')).map((file) => join('logs', file)),
-    ...readdirSync(join(h.root, 'transcripts')).map((file) => join('transcripts', file))]
-    .map((file) => { try { return readFileSync(join(h.root, file), 'utf8'); } catch { return ''; } }).join('\n');
+  // SPEC-014: the journal, transcripts and presentations are in the bot's database.
+  const stored = withStateStore(h.root, (store) => JSON.stringify([
+    store.journal(), store.conversations(),
+    ...store.conversations().map((record) => [store.entries((record as { id: string }).id), store.responses((record as { id: string }).id)]),
+  ]));
+  const files = [stored, ...['desktop-control.json', 'profile.json', ...readdirSync(join(h.root, 'logs')).map((file) => join('logs', file))]
+    .map((file) => { try { return readFileSync(join(h.root, file), 'utf8'); } catch { return ''; } })].join('\n');
   for (const [label, text] of [['transcript', transcript], ['turn deltas', deltas], ['files', files],
     ['logs', h.logs.join('\n')], ['telegram', h.telegram.join('\n')]] as const) {
     for (const secret of [PNG_BYTES, SECRET_UI_VALUE, SECRET_TITLE, SECRET_TYPED, SECRET_CLIPBOARD]) {

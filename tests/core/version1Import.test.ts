@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -228,9 +228,9 @@ test('a version-1 data root is imported whole, keeping every seq, and marked fin
       ['home#5'],
     );
 
-    // Conversation records are kept as their files hold them, and today's loader reads them
-    // to the same records it reads from the files.
-    const loader = new ConversationStore({ paths, now: () => new Date(AT) });
+    // Conversation records are kept as their files hold them, and the core's loader reads
+    // them from the database to the records the version-1 loader read from the files.
+    const loader = new ConversationStore({ store: () => store, now: () => new Date(AT) });
     loader.load();
     const records = store.conversations() as ConversationRecord[];
     assert.deepEqual(
@@ -241,7 +241,10 @@ test('a version-1 data root is imported whole, keeping every seq, and marked fin
         .sort(),
     );
     for (const record of records) {
-      assert.deepEqual(normalizeConversation(record, AT), loader.get(record.id), record.id);
+      const file = JSON.parse(
+        readFileSync(join(paths.conversations, record.id === 'note-a' ? 'note-a.json' : 'home.json'), 'utf8'),
+      ) as unknown;
+      assert.deepEqual(loader.get(record.id), normalizeConversation(file, AT), record.id);
     }
     assert.deepEqual(Object.keys(records.find((record) => record.id === 'note-a')!)[0], 'future');
 

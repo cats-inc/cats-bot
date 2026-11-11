@@ -6,6 +6,7 @@ import { ChannelError, HostChannelClient, readChannelOwner, type ChannelHostIden
 import { remoteBotCore, type RemoteBotCore } from '../../core/host-api/remote.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor } from '../../core/store/paths.ts';
+import { stateMigrationPending } from '../../core/profile/initialize.ts';
 import { rotateStderrLog } from '../../shared/stderrLog.ts';
 import { processIsAlive } from './update/installation.ts';
 
@@ -64,6 +65,16 @@ export interface CoreHostOptions {
   startTimeoutMs?: number;
   /** How long to wait for a core that holds the bot's lock but has not published its channel yet. */
   lockWaitMs?: number;
+  /** Aborted when the start is no longer wanted: a core this host started is ended. */
+  signal?: AbortSignal;
+}
+
+/** A start that was stopped before its core published its channel. */
+export class CoreStartStoppedError extends Error {
+  constructor() {
+    super('The start of the cat bot core was stopped');
+    this.name = 'CoreStartStoppedError';
+  }
 }
 
 export interface HostedCore {
@@ -122,6 +133,7 @@ export async function attachOrStartCore(root: string, launch: CoreLaunch, option
   const paths = botPathsFor(root);
   const deadline = Date.now() + (options.lockWaitMs ?? 10_000);
   for (;;) {
+    if (options.signal?.aborted) throw new CoreStartStoppedError();
     const owner = liveOwner(root);
     if (owner) {
       // SPEC-008 FR-11: a core another host started is never taken over.
@@ -161,7 +173,14 @@ function connect(root: string, options: CoreHostOptions): Promise<HostChannelCli
   return HostChannelClient.connect(root, { host: options.host, ...(options.services ? { services: options.services } : {}) });
 }
 
+/**
+ * SPEC-014 FR-11: a core that migrates a bot's version-1 files publishes its channel once the
+ * migration has finished, which takes minutes for a large bot.
+ */
+const MIGRATION_START_TIMEOUT_MS = 60 * 60_000;
+
 async function startCore(root: string, launch: CoreLaunch, options: CoreHostOptions): Promise<HostedCore> {
+  const migrating = stateMigrationPending(root);
   const logFile = coreLogFile(root);
   const errorFile = coreErrorFile(root);
   mkdirSync(join(errorFile, '..'), { recursive: true });
@@ -186,10 +205,16 @@ async function startCore(root: string, launch: CoreLaunch, options: CoreHostOpti
   const pid = child.pid;
   const published = await waitFor(() => {
     if (ended) return 'ended';
+    // SPEC-014 FR-11: a migration ended this way is finished by the next start.
+    if (options.signal?.aborted) return 'stopped';
     return pid && readChannelOwner(root)?.pid === pid ? 'published' : null;
-  }, options.startTimeoutMs ?? 60_000);
+  }, options.startTimeoutMs ?? (migrating ? MIGRATION_START_TIMEOUT_MS : 60_000));
   if (published !== 'published') {
-    if (pid && !ended) killTree(pid);
+    if (pid && !ended) {
+      killTree(pid);
+      await waitFor(() => !processIsAlive(pid), 5_000);
+    }
+    if (published === 'stopped') throw new CoreStartStoppedError();
     throw new Error(`The cat bot core did not start (${ended ?? 'timed out'}). See ${errorFile} and ${logFile}.`);
   }
   return hosted(await connect(root, options), pid!, true, logFile);

@@ -115,6 +115,7 @@ test('a writer creates the schema on a new file and records what wrote it', () =
       .map((row) => row.name);
     assert.deepEqual(tables, [
       'conversations',
+      'deleted_work',
       'entries',
       'entries_fts',
       'journal',

@@ -127,9 +127,12 @@ does not establish browser/desktop helper availability or successful invocation.
 
 - **Purpose**: the data root (`~/.catsbot/bots/<id>/`; `CATS_BOT_HOME` moves
   the whole `~/.catsbot` root).
-- **Responsibilities**: atomic writes (temp file plus rename), JSON-lines
-  append and rebuild for `journal.jsonl` and transcripts, the single-instance
-  lock and the handoff directory a second instance writes into (FR-2, FR-3).
+- **Responsibilities**: the bot's state database `bot.db` (SPEC-014): the
+  driver, the adapter and the store with its full-text search, which hold
+  conversations, transcripts, reply presentations and the journal; the
+  one-time migration of the version-1 files and its restore; atomic writes
+  (temp file plus rename) for the files beside it; the single-instance lock
+  and the handoff directory a second instance writes into (FR-2, FR-3).
 
 ### `src/core/runtime`
 

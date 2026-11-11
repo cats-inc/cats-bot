@@ -6,6 +6,7 @@ import type {
   WorkItem,
 } from '../types.ts';
 import { buildSearchQuery, INDEX_FORM, indexText } from './searchText.ts';
+export { StateDatabaseError, type StateDatabaseErrorCode } from './stateDatabase.ts';
 import {
   openStateDatabase,
   type StateDatabase,
@@ -27,6 +28,15 @@ import {
  * that cannot be read at all is left out and reported through `warn`, as an unreadable line
  * of a file is today.
  */
+
+/**
+ * What `deleted_work` keeps of a work item. A record that is not JSON keeps only its id, so
+ * that it never stops its conversation from being deleted.
+ */
+const DELETED_WORK_SELECT = `select id,
+  case when json_valid(json) then json_extract(json, '$.sourceRef') end,
+  case when json_valid(json) then json_extract(json, '$.chain.deliveryId') end
+  from work_items`;
 
 /** The `meta` key the version-1 import writes when it has finished (FR-11). */
 const IMPORT_MARKER = 'version1_import';
@@ -105,6 +115,18 @@ export interface BotStateStore {
    * schedule with an id also becomes that item's current state, in the same transaction.
    */
   appendJournal(entry: JournalEntry): void;
+  /**
+   * FR-7: whether a work item from this source went with a deleted conversation, so that a
+   * delivery handled before cannot come in as a new one.
+   */
+  isDeletedSource(sourceRef: string): boolean;
+  /**
+   * FR-7: work items whose conversation no longer exists, as 0.5 kept them, deleted as their
+   * conversation's would have been, with what `deleted_work` keeps. Returns how many.
+   */
+  forgetWorkWithoutConversation(): number;
+  /** FR-7: the deliveries, among those named, whose work item went with a deleted conversation. */
+  deletedDeliveries(deliveryIds: readonly string[]): Array<{ id: string; deliveryId: string }>;
   /** The journal in the order it was written; with `ref`, the lines about one work item or schedule. */
   journal(ref?: string): JournalEntry[];
   /** The current state of every work item, in the order each first appeared. */
@@ -309,6 +331,11 @@ class Store implements BotStateStore {
       this.#database.run('delete from entries where conversation_id = ?', id);
       this.#database.run('delete from responses where conversation_id = ?', id);
       this.#database.run(
+        `insert or ignore into deleted_work(id, source_ref, delivery_id) ${DELETED_WORK_SELECT}
+         where conversation_id = ?`,
+        id,
+      );
+      this.#database.run(
         `delete from journal where type = 'work' and ref in (select id from work_items where conversation_id = ?)`,
         id,
       );
@@ -377,7 +404,9 @@ class Store implements BotStateStore {
       if (!Number.isSafeInteger(seq)) {
         throw new RangeError(`Conversation ${conversationId} holds no more entries`);
       }
-      const full: TranscriptEntry = { ...entry, seq };
+      // As today's core writes an entry: `seq` first, and never one the entry came with.
+      const { seq: _given, ...rest } = entry as Partial<TranscriptEntry>;
+      const full = { seq, ...rest } as TranscriptEntry;
       const id = this.#database.insert(
         'insert into entries(conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?)',
         conversationId,
@@ -422,7 +451,8 @@ class Store implements BotStateStore {
     const row = this.#database.get(
       `select not (exists (select 1 from conversations) or exists (select 1 from entries)
         or exists (select 1 from responses) or exists (select 1 from journal)
-        or exists (select 1 from work_items) or exists (select 1 from schedules)) as empty`,
+        or exists (select 1 from work_items) or exists (select 1 from schedules)
+        or exists (select 1 from deleted_work)) as empty`,
     );
     return row?.empty === 1;
   }
@@ -480,6 +510,41 @@ class Store implements BotStateStore {
         JSON.stringify(entry),
       );
     });
+  }
+
+  forgetWorkWithoutConversation(): number {
+    return this.#database.transaction(() => {
+      // The home conversation is made on first use and is never deleted, so its work items
+      // are never a deleted conversation's, even before its record exists.
+      const orphans = `select id from work_items where conversation_id is not null
+        and conversation_id <> 'home'
+        and conversation_id not in (select id from conversations)`;
+      this.#database.run(
+        `insert or ignore into deleted_work(id, source_ref, delivery_id) ${DELETED_WORK_SELECT}
+         where id in (${orphans})`,
+      );
+      this.#database.run(`delete from journal where type = 'work' and ref in (${orphans})`);
+      return this.#database.run(`delete from work_items where id in (${orphans})`);
+    });
+  }
+
+  isDeletedSource(sourceRef: string): boolean {
+    return (
+      this.#database.get('select 1 as found from deleted_work where source_ref = ?', sourceRef) !==
+      undefined
+    );
+  }
+
+  deletedDeliveries(deliveryIds: readonly string[]): Array<{ id: string; deliveryId: string }> {
+    const found: Array<{ id: string; deliveryId: string }> = [];
+    for (const deliveryId of new Set(deliveryIds)) {
+      const row = this.#database.get(
+        'select id from deleted_work where delivery_id = ? order by id limit 1',
+        deliveryId,
+      );
+      if (typeof row?.id === 'string') found.push({ id: row.id, deliveryId });
+    }
+    return found;
   }
 
   appendJournal(entry: JournalEntry): void {

@@ -33,6 +33,7 @@ import {
   applyProfilePatch,
   loadProfile,
   saveProfile,
+  STATE_DATABASE_PROFILE_RAISE,
   type ProfileChange,
 } from './profile/profile.ts';
 import type { HubLanguageReport } from '../shared/language.ts';
@@ -50,10 +51,11 @@ import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
-import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
 import { assertBotDataResetNotPending } from './store/dataResetGuard.ts';
-import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
+import { botPathsFor, isValidBotId, stateDatabaseFile, type BotPaths } from './store/paths.ts';
+import { openBotStateStore, StateDatabaseError, type BotStateStore } from './store/stateStore.ts';
+import { migrateVersion1 } from './store/version1Migration.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import {
   createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, type HubCall,
@@ -162,6 +164,21 @@ export interface BotCoreOptions {
 export type { BotStatus } from './types.ts';
 export { BotNotInitializedError, initializeBot, readBotProfile, type InitializeBotInput } from './profile/initialize.ts';
 
+/** SPEC-014 FR-7: how a delivery whose conversation was deleted is answered. */
+const DELETED_CONVERSATION = 'The conversation was deleted.';
+
+/** SPEC-014 FR-12: the version-1 files were not migrated; the core does not start. */
+export class MigrationNotFinishedError extends Error {
+  /** The report beside the copy of the version-1 files. */
+  readonly report: string;
+
+  constructor(report: string) {
+    super(`The bot's data could not be moved into its database; the bot did not start. See ${report}`);
+    this.name = 'MigrationNotFinishedError';
+    this.report = report;
+  }
+}
+
 export class BotInstanceRunningError extends Error {
   readonly owner: InstanceLock;
 
@@ -201,6 +218,8 @@ export class BotCore implements BotHostApi {
   private readonly stoppedSignal: Promise<void>;
   private resolveStopped: () => void = () => {};
   private readonly conversations: ConversationStore;
+  /** SPEC-014: the bot's state database, open for writing while this process holds the lock. */
+  private stateStore: BotStateStore | null = null;
   private readonly queue = new WorkQueue();
   private readonly workItems = new Map<string, WorkItem>();
   private readonly schedules = new Map<string, ScheduleRecord>();
@@ -280,13 +299,13 @@ export class BotCore implements BotHostApi {
     });
     this.stoppedSignal = new Promise<void>((resolve) => { this.resolveStopped = resolve; });
     this.conversations = new ConversationStore({
-      paths: this.paths,
+      store: () => this.data(),
       now: this.now,
       warn: (message) => this.log(`warn ${message}`),
     });
-    // Read-only hosts (status, conversations, schedule list) see the records without starting anything.
-    this.conversations.load();
-    this.loadJournal();
+    // Read-only hosts (status, conversations, schedule list) see the records without starting
+    // anything, through a reader closed once they are read (SPEC-014 FR-1).
+    this.readSnapshot();
     this.secrets = options.secrets ?? new FileSecretStore(this.paths.root, {
       ...(options.hostCipher ? { asyncCipher: this.channel.cipher(options.hostCipher) } : {}),
       warn: (line) => this.log(`warn ${line}`),
@@ -432,12 +451,89 @@ export class BotCore implements BotHostApi {
   }
 
   private loadJournal(): void {
-    const journal = readJournal(this.paths);
-    if (journal.corruptLines > 0) this.log(`warn journal has ${journal.corruptLines} unreadable line(s)`);
     this.workItems.clear();
     this.schedules.clear();
-    for (const item of journal.workItems.values()) this.workItems.set(item.id, item);
-    for (const schedule of journal.schedules.values()) this.schedules.set(schedule.id, schedule);
+    for (const item of this.data().workItems()) this.workItems.set(item.id, item);
+    for (const schedule of this.data().schedules()) this.schedules.set(schedule.id, schedule);
+  }
+
+  /** The bot's state database; open only while this process holds the bot's lock. */
+  private data(): BotStateStore {
+    if (!this.stateStore) throw new Error("The bot's data is written only while this process holds its lock");
+    return this.stateStore;
+  }
+
+  /**
+   * SPEC-014 FR-1: a host without the lock reads one snapshot through a reader, which never
+   * makes the file, and closes it. A bot not migrated yet shows nothing until it first starts.
+   */
+  private readSnapshot(): void {
+    let reader: BotStateStore;
+    try {
+      reader = openBotStateStore({
+        file: stateDatabaseFile(this.paths),
+        mode: 'reader',
+        warn: (message) => this.log(`warn ${message}`),
+      });
+    } catch (error) {
+      // A bot not migrated yet has no database; one this version cannot read is an error.
+      if (error instanceof StateDatabaseError && error.code === 'missing') return;
+      throw error;
+    }
+    this.stateStore = reader;
+    try {
+      if (reader.importMarker() !== undefined) {
+        this.conversations.load();
+        this.loadJournal();
+      }
+    } finally {
+      this.stateStore = null;
+      reader.close();
+    }
+  }
+
+  /**
+   * SPEC-014 FR-11, under the lock: a schema-1 profile is raised to 2 as before, the version-1
+   * files are migrated if they still are, and the database is opened for writing and read.
+   */
+  private openForWriting(): void {
+    const loaded = loadProfile(this.paths, this.profile, true);
+    if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
+    const migration = migrateVersion1({ paths: this.paths, profile: STATE_DATABASE_PROFILE_RAISE, now: this.now });
+    if (migration.outcome === 'not_migrated') {
+      this.log(`error the bot's data could not be moved into its database; see ${migration.summary}`);
+      throw new MigrationNotFinishedError(migration.summary);
+    }
+    if (migration.imported) {
+      const { conversations, entries, journalLines } = migration.imported.counts;
+      this.log(`version-1 files moved into the state database: ${conversations} conversations, ${entries} entries, ${journalLines} journal lines`);
+    }
+    if (migration.summary) {
+      const found = migration.imported?.problems.length ?? 0;
+      this.log(`warn the migration found ${found} thing(s) it did not import as they were; see ${migration.summary}`);
+    }
+    for (const item of migration.notArchived) this.log(`warn version-1 ${item} is archived at the next start`);
+    const raised = loadProfile(this.paths, this.profile, true);
+    if (!raised.ok) throw new Error(`The migrated profile cannot be read: ${raised.reason === 'corrupt' ? raised.error : 'missing'}`);
+    this.profile = raised.profile;
+    this.stateStore = openBotStateStore({
+      file: stateDatabaseFile(this.paths),
+      mode: 'writer',
+      now: this.now,
+      warn: (message) => this.log(`warn ${message}`),
+    });
+    // SPEC-014 FR-7 (chosen 2026-11-12): work items 0.5 kept for conversations deleted
+    // before are deleted as the conversation's would have been, leaving what deleted_work keeps.
+    const forgotten = this.stateStore.forgetWorkWithoutConversation();
+    if (forgotten > 0) this.log(`${forgotten} work item(s) of deleted conversations forgotten`);
+    this.conversations.load();
+    this.loadJournal();
+  }
+
+  private closeData(): void {
+    const store = this.stateStore;
+    this.stateStore = null;
+    store?.close();
   }
 
   private readLifeState(): LifeState | null {
@@ -614,6 +710,18 @@ export class BotCore implements BotHostApi {
     const sourceRef = `bot:${delivery.deliveryId}`;
     const existing = [...this.workItems.values()].find((item) => item.sourceRef === sourceRef);
     if (existing) return structuredClone(existing);
+    // SPEC-014 FR-7 (chosen 2026-11-12): a delivery whose work item went with a deleted
+    // conversation was handled; it is answered as cancelled, not admitted again.
+    const deleted = this.data().deletedDeliveries([delivery.deliveryId])[0];
+    if (deleted) {
+      return {
+        ...createWorkItem({ kind: 'event', source: 'bot', conversationId: '', prompt: '' }, this.now()),
+        id: deleted.id,
+        state: 'cancelled',
+        error: DELETED_CONVERSATION,
+        sourceRef,
+      };
+    }
     const fromName = oneLine(delivery.fromName, 80) || delivery.from;
     // A reply whose conversation the owner deleted goes to its sender's conversation, never to the direct message.
     const conversationId = delivery.kind === 'reply' && delivery.conversationId && this.conversations.get(delivery.conversationId)
@@ -688,6 +796,14 @@ export class BotCore implements BotHostApi {
         reply: item.state === 'completed' ? item.result?.text ?? '' : null,
         error: item.error ?? null,
       });
+    }
+    // SPEC-014 FR-7 (chosen 2026-11-12): what went with a deleted conversation is cancelled.
+    const known = new Set(states.map((state) => state.deliveryId));
+    const store = this.stateStore;
+    if (store) {
+      for (const deleted of store.deletedDeliveries(deliveryIds.filter((id) => !known.has(id)))) {
+        states.push({ deliveryId: deleted.deliveryId, workItemId: deleted.id, state: 'cancelled', reply: null, error: DELETED_CONVERSATION });
+      }
     }
     return states;
   }
@@ -798,12 +914,19 @@ export class BotCore implements BotHostApi {
   }
 
   private journal(entry: JournalEntry): void {
-    appendJournal(this.paths, entry);
+    this.data().appendJournal(entry);
   }
 
   private record(item: WorkItem): WorkItem {
-    this.workItems.set(item.id, item);
-    this.journal({ type: 'work', at: this.now().toISOString(), item });
+    // SPEC-014 FR-7 (chosen 2026-11-12): a work item whose conversation was deleted is not
+    // written or kept again, so that a turn ending after the delete does not bring back its
+    // prompt. Who waits for it still hears how it ended.
+    if (this.conversations.get(item.conversationId)) {
+      this.workItems.set(item.id, item);
+      this.journal({ type: 'work', at: this.now().toISOString(), item });
+    } else {
+      this.workItems.delete(item.id);
+    }
     this.bus.emit({ type: 'work.updated', workItem: item });
     return item;
   }
@@ -831,17 +954,20 @@ export class BotCore implements BotHostApi {
 
   async start(): Promise<void> {
     if (this.started) throw new Error('Bot core already started');
+    // A start that failed stopped this core; a new one is opened to try again.
+    if (this.stopped) throw new Error('This bot core was stopped; open it again to start it');
     const lock = acquireInstanceLock(this.paths);
     if (!lock.held) throw new BotInstanceRunningError(lock.owner);
     this.started = true;
     this.releaseLock = lock.release;
     try {
-    const loaded = loadProfile(this.paths, this.profile, true);
-    if (!loaded.ok) {
+    try {
+      this.openForWriting();
+    } catch (error) {
+      this.closeData();
       this.releaseLock(); this.releaseLock = null; this.started = false;
-      throw new Error('Profile upgrade failed; original data and backup were preserved.');
+      throw error;
     }
-    this.profile = loaded.profile;
     if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
@@ -849,9 +975,7 @@ export class BotCore implements BotHostApi {
     // A host may stop the core over the channel while it is still starting.
     if (this.stopped) return;
 
-    this.conversations.load();
     this.conversations.home();
-    this.loadJournal();
     this.desktopSwitches.load();
     // SPEC-012 FR-5: the running core writes the contact note upgrades; a desktop control
     // switch left on in a note from before is turned off, since its bar is gone there.
@@ -907,6 +1031,7 @@ export class BotCore implements BotHostApi {
       finally {
         await this.control.stop();
         await this.channel.stop();
+        this.closeData();
         this.releaseLock?.(); this.releaseLock = null;
       }
       throw error;
@@ -1184,6 +1309,7 @@ export class BotCore implements BotHostApi {
           Promise.resolve().then(() => this.channel.stop()),
         ]);
       } finally {
+        this.closeData();
         this.releaseLock?.(); this.releaseLock = null;
         this.resolveStopped();
       }
@@ -1291,18 +1417,25 @@ export class BotCore implements BotHostApi {
     this.desktop.stop(conversationId ? this.resolveConversationId(conversationId) : undefined);
   }
 
-  /** A write a host makes while no core runs takes the instance lock for its duration, like `updateProfile`. */
-  private withWriteLock(write: () => void): void {
-    if (this.releaseLock) {
-      write();
-      return;
-    }
+  /**
+   * A write a host makes while no core runs takes the instance lock for its duration, like
+   * `updateProfile`, and with it the bot's database (SPEC-014 FR-1), migrating it first.
+   */
+  private withWriteLock<T>(write: () => T): T {
+    if (this.releaseLock) return write();
     const lock = acquireInstanceLock(this.paths);
     if (!lock.held) throw new BotInstanceRunningError(lock.owner);
+    // Held for the write, so that what the write calls sees the lock as this process's.
+    this.releaseLock = lock.release;
     try {
+      this.openForWriting();
       this.desktopSwitches.load();
-      write();
-    } finally { lock.release(); }
+      return write();
+    } finally {
+      this.closeData();
+      this.releaseLock = null;
+      lock.release();
+    }
   }
 
   getWorkItem(id: string): WorkItem | undefined {
@@ -1349,6 +1482,8 @@ export class BotCore implements BotHostApi {
   }
 
   createSchedule(input: CreateScheduleInput): ScheduleRecord {
+    // A host with no core running writes under the lock (SPEC-014 FR-1).
+    if (!this.releaseLock) return this.withWriteLock(() => this.createSchedule(input));
     const conversationId = this.resolveConversationId(input.conversationId);
     // SPEC-012 FR-6: in a contact note only the note's own agent sets reminders; the owner's
     // words never go there, from the CLI either.
@@ -1393,6 +1528,10 @@ export class BotCore implements BotHostApi {
   }
 
   async cancelSchedule(scheduleId: string): Promise<void> {
+    if (!this.releaseLock) {
+      this.withWriteLock(() => this.cancelScheduleRecord(scheduleId));
+      return;
+    }
     this.cancelScheduleRecord(scheduleId);
   }
 
@@ -1420,6 +1559,20 @@ export class BotCore implements BotHostApi {
   }
 
   async resolveApproval(workItemId: string, decision: ApprovalDecision): Promise<void> {
+    if (!this.releaseLock) {
+      // A host with no core running writes under the lock; the lock taken, the approval goes on.
+      const lock = acquireInstanceLock(this.paths);
+      if (!lock.held) throw new BotInstanceRunningError(lock.owner);
+      this.releaseLock = lock.release;
+      try {
+        this.openForWriting();
+        this.desktopSwitches.load();
+        return await this.resolveApproval(workItemId, decision);
+      } finally {
+        this.closeData();
+        this.releaseLock(); this.releaseLock = null;
+      }
+    }
     const item = this.workItems.get(workItemId);
     if (!item) throw new Error(`Unknown work item ${workItemId}`);
     if (item.state !== 'awaiting_owner') throw new Error(`Work item ${workItemId} is ${item.state}, not awaiting the owner`);
@@ -1484,48 +1637,57 @@ export class BotCore implements BotHostApi {
     try {
       for (const item of this.listWorkItems()) {
         if (item.state !== 'interrupted') continue;
-        const own = this.conversations.get(item.conversationId) ? this.conversations.transcript(item.conversationId) : [];
-        const verdict = await reconcileInterrupted(item, client, own);
-        const now = this.now();
-        if (verdict.verdict === 'completed') {
-          recordRecoveredReply(this.conversations, item, verdict.text);
-          this.finish(this.record(transitionWorkItem(item, 'completed', now, {
-            result: { text: verdict.text, completedAt: now.toISOString() },
-            notification: { deliveredAt: now.toISOString(), seenAt: null },
-          })));
-          this.log(`recovery ${item.id}: completed by runtime evidence`);
-        } else if (verdict.verdict === 'awaiting_owner' && this.conversations.get(item.conversationId)?.contactOf) {
-          // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
-          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
-            error: `the turn was interrupted (${verdict.evidence}) and is not run again in a contact note`,
-          })));
-          this.log(`recovery ${item.id}: a turn in a contact note ended interrupted (${verdict.evidence})`);
-        } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
-          // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
-          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
-            error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
-          })));
-          this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
-        } else if (verdict.verdict === 'awaiting_owner') {
-          const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
-            source: 'recovery',
-            error: verdict.evidence,
-            notification: { deliveredAt: now.toISOString(), seenAt: null },
-          }));
-          this.conversations.append(item.conversationId, {
-            kind: 'system',
-            origin: 'event',
-            text: `Approval needed (${waiting.id}): the turn "${waiting.prompt.slice(0, 80)}" was interrupted (${verdict.evidence}). Approve to run it again, deny to drop it.`,
-            workItemId: waiting.id,
-          });
-          this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
-          this.log(`recovery ${item.id}: awaiting the owner (${verdict.evidence})`);
-        } else {
-          this.log(`recovery ${item.id}: no verdict yet (${verdict.reason})`);
+        try {
+          await this.recoverOne(item, client);
+        } catch (error) {
+          // A record that cannot be read stops only its own recovery.
+          this.log(`recovery ${item.id} failed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     } finally {
       this.recovering = false;
+    }
+  }
+
+  private async recoverOne(item: WorkItem, client: RuntimeClient): Promise<void> {
+    const own = this.conversations.get(item.conversationId) ? this.conversations.transcript(item.conversationId) : [];
+    const verdict = await reconcileInterrupted(item, client, own);
+    const now = this.now();
+    if (verdict.verdict === 'completed') {
+      recordRecoveredReply(this.conversations, item, verdict.text);
+      this.finish(this.record(transitionWorkItem(item, 'completed', now, {
+        result: { text: verdict.text, completedAt: now.toISOString() },
+        notification: { deliveredAt: now.toISOString(), seenAt: null },
+      })));
+      this.log(`recovery ${item.id}: completed by runtime evidence`);
+    } else if (verdict.verdict === 'awaiting_owner' && this.conversations.get(item.conversationId)?.contactOf) {
+      // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
+      this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+        error: `the turn was interrupted (${verdict.evidence}) and is not run again in a contact note`,
+      })));
+      this.log(`recovery ${item.id}: a turn in a contact note ended interrupted (${verdict.evidence})`);
+    } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
+      // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
+      this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+        error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
+      })));
+      this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
+    } else if (verdict.verdict === 'awaiting_owner') {
+      const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
+        source: 'recovery',
+        error: verdict.evidence,
+        notification: { deliveredAt: now.toISOString(), seenAt: null },
+      }));
+      this.conversations.append(item.conversationId, {
+        kind: 'system',
+        origin: 'event',
+        text: `Approval needed (${waiting.id}): the turn "${waiting.prompt.slice(0, 80)}" was interrupted (${verdict.evidence}). Approve to run it again, deny to drop it.`,
+        workItemId: waiting.id,
+      });
+      this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
+      this.log(`recovery ${item.id}: awaiting the owner (${verdict.evidence})`);
+    } else {
+      this.log(`recovery ${item.id}: no verdict yet (${verdict.reason})`);
     }
   }
 
@@ -1568,11 +1730,13 @@ export class BotCore implements BotHostApi {
       if (!lock.held) throw new BotInstanceRunningError(lock.owner);
       this.releaseLock = lock.release;
       try {
-        const loaded = loadProfile(this.paths, this.profile, true);
-        if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
-        this.profile = loaded.profile;
+        // SPEC-014: the raised profile is written only on a migrated root.
+        this.openForWriting();
         return await this.runProfileChange(change, patch);
-      } finally { this.releaseLock(); this.releaseLock = null; }
+      } finally {
+        this.closeData();
+        this.releaseLock(); this.releaseLock = null;
+      }
     }
     const result = change();
     if (!result) return structuredClone(this.profile);
@@ -1732,6 +1896,8 @@ export class BotCore implements BotHostApi {
       this.log(`desktop control switch of deleted conversation ${record.id} kept: ${error instanceof Error ? error.message : 'error'}`);
     }
     this.conversations.remove(record.id);
+    // SPEC-014 FR-7: its work items went with it, in memory as on disk.
+    for (const [id, item] of this.workItems) if (item.conversationId === record.id) this.workItems.delete(id);
     this.runner.forget(record.id);
     this.views.delete(record.id);
     this.focusedViews.delete(record.id);

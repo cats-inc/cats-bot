@@ -131,6 +131,60 @@ test('only the store reaches the SQLite driver and the state database adapter (S
   assert.deepEqual(offenders, []);
 });
 
+test('nothing outside the store reads or writes the version-1 files (SPEC-014 FR-11)', () => {
+  // After the cutover the version-1 files are read once, by the import, and never written.
+  // Their modules stay for the import and for tests that make version-1 fixtures. The rule
+  // reads the text, not a parse of it, so it names each way of reaching those files.
+  const storeRoot = join(srcRoot, 'core', 'store');
+  const versionOne = ['transcript.ts', 'journal.ts'].map((name) => join(storeRoot, name));
+  const presentation = join(storeRoot, 'presentation.ts');
+  // Only what checks and projects a presentation; never the sidecar files.
+  const presentationAllowed = ['checkedResponse', 'projectPresentationTranscript'];
+  const versionOnePaths = [
+    // A property of the paths: `paths.journal`, `this.paths.transcripts`, `botPathsFor(root).journal`.
+    /(?:\bpaths|Paths\w*\([^)]*\))\.(?:conversations|transcripts|journal)\b/u,
+    // Taken out of them: `const { journal } = paths`, `= botPathsFor(root)`.
+    /\{[^{}]*\b(?:conversations|transcripts|journal)\b[^{}]*\}\s*=\s*(?:this\.)?(?:paths\b|\w*Paths\w*\()/u,
+    // The layout's own helpers and names.
+    /\b(?:conversationFile|transcriptFile|presentationsDirectory)\s*\(/u,
+    /['"`]journal\.jsonl['"`]/u,
+    /\bjoin\([^)]*['"`](?:conversations|transcripts|presentations)['"`]/u,
+  ];
+  const offenders: string[] = [];
+  for (const file of listTypeScriptFiles(srcRoot)) {
+    if (!relative(storeRoot, file).startsWith('..')) continue;
+    const name = relative(repoRoot, file);
+    const source = readFileSync(file, 'utf8');
+    for (const specifier of importSpecifiers(file)) {
+      if (!isRelative(specifier)) continue;
+      const target = resolve(dirname(file), specifier);
+      if (versionOne.includes(target)) offenders.push(`${name} imports ${specifier}`);
+      if (target !== presentation) continue;
+      // Every statement that names the module: a namespace or default import takes it whole.
+      const quoted = specifier.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
+      const statements = source.matchAll(
+        new RegExp(String.raw`\b(?:import|export)\s+(?:type\s+)?([^'";]*?)\s+from\s*['"]${quoted}['"]|\b(?:import|require)\s*\(\s*['"]${quoted}['"]`, 'gu'),
+      );
+      for (const [, clause] of statements) {
+        const named = /^\{([^}]*)\}$/u.exec(clause?.trim() ?? '');
+        if (!named) {
+          offenders.push(`${name} takes ${specifier} whole`);
+          continue;
+        }
+        for (const imported of named[1]!.split(',').map((part) => part.trim().replace(/^type\s+/u, '').split(/\s+as\s+/u)[0]!).filter(Boolean)) {
+          if (!presentationAllowed.includes(imported)) offenders.push(`${name} imports ${imported} from ${specifier}`);
+        }
+      }
+    }
+    // Code only: a comment may say what a version-1 file held.
+    const code = source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
+    for (const pattern of versionOnePaths) {
+      if (pattern.test(code)) offenders.push(`${name} names a version-1 file (${pattern.source})`);
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 test('the shell never holds the runtime client directly', () => {
   const offenders: string[] = [];
   const runtimeClientDir = join(srcRoot, 'core', 'runtime');

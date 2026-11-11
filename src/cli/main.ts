@@ -15,6 +15,8 @@ import { boundStderrLog } from '../shared/stderrLog.ts';
 import { diagnosticError } from '../shared/diagnosticLog.ts';
 import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
+import { restoreVersion1 } from '../core/store/version1Migration.ts';
+import { STATE_DATABASE_PROFILE_RAISE } from '../core/profile/profile.ts';
 
 /**
  * `cats-bot`: the headless entry point. `run` keeps the core in the
@@ -91,6 +93,8 @@ Commands:
   open [conversation|home]               ask the running hub to show a conversation window
   hub status [--json]                    the running hub's bots, through its control endpoint
   hub boss-cat <id> | --clear            make a bot the Boss Cat, or clear the role (through the hub)
+  restore [--json]                       put the bot's version-1 files back for an older Cats Bot, while
+                                         the bot is stopped; its database is set aside, not removed
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -307,6 +311,33 @@ async function commandSay(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   } finally {
     await core.stop();
   }
+}
+
+/**
+ * SPEC-014 FR-12: the version-1 files back from `archive/v1/`, the database set aside and the
+ * profile lowered, so that an older Cats Bot starts on the root again. What was written after
+ * the migration stays in the set-aside database, which an older Bot does not read.
+ */
+async function commandRestore(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    throw new Error(`The bot is running (pid ${target.running.pid}); quit it before restoring its version-1 files`);
+  }
+  const result = restoreVersion1({ paths: botPathsFor(target.root), profile: STATE_DATABASE_PROFILE_RAISE });
+  if (parsed.flags.get('json') === true) {
+    process.stdout.write(`${JSON.stringify({ restored: result.changed, ...result }, null, 2)}\n`);
+    return 0;
+  }
+  if (!result.changed) {
+    process.stdout.write('Nothing to restore: this bot was not migrated, and an older Cats Bot reads it as it is.\n');
+    return 0;
+  }
+  process.stdout.write('The version-1 files are back; an older Cats Bot can start this bot again.\n');
+  if (result.setAside) {
+    process.stdout.write(`The database was set aside as ${result.setAside}. What was written after the migration is there, not in the version-1 files.\n`);
+  }
+  for (const name of result.leftInArchive) process.stdout.write(`Still in archive/v1: ${name}\n`);
+  return 0;
 }
 
 async function commandStatus(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
@@ -710,6 +741,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandTelegram(parsed, env);
       case 'hub':
         return await commandHub(parsed, env);
+      case 'restore':
+        return await commandRestore(parsed, env);
       case undefined:
       case 'help':
       case '--help':

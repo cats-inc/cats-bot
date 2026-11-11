@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
@@ -159,7 +159,16 @@ test('CI and the package script run the store tests inside Electron on every pla
     )
     .map((name) => `tests/core/${name}`);
   assert.ok(storeTests.length >= 2, storeTests.join(' '));
-  assert.deepEqual([...listed].sort(), storeTests.sort());
+  // Those at least; others may run there too, as the cutover's does, and each one exists.
+  assert.deepEqual(
+    storeTests.filter((name) => !listed.includes(name)),
+    [],
+  );
+  assert.deepEqual(
+    listed.filter((name) => !existsSync(new URL(name, root))),
+    [],
+  );
+  assert.ok(listed.includes('tests/core/stateCutover.test.ts'));
   const workflow = readFileSync(new URL('.github/workflows/ci.yaml', root), 'utf8');
   const step =
     /- name: Test the store inside the shipped Electron\n(?<body>(?: {8}.*\n)+)/u.exec(workflow)

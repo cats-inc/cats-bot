@@ -11,8 +11,12 @@ import { diagnosticError } from '../../../shared/diagnosticLog.ts';
 export type CoreState = 'stopped' | 'starting' | 'running' | 'failed' | 'external';
 
 export interface CoreRunnerOptions<T> {
-  /** Starts the core or reattaches to it, and presents it. */
-  start(): Promise<T>;
+  /**
+   * Starts the core or reattaches to it, and presents it. `signal` is aborted when the runner
+   * is stopped meanwhile: the start ends its core, which may be migrating for minutes
+   * (SPEC-014 FR-11), instead of making the stop wait for it.
+   */
+  start(signal: AbortSignal): Promise<T>;
   /** Stops the core through its channel and closes what presented it. */
   stop(handle: T): Promise<void>;
   /** Calls `listener` once if the core ends while running. */
@@ -43,6 +47,7 @@ export class CoreRunner<T> {
   private restarts: number[] = [];
   private timer: NodeJS.Timeout | null = null;
   private launching: Promise<T | null> | null = null;
+  private launchAbort: AbortController | null = null;
   private gaveUp = false;
 
   constructor(id: string, options: CoreRunnerOptions<T>) {
@@ -98,6 +103,7 @@ export class CoreRunner<T> {
     this.wanted = false;
     this.gaveUp = false;
     this.clearTimer();
+    this.launchAbort?.abort();
     await this.launching?.catch(() => null);
     const handle = this.handleValue;
     this.handleValue = null;
@@ -114,9 +120,11 @@ export class CoreRunner<T> {
   private launch(): Promise<T | null> {
     if (this.launching) return this.launching;
     this.set('starting', null);
+    const abort = new AbortController();
+    this.launchAbort = abort;
     const task = (async () => {
       try {
-        const handle = await this.options.start();
+        const handle = await this.options.start(abort.signal);
         if (!this.wanted) {
           await this.options.stop(handle);
           this.set('stopped', null);
@@ -127,6 +135,10 @@ export class CoreRunner<T> {
         this.set('running', null);
         return handle;
       } catch (error) {
+        if (abort.signal.aborted && !this.wanted) {
+          this.set('stopped', null);
+          return null;
+        }
         const message = error instanceof Error ? error.message : String(error);
         if (this.options.isExternal(error)) {
           this.set('external', message);
@@ -141,6 +153,7 @@ export class CoreRunner<T> {
     this.launching = task;
     void task.finally(() => {
       if (this.launching === task) this.launching = null;
+      if (this.launchAbort === abort) this.launchAbort = null;
     });
     return task;
   }
