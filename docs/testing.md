@@ -45,16 +45,22 @@ last step, not the first.
   `tests/support/sqlite-crash-writer.mjs`
 - **Scope**: what the bot state database (SPEC-014, PLAN-014 task 1.1) needs from the
   SQLite built into the runtime, loaded through `src/core/store/sqliteDriver.ts`:
-  - no experimental notice on stderr, and other warnings still delivered;
+  - no experimental notice on stderr, other warnings still delivered, and a clear error
+    when the runtime was started without SQLite;
   - WAL, STRICT tables, upsert and rollback;
-  - JSON text that comes back exactly, including NUL characters and lone surrogates;
+  - a record stored as JSON text coming back exactly. Text holding NUL characters or lone
+    surrogates survives because JSON escapes them, not because the driver keeps them;
   - contentless FTS5 with a bigram column that finds two-character Chinese words, delete
-    by row id and a rebuild;
-  - `VACUUM INTO` and `quick_check`;
-  - a reader beside the running writer, and a reader that neither creates a database nor
-    leaves files beside a stopped bot;
-  - a closed connection releasing its directory;
-  - committed rows surviving a killed writer.
+    by row id, and a rebuild from the JSON records;
+  - `VACUUM INTO` not replacing an existing database, and `quick_check`;
+  - a reader beside a running writer whose open transaction is already in the
+    write-ahead log, in the same process and from another process;
+  - a reader that neither creates a database nor leaves files beside a stopped bot;
+  - a closed connection releasing its directory, which Windows refuses while it is open;
+  - committed rows surviving a killed writer, and its open transaction not.
+
+The `sqlite-driver runtime` line it prints also reports, without asserting, what the
+runtime does with a raw NUL in a TEXT value and which files a read-only open leaves.
 
 The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
 FR-2).

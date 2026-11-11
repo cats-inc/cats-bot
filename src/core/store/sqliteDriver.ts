@@ -28,13 +28,16 @@ export function sqliteDriver(): SqliteDriver {
   process.emitWarning = quiet as typeof process.emitWarning;
   let loaded: SqliteDriver | undefined;
   try {
-    loaded = process.getBuiltinModule('node:sqlite') as SqliteDriver | undefined;
+    // Undefined when the runtime was started with `--no-experimental-sqlite`.
+    if (typeof process.getBuiltinModule === 'function') {
+      loaded = process.getBuiltinModule('node:sqlite') as SqliteDriver | undefined;
+    }
   } finally {
     process.emitWarning = emitWarning;
   }
   if (typeof loaded?.DatabaseSync !== 'function') {
     throw new Error(
-      `This Node.js build (${process.version}) has no usable node:sqlite module; the bot state database needs Node.js 24 or later with SQLite built in.`,
+      `node:sqlite is not available in this Node.js (${process.version}). The bot state database needs Node.js 24 or later, started without --no-experimental-sqlite.`,
     );
   }
   driver = loaded;

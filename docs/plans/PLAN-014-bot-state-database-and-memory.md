@@ -70,21 +70,39 @@ security review. Embeddings come only if the evaluation asks for them.
         `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
         inside Electron on the three platforms. Nothing uses the driver yet.
   - [ ] Adapter, schema and `meta`.
-  - What the acceptance run settled for the adapter:
-    - A host without the lock opens the database with `mode=rw` and `query_only`. The
-      driver's read-only open leaves `-shm` and `-wal` files beside a cleanly stopped
-      bot, and an immutable open does no locking, so neither is used.
-    - Each row keeps its record as JSON text and other columns only index it. The
-      Node.js 24 driver cuts a TEXT value at a NUL character and replaces a lone
-      surrogate; JSON escapes both.
-    - The index is a contentless FTS5 table with `contentless_delete`, keyed by the
-      entry's row id. SPEC-014 FR-8 still says external-content; the schema change
-      proposes the amendment, together with FR-1's wording about hosts that only read.
-    - `VACUUM INTO` refuses an existing file, so a snapshot is written under a new name
-      and renamed.
-    - On Windows an open connection blocks renaming or removing the bot root. Every
-      host closes its connection before a root is moved, and a host that only reads
+  - What the acceptance run found, and the defaults it proposes for the adapter. They are
+    proposals until the owner accepts them with the schema change, which also brings the
+    SPEC-014 amendments.
+    - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
+      without the lock (the CLI's `status`, `conversations` and `schedule`). Proposed: such
+      a host opens the database with `mode=rw` and `query_only`, reads, and closes.
+      - `query_only` rejects statements that change rows or the schema. It is not a
+        read-only handle: SQLite still lets it run a checkpoint or change the journal
+        mode, and a reader that closes last checkpoints the write-ahead log into `bot.db`
+        and removes the `-wal` and `-shm` files. Rows never change. The adapter must not
+        hand out a reader that accepts arbitrary statements.
+      - The driver's read-only open left `-shm` and `-wal` files beside a cleanly stopped
+        bot. An immutable open does no locking or change detection, which is unsafe when
+        a writer may start at any time.
+      - This touches SPEC-014 FR-1 and ADR-021 decision 1, which say other hosts reach
+        data through `BotHostApi` and not the file.
+    - **The record is JSON text**, and other columns only index it. JSON escapes NUL
+      characters and lone surrogates. As raw TEXT, the Node.js 24.14 driver in Electron 41
+      returns a value only up to its first NUL, and a lone surrogate is stored as U+FFFD.
+      The index is rebuilt from the JSON, not from an indexed column.
+    - **The index** is a contentless FTS5 table with `contentless_delete`, keyed by the
+      entry's row id. SPEC-014 FR-8 says external-content.
+    - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
+      existing empty file and can leave a partial file when interrupted. A snapshot is
+      written under a new name and renamed when complete.
+    - **Windows handles.** An open connection blocks renaming or removing the bot root.
+      Every host closes its connection before a root is moved, and a host that only reads
       holds one no longer than a read takes.
+    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects;
+      the URI for such a path has to be built by hand. SQLite does not support WAL on a
+      network file system, so a bot root on a share is a separate question for the adapter.
+    - The test prints what each runtime does with a raw NUL and a read-only open in its
+      `sqlite-driver runtime` line, in the CI log of every platform.
 - [ ] 1.2 Move writers and readers:
   - conversations and attachments;
   - transcript entries (append-only `seq`);

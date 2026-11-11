@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,6 +32,8 @@ after(() => rmSync(scratch, { recursive: true, force: true, maxRetries: 10, retr
 
 const emitWarningBeforeLoad = process.emitWarning;
 const { DatabaseSync } = sqliteDriver();
+const driverModule = new URL('../../src/core/store/sqliteDriver.ts', import.meta.url).href;
+const NUL = String.fromCharCode(0);
 
 let directories = 0;
 function freshDirectory(): string {
@@ -37,6 +47,27 @@ function files(directory: string): string[] {
   return readdirSync(directory).sort();
 }
 
+interface Finished {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  stdout: string;
+  stderr: string;
+}
+
+/** Waits for `close`, not `exit`: only then has everything the child printed arrived. */
+async function finished(child: ChildProcess): Promise<Finished> {
+  let stdout = '';
+  let stderr = '';
+  child.stdout?.on('data', (chunk) => {
+    stdout += chunk;
+  });
+  child.stderr?.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const [code, signal] = (await once(child, 'close')) as [number | null, NodeJS.Signals | null];
+  return { code, signal, stdout, stderr };
+}
+
 /** The connection the lock holder keeps: read-write, WAL, `synchronous=NORMAL` (SPEC-014 FR-1). */
 function openWriter(file: string): SqliteDatabase {
   const database = new DatabaseSync(file);
@@ -45,10 +76,17 @@ function openWriter(file: string): SqliteDatabase {
 }
 
 /**
- * The connection a host without the lock uses. `mode=rw` refuses to create a missing database
- * and `query_only` refuses every change. The driver's `readOnly` option is not used: opened on
- * a cleanly stopped bot it leaves `-shm` and `-wal` files behind. Neither is `immutable=1`: it
- * turns off locking and change detection, which is unsafe when a writer may start at any time.
+ * The connection proposed for a host without the lock. `mode=rw` refuses to create a missing
+ * database, and `query_only` rejects statements that change rows or the schema.
+ *
+ * It is not a read-only handle. SQLite still lets it run a checkpoint or change the journal
+ * mode, and when it is the last connection to close it checkpoints the write-ahead log into
+ * the database file and removes the `-wal` and `-shm` files. Rows never change, but the
+ * adapter must not hand out such a connection for arbitrary statements.
+ *
+ * The driver's `readOnly` option is not used: opened on a cleanly stopped bot it left `-shm`
+ * and `-wal` files behind where that was tried. Neither is `immutable=1`: it turns off locking
+ * and change detection, which is unsafe when a writer may start at any time.
  */
 function openReader(file: string): SqliteDatabase {
   const url = pathToFileURL(file);
@@ -60,6 +98,13 @@ function openReader(file: string): SqliteDatabase {
 
 function count(database: SqliteDatabase, table: string): number {
   return Number(database.prepare(`select count(*) as n from ${table}`).get()?.n);
+}
+
+function bodies(database: SqliteDatabase): string[] {
+  return database
+    .prepare('select body from notes order by id')
+    .all()
+    .map((row) => String(row.body));
 }
 
 /** Two-character windows over each CJK run, the shape SPEC-014 FR-8 indexes beside the text. */
@@ -75,12 +120,50 @@ function bigramQuery(text: string): string {
   return `grams:"${bigrams(text).trim().replace(/\s+/gu, ' ')}"`;
 }
 
+/**
+ * Behaviour that differs between runtimes and that nothing here asserts. It is printed so a
+ * CI log shows what each platform and each runtime does.
+ */
+function observed(): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  const memory = new DatabaseSync(':memory:');
+  try {
+    memory.exec('create table raw(id integer primary key, value text not null) strict');
+    const id = memory
+      .prepare('insert into raw(value) values (?)')
+      .run(`before${NUL}after`).lastInsertRowid;
+    const row = memory
+      .prepare('select value, length(cast(value as blob)) as bytes from raw where id = ?')
+      .get(id);
+    result.rawNulText = {
+      storedBytes: Number(row?.bytes),
+      readCharacters: String(row?.value).length,
+    };
+  } catch (error) {
+    result.rawNulText = String(error);
+  } finally {
+    memory.close();
+  }
+  try {
+    const directory = freshDirectory();
+    const file = join(directory, 'bot.db');
+    openWriter(file).close();
+    const readOnly = new DatabaseSync(file, { readOnly: true });
+    readOnly.prepare('select count(*) as n from sqlite_master').get();
+    readOnly.close();
+    result.readOnlyOpenLeaves = files(directory).filter((name) => name !== 'bot.db');
+  } catch (error) {
+    result.readOnlyOpenLeaves = String(error);
+  }
+  return result;
+}
+
 test('the driver loads without printing its experimental notice and leaves warnings alone', async () => {
   assert.equal(process.emitWarning, emitWarningBeforeLoad);
   assert.equal(sqliteDriver(), sqliteDriver());
 
   const script = `
-    import { sqliteDriver } from ${JSON.stringify(new URL('../../src/core/store/sqliteDriver.ts', import.meta.url).href)};
+    import { sqliteDriver } from ${JSON.stringify(driverModule)};
     const { DatabaseSync } = sqliteDriver();
     const database = new DatabaseSync(':memory:');
     process.stdout.write(String(database.prepare('select 41 + 1 as answer').get().answer));
@@ -90,27 +173,42 @@ test('the driver loads without printing its experimental notice and leaves warni
   const child = spawn(process.execPath, ['--input-type=module', '-e', script], {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  let stdout = '';
-  let stderr = '';
-  child.stdout.on('data', (chunk) => {
-    stdout += chunk;
-  });
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk;
-  });
-  assert.deepEqual(await once(child, 'exit'), [0, null], stderr);
+  const { code, signal, stdout, stderr } = await finished(child);
+  assert.deepEqual([code, signal], [0, null], stderr);
   assert.equal(stdout, '42');
-  assert.doesNotMatch(stderr, /SQLite|ExperimentalWarning/u);
+  assert.doesNotMatch(stderr, /SQLite is an experimental feature/u);
   assert.match(stderr, /CatsBotProbeWarning: still delivered/u);
+});
+
+test('a runtime started without SQLite gets an error that says so', async (context) => {
+  const script = `
+    import { sqliteDriver } from ${JSON.stringify(driverModule)};
+    try { sqliteDriver(); process.stdout.write('loaded'); } catch (error) { process.stdout.write(error.message); }
+  `;
+  const child = spawn(
+    process.execPath,
+    ['--no-experimental-sqlite', '--input-type=module', '-e', script],
+    {
+      stdio: ['ignore', 'pipe', 'pipe'],
+    },
+  );
+  const { code, stdout, stderr } = await finished(child);
+  if (code === 9 && /bad option/u.test(stderr)) {
+    context.skip('this runtime has no switch that turns SQLite off');
+    return;
+  }
+  assert.equal(code, 0, stderr);
+  assert.match(stdout, /^node:sqlite is not available in this Node\.js \(v\d+\.\d+\.\d+\)/u);
+  assert.match(stdout, /--no-experimental-sqlite/u);
 });
 
 test('the built-in SQLite has the features the schema uses', () => {
   const database = new DatabaseSync(':memory:');
   try {
     const version = String(database.prepare('select sqlite_version() as version').get()?.version);
-    // Printed for the Electron run below and for anyone reading a CI log.
+    // One line for the Electron run below to check, and for anyone reading a CI log.
     console.log(
-      `sqlite-driver runtime ${JSON.stringify({ node: process.versions.node, electron: process.versions.electron ?? null, sqlite: version })}`,
+      `sqlite-driver runtime ${JSON.stringify({ node: process.versions.node, electron: process.versions.electron ?? null, sqlite: version, ...observed() })}`,
     );
     const [major = 0, minor = 0] = version.split('.').map(Number);
     // `contentless_delete` arrived in 3.43; STRICT tables in 3.37.
@@ -170,22 +268,24 @@ test('a WAL database keeps typed rows, upserts in place and rolls a transaction 
   }
 });
 
-test('a row stored as JSON text comes back exactly, whatever the text holds', () => {
+test('a record stored as JSON text comes back exactly', () => {
   const database = new DatabaseSync(':memory:');
   try {
     database.exec('create table entries(id integer primary key, json text not null) strict');
     const insert = database.prepare('insert into entries(json) values (?)');
     const read = database.prepare('select json from entries where id = ?');
-    // A raw NUL in a TEXT column is cut short by the Node 24 driver and a lone surrogate is
-    // replaced; JSON escapes both, so the JSON column is the record and other columns only index it.
+    // The first two never reach the driver as such: JSON escapes a NUL character and a lone
+    // surrogate, which a raw TEXT value does not survive on every runtime. That is why the
+    // JSON column is the record and other columns only index it. The last two do reach it.
     const awkward = [
-      `before${String.fromCharCode(0)}after`,
+      `before${NUL}after`,
       `lone ${String.fromCharCode(0xd83d)} surrogate`,
       `cat ${String.fromCodePoint(0x1f431)} 貓\r\n\ttabbed "quoted" \\ slashed`,
       'x'.repeat(2_000_000),
     ];
     for (const text of awkward) {
       const json = JSON.stringify({ seq: 1, kind: 'bot', text, unknownField: { kept: true } });
+      assert.equal(json.includes(NUL), false);
       const stored = String(read.get(insert.run(json).lastInsertRowid)?.json);
       assert.equal(stored.length, json.length);
       assert.ok(stored === json, `JSON text changed for a ${text.length}-character entry`);
@@ -199,24 +299,22 @@ test('a row stored as JSON text comes back exactly, whatever the text holds', ()
 test('contentless FTS5 with a bigram column finds two-character Chinese words', () => {
   const database = new DatabaseSync(':memory:');
   try {
+    // The record is the JSON; the index is built from the text inside it.
     database.exec(
-      'create table entries(id integer primary key, conversation_id text not null, seq integer not null, text text not null, unique(conversation_id, seq)) strict',
+      'create table entries(id integer primary key, conversation_id text not null, seq integer not null, json text not null, unique(conversation_id, seq)) strict',
     );
     database.exec(
       `create virtual table entries_fts using fts5(text, grams, content='', contentless_delete=1)`,
     );
     const insertEntry = database.prepare(
-      'insert into entries(conversation_id, seq, text) values (?, ?, ?)',
+      'insert into entries(conversation_id, seq, json) values (?, ?, ?)',
     );
     const insertIndex = database.prepare(
       'insert into entries_fts(rowid, text, grams) values (?, ?, ?)',
     );
     const add = (conversation: string, seq: number, text: string): void => {
-      insertIndex.run(
-        insertEntry.run(conversation, seq, text).lastInsertRowid,
-        text,
-        bigrams(text),
-      );
+      const id = insertEntry.run(conversation, seq, JSON.stringify({ seq, text })).lastInsertRowid;
+      insertIndex.run(id, text, bigrams(text));
     };
     const search = (query: string): string[] =>
       database
@@ -229,6 +327,7 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     database.exec('begin');
     add('home', 1, '今天下午去公園散步');
     add('home', 2, 'Please remember the kettle');
+    add('home', 3, `alpha${NUL}omega 記得買茶葉`);
     add('note', 1, '明天早上要去看牙醫，公園改天再去');
     database.exec('commit');
 
@@ -238,34 +337,42 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     assert.deepEqual(search(bigramQuery('園公')), []);
     assert.deepEqual(search('text:kettle'), ['home#2']);
     assert.deepEqual(search('text:KETTLE'), ['home#2']);
+    assert.deepEqual(search('text:omega'), ['home#3']);
+    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
 
     // Deleting a conversation removes its rows and their index rows in one transaction.
     database.exec('begin');
     const deleteIndex = database.prepare('delete from entries_fts where rowid = ?');
     for (const row of database
       .prepare('select id from entries where conversation_id = ?')
-      .all('note'))
+      .all('note')) {
       deleteIndex.run(Number(row.id));
+    }
     database.prepare('delete from entries where conversation_id = ?').run('note');
     database.exec('commit');
     assert.deepEqual(search(bigramQuery('牙醫')), []);
     assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
 
-    // The index can be thrown away and rebuilt from the entries.
+    // The index can be thrown away and rebuilt from the records, including the words after
+    // a NUL character, which a rebuild from a raw TEXT column loses on Node.js 24.14.
     database.exec('begin');
     database.exec('delete from entries_fts');
     assert.deepEqual(search(bigramQuery('公園')), []);
-    for (const row of database.prepare('select id, text from entries').all())
-      insertIndex.run(Number(row.id), String(row.text), bigrams(String(row.text)));
+    for (const row of database.prepare('select id, json from entries').all()) {
+      const { text } = JSON.parse(String(row.json)) as { text: string };
+      insertIndex.run(Number(row.id), text, bigrams(text));
+    }
     database.exec('commit');
     assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
     assert.deepEqual(search('text:kettle'), ['home#2']);
+    assert.deepEqual(search('text:omega'), ['home#3']);
+    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
   } finally {
     database.close();
   }
 });
 
-test('a snapshot is a complete database and never overwrites an existing file', () => {
+test('a snapshot is a complete database and does not replace an existing one', () => {
   const directory = freshDirectory();
   const snapshot = join(directory, "snapshot o'clock.db");
   const database = openWriter(join(directory, 'bot.db'));
@@ -275,6 +382,8 @@ test('a snapshot is a complete database and never overwrites an existing file', 
     assert.equal(database.prepare('pragma quick_check').get()?.quick_check, 'ok');
     const vacuumInto = `vacuum into '${snapshot.replaceAll("'", "''")}'`;
     database.exec(vacuumInto);
+    // SQLite does accept an existing empty file, and an interrupted run can leave a partial
+    // one, so the adapter writes a snapshot under a new name and renames it when complete.
     assert.throws(() => database.exec(vacuumInto), /already exists/u);
   } finally {
     database.close();
@@ -288,33 +397,45 @@ test('a snapshot is a complete database and never overwrites an existing file', 
   }
 });
 
-test('a reader beside the running writer sees committed rows only and cannot change anything', () => {
+test('a reader beside the running writer sees committed rows only and cannot change rows', () => {
   const directory = freshDirectory();
   const file = join(directory, 'bot.db');
   const writer = openWriter(file);
   let reader: SqliteDatabase | undefined;
   try {
+    // A small page cache pushes the open transaction's pages into the write-ahead log, so the
+    // reader has uncommitted frames on disk to skip, not only rows in the writer's memory.
+    writer.exec('pragma cache_size=8');
     writer.exec('create table notes(id integer primary key, body text not null) strict');
     const insert = writer.prepare('insert into notes(body) values (?)');
     insert.run('committed');
     writer.exec('begin');
-    insert.run('in flight');
+    for (let index = 0; index < 400; index += 1)
+      insert.run(`in flight ${index} ${'x'.repeat(2000)}`);
+    assert.ok(
+      statSync(`${file}-wal`).size > 200_000,
+      `the write-ahead log holds ${statSync(`${file}-wal`).size} bytes`,
+    );
 
     reader = openReader(file);
-    assert.equal(count(reader, 'notes'), 1);
+    assert.deepEqual(bodies(reader), ['committed']);
     assert.throws(
       () => reader!.exec(`insert into notes(body) values ('from the reader')`),
       /readonly database/u,
     );
     assert.throws(() => reader!.exec('delete from notes'), /readonly database/u);
+    assert.throws(
+      () => reader!.exec('create table more(id integer primary key)'),
+      /readonly database/u,
+    );
 
     writer.exec('commit');
-    assert.equal(count(reader, 'notes'), 2);
+    assert.equal(count(reader, 'notes'), 401);
     reader.close();
     reader = undefined;
 
     insert.run('after the reader left');
-    assert.equal(count(writer, 'notes'), 3);
+    assert.equal(count(writer, 'notes'), 402);
   } finally {
     reader?.close();
     writer.close();
@@ -322,7 +443,7 @@ test('a reader beside the running writer sees committed rows only and cannot cha
   assert.deepEqual(files(directory), ['bot.db']);
 });
 
-test('a reader never creates a database and tidies up after a stopped bot', () => {
+test('a reader never creates a database and leaves only the database file beside a stopped bot', () => {
   const empty = freshDirectory();
   assert.throws(() => openReader(join(empty, 'bot.db')), /unable to open database file/u);
   assert.deepEqual(files(empty), []);
@@ -337,7 +458,7 @@ test('a reader never creates a database and tidies up after a stopped bot', () =
 
   const reader = openReader(file);
   try {
-    assert.equal(count(reader, 'notes'), 1);
+    assert.deepEqual(bodies(reader), ['left by a clean stop']);
   } finally {
     reader.close();
   }
@@ -347,12 +468,18 @@ test('a reader never creates a database and tidies up after a stopped bot', () =
 test('closing a connection releases the file and its directory', () => {
   const directory = freshDirectory();
   const file = join(directory, 'bot.db');
+  const moved = `${directory} moved`;
   const database = openWriter(file);
   database.exec('create table notes(id integer primary key) strict');
-  database.close();
   // Archiving, the trash and a data reset rename or remove the bot root; Windows refuses both
   // while any handle is open, so hosts must close before they move a root.
-  const moved = `${directory} moved`;
+  if (process.platform === 'win32') {
+    assert.throws(
+      () => renameSync(directory, moved),
+      (error: NodeJS.ErrnoException) => ['EPERM', 'EBUSY', 'EACCES'].includes(String(error.code)),
+    );
+  }
+  database.close();
   renameSync(directory, moved);
   rmSync(join(moved, 'bot.db'));
   assert.equal(existsSync(join(moved, 'bot.db')), false);
@@ -367,9 +494,7 @@ test(
     const child = spawn(
       process.execPath,
       [fileURLToPath(new URL('../support/sqlite-crash-writer.mjs', import.meta.url)), file],
-      {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
+      { stdio: ['ignore', 'pipe', 'pipe'] },
     );
     let stdout = '';
     let stderr = '';
@@ -387,22 +512,33 @@ test(
           reject(new Error(`the writer exited before it was ready: ${stderr}`)),
         );
       });
+      // The writer's open transaction is on disk, in the write-ahead log, not only in its memory.
+      assert.ok(
+        statSync(`${file}-wal`).size > 200_000,
+        `the write-ahead log holds ${statSync(`${file}-wal`).size} bytes`,
+      );
+
+      // Another process reads while that writer is alive: a CLI command beside a running bot.
+      const beside = openReader(file);
+      try {
+        assert.deepEqual(bodies(beside), ['one', 'two', 'three']);
+        assert.throws(
+          () => beside.exec(`insert into notes(body) values ('from the reader')`),
+          /readonly database/u,
+        );
+      } finally {
+        beside.close();
+      }
     } finally {
       child.kill('SIGKILL');
       await exited;
     }
-    // The committed rows are still only in the write-ahead log the dead writer left behind.
-    assert.ok(files(directory).includes('bot.db-wal'), files(directory).join(' '));
+    assert.ok(statSync(`${file}-wal`).size > 200_000, files(directory).join(' '));
 
+    // A reader is the first to open what the dead writer left behind.
     const reader = openReader(file);
     try {
-      assert.deepEqual(
-        reader
-          .prepare('select body from notes order by id')
-          .all()
-          .map((row) => row.body),
-        ['one', 'two', 'three'],
-      );
+      assert.deepEqual(bodies(reader), ['one', 'two', 'three']);
       assert.equal(reader.prepare('pragma quick_check').get()?.quick_check, 'ok');
     } finally {
       reader.close();
@@ -410,7 +546,7 @@ test(
 
     const writer = openWriter(file);
     try {
-      assert.equal(count(writer, 'notes'), 3);
+      assert.deepEqual(bodies(writer), ['one', 'two', 'three']);
       writer.prepare('insert into notes(body) values (?)').run('after recovery');
       assert.equal(count(writer, 'notes'), 4);
       assert.equal(writer.prepare('pragma quick_check').get()?.quick_check, 'ok');
@@ -427,7 +563,7 @@ const electronRequested = process.env.CATS_TEST_SQLITE_ELECTRON === '1';
 test(
   'the same checks pass inside the Electron the app ships',
   { skip: insideElectron || !electronRequested, timeout: 180_000 },
-  async () => {
+  async (context) => {
     const require = createRequire(import.meta.url);
     const electron = require('electron') as string;
     const shipped = (require('electron/package.json') as { version: string }).version;
@@ -440,25 +576,21 @@ test(
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-    let output = '';
-    child.stdout.on('data', (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on('data', (chunk) => {
-      output += chunk;
-    });
-    assert.deepEqual(await once(child, 'exit'), [0, null], output);
-    const runtime = /sqlite-driver runtime (\{.*\})/u.exec(output);
+    const { code, signal, stdout, stderr } = await finished(child);
+    const output = `${stdout}\n${stderr}`;
+    assert.deepEqual([code, signal], [0, null], output);
+    const runtime = /sqlite-driver runtime (\{.*\})/u.exec(stdout);
     assert.ok(runtime, output);
+    context.diagnostic(`inside Electron: ${runtime[1]!}`);
     assert.equal(
       (JSON.parse(runtime[1]!) as { electron: string | null }).electron,
       shipped,
       output,
     );
-    assert.match(output, /^# fail 0$/mu, output);
-    assert.match(output, /^# cancelled 0$/mu, output);
+    assert.match(stdout, /^# fail 0$/mu, output);
+    assert.match(stdout, /^# cancelled 0$/mu, output);
     // Everything above ran there; only this test skips itself inside Electron.
-    assert.match(output, /^# pass 10$/mu, output);
-    assert.match(output, /^# skipped 1$/mu, output);
+    assert.match(stdout, /^# pass 11$/mu, output);
+    assert.match(stdout, /^# skipped 1$/mu, output);
   },
 );
