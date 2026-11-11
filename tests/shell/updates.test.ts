@@ -422,6 +422,54 @@ test('timed-out native download remains fenced until settled and cannot become a
   await assert.rejects(adapter.install(), /matching download/u);
 });
 
+for (const scenario of [
+  { name: 'advancing bytes with an unchanged percentage', progress: (step: number) => ({ percent: 50, transferred: step * 100 }), expected: Array(8).fill(50) },
+  { name: 'advancing percentages without byte counts', progress: (step: number) => ({ percent: step * 10 }), expected: [10, 20, 30, 40, 50, 60, 70, 80] },
+  { name: 'advancing bytes after differential download falls back', progress: (step: number) => ({ percent: step * 10, transferred: (step <= 4 ? step + 10 : step - 4) * 100 }), expected: [10, 20, 30, 40, 50, 60, 70, 80] },
+]) test(`${scenario.name} can finish beyond the timeout and reach installation preparation`, async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const native = new EventEmitter(); const pending = deferred<string[]>();
+  const file = resolve('verified.zip'); const progress: number[] = [];
+  Object.assign(native, { checkForUpdates: async () => info('0.3.0', 'verified.zip'), downloadUpdate: () => pending.promise });
+  const adapter = createUpdaterAdapter(native as AppUpdater, { onQuit: () => () => undefined, fingerprint: async () => 'verified' }, 100);
+  await adapter.check();
+  const download = adapter.download(percent => progress.push(percent)).then(() => null, error => error);
+  await new Promise(resolve => setImmediate(resolve));
+  for (let step = 1; step <= 8; step++) {
+    t.mock.timers.tick(30);
+    native.emit('download-progress', scenario.progress(step));
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  native.emit('update-downloaded', { version: '0.3.0' }); pending.resolve([file]);
+  assert.equal(await download, null);
+  assert.deepEqual(progress, scenario.expected);
+  await adapter.prepareInstall();
+  assert.equal(native.listenerCount('download-progress'), 0);
+});
+
+test('unchanged progress does not keep a stalled download alive and late progress is ignored', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const native = new EventEmitter(); const pending = deferred<string[]>(); const progress: number[] = [];
+  Object.assign(native, { checkForUpdates: async () => info('0.3.0', 'verified.zip'), downloadUpdate: () => pending.promise });
+  const adapter = createUpdaterAdapter(native as AppUpdater, { onQuit: () => () => undefined, fingerprint: async () => 'verified' }, 100);
+  await adapter.check();
+  const download = adapter.download(percent => progress.push(percent)).then(() => null, error => error);
+  await new Promise(resolve => setImmediate(resolve));
+  t.mock.timers.tick(75);
+  native.emit('download-progress', { percent: 50, transferred: 500 });
+  t.mock.timers.tick(75);
+  native.emit('download-progress', { percent: 50, transferred: 500 });
+  t.mock.timers.tick(25);
+  assert.match((await download).message, /timed out/u);
+  const count = progress.length;
+  native.emit('download-progress', { percent: 100, transferred: 1000 });
+  assert.equal(progress.length, count);
+  await assert.rejects(adapter.check(), /still finishing/u);
+  native.emit('update-downloaded', { version: '0.3.0' }); pending.resolve([resolve('verified.zip')]);
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(native.listenerCount('download-progress'), 0);
+});
+
 test('downloaded event with a different version is rejected even when the native promise succeeds', async () => {
   const native = new EventEmitter();
   Object.assign(native, { checkForUpdates: async () => info('0.3.0', 'wrong.exe'), downloadUpdate: async () => {

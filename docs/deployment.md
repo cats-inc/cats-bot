@@ -171,6 +171,11 @@ Update and Restart explicitly authorizes download and installation. Settings kee
 separate Download update / Restart and install actions with a native confirmation.
 Installation interrupts the current Bot task after stopping its Runtime. There
 are no background checks, automatic downloads or install-on-quit.
+Download failures use an inactivity deadline: continuing byte progress renews it,
+so a large transfer can take longer than two minutes. Unchanged progress still
+times out. After a timeout, a native download can finish in the background, but
+it does not install itself; dismiss the error and explicitly check/download
+again to validate and reuse the completed cache before installation.
 
 Quit other Bots sharing the installation first. An atomic per-account installation
 gate blocks new shells during handoff. On macOS/Linux a system process snapshot

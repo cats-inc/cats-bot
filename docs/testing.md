@@ -665,6 +665,18 @@ YAML checks and unsigned candidate packages do not.
 `tests/shell/updates.test.ts` covers native-operation timeout fencing, completion
 identity, explicit consent, Settings main-frame ownership, drain order, multiple
 Bots, crashed/PID-reused installation leases and uncertain handoff recovery.
+Its download regressions advance a fake clock beyond the request deadline while
+bytes keep arriving, require successful checksum verification and installation
+preparation, and require unchanged/late progress to time out without breaking
+the pending native-operation fence. Before the inactivity-deadline fix, the
+advancing-download case failed with `The update request timed out. Please try again.`
+On 2026-11-11, installed macOS Bot 0.5.8 reproduced that error while fetching
+0.5.9: the partial ZIP stopped near 80% while a native error alert was open.
+After the owner dismissed it, the background download completed with the official
+SHA-256, but host state stayed `error` and no new ShipIt installation had started.
+Local validation passed the updater suite, typecheck and build. These fixtures do
+not install an update or prove an installed-app upgrade; the installed app was
+left unchanged during diagnosis.
 `tests/shell/releasePipeline.test.ts` covers immutable inputs, version ordering,
 draft ownership, signing configuration, source receipts and corrupted/missing
 updater assets. Fixtures never run an installer. Real renderer acceptance must use
