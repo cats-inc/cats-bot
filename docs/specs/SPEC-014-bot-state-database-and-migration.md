@@ -356,6 +356,11 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
   scrolls within 120 pixels of the top or when its pages do not fill it, and after each
   turn the newest pages back to the newest entry it holds, at most 20 of them. When those
   do not reach it, the note keeps only what they cover and pages back from there.
+- [x] FR-8 (PLAN-014 task 1.7): a search ranks the newest 1,000 matches, read backwards
+  from the index, instead of every match, and each entry's indexed terms end with a term
+  for its conversation. A common word had taken up to 3.4 s over a million entries. A
+  better match older than those 1,000 is found only by narrowing the query or the
+  conversation.
 
 Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruction:
 
