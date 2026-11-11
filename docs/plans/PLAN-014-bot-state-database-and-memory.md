@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. Not started. P1 may start; P2 onward wait for the security review and the Runtime prerequisites in P0 |
+| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. P1 started 2026-11-11 with the driver acceptance of task 1.1; nothing is wired into the core yet. P2 onward wait for the security review and the Runtime prerequisites in P0 |
 | **Owner** | Bot core store and memory |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Owner; independent review per phase; independent security review before P2 |
@@ -66,6 +66,25 @@ security review. Embeddings come only if the evaluation asks for them.
 
 - [ ] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
       acceptance on Windows, macOS and Linux under the shipped Electron.
+  - [x] Driver module and acceptance test: `src/core/store/sqliteDriver.ts` and
+        `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
+        inside Electron on the three platforms. Nothing uses the driver yet.
+  - [ ] Adapter, schema and `meta`.
+  - What the acceptance run settled for the adapter:
+    - A host without the lock opens the database with `mode=rw` and `query_only`. The
+      driver's read-only open leaves `-shm` and `-wal` files beside a cleanly stopped
+      bot, and an immutable open does no locking, so neither is used.
+    - Each row keeps its record as JSON text and other columns only index it. The
+      Node.js 24 driver cuts a TEXT value at a NUL character and replaces a lone
+      surrogate; JSON escapes both.
+    - The index is a contentless FTS5 table with `contentless_delete`, keyed by the
+      entry's row id. SPEC-014 FR-8 still says external-content; the schema change
+      proposes the amendment, together with FR-1's wording about hosts that only read.
+    - `VACUUM INTO` refuses an existing file, so a snapshot is written under a new name
+      and renamed.
+    - On Windows an open connection blocks renaming or removing the bot root. Every
+      host closes its connection before a root is moved, and a host that only reads
+      holds one no longer than a read takes.
 - [ ] 1.2 Move writers and readers:
   - conversations and attachments;
   - transcript entries (append-only `seq`);

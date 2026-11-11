@@ -39,6 +39,34 @@ last step, not the first.
   truncation, queue ordering and the session gate. Pure functions and the
   file system only.
 
+### SQLite driver acceptance
+
+- **Location**: `tests/core/sqliteDriver.test.ts` with
+  `tests/support/sqlite-crash-writer.mjs`
+- **Scope**: what the bot state database (SPEC-014, PLAN-014 task 1.1) needs from the
+  SQLite built into the runtime, loaded through `src/core/store/sqliteDriver.ts`:
+  - no experimental notice on stderr, and other warnings still delivered;
+  - WAL, STRICT tables, upsert and rollback;
+  - JSON text that comes back exactly, including NUL characters and lone surrogates;
+  - contentless FTS5 with a bigram column that finds two-character Chinese words, delete
+    by row id and a rebuild;
+  - `VACUUM INTO` and `quick_check`;
+  - a reader beside the running writer, and a reader that neither creates a database nor
+    leaves files beside a stopped bot;
+  - a closed connection releasing its directory;
+  - committed rows surviving a killed writer.
+
+The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
+FR-2).
+
+`npm test` runs the file under Node.js. The core runs inside Electron, whose Node.js and
+SQLite are different builds, so CI runs the file once more on every platform, and its
+last test then repeats the others inside the Electron dependency:
+
+```bash
+CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+```
+
 ### Core tests on the fake runtime
 
 - **Location**: `tests/core/bot.test.ts` and `tests/core/life.test.ts` with
@@ -549,6 +577,8 @@ and the renderer (`tsconfig.renderer.json`).
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
+After `npm test` it repeats the [SQLite driver acceptance](#sqlite-driver-acceptance)
+inside Electron on each platform.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
 range. Renames count both old and new paths. An unknown base, empty diff or failed
