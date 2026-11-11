@@ -262,6 +262,35 @@ security review. Embeddings come only if the evaluation asks for them.
       - Not the import's to decide, but changed by the store: two presentations with the
         same `seq` come back ordered by their id, where today they keep the order of the
         sidecar, which moves a presentation to its end each time it is saved.
+      - Found by the import's last review and not changed: a conversation id holding a
+        colon reaches an NTFS alternate stream of another file, which is then taken as
+        that conversation's own; a hard link's second name is taken as the
+        conversation's own (its content is imported); the file identity checks add about
+        17 s per 20,000 conversations on the reviewer's machine.
+    - What the migration does around the import (proposed defaults):
+      - The profile is checked before anything is imported: readable as today's Bot reads
+        it, at the version the raise starts from, and writable. A profile that fails any
+        of these stops the start before the import.
+      - A profile already raised with no finished database means the database is gone;
+        the start stops rather than import the archived root again.
+      - A profile raise that fails after the import stops the start; an archive move
+        that fails does not, and is tried again at the next start.
+      - FR-11's order leaves a time between the marker and the profile raise, as long as
+        the raise keeps failing. An older Bot started then still runs on the version-1
+        files, and what it writes there is archived without being read. Checking the
+        profile first leaves only a failure of the raise itself, such as a full disk.
+      - An import that does not finish uses the newest copy again when the files have not
+        changed, instead of adding a copy at every start.
+      - A database without the marker is removed with its `-wal` and `-shm` and made
+        again; a newer one, or a file that is not one, stops the start and is kept. That
+        is only safe while nothing else makes `bot.db`: the cutover makes the migration
+        the only maker, a new bot's first start included.
+      - Restoring sets the database aside under a new name rather than removing it, and
+        keeps the raised profile beside the lowered one. It folds the log into the
+        database first and stops while another program holds it; it stops when neither
+        the root nor `archive/v1/` holds the version-1 files, and names what it leaves in
+        the archive. It reads only `archive/v1/`; putting files back from a copy in
+        `migration-backup/` is for `cats-bot restore` at the cutover.
 - [ ] 1.3 Full-text index, query builder and a rebuild command. First planned with a
       bigram column and a LIKE path for single characters; the notes below say what
       replaced them.
@@ -322,9 +351,64 @@ security review. Embeddings come only if the evaluation asks for them.
     - It refuses a database that holds any record or a marker. It reports problems by
       file and line number, never by what a line holds. What it does with each kind is
       below, under the cutover; the ones marked as stopping it are proposed defaults.
-    - Left for the next part of 1.5: copying the files aside first, removing the
-      database when the import did not finish, the report files, the profile raise, the
-      archive, and `cats-bot restore`.
+  - [x] The migration around it: `src/core/store/version1Migration.ts`, with
+        `tests/core/version1Migration.test.ts`. Nothing calls it yet.
+    - `migrateVersion1` needs the bot's lock held by its own process and decides what to
+      do from the database's marker, never from which directories exist, since today's
+      code makes them again. Without a marker it checks the profile, removes an
+      unfinished database, copies the version-1 files and the profile to
+      `migration-backup/<time>/` (a copy counts once its manifest of every file's size
+      and SHA-256 is written last, and any other is removed), and imports; the marker
+      names the copy. When the import does not finish, it writes `report.json` and
+      `report.md` beside the copy and removes the database; the version-1 files stay as
+      they were. With the marker it raises the profile's schema version, after a copy of
+      the profile, and moves the version-1 files to `archive/v1/` one by one. A profile
+      a power cut left unreadable during the raise is raised from the copy the marker
+      names. Each step is repeated at the next start until it is done.
+    - `restoreVersion1` takes the lock itself and, in this order, puts the files back,
+      folds the database's log into it and sets it aside whole under a new name, and
+      lowers the profile. A crash between two steps leaves a root the new version starts
+      on, or one it refuses to import again because the profile still says migrated;
+      running the restore again finishes it.
+    - Every removal goes through `removeTree`. Electron 41's `rmSync` fails on a read-only
+      file, and ends the process under a path with characters outside the system's code
+      page for older calls (Korean, an emoji or simplified Chinese on a Traditional
+      Chinese Windows); a read-only file in the version-1 files is copied read-only.
+    - Left for the cutover, since both change what runs today: the profile schema
+      version the core writes (every save writes it, so raising it before the cutover
+      would raise every bot's profile with nothing migrated), and the `cats-bot restore`
+      command. The tests already show that today's `loadProfile`, the rule an older Bot
+      keeps, refuses the raised profile.
+    - A new database does not replay a log left beside a deleted `bot.db`, on both
+      runtimes; the migration removes such a log anyway.
+    - `fs.cpSync` ends the process in Electron 41 (Node.js 24.14) on Windows when it copies
+      a directory whose path holds a character outside ASCII, as a bot root under a
+      user's profile can; Node.js 26 copies it. The copy is made file by file instead. The
+      tests run in a directory with CJK characters in its name, one of them with Korean,
+      an emoji and simplified Chinese, inside Electron as well.
+    - Found by the first review and left for later: a run killed between making a copy's
+      directory and its first file leaves an empty directory, which the next run
+      removes; a temporary file of an interrupted profile write can stay beside the
+      profile, as today; an error's message is written to the report as it is.
+    - For the cutover, from the second review:
+      - A new bot's first start: the migration stops on a profile already at the raised
+        version with no finished database. Once the core writes the raised version,
+        `cats-bot init` makes such a profile, so the cutover has to make a new bot's
+        database at init, or tell a new bot from a migrated one, and raise a schema-1
+        profile to 2 before the migration, not straight to 3.
+      - A restore stopped before it lowers the profile leaves the new version refusing
+        to import again; its message should name the set-aside database, and say the
+        files are back.
+    - For `cats-bot restore`, from the second review: a newer or foreign `bot.db` makes
+      the restore stop after it has put the files back, and no second run gets further;
+      it should check the database first, and set such a one aside whole. A read-only
+      `bot.db` is reported as held by another program.
+    - Left as they are, from the second review: a copy used again is judged by its
+      manifest, not by reading it again, so a copy someone emptied is used again and
+      named by the marker; a file changed after it was copied, which only a writer that
+      ignores the lock can do, leaves a copy one line short of what was imported; a
+      profile another program holds open passes the writable check and fails the raise
+      after the import, until that program lets it go.
     - Measured on Windows: 9 s for 100,000 made-up entries and 25,000 journal lines, on
       Node.js 26 and inside Electron 41 alike, whatever the batch size between 500 and
       10,000; a million entries would take about a minute and a half. A copy of one local
@@ -341,8 +425,8 @@ security review. Embeddings come only if the evaluation asks for them.
       as a difference naming its record.
   - `appendJournal` keeps a line whatever it holds, and makes a current row only of a
     work item or a schedule with a text id, as today's replay does.
-  - Fixtures still to come: crash at each step of the migration including after the
-    marker, an unknown schema, and an older binary refusing the raised profile.
+  - Fixtures for the cutover still to come: a crash of the real start at each step, and
+    an older build of Bot itself, not only its rule, refusing the raised profile.
 - [ ] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
