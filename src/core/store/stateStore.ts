@@ -371,7 +371,13 @@ class Store implements BotStateStore {
   appendEntry(conversationId: string, entry: Omit<TranscriptEntry, 'seq'>): TranscriptEntry {
     return this.#database.transaction(() => {
       this.#requireConversation(conversationId);
-      const full: TranscriptEntry = { ...entry, seq: this.lastSeq(conversationId) + 1 };
+      const seq = this.lastSeq(conversationId) + 1;
+      // An imported entry may carry the largest `seq` a number holds; one more could not be
+      // read back.
+      if (!Number.isSafeInteger(seq)) {
+        throw new RangeError(`Conversation ${conversationId} holds no more entries`);
+      }
+      const full: TranscriptEntry = { ...entry, seq };
       const id = this.#database.insert(
         'insert into entries(conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?)',
         conversationId,
@@ -386,7 +392,6 @@ class Store implements BotStateStore {
     });
   }
 
-  /** As `ConversationStore` requires one today: nothing is kept for a conversation that is not there. */
   importEntries(conversationId: string, entries: readonly TranscriptEntry[]): void {
     this.#database.transaction(() => {
       this.#requireConversation(conversationId);
@@ -430,6 +435,7 @@ class Store implements BotStateStore {
     this.#database.setMeta(IMPORT_MARKER, value);
   }
 
+  /** As `ConversationStore` requires one today: nothing is kept for a conversation that is not there. */
   #requireConversation(id: string): void {
     if (!this.#database.get('select 1 as found from conversations where id = ?', id)) {
       throw new Error(`Unknown conversation ${id}`);

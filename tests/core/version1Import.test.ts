@@ -197,7 +197,7 @@ test('a version-1 data root is imported whole, keeping every seq, and marked fin
   assert.deepEqual(report.problems, []);
   assert.deepEqual(report.mismatches, []);
   assert.equal(report.finished, true);
-  assert.deepEqual(report.counts, {
+  assert.deepEqual(JSON.parse(JSON.stringify(report.counts)), {
     conversations: 2,
     entries: 4,
     responses: 2,
@@ -300,9 +300,6 @@ test('what a crash leaves behind is reported, and the rest imported', () => {
   appendFileSync(paths.journal, '{"type":"work","at"\n');
   appendFileSync(paths.journal, 'null\n');
   appendJournal(paths, { type: 'work', at: AT, item: workItem('w3', 'note-a', 'queued') });
-  // A transcript line that is JSON but no entry.
-  appendFileSync(transcriptFile(paths, 'home'), '{"text":"no seq"}\n[6]\n"seven"\n{"seq":0}\n');
-  appendTranscript(paths, 'home', entry(9, 'still read'));
   // A delete that a crash interrupted after the record went.
   appendTranscript(paths, 'note-gone', entry(1, 'left behind'));
   savePresentation(paths, 'note-gone', response(1, 'p9'));
@@ -318,7 +315,6 @@ test('what a crash leaves behind is reported, and the rest imported', () => {
   assert.deepEqual(kinds(report), [
     'no_conversation presentations/note-gone.json',
     'no_conversation transcripts/note-gone.jsonl',
-    'not_an_entry transcripts/home.jsonl',
     'not_read conversations/.backup',
     'not_read conversations/note-a.json.1234.abcd.tmp',
     'not_read transcripts/notes.txt',
@@ -329,8 +325,6 @@ test('what a crash leaves behind is reported, and the rest imported', () => {
     report.problems.find((found) => found.kind === kind && found.file === file)!;
   // The cut line and the one written onto it are one line that is not JSON.
   assert.deepEqual(at('unreadable_line', 'transcripts/note-a.jsonl').lines, [2]);
-  assert.deepEqual(at('not_an_entry', 'transcripts/home.jsonl').lines, [4, 5, 6, 7]);
-  assert.equal(at('not_an_entry', 'transcripts/home.jsonl').count, 4);
   assert.ok(report.problems.every((found) => !found.blocks));
 
   withStore(paths, (store) => {
@@ -340,7 +334,7 @@ test('what a crash leaves behind is reported, and the rest imported', () => {
     );
     assert.deepEqual(
       store.entries('home').map((item) => item.seq),
-      [1, 2, 5, 9],
+      [1, 2, 5],
     );
     assert.deepEqual(
       (store.conversations() as ConversationRecord[]).map((record) => record.id).sort(),
@@ -374,7 +368,7 @@ test('a sidecar that cannot be read is replaced by its backup, as today, or left
 
   const neither = versionOneBot();
   writeFileSync(join(presentationsDirectory(neither), 'home.json'), '{"version":1,');
-  writeFileSync(join(presentationsDirectory(neither), 'home.json.bak'), '[]');
+  writeFileSync(join(presentationsDirectory(neither), 'home.json.bak'), '{"version":1');
   const second = imported(neither);
   assert.equal(second.finished, true);
   assert.deepEqual(kinds(second), ['unreadable_presentation presentations/home.json']);
@@ -420,7 +414,49 @@ test('what would lose or change a record shown today stops the import, and every
           join(presentationsDirectory(paths), 'home.json'),
           JSON.stringify({ version: 2, conversationId: 'home', responses: [] }),
         ),
-      expect: ['newer_presentation presentations/home.json'],
+      expect: ['unsupported_presentation presentations/home.json'],
+    },
+    {
+      name: 'a sidecar with no version, or one written as text',
+      make: (paths) => {
+        writeFileSync(
+          join(presentationsDirectory(paths), 'home.json'),
+          JSON.stringify({ version: '1', conversationId: 'home', responses: [] }),
+        );
+      },
+      expect: ['unsupported_presentation presentations/home.json'],
+    },
+    {
+      name: 'a sidecar that cannot be read, with a backup that is no sidecar of version 1',
+      make: (paths) => {
+        writeFileSync(join(presentationsDirectory(paths), 'home.json'), '{');
+        writeFileSync(join(presentationsDirectory(paths), 'home.json.bak'), '[]');
+      },
+      expect: ['unsupported_presentation presentations/home.json'],
+    },
+    {
+      name: 'a transcript line that is JSON but no entry, and what today numbers after it',
+      make: (paths) => {
+        appendFileSync(
+          transcriptFile(paths, 'home'),
+          '{"text":"no seq"}\n[6]\n"seven"\n{"seq":0}\n',
+        );
+        // Today's writer numbers on from the last line it reads.
+        appendFileSync(
+          transcriptFile(paths, 'note-a'),
+          `${JSON.stringify(entry(1.5, 'edited'))}\n`,
+        );
+        appendFileSync(transcriptFile(paths, 'note-a'), `${JSON.stringify(entry(2.5, 'next'))}\n`);
+      },
+      expect: ['not_an_entry transcripts/home.jsonl', 'not_an_entry transcripts/note-a.jsonl'],
+    },
+    {
+      name: 'a transcript that cannot be read',
+      make: (paths) => {
+        rmSync(transcriptFile(paths, 'note-a'));
+        mkdirSync(transcriptFile(paths, 'note-a'));
+      },
+      expect: ['unreadable_file transcripts/note-a.jsonl'],
     },
     {
       name: 'a sidecar that cannot be read, with a backup of a later version',
@@ -431,7 +467,7 @@ test('what would lose or change a record shown today stops the import, and every
           JSON.stringify({ version: 2, conversationId: 'home', responses: [] }),
         );
       },
-      expect: ['newer_presentation presentations/home.json'],
+      expect: ['unsupported_presentation presentations/home.json'],
     },
   ];
   for (const { name, make, expect } of cases) {
@@ -441,6 +477,8 @@ test('what would lose or change a record shown today stops the import, and every
     appendFileSync(paths.journal, '{"cut');
     const report = imported(paths);
     assert.equal(report.finished, false, name);
+    // Stopped before the check, which nothing reached.
+    assert.deepEqual(report.mismatches, [], name);
     assert.deepEqual(
       kinds(report).filter((line) => !line.startsWith('unreadable_line')),
       expect,
@@ -637,3 +675,104 @@ test('the journal and the marker are written in one durable transaction, after t
     'marker, durable',
   ]);
 });
+
+test('the check reads the files again, the directories as well', () => {
+  const changes: Array<{ name: string; change: (paths: BotPaths) => void; expect: string }> = [
+    {
+      name: 'a conversation file changed',
+      change: (paths) =>
+        writeJsonAtomic(
+          conversationFile(paths, 'note-a'),
+          conversation('note-a', { title: 'new' }),
+        ),
+      expect: 'conversation note-a differs',
+    },
+    {
+      name: 'a conversation added',
+      change: (paths) => writeJsonAtomic(conversationFile(paths, 'note-b'), conversation('note-b')),
+      expect: 'conversations: 3 in the files, 2 in the database',
+    },
+    {
+      name: 'a conversation removed',
+      change: (paths) => rmSync(conversationFile(paths, 'note-a')),
+      expect: 'conversations: 1 in the files, 2 in the database',
+    },
+  ];
+  for (const { name, change, expect } of changes) {
+    const paths = versionOneBot();
+    let changed = false;
+    const report = importVersion1({
+      paths,
+      file: databaseOf(paths),
+      open: opener((store) => ({
+        // The files change after they were read, while the last transaction is open.
+        appendJournal: (line: JournalEntry) => {
+          if (!changed) change(paths);
+          changed = true;
+          store.appendJournal(line);
+        },
+      })),
+    });
+    assert.equal(report.finished, false, name);
+    assert.ok(report.mismatches.includes(expect), `${name}: ${report.mismatches.join('; ')}`);
+    unfinished(paths);
+  }
+});
+
+test('a sidecar read as today reads it, a directory in its place and a later backup too', () => {
+  const directory = versionOneBot();
+  rmSync(join(presentationsDirectory(directory), 'home.json'));
+  mkdirSync(join(presentationsDirectory(directory), 'home.json'));
+  const first = imported(directory);
+  assert.equal(first.finished, true);
+  assert.deepEqual(kinds(first), ['presentation_from_backup presentations/home.json']);
+  withStore(directory, (store) => assert.equal(store.responses('home').length, 2));
+
+  // A backup of a later version beside a sidecar that is read: today's writer leaves it.
+  const later = versionOneBot();
+  writeFileSync(
+    join(presentationsDirectory(later), 'home.json.bak'),
+    JSON.stringify({ version: 2, conversationId: 'home', responses: [] }),
+  );
+  const second = imported(later);
+  assert.equal(second.finished, true);
+  assert.deepEqual(kinds(second), ['not_read presentations/home.json.bak']);
+});
+
+test('a number JSON cannot keep is a difference, and odd ids are counted', () => {
+  const paths = versionOneBot();
+  // Too large for a double: read as Infinity, which JSON writes as null.
+  writeFileSync(
+    conversationFile(paths, 'note-b'),
+    '{"id":"note-b","role":"note","unreadCount":1e999}',
+  );
+  const report = imported(paths);
+  assert.equal(report.finished, false);
+  assert.deepEqual(report.mismatches, ['conversation note-b differs']);
+  unfinished(paths);
+
+  const odd = freshRoot();
+  writeJsonAtomic(conversationFile(odd, '__proto__'), conversation('__proto__'));
+  appendTranscript(odd, '__proto__', entry(1, 'kept'));
+  const counted = imported(odd);
+  assert.equal(counted.finished, true);
+  assert.equal(
+    JSON.stringify(counted.counts.perConversation),
+    '{"__proto__":{"entries":1,"responses":0}}',
+  );
+});
+
+test(
+  "a file named in another case is the conversation's own where the file system ignores case",
+  { skip: process.platform !== 'win32' && process.platform !== 'darwin' },
+  () => {
+    const paths = freshRoot();
+    writeJsonAtomic(conversationFile(paths, 'Note-A'), conversation('Note-A'));
+    mkdirSync(paths.transcripts, { recursive: true });
+    writeFileSync(join(paths.transcripts, 'note-a.jsonl'), `${JSON.stringify(entry(1, 'one'))}\n`);
+    const report = imported(paths);
+    assert.equal(report.finished, true);
+    assert.deepEqual(report.problems, []);
+    withStore(paths, (store) => assert.equal(store.entries('Note-A').length, 1));
+  },
+);

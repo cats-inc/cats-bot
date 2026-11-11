@@ -232,19 +232,31 @@ security review. Embeddings come only if the evaluation asks for them.
         with a warning and stays on disk; after the import its transcript would never be
         read again.
       - Stops: two files holding one conversation id. Today the later one wins.
-      - Stops: a presentation sidecar of a later version, which today's reader refuses
-        to hide behind an older backup.
+      - Stops: a transcript line that is JSON but no entry with a whole `seq` of 1 or
+        more. Today's reader returns it and the note shows it, and the core numbers the
+        next entry after it (`2.5` is followed by `3.5`, `"2"` by `"21"`), so the
+        entries after one are no entries either.
+      - Stops: a transcript or the journal that exists and cannot be read: a directory in
+        its place, a file the account may not read, or one too long for a string
+        (about 512 MB). Today's readers fail on it as well.
+      - Stops: a presentation sidecar whose version is not 1, or whose backup is one when
+        the sidecar cannot be read. Today's reader refuses both, so that it never hides
+        a later format behind an older backup.
       - Reported: a line that is not JSON, as a crash leaves the line it was writing. A
         line written after such a cut joins it, and today's reader loses both as well.
-      - Reported: a transcript line that is JSON but no entry with a whole `seq` of 1 or
-        more.
       - Reported: a transcript or a sidecar of no conversation, as a crash during a delete
-        leaves (its record goes first).
+        leaves (its record goes first). On Windows and macOS a file named in another case
+        is the conversation's own, as the file system finds it.
       - Reported: a sidecar that cannot be read; its backup is imported when it can be
-        read, as today, and otherwise the transcript is imported without it.
-      - Reported: a file no reader of today reads, such as `conversations/.backup/`.
+        read, as today. When neither can be, today the conversation's view fails, and the
+        transcript is imported without the sidecar.
+      - Reported: a file no reader of today reads, such as `conversations/.backup/`, or a
+        sidecar's backup of another version beside a sidecar that is read.
       - Imported, and counted: work items of conversations deleted in version 1, which
         today's journal keeps. They stay until the FR-7 point above is decided.
+      - Not the import's to decide, but changed by the store: two presentations with the
+        same `seq` come back ordered by their id, where today they keep the order of the
+        sidecar, which moves a presentation to its end each time it is saved.
 - [ ] 1.3 Full-text index, query builder and a rebuild command. First planned with a
       bigram column and a LIKE path for single characters; the notes below say what
       replaced them.
@@ -293,8 +305,10 @@ security review. Embeddings come only if the evaluation asks for them.
       then each transcript in batches of 2,000 entries keeping every `seq`, then its
       presentations. The journal goes in the last transaction, which is durable
       (`synchronous=FULL`, set before it begins, since SQLite refuses to change it inside
-      one). In that transaction the import reads the files again, compares every
-      record with what the store reads back, and only then writes the marker.
+      one). In that transaction the import reads the files and lists the directories
+      again, compares every record with what the store reads back, counts a record the
+      store cannot read or a number JSON cannot keep (`1e999`) as a difference, and only
+      then writes the marker.
     - Records are kept as their files hold them: a conversation before today's loader
       fills in its fields or upgrades a contact note, a presentation sidecar before its
       blocks are checked, every line in its own field order. Today's readers then run on
@@ -310,6 +324,15 @@ security review. Embeddings come only if the evaluation asks for them.
       Node.js 26 and inside Electron 41 alike, whatever the batch size between 500 and
       10,000; a million entries would take about a minute and a half. A copy of one local
       data root imported and checked with no problem.
+    - Measured by the review, on a loaded machine: one transcript of 1,000,000 entries
+      (269 MB) in 200 to 240 s with 1.6 to 1.9 GB of memory, about three times what
+      today's reader holds; 100,000 conversations of one entry each in 800 s, mostly
+      reading files. A journal of 400 MB used 3 GB while it was checked, before the
+      import let go of its first copy. Above about 512 MB a transcript or the journal
+      cannot be read into one string, by today's readers or the import. Each of these is
+      for 1.7 to bound, or for the migration to report.
+    - A failure other than these, such as a full disk, is thrown and leaves no marker; the
+      migration writes the report from it.
   - `appendJournal` keeps a line whatever it holds, and makes a current row only of a
     work item or a schedule with a text id, as today's replay does.
   - Fixtures still to come: crash at each step of the migration including after the

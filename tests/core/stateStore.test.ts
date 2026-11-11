@@ -572,6 +572,15 @@ test('the version-1 import keeps each seq, in order and after what a conversatio
       /Unknown conversation nobody/u,
     );
 
+    // The largest `seq` a number holds may be imported, and nothing after it appended.
+    store.saveConversation(conversation('note-1'));
+    store.importEntries('note-1', [at(Number.MAX_SAFE_INTEGER, 'last')]);
+    assert.throws(() => store.appendEntry('note-1', entry('one more')), /holds no more entries/u);
+    assert.deepEqual(
+      store.entries('note-1').map((item) => item.seq),
+      [Number.MAX_SAFE_INTEGER],
+    );
+
     assert.equal(store.importMarker(), undefined);
     store.setImportMarker('{"from":1}');
     assert.equal(store.importMarker(), '{"from":1}');

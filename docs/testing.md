@@ -157,15 +157,22 @@ outside `src/core/store/`.
     transcript in batches of any size;
   - what a crash leaves (a cut line, a line written onto it, a delete half done) and
     files no reader of today reads, reported by file and line and the rest imported;
-  - a sidecar replaced by its backup, or left out when neither can be read;
+  - a sidecar replaced by its backup, a directory in its place included, or left out
+    when neither can be read; a backup of a later version beside a sidecar reported;
   - each problem that stops the import, listed with every other problem, with no
-    journal line and no marker written;
-  - a database that does not match the files, a record the store cannot read, and a
-    failure on the way to the marker, each leaving no marker and no journal;
+    journal line and no marker written: an entry out of order, a line that is no entry
+    and what today numbers after it, a file that cannot be read, a conversation file
+    that is no record or is one of two, and a sidecar whose version is not 1;
+  - a database that does not match the files, the files changing while the check runs,
+    a record the store cannot read, a number JSON cannot keep, and a failure on the way
+    to the marker, each leaving no marker and no journal;
+  - a conversation called `__proto__` counted, and on Windows and macOS a file named in
+    another case found as the conversation's own;
   - the journal and the marker written in one durable transaction after the rest, and
     a database that already holds records refused.
 - `stateStore.test.ts` covers `importEntries`: each `seq` kept in order and after what
-  the conversation holds, a batch all or nothing, and the entries indexed.
+  the conversation holds, a batch all or nothing, the entries indexed, and nothing
+  appended after the largest `seq` a number holds.
 
 ### Store tests inside Electron
 
