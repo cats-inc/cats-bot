@@ -1,6 +1,6 @@
 import type { BrowserWindow } from './note-windows-electron.ts';
 
-export { BrowserWindow, shell } from './note-windows-electron.ts';
+export { BrowserWindow, shell, screen } from './note-windows-electron.ts';
 
 type Handler = (event: unknown, ...args: unknown[]) => unknown;
 export const ipcMain = {

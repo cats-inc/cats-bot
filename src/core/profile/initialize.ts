@@ -5,6 +5,8 @@ import { nextBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import { botPathsFor, botRootIn, hubPathsFor } from '../store/paths.ts';
 import type { BotProfile } from '../types.ts';
 import { createProfile, loadProfile, saveProfile, type CreateProfileInput } from './profile.ts';
+import { assertBotDataResetNotPending } from '../store/dataResetGuard.ts';
+import { acquireInstanceLock } from '../store/lock.ts';
 
 /**
  * Creating a bot and reading whether one exists, without opening its core.
@@ -60,6 +62,7 @@ export function initializeBot(
 ): { profile: BotProfile; root: string } {
   const root = botRootIn(botsHome, input.id);
   const paths = botPathsFor(root);
+  assertBotDataResetNotPending(root);
   const placeholder = createProfile({ id: input.id, name: input.name, provider: input.provider, cwd: root });
   const existing = loadProfile(paths, placeholder);
   if (existing.ok) {
@@ -68,12 +71,18 @@ export function initializeBot(
   if (existing.reason === 'corrupt') {
     throw new Error(`Bot ${input.id} has a corrupt profile at ${paths.profile}: ${existing.error}`);
   }
-  for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
-    mkdirSync(dir, { recursive: true });
-  }
-  const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
-  saveProfile(paths, profile);
-  return { profile, root };
+  const lock = acquireInstanceLock(paths);
+  if (!lock.held) throw new Error('Another program is initializing this cat bot.');
+  try {
+    // A competing initializer may have finished after the first read.
+    if (existsSync(paths.profile)) throw new Error(`Bot ${input.id} already exists at ${root}`);
+    for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
+      mkdirSync(dir, { recursive: true });
+    }
+    const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
+    saveProfile(paths, profile);
+    return { profile, root };
+  } finally { lock.release(); }
 }
 
 /** The bot's profile, or null when it was never set up; a corrupt profile throws. */

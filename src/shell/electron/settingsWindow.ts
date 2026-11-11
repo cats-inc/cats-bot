@@ -1,11 +1,12 @@
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, screen } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
 import { guardNavigation } from './navigation.ts';
 import { applyWindowIdentity, type WindowIdentity } from './windowIdentity.ts';
+import { fitPageWindow, readPageWindowPlacement, rememberPageWindow, type PageWindowPlacement } from './pageWindowState.ts';
 
 /**
  * SPEC-002 FR-4: one settings window per bot, with tabs for the bot's
@@ -20,6 +21,7 @@ export interface PageWindowOptions {
   iconPath: string;
   /** SPEC-008 FR-17: the bot a window belongs to; hub windows have none. */
   identity?: WindowIdentity;
+  placement?: PageWindowPlacement;
 }
 
 export function pageUrl(rendererDir: string, page: string, query: Record<string, string> = {}): string {
@@ -32,11 +34,16 @@ export function pageUrl(rendererDir: string, page: string, query: Record<string,
 export const SETUP_WINDOW_SIZE = { width: 860, height: 640, minWidth: 800, minHeight: 600 } as const;
 
 export function createPageWindow(options: PageWindowOptions, init: { width: number; height: number; title: string; minWidth?: number; minHeight?: number }): BrowserWindow {
+  const saved = options.placement ? readPageWindowPlacement(options.placement) : null;
+  const minimum = { width: init.minWidth ?? 600, height: init.minHeight ?? 460 };
+  const area = saved ? screen.getDisplayMatching(saved).workArea : null;
+  const bounds = saved && area ? fitPageWindow(saved, area, minimum) : null;
   const window = new BrowserWindow({
     width: init.width,
     height: init.height,
-    minWidth: init.minWidth ?? 600,
-    minHeight: init.minHeight ?? 460,
+    ...bounds,
+    minWidth: area ? Math.min(minimum.width, area.width) : minimum.width,
+    minHeight: area ? Math.min(minimum.height, area.height) : minimum.height,
     show: false,
     autoHideMenuBar: true,
     title: init.title,
@@ -53,6 +60,9 @@ export function createPageWindow(options: PageWindowOptions, init: { width: numb
   window.removeMenu();
   applyWindowIdentity(window, options.identity);
   guardNavigation(window.webContents);
+  if (saved?.maximized) window.maximize();
+  if (saved?.fullScreen) window.setFullScreen(true);
+  if (options.placement) rememberPageWindow(window, options.placement);
   return window;
 }
 
@@ -82,7 +92,7 @@ export class SettingsWindow {
       if (this.window === window) this.window = null;
     });
     await window.loadURL(pageUrl(this.options.rendererDir, 'settings.html', { ...this.query, ...(tab ? { tab } : {}) }));
-    window.show();
+    if (!window.isDestroyed() && this.window === window) window.show();
   }
 
   get browserWindow(): BrowserWindow | null {

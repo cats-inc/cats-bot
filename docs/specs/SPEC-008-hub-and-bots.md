@@ -344,6 +344,24 @@ descriptions for the model and this documentation say "bot".
       and the bot's windows follow without a restart. The floating Cat opens on
       the look stored in the profile, so a slow core never leaves it blank.
 
+### Utility window restoration and data reset
+
+30. FR-30: Setup, Hub Settings, New cat bot and each bot's Settings remember
+    their own position, normal size and maximized/fullscreen state across app
+    exits and OS restarts. Persist during use as well as close; restore onto a
+    visible work area after display changes. Defaults cover missing/invalid
+    geometry without overwriting unreadable storage. Notes and avatars retain
+    their existing separate placement behavior.
+31. FR-31: Hub Settings → Data resets all bots and Hub settings after exact
+    `RESET` confirmation, with an unchecked optional Runtime reset. The host
+    authorizes the main frame, drains its cores/Runtime children and performs
+    the allowlisted purge on the next launch under locks. Runtime is retained
+    separately by default; the option also clears previously retained Runtime.
+    A pending journal survives failure and fences CLI/core/direct writers until
+    completion. Installed tools, external workspaces, provider logins/native
+    history outside Runtime and Cats Desktop data stay intact. Details and
+    failure recovery are in [ADR-023](../decisions/023-persist-utility-windows-and-reset-bot-data-offline.md).
+
 ### Non-Functional Requirements
 
 - **Performance**: record working set and time to first usable note for the hub
@@ -402,6 +420,6 @@ Cats Bot.exe (hub, Electron)            ~/.catsbot/
 ---
 
 *Created: 2026-10-29*
-*Updated: 2026-11-08 (FR-1 locks left by a restart)*
+*Updated: 2026-11-11 (FR-30/31 utility windows and data reset)*
 *Author: Claude, from the owner's decisions*
 *Related Plan: [PLAN-009](../plans/PLAN-009-hub-headless-cores-and-coordinator.md)*

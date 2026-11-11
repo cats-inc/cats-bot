@@ -179,6 +179,33 @@ closes or crashes leaves its cores running, and the next hub reattaches to
 them. A core writes its log lines to `<bot root>/logs/core.log`. The same
 `CATS_BOT_PROVIDER_*` variables apply.
 
+### Window placement and data reset
+
+Setup, Hub Settings, New cat bot and each bot's Settings remember their own
+position and size when closed or when Cats Bot/Windows restarts. Maximized and
+fullscreen states are remembered too. After a monitor is removed, reopening a
+window brings it onto an available display. Notes and floating Cats continue to
+remember their positions separately.
+
+Open **Cats Bot Settings → Data → Reset data…** to erase all active/archived cat
+bots, conversations, memories, schedules, stored secrets, owned Bot workspaces
+and Hub preferences, including window placement. Enter **RESET** to confirm.
+Cats Bot stops its cores, restarts and returns to initial setup. The current
+login-item preference is cleared; finishing setup offers the usual new choice.
+
+**Also reset Runtime data** is off by default. Without it, Runtime profiles are
+kept under `<CATS_BOT_HOME>/retained-runtime/<reset-id>/`, separate from new bots;
+old sessions are not automatically attached to newly created bots. With it,
+every bot's Runtime settings, provider selections, sessions, caches and managed
+workspace files are erased, including Runtime retained by earlier resets.
+
+Installed tools, provider logins/native CLI history outside Runtime storage,
+external workspaces and Cats Desktop's separate data remain. Selected erased
+data cannot be recovered. Stop cat bots hosted by other programs before resetting.
+Finish an in-progress setup or update first. A failed/interrupted purge keeps
+its pending request and finishes when Cats Bot is reopened; CLI writes and
+normal bot startup wait until it completes.
+
 ### Diagnostic logs
 
 The primary desktop hub writes `logs/host.log` below Electron's user-data directory

@@ -1,5 +1,10 @@
 # Documentation Index
 
+[Utility window restoration and data reset](decisions/023-persist-utility-windows-and-reset-bot-data-offline.md)
+adds independent saved positions for setup and settings windows, and Hub Settings' Data tab with
+an optional Runtime purge. See the [setup guide](setup-guide.md#window-placement-and-data-reset)
+for retained Runtime storage and interrupted-reset recovery. Unpublished.
+
 Accepted, not implemented: [ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md)
 moves each bot's state to one SQLite database, and
 [ADR-022](decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) adds

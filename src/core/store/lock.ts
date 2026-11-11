@@ -7,6 +7,7 @@ import type { HandoffMessage } from '../types.ts';
 import { readJsonFile, writeJsonAtomic } from './atomicFile.ts';
 import type { BotPaths } from './paths.ts';
 import { identityCreatedAt, ownProcessIdentity, readProcessIdentity, type ProcessIdentity } from './processIdentity.ts';
+import { assertBotDataResetNotPending } from './dataResetGuard.ts';
 
 /** For the update leases, which the shell writes through this module. */
 export { ownProcessIdentity } from './processIdentity.ts';
@@ -101,8 +102,14 @@ export function lockOwnerHolds(record: LockRecord, probe: LockOwnerProbe = syste
   }, probe);
 }
 
-export function acquireInstanceLock(paths: BotPaths, pid: number = process.pid): LockResult {
-  return acquireLockFile<InstanceLock>(paths.lock, { pid, host: hostname(), startedAt: new Date().toISOString() });
+export function acquireInstanceLock(paths: BotPaths, pid: number = process.pid, options: { dataReset?: boolean } = {}): LockResult {
+  if (!options.dataReset) assertBotDataResetNotPending(paths.root);
+  const lock = acquireLockFile<InstanceLock>(paths.lock, { pid, host: hostname(), startedAt: new Date().toISOString() });
+  if (lock.held && !options.dataReset) {
+    try { assertBotDataResetNotPending(paths.root); }
+    catch (error) { lock.release(); throw error; }
+  }
+  return lock;
 }
 
 function readRaw(file: string): string | null {
@@ -187,6 +194,7 @@ let handoffSequence = 0;
 
 /** The second instance drops its request here; the running core picks it up. */
 export function writeHandoff(paths: BotPaths, message: Omit<HandoffMessage, 'id' | 'at'>): HandoffMessage {
+  assertBotDataResetNotPending(paths.root);
   mkdirSync(paths.handoff, { recursive: true });
   const full: HandoffMessage = { id: randomUUID(), at: new Date().toISOString(), ...message };
   handoffSequence += 1;

@@ -7,7 +7,8 @@ import { readProviderOverrides } from '../core/hostEnv.ts';
 import { callHostControl, HostControlRejectedError } from '../core/host-api/control.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
 import { FileSecretStore, SECRET_TELEGRAM_TOKEN } from '../core/secrets.ts';
-import { readInstanceLock, writeHandoff } from '../core/store/lock.ts';
+import { acquireInstanceLock, readInstanceLock, writeHandoff } from '../core/store/lock.ts';
+import { assertBotDataResetNotPending } from '../core/store/dataResetGuard.ts';
 import { callHubControl } from '../core/host-api/hubControl.ts';
 import { createFileLogger } from '../core/log.ts';
 import { boundStderrLog } from '../shared/stderrLog.ts';
@@ -195,6 +196,7 @@ function resolveTarget(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Target {
   const id = resolveBotId(parsed.flags, env);
   assertNotArchived(id, env);
   const root = resolveBotRoot(id, env);
+  assertBotDataResetNotPending(root);
   return { id, root, running: readInstanceLock(botPathsFor(root)) };
 }
 
@@ -480,9 +482,13 @@ async function commandTelegram(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Prom
     // The CLI has no OS credential facility: the token is stored as a file with owner-only
     // permissions where the platform supports them. A shell with OS encryption re-stores it
     // encrypted: a running one on the handoff below, otherwise on its next start.
-    const store = new FileSecretStore(target.root, { warn: (line) => process.stderr.write(`${line}\n`) });
-    if (action === 'set-token') store.set(SECRET_TELEGRAM_TOKEN, value!);
-    else store.delete(SECRET_TELEGRAM_TOKEN);
+    const lock = target.running ? null : acquireInstanceLock(botPathsFor(target.root));
+    if (lock && !lock.held) throw new BotInstanceRunningError(lock.owner);
+    try {
+      const store = new FileSecretStore(target.root, { warn: (line) => process.stderr.write(`${line}\n`) });
+      if (action === 'set-token') store.set(SECRET_TELEGRAM_TOKEN, value!);
+      else store.delete(SECRET_TELEGRAM_TOKEN);
+    } finally { if (lock?.held) lock.release(); }
     process.stdout.write(action === 'set-token'
       ? 'Telegram token stored with file protection. The shell re-stores it with OS encryption where the OS '
         + 'offers it (now if it is running, otherwise on its next start); `telegram status` shows the actual protection.\n'
