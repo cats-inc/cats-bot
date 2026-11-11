@@ -30,6 +30,8 @@ recorded; the intent is unchanged:
 - Kept on the bot's own provider, consolidation would be unavailable to most bots.
 - The owner therefore chose to let a bot name a separate consolidation target. Without one,
   the bot's own execution target is used.
+- A separate target waits on one more Runtime change: API-backend credentials must not
+  reach the provider CLIs that Runtime starts.
 
 Nothing is implemented. Before any memory injection or consolidation:
 
@@ -141,11 +143,16 @@ It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
        first ones.
      - It is used for consolidation only. Every conversation still runs on the bot's one
        execution target (ADR-001 §3).
-     - Naming another provider sends the owner's and the bot's lines from the direct message
-       and notes to that provider. The owner chooses it per bot, in settings that say so. It
-       is never chosen automatically.
-     - A key for that provider is stored with the bot's other secrets and reaches the private
-       Runtime through its environment, never through a configuration file.
+     - Naming another provider sends it everything a consolidation run reads: the owner's
+       and the bot's lines from the direct message and notes, the core memory, and the
+       recalled memory pages. The owner chooses it per bot, in settings that say so. It is
+       never chosen automatically.
+     - A key for that provider is stored only encrypted, and reaches the private Runtime
+       through an environment variable with a Cats-private name, never through a
+       configuration file.
+     - Runtime passes its whole environment to every provider CLI it starts. A separate
+       target therefore cannot be enabled until Runtime keeps API-backend credentials out
+       of CLI processes.
      - If the target in use does not offer text-only sessions, consolidation is off and the
        settings say why. Bot never falls back from one target to another by itself.
    - **Cost**: there is a per-run and a daily token cap, recorded as usage, and Runtime
@@ -211,9 +218,9 @@ The owner chose the proposed option for each:
 - Two Runtime capabilities do not exist yet: turn-scoped context, and a tool-free deletable
   session.
 - More owner-facing surface: memory settings and an approval queue.
-- A separate consolidation target sends conversation text to a second provider when the
-  owner picks one, needs its own key and billing, and makes the private Runtime host two
-  targets.
+- A separate consolidation target sends conversation text and memory to a second provider
+  when the owner picks one, needs its own key and billing, and makes the private Runtime
+  host two targets. It also depends on a third Runtime change.
 
 ### Neutral
 

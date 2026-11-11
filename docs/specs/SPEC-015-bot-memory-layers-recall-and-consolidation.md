@@ -230,19 +230,30 @@ A bot remembers its owner across sessions, provider changes and restarts.
       - It is used for consolidation only. Conversations keep running on the bot's one
         execution target, and changing the consolidation target makes no conversation
         attachment stale.
-    - **Consent.** Naming a provider other than the bot's own sends the owner's and the
-      bot's lines from the direct message and notes to that provider.
+    - **Consent.** Naming a provider other than the bot's own sends that provider
+      everything a consolidation run reads (FR-15): the owner's and the bot's lines from the
+      direct message and notes, the current core memory, and the memory pages recalled for
+      them.
       - The setting names the provider and says so before it is saved.
       - Bot never selects or switches a consolidation target by itself.
-      - A local model keeps the text on the machine, and the setting says that too.
-    - **Credentials.** A key for the separate target is stored in the bot's `secrets.json`
-      under the existing protection rules. It reaches the private Runtime through an
-      environment variable that the Runtime configuration names. It never appears in the
-      configuration file, the profile, the journal or logs.
+      - A local model keeps the text on the machine only when its endpoint is on the
+        loopback interface. The setting says which case applies.
+    - **Credentials.** A key for the separate target is a billable secret.
+      - It is stored in the bot's `secrets.json` only when the host can encrypt it at rest.
+        Without a cipher the setting refuses the key.
+      - It reaches the private Runtime through an environment variable with a Cats-private
+        name. A provider's standard variable name is never used, because the conversation's
+        CLI could pick it up and change how it signs in or bills.
+      - It never appears in the configuration file, the profile, the journal or logs.
+    - **Runtime prerequisite.** Runtime passes its whole environment to every provider CLI
+      it starts, so a conversation's CLI, which has tools and reads untrusted input, could
+      read the key. A separate target cannot be enabled until Runtime keeps API-backend
+      credentials out of CLI processes (PLAN-014 P0).
     - **Private Runtime.** The generated provider configuration gains the consolidation
       target beside the conversation provider. Adding, changing or removing it restarts the
       private Runtime under SPEC-001 FR-27's rules: after the running turn, and never in
-      the middle of one.
+      the middle of one. Whether an app-managed Runtime can host a CLI target and an
+      API-backend target together is not yet verified.
     - **No fallback.** If the target in use stops qualifying, or its key is missing or
       refused, consolidation is off and the settings say why (FR-14).
     - **Caps**: input plus output tokens per run (60,000 by default) and per day (120,000 by

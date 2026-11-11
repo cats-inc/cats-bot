@@ -53,6 +53,10 @@ security review. Embeddings come only if the evaluation asks for them.
     mechanism.
   - Bot must check the `textOnly` capability and the create readback before it sends
     anything. An older Runtime would return an ordinary session.
+- [ ] Runtime: **API-backend credentials stay out of CLI processes.**
+  - Today Runtime passes its whole environment to every provider CLI it starts, so a
+    conversation's CLI could read a consolidation key.
+  - It blocks P4.6 only. It is not specified in Runtime yet.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 
@@ -117,13 +121,17 @@ controls all of it.
       automatic additions and the approval queue.
 - [ ] 4.4 Token caps per run and per day, usage records, batch halving and skip listing.
 - [ ] 4.5 Optional dream diary, off by default.
-- [ ] 4.6 Separate consolidation target (SPEC-015 FR-19):
+- [ ] 4.6 Separate consolidation target (SPEC-015 FR-19), blocked on P0's credential
+      prerequisite:
   - an optional profile field, normalized field by field;
-  - the private Runtime's generated configuration with a second target, and the restart
+  - verify first that an app-managed private Runtime can host a CLI target and an
+    API-backend target together;
+  - the private Runtime's generated configuration with the second target, and the restart
     rules when it changes;
-  - the key in `secrets.json`, handed to the private Runtime through its environment;
-  - settings with the provider named, the consent text and the reason when consolidation
-    is off;
+  - the key in `secrets.json`, stored only encrypted, and handed to the private Runtime
+    through a Cats-private environment variable;
+  - settings with the provider named, the consent text, the loopback note for a local
+    model, and the reason when consolidation is off;
   - acceptance against a Runtime API-backend target, which needs Runtime SPEC-043 R7.
 
 **Deliverables**: bots improve their memory overnight within a known cost, and no batch can
