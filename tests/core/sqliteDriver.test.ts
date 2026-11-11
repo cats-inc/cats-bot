@@ -193,7 +193,8 @@ test('a runtime started without SQLite gets an error that says so', async (conte
     },
   );
   const { code, stdout, stderr } = await finished(child);
-  if (code === 9 && /bad option/u.test(stderr)) {
+  // A later runtime may drop the switch, or keep it and load SQLite anyway.
+  if ((code === 9 && /bad option/u.test(stderr)) || stdout === 'loaded') {
     context.skip('this runtime has no switch that turns SQLite off');
     return;
   }
@@ -587,10 +588,11 @@ test(
       shipped,
       output,
     );
+    assert.match(stdout, /^# tests 12$/mu, output);
     assert.match(stdout, /^# fail 0$/mu, output);
     assert.match(stdout, /^# cancelled 0$/mu, output);
-    // Everything above ran there; only this test skips itself inside Electron.
-    assert.match(stdout, /^# pass 11$/mu, output);
-    assert.match(stdout, /^# skipped 1$/mu, output);
+    // Everything above ran there. This test skips itself inside Electron, and the test of a
+    // runtime without SQLite may skip itself too.
+    assert.match(stdout, /^# skipped [12]$/mu, output);
   },
 );

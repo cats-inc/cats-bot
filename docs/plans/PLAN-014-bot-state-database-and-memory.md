@@ -74,8 +74,11 @@ security review. Embeddings come only if the evaluation asks for them.
     proposals until the owner accepts them with the schema change, which also brings the
     SPEC-014 amendments.
     - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
-      without the lock (the CLI's `status`, `conversations` and `schedule`). Proposed: such
-      a host opens the database with `mode=rw` and `query_only`, reads, and closes.
+      without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
+      such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
+      - The same host also writes while the bot is stopped: `schedule add` and
+        `schedule cancel` take the instance lock for the write. The adapter has to give
+        it a writer connection for as long as it holds the lock.
       - `query_only` rejects statements that change rows or the schema. It is not a
         read-only handle: SQLite still lets it run a checkpoint or change the journal
         mode, and a reader that closes last checkpoints the write-ahead log into `bot.db`
