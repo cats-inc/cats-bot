@@ -101,6 +101,17 @@ test('no source file imports from outside the repository', () => {
   assert.deepEqual(offenders, []);
 });
 
+test('only the driver module reaches node:sqlite (SPEC-014 FR-2)', () => {
+  // The driver is loaded through `process.getBuiltinModule`, which no import pattern sees, so
+  // this looks for the module name itself.
+  const driver = join(srcRoot, 'core', 'store', 'sqliteDriver.ts');
+  assert.ok(readFileSync(driver, 'utf8').includes('node:sqlite'));
+  const offenders = listTypeScriptFiles(srcRoot)
+    .filter((file) => file !== driver && readFileSync(file, 'utf8').includes('node:sqlite'))
+    .map((file) => relative(repoRoot, file));
+  assert.deepEqual(offenders, []);
+});
+
 test('the shell never holds the runtime client directly', () => {
   const offenders: string[] = [];
   const runtimeClientDir = join(srcRoot, 'core', 'runtime');

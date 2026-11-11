@@ -39,6 +39,40 @@ last step, not the first.
   truncation, queue ordering and the session gate. Pure functions and the
   file system only.
 
+### SQLite driver acceptance
+
+- **Location**: `tests/core/sqliteDriver.test.ts` with
+  `tests/support/sqlite-crash-writer.mjs`
+- **Scope**: what the bot state database (SPEC-014, PLAN-014 task 1.1) needs from the
+  SQLite built into the runtime, loaded through `src/core/store/sqliteDriver.ts`:
+  - no experimental notice on stderr, other warnings still delivered, and a clear error
+    when the runtime was started without SQLite;
+  - WAL, STRICT tables, upsert and rollback;
+  - a record stored as JSON text coming back exactly. Text holding NUL characters or lone
+    surrogates survives because JSON escapes them, not because the driver keeps them;
+  - contentless FTS5 with a bigram column that finds two-character Chinese words, delete
+    by row id, and a rebuild from the JSON records;
+  - `VACUUM INTO` not replacing an existing database, and `quick_check`;
+  - a reader beside a running writer whose open transaction is already in the
+    write-ahead log, in the same process and from another process;
+  - a reader that neither creates a database nor leaves files beside a stopped bot;
+  - a closed connection releasing its directory, which Windows refuses while it is open;
+  - committed rows surviving a killed writer, and its open transaction not.
+
+The `sqlite-driver runtime` line it prints also reports, without asserting, what the
+runtime does with a raw NUL in a TEXT value and which files a read-only open leaves.
+
+The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
+FR-2).
+
+`npm test` runs the file under Node.js. The core runs inside Electron, whose Node.js and
+SQLite are different builds, so CI runs the file once more on every platform, and its
+last test then repeats the others inside the Electron dependency:
+
+```bash
+CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+```
+
 ### Core tests on the fake runtime
 
 - **Location**: `tests/core/bot.test.ts` and `tests/core/life.test.ts` with
@@ -581,6 +615,8 @@ and the renderer (`tsconfig.renderer.json`).
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
+After `npm test` it repeats the [SQLite driver acceptance](#sqlite-driver-acceptance)
+inside Electron on each platform.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
 range. Renames count both old and new paths. An unknown base, empty diff or failed

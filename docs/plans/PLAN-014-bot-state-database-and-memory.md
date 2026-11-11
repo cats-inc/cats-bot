@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. Not started. P1 may start; P2 onward wait for the security review and the Runtime prerequisites in P0 |
+| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. P1 started 2026-11-11 with the driver acceptance of task 1.1; nothing is wired into the core yet. P2 onward wait for the security review and the Runtime prerequisites in P0 |
 | **Owner** | Bot core store and memory |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Owner; independent review per phase; independent security review before P2 |
@@ -66,6 +66,46 @@ security review. Embeddings come only if the evaluation asks for them.
 
 - [ ] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
       acceptance on Windows, macOS and Linux under the shipped Electron.
+  - [x] Driver module and acceptance test: `src/core/store/sqliteDriver.ts` and
+        `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
+        inside Electron on the three platforms. Nothing uses the driver yet.
+  - [ ] Adapter, schema and `meta`.
+  - What the acceptance run found, and the defaults it proposes for the adapter. They are
+    proposals until the owner accepts them with the schema change, which also brings the
+    SPEC-014 amendments.
+    - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
+      without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
+      such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
+      - The same host also writes while the bot is stopped: `schedule add` and
+        `schedule cancel` take the instance lock for the write. The adapter has to give
+        it a writer connection for as long as it holds the lock.
+      - `query_only` rejects statements that change rows or the schema. It is not a
+        read-only handle: SQLite still lets it run a checkpoint or change the journal
+        mode, and a reader that closes last checkpoints the write-ahead log into `bot.db`
+        and removes the `-wal` and `-shm` files. Rows never change. The adapter must not
+        hand out a reader that accepts arbitrary statements.
+      - The driver's read-only open left `-shm` and `-wal` files beside a cleanly stopped
+        bot. An immutable open does no locking or change detection, which is unsafe when
+        a writer may start at any time.
+      - This touches SPEC-014 FR-1 and ADR-021 decision 1, which say other hosts reach
+        data through `BotHostApi` and not the file.
+    - **The record is JSON text**, and other columns only index it. JSON escapes NUL
+      characters and lone surrogates. As raw TEXT, the Node.js 24.14 driver in Electron 41
+      returns a value only up to its first NUL, and a lone surrogate is stored as U+FFFD.
+      The index is rebuilt from the JSON, not from an indexed column.
+    - **The index** is a contentless FTS5 table with `contentless_delete`, keyed by the
+      entry's row id. SPEC-014 FR-8 says external-content.
+    - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
+      existing empty file and can leave a partial file when interrupted. A snapshot is
+      written under a new name and renamed when complete.
+    - **Windows handles.** An open connection blocks renaming or removing the bot root.
+      Every host closes its connection before a root is moved, and a host that only reads
+      holds one no longer than a read takes.
+    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects;
+      the URI for such a path has to be built by hand. SQLite does not support WAL on a
+      network file system, so a bot root on a share is a separate question for the adapter.
+    - The test prints what each runtime does with a raw NUL and a read-only open in its
+      `sqlite-driver runtime` line, in the CI log of every platform.
 - [ ] 1.2 Move writers and readers:
   - conversations and attachments;
   - transcript entries (append-only `seq`);
