@@ -38,17 +38,23 @@ export function createUpdaterAdapter(updater: AppUpdater, lifecycle: UpdaterLife
   let artifacts: { file: string; hash: string }[] = [];
   let expectedFiles = new Map<string, string>();
   const fingerprint = lifecycle.fingerprint ?? fingerprintFile;
-  async function request<T>(start: () => Promise<T>): Promise<T> {
+  async function request<T>(start: (activity: () => void) => Promise<T>): Promise<T> {
     if (pending) throw new Error('The previous update request is still finishing. Try again shortly.');
-    const underlying = Promise.resolve().then(start);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let refresh = () => {};
+    const timeout = new Promise<never>((_resolve, reject) => {
+      refresh = () => {
+        if (timer) clearTimeout(timer);
+        timer = setTimeout(() => reject(new Error('The update request timed out. Please try again.')), timeoutMs);
+      };
+      refresh();
+    });
+    const underlying = Promise.resolve().then(() => start(() => { if (timer) refresh(); }));
     pending = underlying;
     void underlying.finally(() => { if (pending === underlying) pending = null; }).catch(() => undefined);
-    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      return await Promise.race([underlying, new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(() => reject(new Error('The update request timed out. Please try again.')), timeoutMs);
-      })]);
-    } finally { if (timer) clearTimeout(timer); }
+      return await Promise.race([underlying, timeout]);
+    } finally { if (timer) clearTimeout(timer); timer = undefined; }
   }
   return {
     async check() {
@@ -67,41 +73,58 @@ export function createUpdaterAdapter(updater: AppUpdater, lifecycle: UpdaterLife
       });
     },
     async download(progress) {
-      return request(async () => {
-        if (!checkedVersion) throw new Error('Check for updates first.');
-        lifecycle.assertCanInstall?.();
-        const expected = checkedVersion;
-        let completedVersion: string | null = null;
-        let acceptingProgress = true;
-        const onProgress = (info: { percent: number }) => { if (acceptingProgress) progress(info.percent); };
-        const onDownloaded = (info: { version: string }) => { completedVersion = info.version; };
-        updater.on('download-progress', onProgress);
-        updater.on('update-downloaded', onDownloaded);
-        // The native promise remains fenced after the caller's timeout.
-        const progressTimer = setTimeout(() => { acceptingProgress = false; }, timeoutMs);
-        try {
-          const files = await updater.downloadUpdate();
-          if (completedVersion !== expected || checkedVersion !== expected) throw new Error('Downloaded update identity changed. Check again.');
-          if (!files.length || files.some(file => !isAbsolute(file))) throw new Error('No verified update files were returned.');
-          artifacts = await Promise.all(files.map(async file => {
-            const expectedHash = expectedFiles.get(basename(file));
-            if (!expectedHash) throw new Error('The downloaded file is not in the selected release metadata.');
-            if (await fingerprint(file) !== expectedHash) {
-              // Native in-memory cache hits only check existence. Remove a bad
-              // cache file so the next explicit retry fetches verified bytes.
-              await unlink(file).catch(() => undefined);
-              throw new Error('The downloaded update failed checksum validation. Check for updates and download it again.');
+      let acceptingProgress = true;
+      try {
+        await request(async activity => {
+          if (!checkedVersion) throw new Error('Check for updates first.');
+          lifecycle.assertCanInstall?.();
+          const expected = checkedVersion;
+          let completedVersion: string | null = null;
+          let previousTransferred = 0;
+          let previousPercent = 0;
+          const onProgress = (info: { percent: number; transferred?: number }) => {
+            if (!acceptingProgress) return;
+            // A large/differential download can take more than two minutes while
+            // advancing. Time out inactivity, rather than the whole transfer.
+            if (typeof info.transferred === 'number' && Number.isFinite(info.transferred) && info.transferred >= 0) {
+              if (info.transferred > previousTransferred) activity();
+              previousTransferred = info.transferred;
+            } else if (Number.isFinite(info.percent) && info.percent > previousPercent) activity();
+            if (Number.isFinite(info.percent)) {
+              previousPercent = info.percent;
+              progress(info.percent);
             }
-            return { file, hash: expectedHash };
-          }));
-          downloadedVersion = expected;
-          downloadedFile = files.find(file => isAbsolute(file) && file.endsWith('.deb')) ?? null;
-        } finally {
-          clearTimeout(progressTimer);
-          updater.removeListener('download-progress', onProgress);
-          updater.removeListener('update-downloaded', onDownloaded);
-        }
-      });
+          };
+          const onDownloaded = (info: { version: string }) => { completedVersion = info.version; };
+          updater.on('download-progress', onProgress);
+          updater.on('update-downloaded', onDownloaded);
+          try {
+            const files = await updater.downloadUpdate();
+            if (completedVersion !== expected || checkedVersion !== expected) throw new Error('Downloaded update identity changed. Check again.');
+            if (!files.length || files.some(file => !isAbsolute(file))) throw new Error('No verified update files were returned.');
+            artifacts = await Promise.all(files.map(async file => {
+              const expectedHash = expectedFiles.get(basename(file));
+              if (!expectedHash) throw new Error('The downloaded file is not in the selected release metadata.');
+              if (await fingerprint(file) !== expectedHash) {
+                // Native in-memory cache hits only check existence. Remove a bad
+                // cache file so the next explicit retry fetches verified bytes.
+                await unlink(file).catch(() => undefined);
+                throw new Error('The downloaded update failed checksum validation. Check for updates and download it again.');
+              }
+              return { file, hash: expectedHash };
+            }));
+            downloadedVersion = expected;
+            downloadedFile = files.find(file => isAbsolute(file) && file.endsWith('.deb')) ?? null;
+          } finally {
+            updater.removeListener('download-progress', onProgress);
+            updater.removeListener('update-downloaded', onDownloaded);
+          }
+        });
+      } finally {
+        // The native promise remains fenced after a timeout, but its late
+        // progress must not update the failed operation's UI.
+        acceptingProgress = false;
+      }
     },
     async prepareInstall() {
       if (pending || !downloadedVersion || downloadedVersion !== checkedVersion || !artifacts.length) throw new Error('No completed matching download is ready.');
