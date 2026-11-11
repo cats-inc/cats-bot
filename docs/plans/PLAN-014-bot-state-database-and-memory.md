@@ -117,6 +117,14 @@ controls all of it.
       automatic additions and the approval queue.
 - [ ] 4.4 Token caps per run and per day, usage records, batch halving and skip listing.
 - [ ] 4.5 Optional dream diary, off by default.
+- [ ] 4.6 Separate consolidation target (SPEC-015 FR-19):
+  - an optional profile field, normalized field by field;
+  - the private Runtime's generated configuration with a second target, and the restart
+    rules when it changes;
+  - the key in `secrets.json`, handed to the private Runtime through its environment;
+  - settings with the provider named, the consent text and the reason when consolidation
+    is off;
+  - acceptance against a Runtime API-backend target, which needs Runtime SPEC-043 R7.
 
 **Deliverables**: bots improve their memory overnight within a known cost, and no batch can
 stall them.

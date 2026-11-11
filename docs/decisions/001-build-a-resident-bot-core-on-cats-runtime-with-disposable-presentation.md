@@ -18,6 +18,9 @@ lock, one tray). The rest of this record still holds.
 On 2026-11-11 the owner accepted [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md). When
 PLAN-014 P1 lands, it replaces §6's storage mechanics (temp files plus rename, the JSONL journal) with one
 SQLite database per bot. §6's single writer, schema versions and upgrade policy stay.
+[ADR-022](022-give-each-bot-layered-memory-it-consolidates-while-asleep.md), as amended the same day, lets
+the owner name a separate target that is used only for memory consolidation. §3's single execution target
+still governs every conversation.
 
 ## Context
 
