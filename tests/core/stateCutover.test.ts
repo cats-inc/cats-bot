@@ -6,6 +6,7 @@ import { BotCore, MigrationNotFinishedError, initializeBot } from '../../src/cor
 import { stateMigrationPending } from '../../src/core/profile/initialize.ts';
 import { STATE_DATABASE_PROFILE_RAISE } from '../../src/core/profile/profile.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
+import { openBotStateStore } from '../../src/core/store/stateStore.ts';
 import { main } from '../../src/cli/main.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import { readInstanceLock } from '../../src/core/store/lock.ts';
@@ -447,6 +448,33 @@ test('init in a folder that holds version-1 files keeps them for the first start
   } finally {
     await core.stop();
   }
+});
+
+test('a host without the lock, while another process migrates, shows the bot as not migrated yet', async () => {
+  const { root, paths } = versionOneBot('old-in-progress');
+  // As the import leaves it while it runs: the schema made, rows written and not committed.
+  const importing = openBotStateStore({ file: stateDatabaseFile(paths), mode: 'writer' });
+  try {
+    const shown = importing.transaction(() => {
+      importing.saveConversation({ id: 'home', title: 'Direct message' } as never);
+      importing.appendEntry('home', {
+        at: AT,
+        kind: 'owner',
+        origin: 'owner',
+        text: 'importing',
+      } as never);
+      const core = BotCore.open(coreOptions(root));
+      return core.listWorkItems().length;
+    });
+    assert.equal(shown, 0);
+  } finally {
+    importing.close();
+  }
+  // Committed without the marker, as before the import's last transaction: still nothing.
+  const core = BotCore.open(coreOptions(root));
+  assert.equal(core.listWorkItems().length, 0);
+  assert.deepEqual(await core.listConversations(), []);
+  assert.equal(profileVersion(paths), 2);
 });
 
 test('a host without the lock says so when the database is not one this version reads', () => {
