@@ -50,8 +50,10 @@ last step, not the first.
   - WAL, STRICT tables, upsert and rollback;
   - a record stored as JSON text coming back exactly. Text holding NUL characters or lone
     surrogates survives because JSON escapes them, not because the driver keeps them;
-  - contentless FTS5 with a bigram column that finds two-character Chinese words, delete
-    by row id, and a rebuild from the JSON records;
+  - contentless FTS5 over two-character tokens that finds Chinese words and the Latin
+    words written against them, delete by row id, and a rebuild from the JSON records;
+  - a change reported after a delete from the index, which needs the statement to read
+    big integers;
   - `VACUUM INTO` not replacing an existing database, and `quick_check`;
   - a reader beside a running writer whose open transaction is already in the
     write-ahead log, in the same process and from another process;
@@ -60,18 +62,64 @@ last step, not the first.
   - committed rows surviving a killed writer, and its open transaction not.
 
 The `sqlite-driver runtime` line it prints also reports, without asserting, what the
-runtime does with a raw NUL in a TEXT value and which files a read-only open leaves.
+runtime does with a raw NUL in a TEXT value, with the row id after a delete from the index,
+and which files a read-only open leaves.
 
 The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
 FR-2).
 
-`npm test` runs the file under Node.js. The core runs inside Electron, whose Node.js and
-SQLite are different builds, so CI runs the file once more on every platform, and its
-last test then repeats the others inside the Electron dependency:
+### State database adapter
+
+- **Location**: `tests/core/stateDatabase.test.ts`
+- **Scope**: `src/core/store/stateDatabase.ts` and `stateSchema.ts` (SPEC-014 FR-1 to FR-4):
+  - a writer creating the schema on a new file and recording what wrote it;
+  - each table keeping a JSON record with index columns that may be empty, an entry's
+    row id never being reused, and the journal keeping the order it was written in;
+  - a database from a newer version, and a file that is not a bot state database, refused
+    with their bytes and journal mode as they were;
+  - a schema that could not be finished leaving nothing behind, and a reader reading no
+    database a writer has not finished;
+  - a reader that never creates a file, sees the writer's commits, reads one snapshot
+    taken before its work starts, and accepts only queries;
+  - a change reporting its rows, and an insert its row id, whatever row id the index
+    left behind;
+  - transactions that are all or nothing, including work that returns a promise and a
+    transaction SQLite ended by itself; nested work failing the whole transaction when it
+    had changed rows, and leaving it to go on when it had not; a snapshot on its own
+    taking no change;
+  - one statement at a time, transactions opened only through the adapter, and an insert
+    that must add exactly one row;
+  - the rules that catch a statement given to the wrong call: `get` and `all` refusing
+    an insert, an update, a delete, a pragma called as a table and any pragma but three
+    settings read by name, with such a word inside a string, a quoted name or a comment
+    not counting, and `run` refusing what is not an insert, an update or a delete. The
+    rules read the text and are not a parser (PLAN-014 task 1.1);
+  - closing twice, a closed database saying so, and Windows refusing a rename while a
+    connection is open;
+  - the URI for an existing database, including UNC roots, and on Windows a read through
+    a share of the local drive.
+
+The architecture boundary test keeps the driver and the adapter out of every module
+outside `src/core/store/`.
+
+### Store tests inside Electron
+
+`npm test` runs both files above under Node.js. The core runs inside Electron, whose
+Node.js and SQLite are different builds, so CI runs them once more there on every
+platform:
 
 ```bash
-CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+npm run test:electron
 ```
+
+`scripts/test-in-electron.mjs` starts the Electron dependency in its Node.js mode with the
+test runner. It first asks that binary for its Electron version and requires the
+dependency's. It fails when Electron is not installed, when an argument is not an
+existing file, when a test fails or is cancelled, and when a file defined no test, which
+the runner would otherwise count as a pass.
+`tests/shell/testInElectron.test.ts` covers how it reads the report and that CI runs it
+on every platform. It also requires the `test:electron` script to name every test file
+under `tests/core/` that loads the driver, the adapter or a store module built on them.
 
 ### Core tests on the fake runtime
 
@@ -615,8 +663,8 @@ and the renderer (`tsconfig.renderer.json`).
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
-After `npm test` it repeats the [SQLite driver acceptance](#sqlite-driver-acceptance)
-inside Electron on each platform.
+After `npm test` it runs the [store tests inside Electron](#store-tests-inside-electron)
+on each platform.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
 range. Renames count both old and new paths. An unknown base, empty diff or failed

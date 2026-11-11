@@ -5,8 +5,9 @@
 
 ## Status
 
-Accepted, 2026-11-11. The owner chose the proposed decision. Nothing is implemented; the work
-is [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
+Accepted, 2026-11-11. The owner chose the proposed decision. The work is
+[PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1 and is in progress: the store
+is being built beside the files, and nothing in the core uses it yet.
 
 When P1 lands, this replaces the storage mechanics of
 [ADR-001](001-build-a-resident-bot-core-on-cats-runtime-with-disposable-presentation.md) §6
@@ -50,6 +51,9 @@ The following is proposed.
    - Mode: WAL, `synchronous=NORMAL`, a busy timeout.
    - The core holding the instance lock is the only writer. Hosts and the `cats-bot` CLI
      keep reaching data through `BotHostApi`, not the file.
+   - Clarification accepted by the owner, 2026-11-11 (SPEC-014 Open Questions): a
+     core opened without the lock, as the CLI's read commands open one, reads the database
+     through a reader connection that accepts only queries and never creates the file.
 2. **Moved into the database**: conversation records and attachments, transcript entries,
    reply presentations, work items, their transitions, and schedules.
    - Small separately owned files stay files: `profile.json` (only its schema version is
@@ -60,6 +64,9 @@ The following is proposed.
    - A presentation is one row per reply, upserted.
    - A work item is one current-state row plus an appended transition row, written in one
      transaction.
+   - Clarification accepted by the owner, 2026-11-11 (SPEC-014 Open Questions):
+     the transition rows are lines of one journal table that keeps every journal line in
+     order, a schedule's among them, and every table keeps its record as JSON text.
    - Startup reads current rows instead of replaying history.
 4. **A full-text index** is part of the store. Han, Kana and Hangul runs are indexed as
    overlapping bigrams beside the normal text, because trigram and unicode61 miss

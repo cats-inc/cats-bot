@@ -30,6 +30,16 @@ security review. Embeddings come only if the evaluation asks for them.
 
 - [x] Owner decided ADR-021, which unblocks P1 (2026-11-11).
 - [x] Owner chose ADR-022's proposed defaults (2026-11-11).
+- [x] Owner accepted the amendments to SPEC-014 and ADR-021 that building P1 found: a
+      reader connection for a core opened without the lock, JSON records and one
+      `journal` table, and the search index of FR-8 and FR-9 (2026-11-11).
+- [x] Owner: the next release from `main` is 0.6, the next minor line, so the cutover
+      (1.6) may land on `main` when it is ready. The version bump and the publication
+      still need the owner's release authorization (2026-11-11).
+- [x] Owner: a slice nothing in the core uses yet merges once an independent review
+      finds nothing that blocks it and CI passes on the three platforms. The cutover
+      pull request waits for the owner's go, because it carries decisions of its own
+      (2026-11-11).
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
@@ -64,17 +74,26 @@ security review. Embeddings come only if the evaluation asks for them.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 
-- [ ] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
+- [x] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
       acceptance on Windows, macOS and Linux under the shipped Electron.
   - [x] Driver module and acceptance test: `src/core/store/sqliteDriver.ts` and
         `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
         inside Electron on the three platforms. Nothing uses the driver yet.
-  - [ ] Adapter, schema and `meta`.
-  - What the acceptance run found, and the defaults it proposes for the adapter. They are
-    proposals until the owner accepts them with the schema change, which also brings the
-    SPEC-014 amendments.
+  - [x] Adapter, schema and `meta`: `src/core/store/stateDatabase.ts` and
+        `stateSchema.ts`, with `tests/core/stateDatabase.test.ts`. `npm run test:electron`
+        runs the store's tests inside Electron, and CI does so on the three platforms.
+        Nothing uses the adapter yet.
+    - Schema version 1 is provisional until a release ships it. No database exists
+      outside tests, so a change needs no upgrade step yet.
+    - Only the key columns and the JSON record are required. The derived index columns
+      may be empty, so that a version-1 record lacking a field still imports unchanged.
+    - Open for the importer (1.5): a version-1 transcript with a repeated `seq`. The
+      schema keeps `(conversation, seq)` unique; one local data root had no repeat, gap
+      or unreadable line, which is not proof that none exists elsewhere.
+  - What the acceptance run found, and the defaults it proposed for the adapter. The ones
+    that change SPEC-014 are in its Open Questions, accepted by the owner on 2026-11-11.
     - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
-      without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
+      without the lock (the CLI's `status`, `conversations` and `schedule list`). Accepted:
       such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
       - The same host also writes while the bot is stopped: `schedule add` and
         `schedule cancel` take the instance lock for the write. The adapter has to give
@@ -87,23 +106,72 @@ security review. Embeddings come only if the evaluation asks for them.
       - The driver's read-only open left `-shm` and `-wal` files beside a cleanly stopped
         bot. An immutable open does no locking or change detection, which is unsafe when
         a writer may start at any time.
-      - This touches SPEC-014 FR-1 and ADR-021 decision 1, which say other hosts reach
+      - This amended SPEC-014 FR-1 and ADR-021 decision 1, which said other hosts reach
         data through `BotHostApi` and not the file.
     - **The record is JSON text**, and other columns only index it. JSON escapes NUL
       characters and lone surrogates. As raw TEXT, the Node.js 24.14 driver in Electron 41
       returns a value only up to its first NUL, and a lone surrogate is stored as U+FFFD.
       The index is rebuilt from the JSON, not from an indexed column.
     - **The index** is a contentless FTS5 table with `contentless_delete`, keyed by the
-      entry's row id. SPEC-014 FR-8 says external-content.
+      entry's row id, over one rewritten form of the text. `unicode61` reads a CJK run
+      and a Latin word written against it as one token, so indexing the text as written
+      too adds nothing. SPEC-014 FR-8 said external-content and two forms.
+    - **Changes read big integers.** After some deletes from the index, the last row id
+      SQLite reports is one of the index's own, beyond 2^53. With the driver's default a
+      statement that ran then throws on Node.js 26 and returns a number outside the
+      safe range on Node.js 24. The adapter runs every change with big integers on and returns the
+      number of rows changed; an insert's row id is a separate call.
+    - **A snapshot starts at its first read**, not at `begin`, so the adapter reads once
+      before it runs the work. A snapshot opened on its own is for reading and takes no
+      change.
+    - **Nested work fails the whole transaction only when it had changed rows.** Half of
+      a change must not be kept by a caller that catches the error and carries on, while
+      a read that failed, or a check that refused before anything was written, is the
+      caller's to handle.
+    - **The journal is one table**, every line in the order it was written, with the
+      work item or schedule it is about. Work items and schedules keep a current row
+      each, in the order they first appeared, which is the order today's replay gives.
+      A column is in the schema only when a query or an accepted requirement uses it.
+    - **SQLite can end a transaction by itself**, after a full disk or an `or rollback`
+      conflict. Statements run after that would be committed one by one, so inside a
+      transaction the adapter refuses them and reports the transaction as lost.
+    - **The driver compiles only the first statement of a text** and says nothing about
+      the rest, so the adapter takes one statement at a time.
+    - **SQLite counts changed rows for an insert, an update or a delete only**, and keeps
+      the last count through every other statement. The adapter's `run` therefore takes
+      those three and nothing else; a pragma, a `create` or a `vacuum` gets a call of its
+      own when a later task needs one.
+    - **A pragma named with nothing after it is not always a read.** `optimize` writes
+      statistics, also when a query calls it as a table, and `wal_checkpoint` moves the
+      log into the file. The adapter's `get` and `all` read three settings by name, and
+      refuse a query that holds an insert, an update, a delete or a pragma called as a
+      table.
+    - **The adapter's statement rules read text, and are not a parser.** They catch a
+      statement given to the wrong call in the store's own source, where every
+      statement is a constant with its values bound. The fourth review of the store got
+      eleven statements past `get` and `all` on a writer, each written to do so: a
+      comment between `replace` and `into`, a parameter written `$a(--)` before a
+      `delete`, and a quoted `"pragma_optimize"`. A reader refused every one. `run`
+      likewise took a query that only names a change, through a parameter called
+      `:update`, and returned an earlier statement's count; and `or/**/fail` passed.
+      - A later pull request, with its own review, can replace the rules with the
+        driver's authorizer (`setAuthorizer`, present on both runtimes), which judges
+        what SQLite compiled instead of the text. The review found that its allow-list
+        has to let FTS5 run `pragma data_version`; the store's tests have not run
+        under it.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.
     - **Windows handles.** An open connection blocks renaming or removing the bot root.
       Every host closes its connection before a root is moved, and a host that only reads
       holds one no longer than a read takes.
-    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects;
-      the URI for such a path has to be built by hand. SQLite does not support WAL on a
-      network file system, so a bot root on a share is a separate question for the adapter.
+    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects,
+      so the adapter builds the URI for such a path by hand, and a stopped bot's database
+      opens through one. That is all it shows. SQLite does not support WAL on a network
+      file system, and on one machine a reader that opened the database through
+      `\\localhost\C$` did not see what a writer on the local path committed afterwards.
+      Open for the cutover: refuse a bot root on a UNC path, or give it another journal
+      mode. Version-1 files work there today.
     - The test prints what each runtime does with a raw NUL and a read-only open in its
       `sqlite-driver runtime` line, in the CI log of every platform.
 - [ ] 1.2 Move writers and readers:
@@ -209,9 +277,11 @@ stall them.
 ## Files to Create/Modify
 
 - **Create**:
-  - `src/core/store/database.ts` (adapter), `schema.ts`, `migrate.ts`, `search.ts`;
+  - in `src/core/store/`: `sqliteDriver.ts`, `stateDatabase.ts` (adapter),
+    `stateSchema.ts`, `stateStore.ts`, `searchText.ts`, and the migration;
   - `src/core/memory/*` (records, recall, consolidation, rendering);
-  - tests under `tests/core/store/` and `tests/core/memory/`;
+  - tests under `tests/core/` (the store's run inside Electron too) and
+    `tests/core/memory/`;
   - fixtures of a version-1 data root.
 - **Modify**:
   - `src/core/conversations/store.ts`, `src/core/store/journal.ts`,

@@ -10,7 +10,6 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -22,8 +21,8 @@ import { sqliteDriver, type SqliteDatabase } from '../../src/core/store/sqliteDr
  * PLAN-014 task 1.1, SPEC-014 FR-2: what the bot state database needs from the SQLite built
  * into the runtime. The storage adapter relies on every behaviour pinned here, so this file
  * runs on each supported platform under plain Node.js and, in CI, a second time inside the
- * Electron the app ships (the core runs there with `ELECTRON_RUN_AS_NODE`):
- *   CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+ * Electron the app ships, where the core runs with `ELECTRON_RUN_AS_NODE`:
+ *   npm run test:electron
  */
 
 // A bot root can sit under a home directory with spaces and non-ASCII characters.
@@ -107,17 +106,23 @@ function bodies(database: SqliteDatabase): string[] {
     .map((row) => String(row.body));
 }
 
-/** Two-character windows over each CJK run, the shape SPEC-014 FR-8 indexes beside the text. */
+/**
+ * The shape SPEC-014 FR-8 indexes: each CJK run as its two-character windows followed by its
+ * last character, set apart from the text around it. `unicode61` alone reads a run, and a
+ * Latin word touching it, as one token.
+ */
 const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/gu;
-function bigrams(text: string): string {
-  return text.replace(CJK_RUN, (run) => {
-    if (run.length < 2) return ` ${run} `;
-    return ` ${Array.from({ length: run.length - 1 }, (_, index) => run.slice(index, index + 2)).join(' ')} `;
-  });
+function windows(run: string): string[] {
+  return Array.from({ length: run.length - 1 }, (_, index) => run.slice(index, index + 2));
 }
 
-function bigramQuery(text: string): string {
-  return `grams:"${bigrams(text).trim().replace(/\s+/gu, ' ')}"`;
+function indexForm(text: string): string {
+  return text.replace(CJK_RUN, (run) => ` ${[...windows(run), run.slice(-1)].join(' ')} `);
+}
+
+/** One CJK word: its windows as a phrase, or a single character as a prefix of any token. */
+function cjkQuery(word: string): string {
+  return word.length < 2 ? `"${word}"*` : `"${windows(word).join(' ')}"`;
 }
 
 /**
@@ -143,6 +148,27 @@ function observed(): Record<string, unknown> {
     result.rawNulText = String(error);
   } finally {
     memory.close();
+  }
+  const index = new DatabaseSync(':memory:');
+  try {
+    index.exec(
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
+    );
+    const insert = index.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
+    index.exec('begin');
+    for (let rowid = 1; rowid <= 3; rowid += 1) insert.run(rowid, `word${rowid}`);
+    index.exec('commit');
+    const remove = index.prepare('delete from entries_fts where rowid = ?');
+    remove.run(1);
+    try {
+      result.rowIdAfterIndexDelete = String(remove.run(2).lastInsertRowid);
+    } catch (error) {
+      result.rowIdAfterIndexDelete = `throws ${(error as Error).name}`;
+    }
+  } catch (error) {
+    result.rowIdAfterIndexDelete = String(error);
+  } finally {
+    index.close();
   }
   try {
     const directory = freshDirectory();
@@ -207,7 +233,7 @@ test('the built-in SQLite has the features the schema uses', () => {
   const database = new DatabaseSync(':memory:');
   try {
     const version = String(database.prepare('select sqlite_version() as version').get()?.version);
-    // One line for the Electron run below to check, and for anyone reading a CI log.
+    // One line for anyone reading a CI log, from each runtime the file runs under.
     console.log(
       `sqlite-driver runtime ${JSON.stringify({ node: process.versions.node, electron: process.versions.electron ?? null, sqlite: version, ...observed() })}`,
     );
@@ -297,7 +323,7 @@ test('a record stored as JSON text comes back exactly', () => {
   }
 });
 
-test('contentless FTS5 with a bigram column finds two-character Chinese words', () => {
+test('contentless FTS5 over the indexed form finds Chinese words of any length and the Latin words beside them', () => {
   const database = new DatabaseSync(':memory:');
   try {
     // The record is the JSON; the index is built from the text inside it.
@@ -305,17 +331,15 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
       'create table entries(id integer primary key, conversation_id text not null, seq integer not null, json text not null, unique(conversation_id, seq)) strict',
     );
     database.exec(
-      `create virtual table entries_fts using fts5(text, grams, content='', contentless_delete=1)`,
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
     );
     const insertEntry = database.prepare(
       'insert into entries(conversation_id, seq, json) values (?, ?, ?)',
     );
-    const insertIndex = database.prepare(
-      'insert into entries_fts(rowid, text, grams) values (?, ?, ?)',
-    );
+    const insertIndex = database.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
     const add = (conversation: string, seq: number, text: string): void => {
       const id = insertEntry.run(conversation, seq, JSON.stringify({ seq, text })).lastInsertRowid;
-      insertIndex.run(id, text, bigrams(text));
+      insertIndex.run(id, indexForm(text));
     };
     const search = (query: string): string[] =>
       database
@@ -329,45 +353,105 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     add('home', 1, '今天下午去公園散步');
     add('home', 2, 'Please remember the kettle');
     add('home', 3, `alpha${NUL}omega 記得買茶葉`);
+    add('home', 4, '用iPhone拍照');
     add('note', 1, '明天早上要去看牙醫，公園改天再去');
+    add('note', 2, '謝謝你，你好嗎');
     database.exec('commit');
+    const indexRows = (): number =>
+      Number(database.prepare('select count(*) as n from entries_fts_docsize').get()?.n);
+    assert.equal(indexRows(), 6);
 
-    assert.deepEqual(search(bigramQuery('牙醫')), ['note#1']);
-    assert.deepEqual(search(bigramQuery('公園')).sort(), ['home#1', 'note#1']);
-    assert.deepEqual(search(bigramQuery('去公園')), ['home#1']);
-    assert.deepEqual(search(bigramQuery('園公')), []);
-    assert.deepEqual(search('text:kettle'), ['home#2']);
-    assert.deepEqual(search('text:KETTLE'), ['home#2']);
-    assert.deepEqual(search('text:omega'), ['home#3']);
-    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
+    assert.deepEqual(search(cjkQuery('牙醫')), ['note#1']);
+    assert.deepEqual(search(cjkQuery('公園')).sort(), ['home#1', 'note#1']);
+    assert.deepEqual(search(cjkQuery('去公園')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('園公')), []);
+    assert.deepEqual(search('kettle'), ['home#2']);
+    assert.deepEqual(search('KETTLE'), ['home#2']);
+    // Written without spaces, and still a word of its own in the index.
+    assert.deepEqual(search('iphone'), ['home#4']);
+    assert.deepEqual(search(cjkQuery('拍照')), ['home#4']);
+    assert.deepEqual(search('omega'), ['home#3']);
+    assert.deepEqual(search(cjkQuery('茶葉')), ['home#3']);
+    // One character reaches every place it occurs: as the first of a window, or as the
+    // last character of a run.
+    assert.deepEqual(search(cjkQuery('園')).sort(), ['home#1', 'note#1']);
+    assert.deepEqual(search(cjkQuery('步')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('醫')), ['note#1']);
+    assert.deepEqual(search(cjkQuery('貓')), []);
+    // The last character of a run also ends it: a phrase does not match across punctuation.
+    assert.deepEqual(search(cjkQuery('謝謝你')), ['note#2']);
+    assert.deepEqual(search(cjkQuery('謝你好')), []);
+    assert.deepEqual(search(cjkQuery('牙醫公園')), []);
 
-    // Deleting a conversation removes its rows and their index rows in one transaction.
+    // Deleting a conversation removes its rows and their index rows in one transaction. Both
+    // statements read big integers, for the reason the next test pins.
     database.exec('begin');
     const deleteIndex = database.prepare('delete from entries_fts where rowid = ?');
+    deleteIndex.setReadBigInts(true);
     for (const row of database
       .prepare('select id from entries where conversation_id = ?')
       .all('note')) {
       deleteIndex.run(Number(row.id));
     }
-    database.prepare('delete from entries where conversation_id = ?').run('note');
+    const deleteEntries = database.prepare('delete from entries where conversation_id = ?');
+    deleteEntries.setReadBigInts(true);
+    assert.equal(deleteEntries.run('note').changes, 2n);
     database.exec('commit');
-    assert.deepEqual(search(bigramQuery('牙醫')), []);
-    assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('牙醫')), []);
+    assert.deepEqual(search(cjkQuery('公園')), ['home#1']);
+    // Counted in the index itself: a search joins the entries and would hide a row left behind.
+    assert.equal(indexRows(), 4);
 
     // The index can be thrown away and rebuilt from the records, including the words after
     // a NUL character, which a rebuild from a raw TEXT column loses on Node.js 24.14.
+    // `delete-all` empties the index without reading it, so it also works on a damaged one.
     database.exec('begin');
-    database.exec('delete from entries_fts');
-    assert.deepEqual(search(bigramQuery('公園')), []);
+    database.exec(`insert into entries_fts(entries_fts) values('delete-all')`);
+    assert.equal(indexRows(), 0);
+    assert.deepEqual(search(cjkQuery('公園')), []);
     for (const row of database.prepare('select id, json from entries').all()) {
       const { text } = JSON.parse(String(row.json)) as { text: string };
-      insertIndex.run(Number(row.id), text, bigrams(text));
+      insertIndex.run(Number(row.id), indexForm(text));
     }
     database.exec('commit');
-    assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
-    assert.deepEqual(search('text:kettle'), ['home#2']);
-    assert.deepEqual(search('text:omega'), ['home#3']);
-    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
+    assert.deepEqual(search(cjkQuery('公園')), ['home#1']);
+    assert.deepEqual(search('kettle'), ['home#2']);
+    assert.deepEqual(search('omega'), ['home#3']);
+    assert.deepEqual(search(cjkQuery('茶葉')), ['home#3']);
+    assert.equal(indexRows(), 4);
+  } finally {
+    database.close();
+  }
+});
+
+test('a statement that reads big integers reports a change after any delete from the index', () => {
+  const database = new DatabaseSync(':memory:');
+  try {
+    database.exec(
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
+    );
+    const insert = database.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
+    // Rows written in one transaction share a segment of the index.
+    database.exec('begin');
+    for (let rowid = 1; rowid <= 4; rowid += 1) insert.run(rowid, `word${rowid} common`);
+    database.exec('commit');
+    // Deleting them one by one makes SQLite's last row id one of the index's own, beyond
+    // 2^53. With the default setting the driver cannot report it: Node.js 26 throws after
+    // the statement ran, and Node.js 24 returns a rounded number. The adapter therefore
+    // runs every change with big integers on.
+    const remove = database.prepare('delete from entries_fts where rowid = ?');
+    remove.setReadBigInts(true);
+    for (let rowid = 1; rowid <= 4; rowid += 1) {
+      const result = remove.run(rowid);
+      assert.equal(result.changes, 1n);
+      assert.equal(typeof result.lastInsertRowid, 'bigint');
+    }
+    assert.equal(
+      database
+        .prepare(`select count(*) as n from entries_fts where entries_fts match 'common'`)
+        .get()?.n,
+      0,
+    );
   } finally {
     database.close();
   }
@@ -555,44 +639,5 @@ test(
       writer.close();
     }
     assert.deepEqual(files(directory), ['bot.db']);
-  },
-);
-
-const insideElectron = process.versions.electron !== undefined;
-const electronRequested = process.env.CATS_TEST_SQLITE_ELECTRON === '1';
-
-test(
-  'the same checks pass inside the Electron the app ships',
-  { skip: insideElectron || !electronRequested, timeout: 180_000 },
-  async (context) => {
-    const require = createRequire(import.meta.url);
-    const electron = require('electron') as string;
-    const shipped = (require('electron/package.json') as { version: string }).version;
-    const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-    delete env.CATS_TEST_SQLITE_ELECTRON;
-    // Set by `node --test` for its own children; with it the run below would report in the
-    // runner's binary format instead of TAP.
-    delete env.NODE_TEST_CONTEXT;
-    const child = spawn(electron, ['--test-reporter=tap', fileURLToPath(import.meta.url)], {
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const { code, signal, stdout, stderr } = await finished(child);
-    const output = `${stdout}\n${stderr}`;
-    assert.deepEqual([code, signal], [0, null], output);
-    const runtime = /sqlite-driver runtime (\{.*\})/u.exec(stdout);
-    assert.ok(runtime, output);
-    context.diagnostic(`inside Electron: ${runtime[1]!}`);
-    assert.equal(
-      (JSON.parse(runtime[1]!) as { electron: string | null }).electron,
-      shipped,
-      output,
-    );
-    assert.match(stdout, /^# tests 12$/mu, output);
-    assert.match(stdout, /^# fail 0$/mu, output);
-    assert.match(stdout, /^# cancelled 0$/mu, output);
-    // Everything above ran there. This test skips itself inside Electron, and the test of a
-    // runtime without SQLite may skip itself too.
-    assert.match(stdout, /^# skipped [12]$/mu, output);
   },
 );

@@ -142,12 +142,10 @@ jobs:
         run: npm test
 
       # PLAN-014 task 1.1: the bot core runs inside Electron, whose Node.js and SQLite are not
-      # the ones above, so the driver checks run there as well on every platform.
-      - name: Test the SQLite driver inside the shipped Electron
+      # the ones above, so the store's tests run there as well on every platform.
+      - name: Test the store inside the shipped Electron
         if: env.SKIP == ''
-        env:
-          CATS_TEST_SQLITE_ELECTRON: '1'
-        run: node --test tests/core/sqliteDriver.test.ts
+        run: npm run test:electron
 
       - name: Build
         if: env.SKIP == ''
