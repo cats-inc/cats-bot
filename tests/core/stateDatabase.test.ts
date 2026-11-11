@@ -415,8 +415,11 @@ test('a reader beside the writer sees its commits and accepts only queries', () 
     throwsCode(() => reading!.get('pragma query_only=off'), 'read_only');
     throwsCode(() => reading!.get('pragma wal_checkpoint(truncate)'), 'read_only');
     throwsCode(() => reading!.all(insert), 'read_only');
-    // And one the text check lets through, which SQLite then rejects.
-    assert.throws(() => reading!.get(`with one as (select 1) ${insert}`), /readonly database/u);
+    // And a change dressed as a query, which `query_only` would reject in any case.
+    assert.throws(
+      () => reading!.get(`with one as (select 1) ${insert}`),
+      /get\(\) and all\(\) read/u,
+    );
 
     writing.run('insert into conversations(id, json) values (?, ?)', 'note-1', '{}');
     assert.deepEqual(conversations(reading), ['home', 'note-1']);
@@ -553,8 +556,8 @@ test('a transaction is all or nothing', () => {
     }
 
     // Nested work that failed before it changed anything left nothing half made, so it is
-    // the caller's to handle and the transaction goes on: a read that failed, or a check
-    // that refused.
+    // the caller's to handle and the transaction goes on: a read that failed, a statement
+    // that found nothing to change, or one that failed and was undone by SQLite itself.
     database.transaction(() => {
       add('e');
       for (const nested of ['transaction', 'snapshot'] as const) {
@@ -562,6 +565,8 @@ test('a transaction is all or nothing', () => {
           () =>
             database[nested](() => {
               conversations(database);
+              assert.equal(database.run('delete from conversations where id = ?', 'nobody'), 0);
+              assert.throws(() => add('e'), /UNIQUE constraint failed/u);
               throw new Error('inner read');
             }),
           /inner read/u,
@@ -689,6 +694,38 @@ test('one statement at a time, and transactions only through the adapter', () =>
     assert.throws(
       () => database.insert('delete from conversations where id = ?', 'a'),
       /exactly one row/u,
+    );
+    assert.deepEqual(conversations(database), ['a', 'b']);
+
+    // `get` and `all` read. A change made through them would not count as one.
+    const reads = /get\(\) and all\(\) read/u;
+    assert.throws(
+      () => database.get(`delete from conversations where id = 'a' returning id`),
+      reads,
+    );
+    assert.throws(
+      () =>
+        database.all(`with gone as (select 'a' as id) delete from conversations where id in gone`),
+      reads,
+    );
+    assert.throws(
+      () =>
+        database.get(
+          `with one as (select 1) insert or replace into conversations(id, json) values ('c', '{}')`,
+        ),
+      reads,
+    );
+    assert.throws(() => database.get('pragma journal_mode=delete'), reads);
+    assert.throws(() => database.get('pragma wal_checkpoint(truncate)'), reads);
+    assert.equal(database.get('pragma journal_mode')?.journal_mode, 'wal');
+    // A function of that name is not a statement.
+    assert.equal(database.get(`select replace('kettle', 'k', 'K') as word`)?.word, 'Kettle');
+    assert.deepEqual(conversations(database), ['a', 'b']);
+
+    // A statement that fails must be undone whole, which `or fail` does not do.
+    assert.throws(
+      () => database.run(`insert or fail into conversations(id, json) values ('c', '{}')`),
+      /undone whole/u,
     );
     assert.deepEqual(conversations(database), ['a', 'b']);
   } finally {
