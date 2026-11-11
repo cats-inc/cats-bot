@@ -55,7 +55,15 @@ import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock 
 import { assertBotDataResetNotPending } from './store/dataResetGuard.ts';
 import { botPathsFor, isValidBotId, stateDatabaseFile, type BotPaths } from './store/paths.ts';
 import { openBotStateStore, StateDatabaseError, type BotStateStore } from './store/stateStore.ts';
-import { migrateVersion1 } from './store/version1Migration.ts';
+import { migrateVersion1, type MigrationStep } from './store/version1Migration.ts';
+import {
+  checkStateDatabase,
+  isDamagedDatabaseError,
+  snapshotDue,
+  takeSnapshot,
+  writeCheckReport,
+  type MaintenanceTask,
+} from './store/stateMaintenance.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import {
   createHubToolHandlers, hubAnswer, HUB_INSTRUCTIONS, HUB_SERVER_NAME, isHubRecordId, oneLine, type HubCall,
@@ -159,7 +167,17 @@ export interface BotCoreOptions {
   channel?: { manager?: string | null; hostRequestTimeoutMs?: number };
   /** SPEC-008 FR-20: the label of the cipher the presenting host serves over the channel. */
   hostCipher?: string;
+  /**
+   * SPEC-014 FR-13: the database check after start and the daily snapshot. Tests turn the
+   * check off, or look for a due snapshot more often; production keeps the defaults.
+   */
+  stateMaintenance?: { check?: boolean; snapshotCheckMs?: number };
+  /** PLAN-014 task 1.5: tests stop the version-1 migration of a start before one of its steps. */
+  migrationStep?: (step: MigrationStep) => void;
 }
+
+/** SPEC-014 FR-13: how often a running core looks whether a snapshot is due. */
+const SNAPSHOT_CHECK_MS = 15 * 60_000;
 
 export type { BotStatus } from './types.ts';
 export { BotNotInitializedError, initializeBot, readBotProfile, type InitializeBotInput } from './profile/initialize.ts';
@@ -257,6 +275,11 @@ export class BotCore implements BotHostApi {
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
+  /** SPEC-014 FR-13: the check or the snapshot running in its worker; `stop` ends it. */
+  private maintenance: MaintenanceTask<unknown> | null = null;
+  private snapshotTimer: NodeJS.Timeout | null = null;
+  /** A snapshot is taken only once this run's check passed, so a damaged database never replaces the good ones. */
+  private stateChecked = false;
   /** The tail of the profile changes in progress (`changeProfile`). */
   private profileChanges: Promise<unknown> = Promise.resolve();
   private handoffTimer: NodeJS.Timeout | null = null;
@@ -305,7 +328,19 @@ export class BotCore implements BotHostApi {
     });
     // Read-only hosts (status, conversations, schedule list) see the records without starting
     // anything, through a reader closed once they are read (SPEC-014 FR-1).
-    this.readSnapshot();
+    try {
+      this.readSnapshot();
+    } catch (error) {
+      // SPEC-014 FR-13: a database SQLite cannot read is reported with the newest snapshot,
+      // in every host, the one about to start the core included.
+      if (isDamagedDatabaseError(error)) {
+        const message = error instanceof Error ? error.message : String(error);
+        const report = writeCheckReport(this.paths, [message], this.now());
+        this.log(`error the bot's state database cannot be read; see ${report}`);
+        throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
+      }
+      throw error;
+    }
     this.secrets = options.secrets ?? new FileSecretStore(this.paths.root, {
       ...(options.hostCipher ? { asyncCipher: this.channel.cipher(options.hostCipher) } : {}),
       warn: (line) => this.log(`warn ${line}`),
@@ -499,7 +534,12 @@ export class BotCore implements BotHostApi {
   private openForWriting(): void {
     const loaded = loadProfile(this.paths, this.profile, true);
     if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
-    const migration = migrateVersion1({ paths: this.paths, profile: STATE_DATABASE_PROFILE_RAISE, now: this.now });
+    const migration = migrateVersion1({
+      paths: this.paths,
+      profile: STATE_DATABASE_PROFILE_RAISE,
+      now: this.now,
+      beforeStep: this.options.migrationStep,
+    });
     if (migration.outcome === 'not_migrated') {
       this.log(`error the bot's data could not be moved into its database; see ${migration.summary}`);
       throw new MigrationNotFinishedError(migration.summary);
@@ -966,6 +1006,12 @@ export class BotCore implements BotHostApi {
     } catch (error) {
       this.closeData();
       this.releaseLock(); this.releaseLock = null; this.started = false;
+      if (isDamagedDatabaseError(error)) {
+        // SPEC-014 FR-13: a database SQLite cannot read stops the start with a report.
+        const message = error instanceof Error ? error.message : String(error);
+        const report = writeCheckReport(this.paths, [message], this.now());
+        this.log(`error the bot's state database cannot be read; see ${report}`);
+      }
       throw error;
     }
     if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
@@ -1021,6 +1067,7 @@ export class BotCore implements BotHostApi {
     this.life.start();
     this.startTelegram();
     this.pump();
+    this.startStateMaintenance();
     } catch (error) {
       // A stop that raced this start cleans up itself.
       if (this.stopped) {
@@ -1281,6 +1328,7 @@ export class BotCore implements BotHostApi {
     const running = this.running;
     try {
     this.life.stop();
+    if (this.snapshotTimer) clearInterval(this.snapshotTimer);
     await this.stopTelegram();
     if (this.handoffTimer) clearInterval(this.handoffTimer);
     for (const timer of this.timers) clearTimeout(timer);
@@ -1307,6 +1355,8 @@ export class BotCore implements BotHostApi {
           Promise.resolve().then(() => this.desktop.stopServer()),
           Promise.resolve().then(() => this.control.stop()),
           Promise.resolve().then(() => this.channel.stop()),
+          // Its worker's connection keeps the file open, which Windows will not rename.
+          Promise.resolve().then(() => this.maintenance?.cancel()),
         ]);
       } finally {
         this.closeData();
@@ -1421,6 +1471,68 @@ export class BotCore implements BotHostApi {
    * A write a host makes while no core runs takes the instance lock for its duration, like
    * `updateProfile`, and with it the bot's database (SPEC-014 FR-1), migrating it first.
    */
+  /**
+   * PLAN-014 task 1.3: the search index rebuilt from the entries, while the bot is stopped,
+   * as a writer does by itself when the index was made another way. Returns how many
+   * entries it indexed.
+   */
+  rebuildSearchIndex(): number {
+    if (this.started) throw new Error('The search index is rebuilt while the bot is stopped');
+    return this.withWriteLock(() => this.data().rebuildIndex());
+  }
+
+  /** SPEC-014 FR-13: the check, then a snapshot whenever one is due while the bot is idle. */
+  private startStateMaintenance(): void {
+    const options = this.options.stateMaintenance ?? {};
+    if (options.check === false || this.stopped) return;
+    const check = checkStateDatabase(this.paths);
+    this.maintenance = check;
+    const done = (): void => {
+      if (this.maintenance === check) this.maintenance = null;
+    };
+    check.result.then(
+      (problems) => {
+        done();
+        if (this.stopped) return;
+        if (problems.length > 0) {
+          this.stopForDamage(problems);
+          return;
+        }
+        this.stateChecked = true;
+        this.snapshotTimer = setInterval(() => this.snapshotWhenIdle(), options.snapshotCheckMs ?? SNAPSHOT_CHECK_MS);
+        this.snapshotTimer.unref?.();
+        this.snapshotWhenIdle();
+      },
+      (error: unknown) => {
+        done();
+        if (!this.stopped) this.log(`warn the state database could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+      },
+    );
+  }
+
+  private stopForDamage(problems: string[]): void {
+    const report = writeCheckReport(this.paths, problems, this.now());
+    this.log(`error the bot's state database failed its check, so the bot stops; see ${report}`);
+    void this.stop();
+  }
+
+  private snapshotWhenIdle(): void {
+    if (this.stopped || !this.stateChecked || this.maintenance || this.running || this.queue.size > 0) return;
+    if (!snapshotDue(this.paths, this.now())) return;
+    const task = takeSnapshot(this.paths, this.now());
+    this.maintenance = task;
+    task.result.then(
+      (snapshot) => {
+        if (this.maintenance === task) this.maintenance = null;
+        this.log(`state database snapshot ${snapshot.file}`);
+      },
+      (error: unknown) => {
+        if (this.maintenance === task) this.maintenance = null;
+        if (!this.stopped) this.log(`warn the state database snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
+      },
+    );
+  }
+
   private withWriteLock<T>(write: () => T): T {
     if (this.releaseLock) return write();
     const lock = acquireInstanceLock(this.paths);

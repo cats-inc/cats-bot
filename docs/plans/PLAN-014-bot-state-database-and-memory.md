@@ -406,7 +406,8 @@ security review. Embeddings come only if the evaluation asks for them.
       index, and reported through the store's `warn`, as an unreadable line is today.
     - Not offered: a prefix of a Latin word (`kett` for `kettle`), word forms, Traditional
       for Simplified, and a Chinese word broken by a line end.
-  - [ ] The `cats-bot` command that rebuilds the index.
+  - [x] The `cats-bot` command that rebuilds the index: `cats-bot reindex`, while the bot
+        is stopped; `tests/core/migrationAtStart.test.ts`.
 - [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
       working.
 - [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
@@ -503,9 +504,30 @@ security review. Embeddings come only if the evaluation asks for them.
       as a difference naming its record.
   - `appendJournal` keeps a line whatever it holds, and makes a current row only of a
     work item or a schedule with a text id, as today's replay does.
-  - Fixtures for the cutover still to come: a crash of the real start at each step, and
-    an older build of Bot itself, not only its rule, refusing the raised profile.
-- [ ] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`.
+  - [x] Fixtures for the cutover: a start stopped before each step of the migration and
+        finished by the next start, through the core's own start
+        (`tests/core/migrationAtStart.test.ts`). An older build of Bot itself refusing the
+        raised profile was checked by hand with the 0.5.9 release's CLI (see the cutover
+        above); its rule is pinned in `tests/core/version1Migration.test.ts`.
+- [x] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`:
+      `src/core/store/stateMaintenance.ts` with its worker, `conversationExport.ts`, and the
+      `export` and `reindex` commands; `tests/core/stateMaintenance.test.ts` and
+      `tests/core/conversationExport.test.ts`.
+  - Measured inside Electron 41 on Windows, on a 330 MB database of a million made-up
+    entries: `quick_check` 15.5 to 17.4 s, `VACUUM INTO` 9.1 s (one run each). Both run
+    in a worker thread on a read-only connection of their own, so the core goes on
+    answering; a read-only connection checks and copies while the writer holds a
+    transaction, and the copy has what was committed.
+  - Checked on a copy of one local bot root (one conversation, 77 lines): its export
+    before the migration and after it are equal byte for byte. The copy was removed.
+  - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's
+    Open Questions: the check runs once the core has started, in a worker; a snapshot
+    only after this run's check passed, written under an unfinished name first; the
+    report's name and what it says; the export's lines; `cats-bot reindex`.
+  - For the release notes (1.8): a deleted conversation stays in the snapshots in
+    `backups/` until they are replaced, three days later; the check and the daily
+    snapshot read the whole database, about a minute each for a large bot, in the
+    background.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
     with 1,000,010 made-up entries, 286,894 work items and 861,732 journal lines

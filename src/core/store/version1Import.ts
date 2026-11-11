@@ -247,6 +247,27 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
   }
 }
 
+/**
+ * SPEC-014 FR-14: what the import would keep of the conversations of a version-1 root, read
+ * the way the import reads them, for `cats-bot export`: each record, its entries and its
+ * reply presentations as written. Nothing is written; the problems found come with them.
+ */
+export function readVersion1Conversations(paths: BotPaths): {
+  conversations: Array<{ record: Record<string, unknown>; read(): { entries: unknown[]; responses: unknown[] } }>;
+  problems: Version1Problem[];
+} {
+  const problems = new Problems();
+  const sources = readSources(paths, problems);
+  const conversations = [...sources.conversations.entries()].map(([id, { value }]) => ({
+    record: value,
+    read: () => ({
+      entries: readTranscriptSource(paths, id, problems) as unknown[],
+      responses: readPresentationSource(paths, id, sources, problems),
+    }),
+  }));
+  return { conversations, problems: problems.list };
+}
+
 interface Sources {
   /** By the id each file holds, as today's loader keys them. */
   conversations: Map<string, { file: string; value: Record<string, unknown> }>;

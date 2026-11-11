@@ -192,6 +192,24 @@ outside `src/core/store/`.
 - `tests/architecture-boundaries.test.ts` keeps every module outside the store from the
   version-1 files' modules and paths.
 
+### State database check, snapshots and export
+
+- **Location**: `tests/core/stateMaintenance.test.ts`, `tests/core/conversationExport.test.ts`
+  and `tests/core/migrationAtStart.test.ts`.
+- **Scope**: SPEC-014 FR-13, FR-14 and the acceptance list:
+  - the check finding nothing in a sound database, and the page a damaged one breaks;
+  - a snapshot that is a whole copy beside the working writer, the three newest kept, an
+    unfinished one never counted, and a failed one leaving the others;
+  - a running core checking its database and taking one snapshot a day while idle;
+  - a damaged database stopping the core with a report that names the newest snapshot,
+    and that snapshot, copied in place, starting the bot again;
+  - an export from the version-1 files equal, byte for byte, to the one from the database
+    after the migration;
+  - a start stopped before each step of the migration, finished by the next start;
+  - `cats-bot reindex` while the bot is stopped, and refused while it runs.
+- The worker runs from the TypeScript source under the tests and from the built `.js` in a
+  package; both run inside Electron in CI with the store's other tests.
+
 ### Version-1 migration
 
 - **Location**: `tests/core/version1Migration.test.ts`
