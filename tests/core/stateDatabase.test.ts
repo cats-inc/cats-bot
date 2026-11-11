@@ -567,6 +567,16 @@ test('a transaction is all or nothing', () => {
               conversations(database);
               assert.equal(database.run('delete from conversations where id = ?', 'nobody'), 0);
               assert.throws(() => add('e'), /UNIQUE constraint failed/u);
+              // An insert that added no row is refused, and changed nothing either.
+              assert.throws(
+                () =>
+                  database.insert(
+                    'insert or ignore into conversations(id, json) values (?, ?)',
+                    'a',
+                    '{}',
+                  ),
+                /exactly one row/u,
+              );
               throw new Error('inner read');
             }),
           /inner read/u,

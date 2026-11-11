@@ -89,9 +89,11 @@ FR-2).
     taking no change;
   - one statement at a time, transactions opened only through the adapter, and an insert
     that must add exactly one row;
-  - `get` and `all` taking a query that changes nothing or the name of one of three
-    settings, whatever a string, a quoted name or a comment in it says, and `run` taking
-    an insert, an update or a delete and nothing else;
+  - the rules that catch a statement given to the wrong call: `get` and `all` refusing
+    an insert, an update, a delete, a pragma called as a table and any pragma but three
+    settings read by name, with such a word inside a string, a quoted name or a comment
+    not counting, and `run` refusing what is not an insert, an update or a delete. The
+    rules read the text and are not a parser (PLAN-014 task 1.1);
   - closing twice, a closed database saying so, and Windows refusing a rename while a
     connection is open;
   - the URI for an existing database, including UNC roots, and on Windows a read through

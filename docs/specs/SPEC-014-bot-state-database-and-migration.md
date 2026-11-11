@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, proposed the same day, wait for the owner: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter, schema, store and search exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter, schema, store and search exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -38,7 +38,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Database
 
-1. FR-1 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: The database is `<bot root>/bot.db`, opened in WAL mode with
+1. FR-1 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The database is `<bot root>/bot.db`, opened in WAL mode with
    `synchronous=NORMAL` and a busy timeout.
    - Only the core holding the instance lock opens it for writing, and only it changes rows.
      A host that takes the lock for one write while the bot is stopped (the CLI's
@@ -52,12 +52,12 @@ verified migration moves existing bots over without losing or rewriting their hi
    - Every host closes its connection before a bot root is renamed or removed; Windows
      refuses both while one is open.
    - The restore command (FR-12) runs only while the bot is stopped.
-2. FR-2 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: All access goes through one adapter module, built on a driver module
+2. FR-2 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: All access goes through one adapter module, built on a driver module
    that is the only one to name `node:sqlite`, so `better-sqlite3` can replace it if
    acceptance fails. No module outside the store reaches either of them. The adapter
    records the Node.js, Electron, SQLite and Unicode versions of the last writer in
    `meta`.
-3. FR-3 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Tables (conceptual; exact columns are a PLAN-014 decision). Each table
+3. FR-3 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: Tables (conceptual; exact columns are a PLAN-014 decision). Each table
    keeps its record as JSON text; the other columns are derived from it for lookups and
    may be empty.
    - `meta`: schema version, migration record, the versions of FR-2, and the number of
@@ -74,7 +74,7 @@ verified migration moves existing bots over without losing or rewriting their hi
      configuration and Boss Cat tool calls. A line is never changed; it leaves only by
      FR-7's pruning or with its conversation;
    - `entries_fts`: the full-text index of FR-8.
-4. FR-4 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every table carries the schema version through `meta`. An unknown newer
+4. FR-4 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: Every table carries the schema version through `meta`. An unknown newer
    version stops the core with a clear error and changes no row, table or setting. A file
    that is not a bot state database is refused the same way.
 
@@ -86,7 +86,7 @@ verified migration moves existing bots over without losing or rewriting their hi
      rows in one transaction, after Runtime's close and delete.
 6. FR-6: A presentation checkpoint upserts its one `responses` row. Throttling stays as
    today (100 ms), and the cost no longer grows with the number of past replies.
-7. FR-7 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: A work-item transition updates `work_items` and appends its line to
+7. FR-7 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: A work-item transition updates `work_items` and appends its line to
    `journal` in one transaction, and a schedule change does the same with `schedules`.
    Startup reads `work_items` and `schedules` directly.
    - For items completed more than 30 days ago, all but the last of an item's journal
@@ -95,7 +95,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Search
 
-8. FR-8 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
+8. FR-8 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
    (`contentless_delete`), keyed by the entry's row id. Before it is indexed the text is
    rewritten:
    - characters that are never shown are dropped, and so is the dot Chinese writes
@@ -115,7 +115,7 @@ verified migration moves existing bots over without losing or rewriting their hi
    of a token or the last character of its run. A query of more than 200 characters or
    12 different words is refused. Results carry kind and origin, so callers can drop tool
    output and other bots' messages (SPEC-015 trust levels).
-9. FR-9 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
+9. FR-9 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
    it from the entries' JSON records is a supported maintenance command. It does not read
    the index, so it repairs a damaged one. A writer runs it by itself when the way text
    is rewritten has changed since the index was made, and a reader that finds such an
@@ -129,7 +129,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Migration
 
-11. FR-11 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: On the first start of the new version, the lock holder migrates a
+11. FR-11 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: On the first start of the new version, the lock holder migrates a
     version-1 data root:
     - It copies the version-1 files into `migration-backup/<timestamp>/`.
     - It imports conversations, transcripts (keeping `seq`), presentations and the journal.
@@ -203,7 +203,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Dependencies
 
-- *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)* `node:sqlite` in Electron 41 (Node 24.14, experimental), and FTS5 with
+- *(amended 2026-11-11 and accepted by the owner; see Open Questions)* `node:sqlite` in Electron 41 (Node 24.14, experimental), and FTS5 with
   `contentless_delete`, which needs SQLite 3.43 or later (Electron 41 has 3.51.2).
 - [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md),
   [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
@@ -217,31 +217,31 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
 
-Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found. The text above
-already carries every one of them, marked at its requirement. Nothing here is decided
-until the owner accepts it.
+Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found, and accepted
+by the owner the same day. The text above carries every one of them, marked at its
+requirement.
 
 Changes of design:
 
-- [ ] FR-1: a core opened without the lock reads through a reader connection. Proposed: yes.
+- [x] FR-1: a core opened without the lock reads through a reader connection. Accepted.
   - Why: such a core reads the files directly today, and the driver's own read-only open
     leaves `-shm` and `-wal` files beside a stopped bot on all three platforms.
   - The other option routes those reads through the running core's channel. It still
     needs the reader connection while the bot is stopped.
   - ADR-021 decision 1 gets the same clarification.
-- [ ] FR-3, with FR-7 and FR-11: JSON text as the record in every table, and one `journal`
+- [x] FR-3, with FR-7 and FR-11: JSON text as the record in every table, and one `journal`
   table holding every line of today's journal in order, in place of a `work_events`
-  table for work-item transitions alone. Proposed: yes.
+  table for work-item transitions alone. Accepted.
   - Why JSON: the Node.js 24.14 driver in Electron 41 returns a TEXT value only up to its
     first NUL character, which JSON escapes; and a record keeps fields this version does
     not know.
   - Why one journal: the journal's other lines had no home; a schedule's history would
     have been dropped; and lines split over several tables could only be put back in
     order by their time, to the millisecond.
-- [ ] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
+- [x] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
   external-content one; one rewritten form of the text in place of the text as written
   beside a second form; and single characters found through the index, in place of
-  `LIKE`. Proposed: yes.
+  `LIKE`. Accepted.
   - Why contentless: the indexed form of the text is produced in JavaScript and kept
     nowhere else. An external-content index needs a column that holds what it indexes,
     which would store every entry's text a second time, rewritten.
@@ -258,19 +258,19 @@ Changes of design:
 
 Changes of wording that follow from the code, with no other decision in them:
 
-- [ ] FR-1 also names the writer the CLI is while it holds the lock for `schedule add` and
+- [x] FR-1 also names the writer the CLI is while it holds the lock for `schedule add` and
   `schedule cancel`, as today, and has every host close its connection before a bot root
   is moved.
-- [ ] FR-2: a driver module and an adapter module instead of one module, neither reachable
+- [x] FR-2: a driver module and an adapter module instead of one module, neither reachable
   from outside the store; `meta` records the Node.js, Electron, SQLite and Unicode
   versions.
-- [ ] FR-3: an entry's row id is never reused, and a presentation is keyed by its
+- [x] FR-3: an entry's row id is never reused, and a presentation is keyed by its
   conversation as well as its id.
-- [ ] FR-4: "changes nothing" became "changes no row, table or setting". Opening a database
+- [x] FR-4: "changes nothing" became "changes no row, table or setting". Opening a database
   that still has a write-ahead log makes SQLite fold that log into the file, even when
   the open is then refused, so the file's bytes can change while its content does not.
   A file that is not a bot state database is refused the same way.
-- [ ] Dependencies: no trigram tokenizer is used; `contentless_delete` needs SQLite 3.43.
+- [x] Dependencies: no trigram tokenizer is used; `contentless_delete` needs SQLite 3.43.
 
 ## References
 

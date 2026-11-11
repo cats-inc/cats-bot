@@ -30,6 +30,16 @@ security review. Embeddings come only if the evaluation asks for them.
 
 - [x] Owner decided ADR-021, which unblocks P1 (2026-11-11).
 - [x] Owner chose ADR-022's proposed defaults (2026-11-11).
+- [x] Owner accepted the amendments to SPEC-014 and ADR-021 that building P1 found: a
+      reader connection for a core opened without the lock, JSON records and one
+      `journal` table, and the search index of FR-8 and FR-9 (2026-11-11).
+- [x] Owner: the next release from `main` is 0.6, the next minor line, so the cutover
+      (1.6) may land on `main` when it is ready. The version bump and the publication
+      still need the owner's release authorization (2026-11-11).
+- [x] Owner: a slice nothing in the core uses yet merges once an independent review
+      finds nothing that blocks it and CI passes on the three platforms. The cutover
+      pull request waits for the owner's go, because it carries decisions of its own
+      (2026-11-11).
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
@@ -80,10 +90,10 @@ security review. Embeddings come only if the evaluation asks for them.
     - Open for the importer (1.5): a version-1 transcript with a repeated `seq`. The
       schema keeps `(conversation, seq)` unique; one local data root had no repeat, gap
       or unreadable line, which is not proof that none exists elsewhere.
-  - What the acceptance run found, and the defaults it proposes for the adapter. The ones
-    that change SPEC-014 are in its Open Questions and wait for the owner.
+  - What the acceptance run found, and the defaults it proposed for the adapter. The ones
+    that change SPEC-014 are in its Open Questions, accepted by the owner on 2026-11-11.
     - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
-      without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
+      without the lock (the CLI's `status`, `conversations` and `schedule list`). Accepted:
       such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
       - The same host also writes while the bot is stopped: `schedule add` and
         `schedule cancel` take the instance lock for the write. The adapter has to give
@@ -96,7 +106,7 @@ security review. Embeddings come only if the evaluation asks for them.
       - The driver's read-only open left `-shm` and `-wal` files beside a cleanly stopped
         bot. An immutable open does no locking or change detection, which is unsafe when
         a writer may start at any time.
-      - This touches SPEC-014 FR-1 and ADR-021 decision 1, which say other hosts reach
+      - This amended SPEC-014 FR-1 and ADR-021 decision 1, which said other hosts reach
         data through `BotHostApi` and not the file.
     - **The record is JSON text**, and other columns only index it. JSON escapes NUL
       characters and lone surrogates. As raw TEXT, the Node.js 24.14 driver in Electron 41
@@ -135,7 +145,20 @@ security review. Embeddings come only if the evaluation asks for them.
       statistics, also when a query calls it as a table, and `wal_checkpoint` moves the
       log into the file. The adapter's `get` and `all` read three settings by name, and
       refuse a query that holds an insert, an update, a delete or a pragma called as a
-      table, however the table it changes is written.
+      table.
+    - **The adapter's statement rules read text, and are not a parser.** They catch a
+      statement given to the wrong call in the store's own source, where every
+      statement is a constant with its values bound. The fourth review of the store got
+      eleven statements past `get` and `all` on a writer, each written to do so: a
+      comment between `replace` and `into`, a parameter written `$a(--)` before a
+      `delete`, and a quoted `"pragma_optimize"`. A reader refused every one. `run`
+      likewise took a query that only names a change, through a parameter called
+      `:update`, and returned an earlier statement's count; and `or/**/fail` passed.
+      - A later pull request, with its own review, can replace the rules with the
+        driver's authorizer (`setAuthorizer`, present on both runtimes), which judges
+        what SQLite compiled instead of the text. The review found that its allow-list
+        has to let FTS5 run `pragma data_version`; the store's tests have not run
+        under it.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.
@@ -190,6 +213,13 @@ security review. Embeddings come only if the evaluation asks for them.
       whose own record cannot be read, and a work item whose current row cannot be read
       is missing from the list while its journal lines remain. The import's check has to
       count any such warning as a failure.
+    - Filling a page or a search past records that cannot be read asks again from the
+      start for twice as many rows each time. In the fourth review a page of one entry
+      took 1.2 s when all 20,000 entries of its conversation were unreadable, and a
+      search took 0.45 s instead of 0.05 s when its newest 100 hits were.
+    - A search across all conversations stops early when the index holds a row whose
+      entry is gone. The store never leaves one; a damaged file can, and a rebuild of
+      the index removes it.
     - A bot root on a UNC path (see 1.1).
 - [ ] 1.3 Full-text index, query builder and a rebuild command. First planned with a
       bigram column and a LIKE path for single characters; the notes below say what
@@ -198,7 +228,7 @@ security review. Embeddings come only if the evaluation asks for them.
         the store's `search` and `rebuildIndex` use it; `tests/core/searchText.test.ts`.
     - There is no bigram column and no `LIKE` path any more: one rewritten form of the
       text is indexed, and a single character is a prefix query on it. SPEC-014 FR-8
-      carries both as proposed.
+      carries both, accepted by the owner on 2026-11-11.
     - `meta` holds a number for the way text is rewritten. A writer that finds another
       number rebuilds the index, so the rewriting can change later without a migration.
     - The rewriting depends on the Unicode version of the runtime, which `meta` records.
@@ -215,6 +245,10 @@ security review. Embeddings come only if the evaluation asks for them.
     - CJK punctuation parts two words wherever it stands (`LINE、Telegram`), as a space
       does; other punctuation parts them next to a CJK run and keeps a Latin word
       together (`v1.2.3`).
+    - Full-width punctuation is CJK punctuation, so between Latin letters or digits it
+      parts a query where the half-width form keeps one phrase: `３．５公斤` asks for `3`
+      and `5 公斤`, and also finds an entry holding both apart. Such a query finds more,
+      never less.
     - A search takes at most 200 characters and 12 different words, and refuses more.
       That bounds the text, not the time: a word found in a large share of the entries
       takes seconds, on the core's own connection (see 1.7).
@@ -240,9 +274,9 @@ security review. Embeddings come only if the evaluation asks for them.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
     with 1,000,010 made-up entries, 286,894 work items and 861,732 journal lines
     (1,376 MB). Medians of three to five runs, except where one run is said. Every
-    number is from before the last changes to how text is rewritten, which made the
-    rewriting itself slower: 0.2 s for 2 MB of Latin text and 0.4 s for 2 MB of mixed
-    text, where it took 0.06 s and 0.2 s.
+    number is from before the last changes to how text is rewritten. Those leave the
+    rewriting of 2 MB of Latin text at about 0.07 s, where it took 0.06 s, and that of
+    2 MB of mixed text at 0.4 s, where it took 0.2 s.
     - Within the targets: append 0.3 ms, 0.8 ms at the 95th percentile; newest 50 entries
       of a 600,000-entry conversation 0.2 ms; a word or a character found in few
       entries 0.2 to 0.5 ms, 2.7 ms at worst, in one conversation or in all.
@@ -372,8 +406,8 @@ stall them.
 
 - **Index design.** Two-character tokens were chosen because trigram and unicode61 both
   miss 2-character Chinese words; the survey's probe covered this. How the text is
-  rewritten into them is proposed in SPEC-014 FR-8 and waits for the owner (task 1.3). It
-  is re-checked with the P2 evaluation set.
+  rewritten into them is SPEC-014 FR-8, as amended and accepted on 2026-11-11 (task 1.3).
+  It is re-checked with the P2 evaluation set.
 - **Store before memory.** The store change is independently valuable and independently
   reversible through `cats-bot restore`.
 - **One-turn context needs a Runtime field.** Turn `instructions` are persisted by Runtime,
