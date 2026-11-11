@@ -152,7 +152,12 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
     }
     imported = report;
     // FR-11: what the import found is reported, never dropped, also when it finished.
-    if (report.problems.length > 0) summary = writeReport(backup, report, undefined, now()).summary;
+    if (report.problems.length > 0) {
+      summary = writeReport(backup, report, undefined, now()).summary;
+    } else {
+      // A copy reused from a run that did not finish keeps that run's report otherwise.
+      for (const name of ['report.md', 'report.json']) removeTree(join(backup, name));
+    }
     marker = readMarker(file);
   }
 

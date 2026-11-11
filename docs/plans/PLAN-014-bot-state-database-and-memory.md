@@ -276,6 +276,10 @@ security review. Embeddings come only if the evaluation asks for them.
           turn is not kept in memory.
         - Recovery and the expiry of approvals go on past an item they cannot handle.
         - `restore --json` says `restored: false` when nothing changed.
+      - From the third review, which found nothing that blocks, fixed with PLAN-014 1.6:
+        a start asked for right after a stop follows the stopped one instead of counting
+        as a failure, and a copy reused from a migration that did not finish loses that
+        run's report when the next one finishes without anything to report.
       - Left as they are, from the same review: the architecture rule still misses a
         version-1 path reached through a variable not named `paths`, an index by string,
         a re-export from another store module, a template string, or `join` with a

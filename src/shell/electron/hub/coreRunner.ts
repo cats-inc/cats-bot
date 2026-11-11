@@ -118,7 +118,13 @@ export class CoreRunner<T> {
   }
 
   private launch(): Promise<T | null> {
-    if (this.launching) return this.launching;
+    if (this.launching) {
+      // A start that was stopped a moment ago is still ending its core; this one follows it.
+      if (this.launchAbort?.signal.aborted) {
+        return this.launching.then((handle) => handle ?? (this.wanted ? this.launch() : null));
+      }
+      return this.launching;
+    }
     this.set('starting', null);
     const abort = new AbortController();
     this.launchAbort = abort;
@@ -135,8 +141,9 @@ export class CoreRunner<T> {
         this.set('running', null);
         return handle;
       } catch (error) {
-        if (abort.signal.aborted && !this.wanted) {
-          this.set('stopped', null);
+        if (abort.signal.aborted) {
+          // Stopped, not failed; a start asked for since follows this one.
+          if (!this.wanted) this.set('stopped', null);
           return null;
         }
         const message = error instanceof Error ? error.message : String(error);

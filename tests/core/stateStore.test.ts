@@ -1068,6 +1068,50 @@ test('an entry and its conversation change together or not at all', () => {
   }
 });
 
+test('a reader beside a reply that streams sees each checkpoint once committed, and holds up no write', () => {
+  // SPEC-014 acceptance: WAL behaviour with a reader while a reply streams.
+  const { file, store: writing } = filled(['a question']);
+  const reading = openBotStateStore({ file, mode: 'reader' });
+  const checkpoint = (revision: number, text: string) =>
+    ({
+      ...entry(text, { kind: 'bot' }),
+      seq: 2,
+      workItemId: 'w-1',
+      presentation: {
+        version: 1,
+        id: 'p1',
+        phase: revision < 3 ? 'streaming' : 'sealed',
+        blocks: [],
+      },
+      presentationRevision: revision,
+      presentationSeqs: [2],
+    }) as unknown as TranscriptEntry;
+  const shown = (): unknown[] =>
+    reading.responses('home').map((response) => (response as { text: string }).text);
+  try {
+    writing.saveResponse('home', checkpoint(1, 'Thinking'));
+    assert.deepEqual(shown(), ['Thinking']);
+    // The reader holds one snapshot open across the next checkpoints.
+    reading.snapshot(() => {
+      writing.transaction(() => {
+        writing.saveResponse('home', checkpoint(2, 'Thinking about the kettle'));
+        // Not committed: the reader still sees the checkpoint before.
+        assert.deepEqual(shown(), ['Thinking']);
+      });
+      // Committed after the reader's snapshot began: still the one before, until it ends.
+      assert.deepEqual(shown(), ['Thinking']);
+      writing.saveResponse('home', checkpoint(3, 'The kettle is on'));
+      writing.appendEntry('home', entry('The kettle is on', { kind: 'bot' }));
+    });
+    assert.deepEqual(shown(), ['The kettle is on']);
+    assert.equal(reading.entries('home').length, 2);
+    assert.deepEqual(hits(reading, 'kettle'), ['home#2']);
+  } finally {
+    reading.close();
+    writing.close();
+  }
+});
+
 test('a reader reads and searches beside the writer, and changes nothing', () => {
   const { file, store: writing } = filled(['今天下午去公園散步']);
   let reading: BotStateStore | undefined;
