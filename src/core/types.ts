@@ -70,7 +70,7 @@ export interface BotEnvironment {
 }
 
 export interface BotProfile {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   name: string;
   /** SPEC-008 FR-29: the look of this bot's Cat; absent or unknown reads as the default Cat. */

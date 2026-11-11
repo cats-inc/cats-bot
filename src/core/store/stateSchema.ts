@@ -68,6 +68,17 @@ create table schedules(
   json text not null
 ) strict;
 
+-- What is kept of a work item when its conversation is deleted (FR-7): no prompt, text or
+-- reply, only what tells a delivery already handled from a new one and lets the hub be
+-- answered about it.
+create table deleted_work(
+  id text primary key not null,
+  source_ref text,
+  delivery_id text
+) strict;
+create index deleted_work_by_source on deleted_work(source_ref) where source_ref is not null;
+create index deleted_work_by_delivery on deleted_work(delivery_id) where delivery_id is not null;
+
 -- Every line the journal holds, in the order it was written: each state of a work item or a
 -- schedule, and presence, runtime, heartbeat, configuration and Boss Cat tool calls. ref is
 -- the work item or schedule a line is about. Appended only; an id is never reused.

@@ -175,6 +175,23 @@ outside `src/core/store/`.
   the conversation holds, a batch all or nothing, the entries indexed, and nothing
   appended after the largest `seq` a number holds.
 
+### State database cutover
+
+- **Location**: `tests/core/stateCutover.test.ts`, with `tests/support/stateData.ts` for
+  the tests that read or write a bot's database beside its core.
+- **Scope**: the core on the state database (SPEC-014 FR-1, FR-5 to FR-7, FR-11, FR-12):
+  - a bot of 0.5 migrated at its first start and running on its database, read by a
+    host without the lock as nothing until then;
+  - a write while the bot is stopped taking the lock and migrating first;
+  - a migration that does not finish stopping the start with its report, and leaving
+    the files and the profile as they were;
+  - a work item of a deleted conversation not written again, and a delivery of one
+    answered as cancelled and not admitted again;
+  - a new bot's database made before its profile, and again after a crash between;
+  - `cats-bot restore` on a stopped bot, and refused while it runs.
+- `tests/architecture-boundaries.test.ts` keeps every module outside the store from the
+  version-1 files' modules and paths.
+
 ### Version-1 migration
 
 - **Location**: `tests/core/version1Migration.test.ts`

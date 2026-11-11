@@ -163,6 +163,24 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
   return { outcome: 'migrated', imported, backup, notArchived };
 }
 
+/**
+ * SPEC-014: a new bot's database, made by `cats-bot init` under the lock before the profile
+ * is written at the raised version. A new bot has no version-1 files, so its database is
+ * marked as one whose import has finished. Done again after a crash, it keeps what it made.
+ */
+export function createNewBotDatabase(paths: BotPaths, now: Date = new Date()): void {
+  const file = stateDatabaseFile(paths);
+  const store = openBotStateStore({ file, mode: 'writer', now: () => now });
+  try {
+    if (store.importMarker() !== undefined) return;
+    if (!store.isEmpty())
+      throw new Error(`${file} holds records but no marker; it is not a new bot's`);
+    store.setImportMarker(JSON.stringify({ new: true, madeAt: now.toISOString() }));
+  } finally {
+    store.close();
+  }
+}
+
 export interface RestoreVersion1Options {
   paths: BotPaths;
   /** The raise the migration made, undone. */

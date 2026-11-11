@@ -7,6 +7,7 @@ import type { BotProfile } from '../types.ts';
 import { createProfile, loadProfile, saveProfile, type CreateProfileInput } from './profile.ts';
 import { assertBotDataResetNotPending } from '../store/dataResetGuard.ts';
 import { acquireInstanceLock } from '../store/lock.ts';
+import { createNewBotDatabase } from '../store/version1Migration.ts';
 
 /**
  * Creating a bot and reading whether one exists, without opening its core.
@@ -76,9 +77,12 @@ export function initializeBot(
   try {
     // A competing initializer may have finished after the first read.
     if (existsSync(paths.profile)) throw new Error(`Bot ${input.id} already exists at ${root}`);
-    for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
+    for (const dir of [paths.root, paths.runtime, paths.logs, paths.workspace]) {
       mkdirSync(dir, { recursive: true });
     }
+    // SPEC-014: the database first, so that the profile at the raised version is never on a
+    // root whose database is not finished.
+    createNewBotDatabase(paths);
     const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
     saveProfile(paths, profile);
     return { profile, root };

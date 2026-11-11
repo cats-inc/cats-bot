@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { after, before, test } from 'node:test';
 
-import { readJournal } from '../../src/core/store/journal.ts';
+import { readStateJournal } from '../support/stateData.ts';
 import { awakeNow, fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
 
 /**
@@ -49,7 +49,7 @@ test('the tick keeps the home session alive: creates it, leaves a live one alone
     assert.equal(second.outcome, 'awake');
     let state = await fetchFakeState(core);
     assert.equal(state.calls.filter((call) => call.op === 'create').length, 1);
-    assert.ok(readJournal(core.paths).entries.some((entry) => entry.type === 'presence' && entry.presence === 'awake'));
+    assert.ok(readStateJournal(core.paths.root).entries.some((entry) => entry.type === 'presence' && entry.presence === 'awake'));
 
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'failed', 10_000);
     assert.equal((await core.listConversations())[0]!.attachment.state, 'sleeping');
@@ -109,7 +109,7 @@ test('a quiet heartbeat leaves a journal entry but no message; a spoken one is a
     const item = await done;
     assert.equal(item.type === 'turn.completed' && item.workItem.state, 'completed');
     assert.equal(quiet.transcript('home').filter((entry) => entry.kind === 'bot').length, 0, 'quiet leaves no message');
-    const entries = readJournal(quiet.paths).entries.filter((entry) => entry.type === 'heartbeat');
+    const entries = readStateJournal(quiet.paths.root).entries.filter((entry) => entry.type === 'heartbeat');
     assert.deepEqual(entries.map((entry) => entry.type === 'heartbeat' ? [entry.kind, entry.result] : []), [['wake', 'quiet']]);
     assert.equal((await quiet.listConversations())[0]!.unreadCount, 0);
     assert.equal((await quiet.listConversations())[0]!.attachment.state, 'ready', 'the heartbeat brought the initializing session to ready');

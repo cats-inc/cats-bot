@@ -131,6 +131,41 @@ test('only the store reaches the SQLite driver and the state database adapter (S
   assert.deepEqual(offenders, []);
 });
 
+test('nothing outside the store reads or writes the version-1 files (SPEC-014 FR-11)', () => {
+  // After the cutover the version-1 files are read once, by the import, and never written.
+  // Their modules stay for the import and for tests that make version-1 fixtures.
+  const storeRoot = join(srcRoot, 'core', 'store');
+  const versionOne = ['transcript.ts', 'journal.ts', 'atomicFile.ts'].map((name) => join(storeRoot, name));
+  const presentation = join(storeRoot, 'presentation.ts');
+  const offenders: string[] = [];
+  for (const file of listTypeScriptFiles(srcRoot)) {
+    if (!relative(storeRoot, file).startsWith('..')) continue;
+    const source = readFileSync(file, 'utf8');
+    for (const specifier of importSpecifiers(file)) {
+      if (!isRelative(specifier)) continue;
+      const target = resolve(dirname(file), specifier);
+      if (target === join(storeRoot, 'transcript.ts') || target === join(storeRoot, 'journal.ts')) {
+        offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
+      }
+      if (target === presentation) {
+        // Only what checks and projects a presentation; never the sidecar files.
+        const named = new RegExp(String.raw`import\s*(?:type\s*)?\{([^}]*)\}\s*from\s*['"]${specifier.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')}['"]`, 'u').exec(source)?.[1] ?? '';
+        for (const name of named.split(',').map((part) => part.trim().split(/\s+as\s+/u)[0]!).filter(Boolean)) {
+          if (!['checkedResponse', 'projectPresentationTranscript'].includes(name)) {
+            offenders.push(`${relative(repoRoot, file)} imports ${name} from ${specifier}`);
+          }
+        }
+      }
+    }
+    // The version-1 layout's own paths.
+    if (/\bpaths\.(?:conversations|transcripts|journal)\b|conversationFile\(|transcriptFile\(/u.test(source)) {
+      offenders.push(`${relative(repoRoot, file)} names a version-1 file`);
+    }
+  }
+  void versionOne;
+  assert.deepEqual(offenders, []);
+});
+
 test('the shell never holds the runtime client directly', () => {
   const offenders: string[] = [];
   const runtimeClientDir = join(srcRoot, 'core', 'runtime');

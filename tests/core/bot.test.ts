@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { after, before, test } from 'node:test';
 
 import { BotCore, BotInstanceRunningError, readBotProfile } from '../../src/core/bot.ts';
-import { appendJournal, readJournal } from '../../src/core/store/journal.ts';
+import { appendStateJournal, readStateJournal, withStateStore } from '../support/stateData.ts';
 import { writeHandoff } from '../../src/core/store/lock.ts';
 import { botPathsFor, conversationFile, transcriptFile } from '../../src/core/store/paths.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
@@ -62,8 +62,9 @@ test('an owner message becomes a completed work item with a streamed reply', asy
     assert.equal(create.body.instructions, 'You are Mochi.', 'the first session gets the persona and no handoff');
     assert.equal(create.body.permissionMode, 'default');
     assert.equal(create.body.workspaceKind, 'source');
-    assert.ok(existsSync(botPathsFor(root).journal));
-    assert.ok(existsSync(transcriptFile(botPathsFor(root), home1.id)));
+    // SPEC-014: the journal and the transcript are in the bot's database.
+    assert.ok(readStateJournal(root).entries.length > 0);
+    assert.ok(withStateStore(root, (store) => store.entries(home1.id).length > 0));
 
     const history = await core.sessionHistory('home');
     assert.deepEqual(history, [{ role: 'user', text: 'hello' }, { role: 'assistant', text: 'echo: hello' }]);
@@ -190,9 +191,9 @@ test('a restart marks running work interrupted and never reruns it (FR-28)', asy
 
   const paths = botPathsFor(root);
   const stale = createWorkItem({ kind: 'owner_message', source: 'owner', conversationId: first.conversationId, prompt: 'lost turn' }, new Date());
-  appendJournal(paths, { type: 'work', at: new Date().toISOString(), item: { ...stale, state: 'running', attempts: 1 } });
+  appendStateJournal(root, { type: 'work', at: new Date().toISOString(), item: { ...stale, state: 'running', attempts: 1 } });
   const queued = createWorkItem({ kind: 'owner_message', source: 'owner', conversationId: first.conversationId, prompt: 'still queued' }, new Date());
-  appendJournal(paths, { type: 'work', at: new Date().toISOString(), item: queued });
+  appendStateJournal(root, { type: 'work', at: new Date().toISOString(), item: queued });
 
   const reopened = BotCore.open({ root, log: () => {}, runtime: { runtimeEntry: (await import('../support/harness.ts')).fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000 }, life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 }, ...fastRetries });
   const done = waitForEvent(reopened, (event) => event.type === 'turn.completed' && event.workItem.id === queued.id);
@@ -204,7 +205,7 @@ test('a restart marks running work interrupted and never reruns it (FR-28)', asy
     // FR-28: the new runtime has no evidence of the lost turn, so the owner decides; it is never rerun.
     await recovered;
     assert.equal(reopened.getWorkItem(stale.id)?.state, 'awaiting_owner');
-    const journal = readJournal(paths);
+    const journal = readStateJournal(root);
     assert.equal(journal.workItems.get(stale.id)?.state, 'awaiting_owner');
     assert.ok(journal.entries.some((entry) => entry.type === 'work' && entry.item.id === stale.id && entry.item.state === 'interrupted'), 'it passed through interrupted first');
     const state = await fetchFakeState(reopened);
@@ -229,7 +230,7 @@ test('the run is journaled before the prompt is sent, with its history baseline 
     const slow = await core.sendOwnerMessage('home', 'slow:800');
     await running;
     const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.id === slow.id);
-    const journaled = readJournal(botPathsFor(root)).workItems.get(slow.id);
+    const journaled = readStateJournal(root).workItems.get(slow.id);
     assert.equal(journaled?.state, 'running');
     assert.equal(journaled?.run?.sessionId, first.run?.sessionId, 'a crash now would still know the session');
     assert.equal(journaled?.run?.historyBaseline, 2, 'the first turn left two messages before this prompt');
@@ -320,7 +321,7 @@ test('a crashed runtime is restarted with backoff and the home session is rebuil
     const state = await fetchFakeState(core);
     assert.equal(state.calls.filter((call) => call.op === 'create').length, 1, 'the new runtime got a fresh session');
     assert.ok(!state.calls.some((call) => call.op === 'resume'), 'nothing of the dead runtime was resumed');
-    const journal = readJournal(core.paths);
+    const journal = readStateJournal(core.paths.root);
     const runtimeEvents = journal.entries.filter((entry) => entry.type === 'runtime').map((entry) => entry.type === 'runtime' ? entry.event : '');
     assert.deepEqual(runtimeEvents.slice(0, 5), ['started', 'ready', 'exited', 'restart_scheduled', 'started']);
   } finally {

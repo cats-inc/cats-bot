@@ -132,7 +132,8 @@ test('legacy providers, null models and custom model IDs remain unchanged on unr
 
 test('createProfile applies the SPEC-001 FR-1 defaults', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
-  assert.equal(profile.schemaVersion, 2);
+  // SPEC-014 FR-11: 3 since the state database.
+  assert.equal(profile.schemaVersion, 3);
   assert.equal(profile.providerPolicy, null);
   assert.equal(profile.configRevision, 1);
   assert.deepEqual(profile.executionTarget, { provider: 'claude', model: null });
@@ -341,7 +342,7 @@ test('desktop control is off by default, off when absent or invalid, and its pat
   saveProfile(paths, on.profile);
   const saved = loadProfile(paths, profile);
   assert.ok(saved.ok && saved.profile.desktopControl.enabled === true);
-  assert.equal(saved.ok && saved.profile.schemaVersion, 2);
+  assert.equal(saved.ok && saved.profile.schemaVersion, 3);
 });
 
 test('a bot follows the hub reply language by default, and an older writer reads as following it (SPEC-008 FR-28)', () => {

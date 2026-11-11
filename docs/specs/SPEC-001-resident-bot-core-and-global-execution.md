@@ -83,15 +83,18 @@ freeze of the storage format.
    `idleSleepMinutes` (default 15), `updatedAt`.
 2. FR-2: The data root defaults to `~/.catsbot/bots/<id>/`; `CATS_BOT_HOME` moves the whole `~/.catsbot` root
    (SPEC-007 FR-3, FR-4). Layout:
-   `profile.json`, `conversations/<conversationId>.json` (conversation metadata and attachment),
-   `transcripts/<conversationId>.jsonl`, `journal.jsonl` (work items, schedules and state transitions),
+   `profile.json`, `bot.db` (since 0.6, SPEC-014: conversation metadata and attachments, transcripts,
+   reply presentations, and the journal of work items, schedules and state transitions; until 0.6 these
+   were `conversations/<conversationId>.json`, `transcripts/<conversationId>.jsonl`, `presentations/` and
+   `journal.jsonl`, which the first start of 0.6 copies to `migration-backup/` and moves to `archive/v1/`),
    `runtime/` (used as `CATS_RUNTIME_DIR`), `logs/`; plus the core's `life.json` (time of the last tick),
    `instance.lock.json`, `handoff/`, `secrets.json` (the Telegram token and the like, see Open Questions),
    `telegram-state.json` (the last admitted `update_id`, not secret), and the shell's own `shell-state.json`
    (note position, size, always-on-top, start at login).
 3. FR-3: A data root has only one writer at a time, guaranteed by a lock file; a second instance with the same
-   id hands its startup arguments to the first and exits. All writes go through a temp file plus rename; reads
-   never write back. Under the hub (SPEC-008) the writer is the bot's core process; the hub's own files have
+   id hands its startup arguments to the first and exits. The bot's records are written in the state database's
+   transactions (SPEC-014 FR-1, FR-5 to FR-9); the files beside it go through a temp file plus rename. Reads
+   never write back, and a host without the lock reads the database through a reader that never creates it. Under the hub (SPEC-008) the writer is the bot's core process; the hub's own files have
    their own locks, and the hub takes a bot's lock only to archive, restore or delete it. Locks outlive a
    shutdown because Windows ends programs without their quit handlers, and by the next start a PID can belong
    to another process. A lock therefore records its writer's process identity: the creation time on Windows,
@@ -167,7 +170,7 @@ freeze of the storage format.
     each create a session that overwrites the other's attachment; the handoff pack does not include owner
     messages still `queued` / `running`, which are sent in as messages.
 12. FR-12: Handoff context: the CLI provider's native transcript is kept by the CLI; the core additionally keeps
-    its own transcript and, when creating or replacing a session, sends the handoff pack in the instructions:
+    its own transcript (in `bot.db`, SPEC-014 FR-3) and, when creating or replacing a session, sends the handoff pack in the instructions:
     12,000-character cap, verbatim for short conversations, digest plus recent content for long ones. The
     digest is lossy, and lossless recall is not claimed. Errors and rebuild notices are not part of the pack:
     they describe the execution path, not the conversation, and repeated ones would otherwise crowd the
@@ -178,7 +181,8 @@ freeze of the storage format.
     worker closed (`POST /sessions/{id}/close`), its status becomes `sleeping` and the session id is kept. The
     home conversation is not subject to the idle policy.
 14. FR-14: Deleting a conversation: `close` first, then `DELETE /sessions/{id}`, and after confirmation remove
-    the transcript and views; closing a note view never deletes a conversation; quitting the bot never deletes
+    the record, the transcript, its presentations and its work items in one transaction (SPEC-014 FR-5, FR-7),
+    and the views; closing a note view never deletes a conversation; quitting the bot never deletes
     any conversation.
 
 ### Admission, queue and turns

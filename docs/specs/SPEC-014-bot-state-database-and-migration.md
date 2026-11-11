@@ -43,6 +43,9 @@ verified migration moves existing bots over without losing or rewriting their hi
    - Only the core holding the instance lock opens it for writing, and only it changes rows.
      A host that takes the lock for one write while the bot is stopped (the CLI's
      `schedule add` and `schedule cancel`) is that writer for as long as it holds the lock.
+     *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open
+     Questions)* Such a host migrates the version-1 files first, as a starting core does;
+     `approve`, and the heartbeat and Telegram settings, write the same way.
    - Other processes reach data through `BotHostApi`. A core opened without the lock, which
      is how the CLI's `status`, `conversations` and `schedule list` read today, reads
      through a **reader connection**: it never creates the file, accepts only queries, and
@@ -69,6 +72,8 @@ verified migration moves existing bots over without losing or rewriting their hi
    - `responses`: one row per reply presentation, keyed by conversation and presentation
      id, with revision and phase;
    - `work_items` and `schedules`: the current state of each work item and schedule;
+   - `deleted_work` *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)*: for each work item deleted with its
+     conversation, its id, source reference and delivery id, and nothing it said;
    - `journal`: every line of today's journal, in the order it was written: each state a
      work item or a schedule went through, and presence, runtime, heartbeat,
      configuration and Boss Cat tool calls. A line is never changed; it leaves only by
@@ -92,6 +97,13 @@ verified migration moves existing bots over without losing or rewriting their hi
    - For items completed more than 30 days ago, all but the last of an item's journal
      lines may be pruned.
    - The `work_items` row itself is never deleted, except with its conversation (FR-5).
+   - *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)* A work item deleted with its conversation leaves
+     its id, source reference and delivery id in `deleted_work`. A delivery from another
+     bot whose work item is there was handled: it is not admitted again, and the hub is
+     told it was cancelled because its conversation was deleted.
+   - *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)* A work item whose conversation no longer exists is
+     not written, so that a turn ending after its conversation was deleted does not bring
+     back the prompt.
 
 #### Search
 
@@ -145,6 +157,10 @@ verified migration moves existing bots over without losing or rewriting their hi
       replacement. Older binaries already refuse an unknown profile schema, so they stop
       instead of starting a blank bot on the migrated root.
     - It then moves the version-1 files to `archive/v1/`.
+    - *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)* A new bot made by `cats-bot init` has no
+      version-1 files: its database is made, with the marker, before its profile is
+      written at the raised version. A schema-1 profile is raised to 2 before the
+      migration, as before, and to the new version by it.
     - **Crash before the marker**: the version-1 files stay authoritative, and the next start
       repeats the migration from a fresh database.
     - **Crash after the marker**: the database is authoritative and version-1 files are never
@@ -271,6 +287,19 @@ Changes of wording that follow from the code, with no other decision in them:
   the open is then refused, so the file's bytes can change while its content does not.
   A file that is not a bot state database is refused the same way.
 - [x] Dependencies: no trigram tokenizer is used; `contentless_delete` needs SQLite 3.43.
+
+
+Chosen on 2026-11-12 under the owner's instruction of that day ("all as recommended; take it
+to the end"), while building the cutover; the owner reads them before bumping 0.6:
+
+- [x] FR-1: a host that writes while the bot is stopped (`schedule add`, `schedule cancel`,
+  `approve`, the heartbeat and Telegram settings) takes the lock and migrates first.
+- [x] FR-3 and FR-7: a work item deleted with its conversation leaves its id, source
+  reference and delivery id in `deleted_work`; a delivery found there is answered as
+  cancelled and not admitted again. Without it, a delivery the hub sent again after a
+  restart would come in as new, and the hub would wait for an answer that never came.
+- [x] FR-7: a work item whose conversation no longer exists is not written.
+- [x] FR-11: a new bot's database is made by `cats-bot init`, before its profile.
 
 ## References
 

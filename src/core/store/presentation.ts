@@ -19,24 +19,37 @@ function parse(text: string, id: string): PresentationFile {
   if (data.version !== 1) throw new Error('Unsupported conversation presentation version; file preserved');
   if (data.conversationId !== id || !Array.isArray(data.responses)) throw new Error('Invalid presentation envelope');
   const ids = new Set<string>();
-  for (const entry of data.responses) {
-    const presentation = readConversationPresentation(entry.presentation);
-    if (!presentation || ids.has(presentation.id) || entry.kind !== 'bot'
-      || !Number.isSafeInteger(entry.seq) || entry.seq < 1
-      || typeof entry.at !== 'string' || !Number.isFinite(Date.parse(entry.at))
-      || typeof entry.text !== 'string' || typeof entry.workItemId !== 'string'
-      || !['owner', 'heartbeat', 'schedule', 'event', 'system'].includes(entry.origin)
-      || !Number.isSafeInteger(entry.presentationRevision) || entry.presentationRevision! < 1
-      || !Array.isArray(entry.presentationSeqs)
-      || !entry.presentationSeqs.every(seq => Number.isSafeInteger(seq) && seq >= entry.seq)
-      || (entry.presentationTerminalSeq !== undefined
-        && (!Number.isSafeInteger(entry.presentationTerminalSeq) || entry.presentationTerminalSeq < entry.seq))) {
-      throw new Error('Invalid conversation presentation record');
-    }
-    ids.add(presentation.id);
-    entry.presentation = presentation;
-  }
+  data.responses = data.responses.map((entry) => {
+    const checked = checkedResponse(entry);
+    if (!checked || ids.has(checked.presentation!.id)) throw new Error('Invalid conversation presentation record');
+    ids.add(checked.presentation!.id);
+    return checked;
+  });
   return data;
+}
+
+/**
+ * One reply presentation as a sidecar keeps it, with its presentation read by the shared
+ * contract, or null when it is not one. SPEC-014: the state database keeps each as a row,
+ * and the core checks it as it checked the sidecar.
+ */
+export function checkedResponse(value: unknown): TranscriptEntry | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const entry = value as TranscriptEntry;
+  const presentation = readConversationPresentation(entry.presentation);
+  if (!presentation || entry.kind !== 'bot'
+    || !Number.isSafeInteger(entry.seq) || entry.seq < 1
+    || typeof entry.at !== 'string' || !Number.isFinite(Date.parse(entry.at))
+    || typeof entry.text !== 'string' || typeof entry.workItemId !== 'string'
+    || !['owner', 'heartbeat', 'schedule', 'event', 'system'].includes(entry.origin)
+    || !Number.isSafeInteger(entry.presentationRevision) || entry.presentationRevision! < 1
+    || !Array.isArray(entry.presentationSeqs)
+    || !entry.presentationSeqs.every(seq => Number.isSafeInteger(seq) && seq >= entry.seq)
+    || (entry.presentationTerminalSeq !== undefined
+      && (!Number.isSafeInteger(entry.presentationTerminalSeq) || entry.presentationTerminalSeq < entry.seq))) {
+    return null;
+  }
+  return { ...entry, presentation };
 }
 
 /**

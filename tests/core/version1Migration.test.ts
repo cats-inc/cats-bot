@@ -15,7 +15,8 @@ import {
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { after, test } from 'node:test';
-import { createProfile, loadProfile, saveProfile } from '../../src/core/profile/profile.ts';
+import { createProfile, loadProfile } from '../../src/core/profile/profile.ts';
+import type { BotProfile } from '../../src/core/types.ts';
 import { writeJsonAtomic } from '../../src/core/store/atomicFile.ts';
 import { appendJournal } from '../../src/core/store/journal.ts';
 import { acquireInstanceLock } from '../../src/core/store/lock.ts';
@@ -110,7 +111,7 @@ function versionOneBot(name = 'bot'): BotPaths {
   made += 1;
   const paths = botPathsFor(join(scratch, `${name}-${made}`));
   mkdirSync(paths.root, { recursive: true });
-  saveProfile(
+  olderBotSaves(
     paths,
     createProfile({
       id: 'mochi',
@@ -185,6 +186,23 @@ function profileOf(paths: BotPaths): Record<string, unknown> {
   return JSON.parse(readFileSync(paths.profile, 'utf8')) as Record<string, unknown>;
 }
 
+/** A profile as a Bot of 0.5 writes it: schema version 2. */
+function olderBotSaves(paths: BotPaths, profile: BotProfile): void {
+  writeJsonAtomic(paths.profile, { ...profile, schemaVersion: 2 });
+}
+
+/**
+ * The rule a Bot of 0.5 reads a profile by (its `loadProfile`, as of 0.5.9): schema 1, or 2
+ * with a provider policy. Pinned here, since this version's own rule now takes 3 as well.
+ */
+function olderBotReads(paths: BotPaths): boolean {
+  const raw = JSON.parse(readFileSync(paths.profile, 'utf8')) as Record<string, unknown>;
+  return (
+    [1, 2].includes(raw.schemaVersion as number) &&
+    !(raw.schemaVersion === 2 && !Object.hasOwn(raw, 'providerPolicy'))
+  );
+}
+
 function placeholder(paths: BotPaths) {
   return createProfile({ id: 'mochi', name: 'Mochi', provider: 'claude', cwd: paths.root });
 }
@@ -249,11 +267,10 @@ test('a version-1 root is copied aside, imported, its profile raised and its fil
 
   // The profile as it was is kept, and today's Bot refuses the raised one.
   assert.deepEqual(readFileSync(`${paths.profile}.v2.bak`), profileBytes);
-  const refused = loadProfile(paths, placeholder(paths), true);
+  assert.equal(olderBotReads(paths), false);
+  const read = loadProfile(paths, placeholder(paths), true);
   assert.ok(
-    !refused.ok &&
-      refused.reason === 'corrupt' &&
-      /Unsupported profile schema/u.test(refused.error),
+    read.ok && read.profile.schemaVersion === 3,
   );
 
   // A second run finds nothing to do.
@@ -455,7 +472,7 @@ test("a profile a power cut left unreadable during the raise is raised from this
   const again = versionOneBot();
   const profile = loadProfile(again, placeholder(again));
   assert.ok(profile.ok);
-  saveProfile(again, {
+  olderBotSaves(again, {
     ...profile.profile,
     permissions: { ...profile.profile.permissions, permissionMode: 'skip' },
   });
@@ -463,7 +480,7 @@ test("a profile a power cut left unreadable during the raise is raised from this
   restoreVersion1({ paths: again, profile: RAISE, now });
   const lowered = loadProfile(again, placeholder(again));
   assert.ok(lowered.ok);
-  saveProfile(again, {
+  olderBotSaves(again, {
     ...lowered.profile,
     name: 'Mochi Two',
     permissions: { ...lowered.profile.permissions, permissionMode: 'default' },
@@ -597,8 +614,9 @@ test('restoring puts the files back, sets the database aside and lowers the prof
   assert.equal(existsSync(stateDatabaseFile(paths)), false);
   assert.ok(setAside && existsSync(setAside));
   assert.deepEqual(profileOf(paths), original);
-  // Today's Bot reads the root again.
-  const loaded = loadProfile(paths, placeholder(paths), true);
+  // An older Bot reads the root again.
+  assert.equal(olderBotReads(paths), true);
+  const loaded = loadProfile(paths, placeholder(paths));
   assert.equal(loaded.ok, true);
   // The set-aside database still holds what the migration made.
   const kept = openBotStateStore({ file: setAside!, mode: 'reader' });
@@ -614,7 +632,7 @@ test('restoring puts the files back, sets the database aside and lowers the prof
 
   // Today's Bot writes on; then the new version migrates again.
   appendTranscript(paths, 'home', entry(3, 'written by the older Bot'));
-  saveProfile(paths, { ...(loaded.ok ? loaded.profile : placeholder(paths)), name: 'Mochi Two' });
+  olderBotSaves(paths, { ...(loaded.ok ? loaded.profile : placeholder(paths)), name: 'Mochi Two' });
   const changed = profileOf(paths);
   assert.equal(migrate(paths).outcome, 'migrated');
   assert.deepEqual(profileOf(paths), { ...changed, schemaVersion: 3 });

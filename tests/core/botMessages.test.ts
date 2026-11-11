@@ -4,7 +4,7 @@ import { after, before, test } from 'node:test';
 
 import { BotCore } from '../../src/core/bot.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
-import { appendJournal } from '../../src/core/store/journal.ts';
+import { appendStateJournal, readStateJournal } from '../support/stateData.ts';
 import { botPathsFor } from '../../src/core/store/paths.ts';
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 import { fakeRuntimeEntry, fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent, type TempHome } from '../support/harness.ts';
@@ -73,7 +73,7 @@ test('an interrupted message from another bot ends failed with its chain, never 
     sourceRef: 'bot:delivery-r2',
     chain: { id: 'chain-r2', hop: 1, deliveryId: 'delivery-r2', kind: 'message', from: 'alpha', fromName: 'Alpha' },
   };
-  appendJournal(botPathsFor(root), { type: 'work', at: new Date().toISOString(), item: { ...item, state: 'running', attempts: 1 } });
+  appendStateJournal(root, { type: 'work', at: new Date().toISOString(), item: { ...item, state: 'running', attempts: 1 } });
 
   const reopened = BotCore.open({
     root, log: () => {},
@@ -101,16 +101,17 @@ test('a cats-hub call is journaled with ids only, whatever the model passes (FR-
   const { core, root } = openTestBot({ botsHome: home.botsHome, id: 'alpha-journal', profile: { name: 'Alpha' }, core: fastRetries });
   await core.start();
   try {
-    const journal = botPathsFor(root).journal;
-    const before = statSync(journal).size;
+    // SPEC-014: the journal is in the bot's database, read beside the running core.
+    const written = (): string => JSON.stringify(readStateJournal(root).entries);
+    const before = written().length;
     const callHub = (core as unknown as { callHub(call: unknown): Promise<{ text: string }> }).callHub.bind(core);
     for (let i = 0; i < 10; i += 1) {
       const result = await callHub({ tool: 'hub_list_bots', args: { bot: 'y'.repeat(90_000), chain: 'z'.repeat(90_000) }, conversationId: 'home' });
       assert.match(result.text, /does not hold/u);
     }
-    const grown = statSync(journal).size - before;
+    const grown = written().length - before;
     assert.ok(grown < 10 * 400, `the journal grew ${grown} bytes`);
-    assert.doesNotMatch(readFileSync(journal, 'utf8'), /yyyy|zzzz/u);
+    assert.doesNotMatch(written(), /yyyy|zzzz/u);
   } finally {
     await core.stop();
   }

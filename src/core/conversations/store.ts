@@ -1,11 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 
-import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
-import { conversationFile, isValidBotId, transcriptFile, type BotPaths } from '../store/paths.ts';
-import { appendTranscript, readTranscript } from '../store/transcript.ts';
-import { deletePresentations, readPresentations, savePresentation, projectPresentationTranscript } from '../store/presentation.ts';
+import { isValidBotId } from '../store/paths.ts';
+import { checkedResponse, projectPresentationTranscript } from '../store/presentation.ts';
+import type { BotStateStore, EntriesPage } from '../store/stateStore.ts';
 import type {
   AttachmentState,
   ConversationRecord,
@@ -15,10 +12,9 @@ import type {
 } from '../types.ts';
 
 /**
- * SPEC-001 FR-9, FR-10, FR-12: conversation records under
- * `conversations/<id>.json`, transcripts under `transcripts/<id>.jsonl`.
- * Every mutation goes through `update` so the file on disk is always the
- * atomic rendering of the in-memory record.
+ * SPEC-001 FR-9, FR-10, FR-12 and SPEC-014: conversation records, their transcripts and
+ * their reply presentations in the bot's state database. Every mutation goes through
+ * `update`, so the stored record is always the rendering of the one in memory.
  */
 
 export const ATTACHMENT_STATES: readonly AttachmentState[] = [
@@ -118,44 +114,36 @@ function errorText(error: unknown): string {
 }
 
 export interface ConversationStoreOptions {
-  paths: BotPaths;
+  /** The bot's open store; it throws when none is open. */
+  store: () => BotStateStore;
   now: () => Date;
-  /** Receives problems that are not fatal, such as a corrupt record left in place (FR-4). */
+  /** Receives problems that are not fatal, such as a record that cannot be read (FR-4). */
   warn?: (message: string) => void;
 }
 
 export class ConversationStore {
-  private readonly paths: BotPaths;
+  private readonly store: () => BotStateStore;
   private readonly now: () => Date;
   private readonly warn: (message: string) => void;
   private readonly records = new Map<string, ConversationRecord>();
-  private readonly nextSeq = new Map<string, number>();
-  /** SPEC-012 FR-5: contact notes upgraded in memory whose files still hold the old record. */
+  /** SPEC-012 FR-5: contact notes upgraded in memory whose stored records are still the old ones. */
   private readonly unwrittenUpgrades = new Set<string>();
 
   constructor(options: ConversationStoreOptions) {
-    this.paths = options.paths;
+    this.store = options.store;
     this.now = options.now;
     this.warn = options.warn ?? (() => {});
   }
 
   load(): void {
     this.records.clear();
-    this.nextSeq.clear();
     this.unwrittenUpgrades.clear();
-    mkdirSync(this.paths.conversations, { recursive: true });
     const now = this.now().toISOString();
-    for (const name of readdirSync(this.paths.conversations).sort()) {
-      if (!name.endsWith('.json')) continue;
-      const file = conversationFile(this.paths, name.slice(0, -'.json'.length));
-      const read = readJsonFile<unknown>(file);
-      if (!read.ok) {
-        this.warn(`conversation ${name}: ${read.reason === 'missing' ? 'missing' : read.error}; left untouched`);
-        continue;
-      }
-      const record = normalizeConversation(read.value, now);
+    for (const raw of this.store().conversations()) {
+      const record = normalizeConversation(raw, now);
       if (!record) {
-        this.warn(`conversation ${name}: not a conversation record; left untouched`);
+        const id = typeof (raw as { id?: unknown } | null)?.id === 'string' ? (raw as { id: string }).id : '?';
+        this.warn(`conversation ${id}: not a conversation record; left untouched`);
         continue;
       }
       this.records.set(record.id, this.upgradeContactNote(record));
@@ -167,7 +155,8 @@ export class ConversationStore {
    * one from the moment it is read, in every host. Its session may have seen
    * words the owner wrote there, so it is marked stale and the next one starts
    * from a handoff without them. Only a running core writes the upgrade
-   * (`persistUpgrades`), after a copy of the old file; read-only hosts never do.
+   * (`persistUpgrades`); read-only hosts never do. The migration's copy of the
+   * version-1 files keeps the record as it was.
    */
   private upgradeContactNote(record: ConversationRecord): ConversationRecord {
     if (record.role !== 'note' || record.contactOf) return record;
@@ -182,11 +171,7 @@ export class ConversationStore {
     };
   }
 
-  /**
-   * Writes the contact note upgrades `load` applied in memory. A note whose
-   * old file cannot be copied aside stays upgraded in memory only, and is
-   * upgraded again on the next start; its next change is written either way.
-   */
+  /** Writes the contact note upgrades `load` applied in memory. */
   persistUpgrades(): void {
     for (const id of [...this.unwrittenUpgrades]) {
       const record = this.records.get(id);
@@ -194,7 +179,6 @@ export class ConversationStore {
         this.unwrittenUpgrades.delete(id);
         continue;
       }
-      if (!this.backUpBeforeUpgrade(id)) continue;
       try {
         this.write(record);
       } catch (error) {
@@ -203,26 +187,8 @@ export class ConversationStore {
     }
   }
 
-  /** The old file, copied aside once before an upgraded record replaces it. */
-  private backUpBeforeUpgrade(id: string): boolean {
-    try {
-      const file = conversationFile(this.paths, id);
-      const backups = join(this.paths.conversations, '.backup');
-      mkdirSync(backups, { recursive: true });
-      const backup = join(backups, `${id}.before-contact-note.json`);
-      if (!existsSync(backup) && existsSync(file)) copyFileSync(file, backup);
-      return true;
-    } catch (error) {
-      this.warn(`conversation ${id}: the file before the contact note upgrade could not be copied aside (${errorText(error)})`);
-      return false;
-    }
-  }
-
   private write(record: ConversationRecord): void {
-    // A change to a note upgraded only in memory still tries the copy first; the record is
-    // written either way, since the upgrade only adds what an older version ignores.
-    if (this.unwrittenUpgrades.has(record.id)) this.backUpBeforeUpgrade(record.id);
-    writeJsonAtomic(conversationFile(this.paths, record.id), record);
+    this.store().saveConversation(record);
     this.unwrittenUpgrades.delete(record.id);
   }
 
@@ -294,47 +260,81 @@ export class ConversationStore {
     });
   }
 
-  /** SPEC-001 FR-14: the record and transcript go together; the caller closed the session first. */
+  /**
+   * SPEC-001 FR-14 and SPEC-014 FR-5: the record, its transcript, its presentations and its
+   * work items go together, in one transaction; the caller closed the session first.
+   */
   remove(id: string): void {
     const record = this.require(id);
     if (record.role === 'home') throw new Error('The direct message cannot be deleted');
+    this.store().deleteConversation(id);
     this.records.delete(id);
-    this.nextSeq.delete(id);
     this.unwrittenUpgrades.delete(id);
-    rmSync(conversationFile(this.paths, id), { force: true });
-    rmSync(transcriptFile(this.paths, id), { force: true });
-    deletePresentations(this.paths, id);
   }
 
   transcript(id: string): TranscriptEntry[] {
     this.require(id);
-    return readTranscript(this.paths, id);
+    return this.store().entries(id);
+  }
+
+  /** SPEC-014 FR-10: the newest entries, or the ones before a `seq`, in `seq` order. */
+  transcriptPage(id: string, page: EntriesPage): TranscriptEntry[] {
+    this.require(id);
+    return this.store().entriesPage(id, page);
+  }
+
+  /** The highest `seq` of the conversation, or 0. */
+  lastSeq(id: string): number {
+    this.require(id);
+    return this.store().lastSeq(id);
   }
 
   presentationTranscript(id: string, runningWorkId?: string): TranscriptEntry[] {
-    return projectPresentationTranscript(this.transcript(id), readPresentations(this.paths, id), runningWorkId);
+    return projectPresentationTranscript(this.transcript(id), this.presentations(id), runningWorkId);
+  }
+
+  /**
+   * SPEC-014 FR-10: a page of the transcript as the note shows it. The presentations it
+   * projects are those of the page's own entries, and of replies still running.
+   */
+  presentationPage(id: string, page: EntriesPage, runningWorkId?: string): TranscriptEntry[] {
+    const entries = this.transcriptPage(id, page);
+    if (entries.length === 0) return [];
+    const first = entries[0]!.seq;
+    const last = page.beforeSeq === undefined ? Number.POSITIVE_INFINITY : page.beforeSeq;
+    const responses = this.presentations(id).filter((response) => response.seq >= first && response.seq < last);
+    return projectPresentationTranscript(entries, responses, runningWorkId);
+  }
+
+  /** The reply presentations as the shared contract reads them; one it cannot is reported. */
+  private presentations(id: string): TranscriptEntry[] {
+    const checked: TranscriptEntry[] = [];
+    for (const raw of this.store().responses(id)) {
+      const response = checkedResponse(raw);
+      if (response) checked.push(response);
+      else this.warn(`conversation ${id}: a reply presentation cannot be read and was left out`);
+    }
+    return checked;
   }
 
   savePresentation(id: string, entry: TranscriptEntry): void {
     this.require(id);
-    savePresentation(this.paths, id, entry);
+    if (!checkedResponse(entry)) throw new Error('Invalid conversation presentation record');
+    this.store().saveResponse(id, entry);
   }
 
+  /** The entry and the record's own change are one transaction. */
   append(id: string, entry: Omit<TranscriptEntry, 'seq' | 'at'>): TranscriptEntry {
     this.require(id);
-    let seq = this.nextSeq.get(id);
-    if (seq === undefined) {
-      seq = (readTranscript(this.paths, id).at(-1)?.seq ?? 0) + 1;
-    }
     const at = this.now().toISOString();
-    const full: TranscriptEntry = { seq, at, ...entry };
-    appendTranscript(this.paths, id, full);
-    this.nextSeq.set(id, seq + 1);
-    this.update(id, (record) => {
-      // SPEC-009 FR-7: another bot's message does not count as the owner writing.
-      if (entry.kind === 'owner' && entry.origin !== 'bot') record.lastOwnerMessageAt = at;
-      if (entry.kind === 'bot') record.lastBotMessageAt = at;
+    return this.store().transaction(() => {
+      const full = this.store().appendEntry(id, { at, ...entry });
+      this.update(id, (record) => {
+        // SPEC-009 FR-7: another bot's message does not count as the owner writing.
+        if (entry.kind === 'owner' && entry.origin !== 'bot') record.lastOwnerMessageAt = at;
+        if (entry.kind === 'bot') record.lastBotMessageAt = at;
+      });
+      return full;
     });
-    return full;
   }
 }

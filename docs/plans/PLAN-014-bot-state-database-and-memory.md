@@ -213,20 +213,35 @@ security review. Embeddings come only if the evaluation asks for them.
       stay, for the caller to cancel as it does now.
     - It also answers what callers today read a whole transcript for: the last `seq`, and
       the entries after a `seq`.
-  - [ ] The cutover: `ConversationStore`, the presentation store and the journal use it.
-    Open for it, each needing the owner:
-    - A turn that ends after its conversation was deleted still records its work item
-      today. With the store that would bring back a row holding the prompt, which
-      nothing deletes again.
-    - Telling a delivery already handled from a new one, and answering the hub about a
-      delivery, both read work items that outlive their conversation. FR-7 deletes them
-      with it.
-    - A cancelled schedule keeps its prompt for good, in its current row and in each of
-      its journal lines, while a deleted conversation's work items lose theirs.
-    - Startup reads every work item: 2.2 to 2.7 s for 287,000 of them. Today it replays
-      the whole journal. The store has no way to ask for the unfinished ones alone.
-    - Deleting a conversation is one transaction and takes seconds when it is large (see
-      1.7); today it removes three files.
+  - [x] The cutover: `ConversationStore`, the presentation store and the journal use it;
+        `tests/core/stateCutover.test.ts`.
+    - The core opens the database for writing under the lock, after migrating: at start,
+      and for a write a host makes while the bot is stopped (`schedule add`, `schedule
+      cancel`, `approve`, profile changes). A host without the lock reads one snapshot
+      through a reader and closes it. Profiles are written at schema 3; `cats-bot init`
+      makes a new bot's database first. `cats-bot restore` is the restore command.
+    - An architecture test keeps every module outside the store from the version-1
+      files' modules and paths.
+    - Checked by hand on a copy of one local bot root through the CLI (status, a
+      stopped write that migrates, restore), and with the 0.5.9 release's own CLI: it
+      reads a bot it made, refuses it once migrated ("Unsupported profile schema"), and
+      reads it again after a restore, without what was written in between.
+    - Chosen 2026-11-12, under the owner's instruction of that day:
+      - A turn that ends after its conversation was deleted: a work item whose
+        conversation no longer exists is not written (SPEC-014 FR-7).
+      - Deliveries of a deleted conversation: a deleted work item leaves its id, source
+        reference and delivery id in `deleted_work`; a delivery found there is not
+        admitted again, and the hub is told it was cancelled because its conversation was
+        deleted (SPEC-014 FR-3, FR-7).
+      - A cancelled schedule keeps its prompt, as today's journal does (FR-15).
+      - Startup reads every work item, and deleting a large conversation takes seconds:
+        accepted as measured.
+      - A host without the lock shows nothing of a bot not migrated yet, until its first
+        start or write; the hub starts its bots, so this is a CLI-only moment.
+      - A bot root on a network share is not supported once it is a database: SQLite
+        does not support WAL there. The release notes say to keep `CATS_BOT_HOME` on a
+        local disk; nothing refuses one.
+      - Two presentations with the same `seq` come back ordered by their id.
     - A record that cannot be read: a search still returns the entries of a conversation
       whose own record cannot be read, and a work item whose current row cannot be read
       is missing from the list while its journal lines remain. The import's check has to
@@ -238,7 +253,6 @@ security review. Embeddings come only if the evaluation asks for them.
     - A search across all conversations stops early when the index holds a row whose
       entry is gone. The store never leaves one; a damaged file can, and a rebuild of
       the index removes it.
-    - A bot root on a UNC path (see 1.1).
     - What the import does with what it finds (proposed defaults; each one decides
       whether a bot starts on 0.6). The rule proposed: it stops only where a record
       shown today would be lost or changed, and reports everything else, whose files
