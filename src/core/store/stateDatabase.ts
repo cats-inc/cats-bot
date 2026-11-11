@@ -115,7 +115,14 @@ const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 /** Statements are compiled once and kept. Past this many, the cache starts again. */
 const STATEMENT_CACHE_LIMIT = 256;
 const QUERY = /^\s*(?:select|with)\b/iu;
+/** `pragma name` and nothing after it. */
+const SETTING_READ = /^\s*pragma\s+\w+\s*$/iu;
+/** A statement that changes rows, as `with ... insert into` would bring into a query. */
+const CHANGE_WORD =
+  /\b(?:insert|replace)\s+(?:or\s+\w+\s+)?into\b|\bupdate\s+(?:or\s+\w+\s+)?\w+\s+set\b|\bdelete\s+from\b/iu;
 const INSERT = /^\s*insert\b/iu;
+/** A conflict clause that leaves the rows a failed statement had already changed. */
+const KEEPS_HALF = /\bor\s+fail\b/iu;
 const TRANSACTION_CONTROL = /^\s*(?:begin|commit|end|rollback|savepoint|release)\b/iu;
 /** SQLite's primary result codes, as the driver reports them in `errcode`. */
 const SQLITE_CANTOPEN = 14;
@@ -367,9 +374,10 @@ class Connection implements StateDatabase {
   }
 
   run(sql: string, ...parameters: SqliteInput[]): number {
-    const { changes } = this.#change(sql).run(...parameters);
-    this.#writes += 1;
-    return Number(changes);
+    const changes = Number(this.#change(sql).run(...parameters).changes);
+    // A statement that changed no row left nothing half made.
+    if (changes > 0) this.#writes += 1;
+    return changes;
   }
 
   insert(sql: string, ...parameters: SqliteInput[]): number {
@@ -379,7 +387,7 @@ class Connection implements StateDatabase {
       );
     if (!INSERT.test(sql)) throw misuse();
     const { changes, lastInsertRowid } = this.#change(sql).run(...parameters);
-    this.#writes += 1;
+    if (Number(changes) > 0) this.#writes += 1;
     // Without a new row, SQLite's last row id is still that of some earlier statement.
     if (Number(changes) !== 1 || lastInsertRowid > Number.MAX_SAFE_INTEGER) throw misuse();
     return Number(lastInsertRowid);
@@ -467,6 +475,11 @@ class Connection implements StateDatabase {
         `${this.file} is open for reading and accepts only queries`,
       );
     }
+    // On a writer, `get` and `all` read as well: a change made through them would not be
+    // counted as one, nor refused inside a snapshot. A setting may be read, not set.
+    if ((!QUERY.test(sql) && !SETTING_READ.test(sql)) || CHANGE_WORD.test(sql)) {
+      throw new TypeError(`get() and all() read; change rows with run() or insert(): ${sql}`);
+    }
     assertOneStatement(sql);
     this.#assertTransaction(connection);
     return this.#prepared(this.#queries, connection, sql, false);
@@ -483,6 +496,11 @@ class Connection implements StateDatabase {
     this.#assertNotReading();
     const connection = this.#open();
     assertOneStatement(sql);
+    // A statement that fails is undone by SQLite unless it says otherwise; `or fail` would
+    // keep part of it, and nothing here would know.
+    if (KEEPS_HALF.test(sql)) {
+      throw new TypeError(`A statement must be undone whole when it fails: ${sql}`);
+    }
     this.#assertTransaction(connection);
     return this.#prepared(this.#changes, connection, sql, true);
   }
