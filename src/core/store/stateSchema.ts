@@ -94,7 +94,8 @@ create table events(
   json text not null
 ) strict;
 
--- FR-8: the text as written, and the same text with each CJK run as two-character tokens.
--- Contentless: the index stores no copy of the text and is rebuilt from the entries' JSON.
-create virtual table entries_fts using fts5(text, grams, content='', contentless_delete=1);
+-- FR-8: each entry's text with every CJK run rewritten as two-character tokens and set apart
+-- from the text around it. Contentless: the index stores no copy of the text and is rebuilt
+-- from the entries' JSON.
+create virtual table entries_fts using fts5(terms, content='', contentless_delete=1);
 `;

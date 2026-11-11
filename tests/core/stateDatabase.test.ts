@@ -184,7 +184,7 @@ test('each table keeps a JSON record, with index columns that may be empty', () 
     );
 
     const insertEntry = 'insert into entries(conversation_id, seq, json) values (?, ?, ?)';
-    const first = database.run(insertEntry, 'c1', 1, '{}').lastInsertRowid;
+    const first = database.insert(insertEntry, 'c1', 1, '{}');
     assert.throws(
       () => database.run(insertEntry, 'c1', 1, '{}'),
       /UNIQUE constraint failed: entries\.conversation_id, entries\.seq/u,
@@ -193,17 +193,17 @@ test('each table keeps a JSON record, with index columns that may be empty', () 
       () => database.run(insertEntry, 'c1', 'two', '{}'),
       /cannot store TEXT value in INTEGER column/u,
     );
-    const second = database.run(insertEntry, 'c1', 2, '{}').lastInsertRowid;
+    const second = database.insert(insertEntry, 'c1', 2, '{}');
     // A deleted entry's row id is never handed out again.
-    database.run('delete from entries where id = ?', second);
-    const third = database.run(insertEntry, 'c1', 2, '{}').lastInsertRowid;
+    assert.equal(database.run('delete from entries where id = ?', second), 1);
+    assert.equal(database.run('delete from entries where id = ?', second), 0);
+    const third = database.insert(insertEntry, 'c1', 2, '{}');
     assert.ok(third > second, `${third} reuses ${second}`);
 
     database.run(
-      'insert into entries_fts(rowid, text, grams) values (?, ?, ?)',
+      'insert into entries_fts(rowid, terms) values (?, ?)',
       first,
       'remember the kettle',
-      '',
     );
     assert.equal(
       database.get(`select rowid from entries_fts where entries_fts match 'kettle'`)?.rowid,
@@ -344,13 +344,15 @@ test('a reader beside the writer sees its commits and accepts only queries', () 
     writing.run('insert into conversations(id, json) values (?, ?)', 'note-1', '{}');
     assert.deepEqual(conversations(reading), ['home', 'note-1']);
 
-    // One snapshot: a commit in between does not change what the reader's queries see.
+    // One snapshot, taken before the work starts: a commit made inside it is not seen,
+    // even when it comes before the first query.
     reading.snapshot(() => {
-      assert.deepEqual(conversations(reading!), ['home', 'note-1']);
       writing.run('insert into conversations(id, json) values (?, ?)', 'note-2', '{}');
       assert.deepEqual(conversations(reading!), ['home', 'note-1']);
+      writing.run('insert into conversations(id, json) values (?, ?)', 'note-3', '{}');
+      assert.deepEqual(conversations(reading!), ['home', 'note-1']);
     });
-    assert.deepEqual(conversations(reading), ['home', 'note-1', 'note-2']);
+    assert.deepEqual(conversations(reading), ['home', 'note-1', 'note-2', 'note-3']);
     assert.equal(writing.get('pragma journal_mode')?.journal_mode, 'wal');
   } finally {
     reading?.close();
@@ -361,11 +363,50 @@ test('a reader beside the writer sees its commits and accepts only queries', () 
   // Beside a stopped bot the reader still reads, and leaves only the database behind.
   const alone = reader(file);
   try {
-    assert.deepEqual(conversations(alone), ['home', 'note-1', 'note-2']);
+    assert.deepEqual(conversations(alone), ['home', 'note-1', 'note-2', 'note-3']);
   } finally {
     alone.close();
   }
   assert.deepEqual(files(directory), ['bot.db']);
+});
+
+test('a change reports its rows even when the index leaves a row id no number can hold', () => {
+  const database = writer(join(freshDirectory(), 'bot.db'));
+  try {
+    // Index rows written in one transaction share a segment. Deleting them one by one
+    // afterwards makes SQLite's last row id one of the index's own, beyond 2^53: with the
+    // driver's default the second delete throws on Node.js 26 and is rounded on Node.js 24.
+    database.transaction(() => {
+      for (let rowid = 1; rowid <= 4; rowid += 1) {
+        database.run(
+          'insert into entries_fts(rowid, terms) values (?, ?)',
+          rowid,
+          `word${rowid} common`,
+        );
+      }
+    });
+    for (let rowid = 1; rowid <= 4; rowid += 1) {
+      assert.equal(database.run('delete from entries_fts where rowid = ?', rowid), 1);
+    }
+    assert.equal(
+      database.get(`select count(*) as n from entries_fts where entries_fts match 'common'`)?.n,
+      0,
+    );
+    // A statement on an ordinary table afterwards is unaffected, and an insert still
+    // reports its own row.
+    assert.equal(database.run('insert into conversations(id, json) values (?, ?)', 'c1', '{}'), 1);
+    assert.equal(database.run(`update conversations set json = '{"a":1}' where id = ?`, 'c1'), 1);
+    assert.equal(database.run('delete from conversations where id = ?', 'nobody'), 0);
+    const entry = database.insert(
+      'insert into entries(conversation_id, seq, json) values (?, ?, ?)',
+      'c1',
+      1,
+      '{}',
+    );
+    assert.equal(database.get('select id from entries where conversation_id = ?', 'c1')?.id, entry);
+  } finally {
+    database.close();
+  }
 });
 
 test('a transaction is all or nothing', () => {

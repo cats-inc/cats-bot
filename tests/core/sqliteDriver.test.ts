@@ -106,7 +106,10 @@ function bodies(database: SqliteDatabase): string[] {
     .map((row) => String(row.body));
 }
 
-/** Two-character windows over each CJK run, the shape SPEC-014 FR-8 indexes beside the text. */
+/**
+ * Two-character windows over each CJK run, set apart from the text around it: the shape
+ * SPEC-014 FR-8 indexes. `unicode61` alone reads a run, and a Latin word touching it, as one token.
+ */
 const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/gu;
 function bigrams(text: string): string {
   return text.replace(CJK_RUN, (run) => {
@@ -116,7 +119,7 @@ function bigrams(text: string): string {
 }
 
 function bigramQuery(text: string): string {
-  return `grams:"${bigrams(text).trim().replace(/\s+/gu, ' ')}"`;
+  return `"${bigrams(text).trim().replace(/\s+/gu, ' ')}"`;
 }
 
 /**
@@ -142,6 +145,27 @@ function observed(): Record<string, unknown> {
     result.rawNulText = String(error);
   } finally {
     memory.close();
+  }
+  const index = new DatabaseSync(':memory:');
+  try {
+    index.exec(
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
+    );
+    const insert = index.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
+    index.exec('begin');
+    for (let rowid = 1; rowid <= 3; rowid += 1) insert.run(rowid, `word${rowid}`);
+    index.exec('commit');
+    const remove = index.prepare('delete from entries_fts where rowid = ?');
+    remove.run(1);
+    try {
+      result.rowIdAfterIndexDelete = String(remove.run(2).lastInsertRowid);
+    } catch (error) {
+      result.rowIdAfterIndexDelete = `throws ${(error as Error).name}`;
+    }
+  } catch (error) {
+    result.rowIdAfterIndexDelete = String(error);
+  } finally {
+    index.close();
   }
   try {
     const directory = freshDirectory();
@@ -296,7 +320,7 @@ test('a record stored as JSON text comes back exactly', () => {
   }
 });
 
-test('contentless FTS5 with a bigram column finds two-character Chinese words', () => {
+test('contentless FTS5 over two-character tokens finds Chinese words and the Latin words beside them', () => {
   const database = new DatabaseSync(':memory:');
   try {
     // The record is the JSON; the index is built from the text inside it.
@@ -304,17 +328,15 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
       'create table entries(id integer primary key, conversation_id text not null, seq integer not null, json text not null, unique(conversation_id, seq)) strict',
     );
     database.exec(
-      `create virtual table entries_fts using fts5(text, grams, content='', contentless_delete=1)`,
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
     );
     const insertEntry = database.prepare(
       'insert into entries(conversation_id, seq, json) values (?, ?, ?)',
     );
-    const insertIndex = database.prepare(
-      'insert into entries_fts(rowid, text, grams) values (?, ?, ?)',
-    );
+    const insertIndex = database.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
     const add = (conversation: string, seq: number, text: string): void => {
       const id = insertEntry.run(conversation, seq, JSON.stringify({ seq, text })).lastInsertRowid;
-      insertIndex.run(id, text, bigrams(text));
+      insertIndex.run(id, bigrams(text));
     };
     const search = (query: string): string[] =>
       database
@@ -328,6 +350,7 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     add('home', 1, '今天下午去公園散步');
     add('home', 2, 'Please remember the kettle');
     add('home', 3, `alpha${NUL}omega 記得買茶葉`);
+    add('home', 4, '用iPhone拍照');
     add('note', 1, '明天早上要去看牙醫，公園改天再去');
     database.exec('commit');
 
@@ -335,9 +358,12 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     assert.deepEqual(search(bigramQuery('公園')).sort(), ['home#1', 'note#1']);
     assert.deepEqual(search(bigramQuery('去公園')), ['home#1']);
     assert.deepEqual(search(bigramQuery('園公')), []);
-    assert.deepEqual(search('text:kettle'), ['home#2']);
-    assert.deepEqual(search('text:KETTLE'), ['home#2']);
-    assert.deepEqual(search('text:omega'), ['home#3']);
+    assert.deepEqual(search('kettle'), ['home#2']);
+    assert.deepEqual(search('KETTLE'), ['home#2']);
+    // Written without spaces, and still a word of its own in the index.
+    assert.deepEqual(search('iphone'), ['home#4']);
+    assert.deepEqual(search(bigramQuery('拍照')), ['home#4']);
+    assert.deepEqual(search('omega'), ['home#3']);
     assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
 
     // Deleting a conversation removes its rows and their index rows in one transaction.
@@ -360,13 +386,46 @@ test('contentless FTS5 with a bigram column finds two-character Chinese words', 
     assert.deepEqual(search(bigramQuery('公園')), []);
     for (const row of database.prepare('select id, json from entries').all()) {
       const { text } = JSON.parse(String(row.json)) as { text: string };
-      insertIndex.run(Number(row.id), text, bigrams(text));
+      insertIndex.run(Number(row.id), bigrams(text));
     }
     database.exec('commit');
     assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
-    assert.deepEqual(search('text:kettle'), ['home#2']);
-    assert.deepEqual(search('text:omega'), ['home#3']);
+    assert.deepEqual(search('kettle'), ['home#2']);
+    assert.deepEqual(search('omega'), ['home#3']);
     assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
+  } finally {
+    database.close();
+  }
+});
+
+test('a statement that reads big integers reports a change after any delete from the index', () => {
+  const database = new DatabaseSync(':memory:');
+  try {
+    database.exec(
+      `create virtual table entries_fts using fts5(terms, content='', contentless_delete=1)`,
+    );
+    const insert = database.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
+    // Rows written in one transaction share a segment of the index.
+    database.exec('begin');
+    for (let rowid = 1; rowid <= 4; rowid += 1) insert.run(rowid, `word${rowid} common`);
+    database.exec('commit');
+    // Deleting them one by one makes SQLite's last row id one of the index's own, beyond
+    // 2^53. With the default setting the driver cannot report it: Node.js 26 throws after
+    // the statement ran, and Node.js 24 returns a rounded number. The adapter therefore
+    // runs every change with big integers on.
+    const remove = database.prepare('delete from entries_fts where rowid = ?');
+    remove.setReadBigInts(true);
+    for (let rowid = 1; rowid <= 4; rowid += 1) {
+      const result = remove.run(rowid);
+      assert.equal(result.changes, 1n);
+      assert.equal(typeof result.lastInsertRowid, 'bigint');
+    }
+    assert.equal(
+      database
+        .prepare(`select count(*) as n from entries_fts where entries_fts match 'common'`)
+        .get()?.n,
+      0,
+    );
   } finally {
     database.close();
   }

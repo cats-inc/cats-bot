@@ -60,11 +60,6 @@ export interface OpenStateDatabaseOptions {
 
 export type StateRow = Record<string, SqliteOutput>;
 
-export interface StateChange {
-  changes: number;
-  lastInsertRowid: number;
-}
-
 /** The runtime that last opened the database for writing (FR-2). */
 export interface StateRuntime {
   node: string;
@@ -79,15 +74,20 @@ export interface StateDatabase {
   /** The first row of a query, or undefined. A reader accepts only `select` and `with`. */
   get(sql: string, ...parameters: SqliteInput[]): StateRow | undefined;
   all(sql: string, ...parameters: SqliteInput[]): StateRow[];
-  /** One statement that changes rows. Refused on a reader. */
-  run(sql: string, ...parameters: SqliteInput[]): StateChange;
+  /** One statement that changes rows; returns how many it changed. Refused on a reader. */
+  run(sql: string, ...parameters: SqliteInput[]): number;
+  /** An insert into an ordinary table; returns the new row's id. Refused on a reader. */
+  insert(sql: string, ...parameters: SqliteInput[]): number;
   /**
    * All of `work` or none of it. `work` is synchronous. A nested call joins the outer
    * transaction, and a failure inside it rolls the whole transaction back even when the
    * outer code catches the error. Refused on a reader.
    */
   transaction<T>(work: () => T): T;
-  /** Runs `work` against one snapshot, so that several queries agree with each other. */
+  /**
+   * Runs `work` against one snapshot, taken before `work` starts, so that several queries
+   * agree with each other whatever is committed meanwhile.
+   */
   snapshot<T>(work: () => T): T;
   meta(key: string): string | undefined;
   setMeta(key: string, value: string): void;
@@ -288,6 +288,7 @@ class Connection implements StateDatabase {
   readonly mode: StateDatabaseMode;
   private connection: SqliteDatabase | null;
   private readonly statements = new Map<string, SqliteStatement>();
+  private readonly changes = new Map<string, SqliteStatement>();
   private depth = 0;
   private doomed = false;
 
@@ -309,10 +310,18 @@ class Connection implements StateDatabase {
     return this.query(sql).all(...parameters);
   }
 
-  run(sql: string, ...parameters: SqliteInput[]): StateChange {
-    this.assertWriter();
-    const { changes, lastInsertRowid } = this.statement(sql).run(...parameters);
-    return { changes: Number(changes), lastInsertRowid: Number(lastInsertRowid) };
+  run(sql: string, ...parameters: SqliteInput[]): number {
+    return Number(this.change(sql).run(...parameters).changes);
+  }
+
+  insert(sql: string, ...parameters: SqliteInput[]): number {
+    const { lastInsertRowid } = this.change(sql).run(...parameters);
+    if (lastInsertRowid > Number.MAX_SAFE_INTEGER) {
+      throw new RangeError(
+        `The row id ${lastInsertRowid} is not that of a row in an ordinary table`,
+      );
+    }
+    return Number(lastInsertRowid);
   }
 
   transaction<T>(work: () => T): T {
@@ -321,7 +330,7 @@ class Connection implements StateDatabase {
   }
 
   snapshot<T>(work: () => T): T {
-    return this.within('begin', work);
+    return this.within('begin', work, true);
   }
 
   meta(key: string): string | undefined {
@@ -342,6 +351,7 @@ class Connection implements StateDatabase {
     if (!connection) return;
     this.connection = null;
     this.statements.clear();
+    this.changes.clear();
     this.depth = 0;
     connection.close();
   }
@@ -384,7 +394,25 @@ class Connection implements StateDatabase {
     return statement;
   }
 
-  private within<T>(begin: string, work: () => T): T {
+  /**
+   * A statement that changes rows reads integers as big integers. After some deletes from
+   * the full-text index, the last row id SQLite reports is one of the index's own and
+   * beyond what a number holds. With the default setting the driver then throws on
+   * Node.js 26 and returns a rounded number on Node.js 24, although the statement ran.
+   */
+  private change(sql: string): SqliteStatement {
+    this.assertWriter();
+    const connection = this.open();
+    let statement = this.changes.get(sql);
+    if (!statement) {
+      statement = connection.prepare(sql);
+      statement.setReadBigInts(true);
+      this.changes.set(sql, statement);
+    }
+    return statement;
+  }
+
+  private within<T>(begin: string, work: () => T, readNow = false): T {
     const connection = this.open();
     if (this.depth > 0) {
       this.depth += 1;
@@ -398,6 +426,15 @@ class Connection implements StateDatabase {
       }
     }
     connection.exec(begin);
+    if (readNow) {
+      // A plain `begin` takes its snapshot at the first read, so read once before `work`.
+      try {
+        connection.exec('select 1 from sqlite_master limit 1');
+      } catch (error) {
+        rollback(connection);
+        throw error;
+      }
+    }
     this.depth = 1;
     this.doomed = false;
     let result: T;

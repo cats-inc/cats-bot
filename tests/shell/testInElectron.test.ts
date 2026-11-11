@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 interface TapSummary {
@@ -118,15 +118,26 @@ test('only a clean run with tests in every file counts as a pass', () => {
 
 test('CI and the package script run the store tests inside Electron on every platform', () => {
   const root = new URL('../../', import.meta.url);
-  const script = (
-    JSON.parse(readFileSync(new URL('package.json', root), 'utf8')) as {
-      scripts: Record<string, string>;
-    }
-  ).scripts['test:electron'];
-  assert.equal(
-    script,
-    'node scripts/test-in-electron.mjs tests/core/sqliteDriver.test.ts tests/core/stateDatabase.test.ts',
-  );
+  const script =
+    (
+      JSON.parse(readFileSync(new URL('package.json', root), 'utf8')) as {
+        scripts: Record<string, string>;
+      }
+    ).scripts['test:electron'] ?? '';
+  const [node, runner, ...listed] = script.split(' ');
+  assert.deepEqual([node, runner], ['node', 'scripts/test-in-electron.mjs']);
+  // Every test that loads the driver, the adapter or a store module built on them runs there.
+  const core = new URL('tests/core/', root);
+  const storeTests = readdirSync(core)
+    .filter((name) => name.endsWith('.test.ts'))
+    .filter((name) =>
+      /\/src\/core\/store\/(?:sqliteDriver|state[A-Za-z]+|searchText)\.ts'/u.test(
+        readFileSync(new URL(name, core), 'utf8'),
+      ),
+    )
+    .map((name) => `tests/core/${name}`);
+  assert.ok(storeTests.length >= 2, storeTests.join(' '));
+  assert.deepEqual([...listed].sort(), storeTests.sort());
   const workflow = readFileSync(new URL('.github/workflows/ci.yaml', root), 'utf8');
   const step =
     /- name: Test the store inside the shipped Electron\n(?<body>(?: {8}.*\n)+)/u.exec(workflow)

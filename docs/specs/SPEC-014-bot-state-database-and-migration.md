@@ -91,14 +91,14 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Search
 
-8. FR-8: Every entry's text is indexed twice in a contentless FTS5 table
-   (`contentless_delete`), keyed by the entry's row id:
-   - as written, with `unicode61`;
-   - with each Han, Kana and Hangul run rewritten as overlapping 2-character tokens.
+8. FR-8: Every entry's text is indexed in a contentless FTS5 table (`contentless_delete`),
+   keyed by the entry's row id. Before it is indexed, each Han, Kana and Hangul run is
+   rewritten as overlapping 2-character tokens and set apart from the text around it. The
+   rest is indexed as written, with `unicode61`.
 
-   Queries build the bigram form the same way and rank with BM25. A query made only of
-   single CJK characters uses `LIKE`. Results carry kind and origin, so callers can drop
-   tool output and other bots' messages (SPEC-015 trust levels).
+   Queries are rewritten the same way and rank with BM25. A single CJK character is
+   looked for as a substring of the text instead. Results carry kind and origin, so
+   callers can drop tool output and other bots' messages (SPEC-015 trust levels).
 9. FR-9: The index is maintained in the same transaction as the entry. Rebuilding it from
    the entries' JSON records is a supported maintenance command.
 
@@ -211,9 +211,12 @@ already carries them; they wait for the owner:
   - Why: the Node.js 24.14 driver in Electron 41 returns a TEXT value only up to its first
     NUL character, which JSON escapes; and the journal's other lines had no home.
 - [ ] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
-  external-content one. Proposed: yes.
-  - Why: an external-content index would read the text back from a column, which is the
-    raw TEXT the driver can cut short.
+  external-content one, and one indexed form of the text in place of two. Proposed: yes.
+  - Why contentless: an external-content index would read the text back from a column,
+    which is the raw TEXT the driver can cut short.
+  - Why one form: `unicode61` reads a CJK run and a Latin word written against it as one
+    token, so indexed as written `用iPhone拍照` cannot be found by `iPhone`. The rewritten
+    form finds everything the as-written form does, and that word as well.
 
 ## References
 

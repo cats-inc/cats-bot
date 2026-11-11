@@ -103,7 +103,16 @@ security review. Embeddings come only if the evaluation asks for them.
       returns a value only up to its first NUL, and a lone surrogate is stored as U+FFFD.
       The index is rebuilt from the JSON, not from an indexed column.
     - **The index** is a contentless FTS5 table with `contentless_delete`, keyed by the
-      entry's row id. SPEC-014 FR-8 says external-content.
+      entry's row id, over one rewritten form of the text. `unicode61` reads a CJK run
+      and a Latin word written against it as one token, so indexing the text as written
+      too adds nothing. SPEC-014 FR-8 said external-content and two forms.
+    - **Changes read big integers.** After some deletes from the index, the last row id
+      SQLite reports is one of the index's own, beyond 2^53. With the driver's default a
+      statement that ran then throws on Node.js 26 and returns a rounded number on
+      Node.js 24.14. The adapter runs every change with big integers on and returns the
+      number of rows changed; an insert's row id is a separate call.
+    - **A snapshot starts at its first read**, not at `begin`, so the adapter reads once
+      before it runs the work.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.

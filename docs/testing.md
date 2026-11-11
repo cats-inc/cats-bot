@@ -50,8 +50,10 @@ last step, not the first.
   - WAL, STRICT tables, upsert and rollback;
   - a record stored as JSON text coming back exactly. Text holding NUL characters or lone
     surrogates survives because JSON escapes them, not because the driver keeps them;
-  - contentless FTS5 with a bigram column that finds two-character Chinese words, delete
-    by row id, and a rebuild from the JSON records;
+  - contentless FTS5 over two-character tokens that finds Chinese words and the Latin
+    words written against them, delete by row id, and a rebuild from the JSON records;
+  - a change reported after a delete from the index, which needs the statement to read
+    big integers;
   - `VACUUM INTO` not replacing an existing database, and `quick_check`;
   - a reader beside a running writer whose open transaction is already in the
     write-ahead log, in the same process and from another process;
@@ -60,7 +62,8 @@ last step, not the first.
   - committed rows surviving a killed writer, and its open transaction not.
 
 The `sqlite-driver runtime` line it prints also reports, without asserting, what the
-runtime does with a raw NUL in a TEXT value and which files a read-only open leaves.
+runtime does with a raw NUL in a TEXT value, with the row id after a delete from the index,
+and which files a read-only open leaves.
 
 The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
 FR-2).
@@ -74,8 +77,10 @@ FR-2).
     row id never being reused;
   - a database from a newer version, and a file that is not a bot state database, refused
     and left as they were;
-  - a reader that never creates a file, sees the writer's commits, reads one snapshot, and
-    accepts only queries;
+  - a reader that never creates a file, sees the writer's commits, reads one snapshot
+    taken before its work starts, and accepts only queries;
+  - a change reporting its rows, and an insert its row id, whatever row id the index
+    left behind;
   - transactions that are all or nothing, including a nested failure the outer code
     catches and work that returns a promise;
   - closing twice, a closed database saying so, and Windows refusing a rename while a
@@ -100,7 +105,8 @@ npm run test:electron
 test runner. It fails when Electron is not installed, when a test fails or is cancelled,
 and when a file defined no test, which the runner would otherwise count as a pass.
 `tests/shell/testInElectron.test.ts` covers how it reads the report and that CI runs it
-on every platform. A new store test file is added to the `test:electron` script.
+on every platform. It also requires the `test:electron` script to name every test file
+under `tests/core/` that loads the driver, the adapter or a store module built on them.
 
 ### Core tests on the fake runtime
 
