@@ -112,17 +112,18 @@ test('only the driver module reaches node:sqlite (SPEC-014 FR-2)', () => {
   assert.deepEqual(offenders, []);
 });
 
-test('only the store reaches the state database adapter (SPEC-014 FR-2)', () => {
-  // The adapter runs whatever statement it is given, so a module outside the store never gets
-  // one: the rest of the bot uses what the store modules build on it.
+test('only the store reaches the SQLite driver and the state database adapter (SPEC-014 FR-2)', () => {
+  // The driver gives a connection and the adapter runs whatever statement it is given, so a
+  // module outside the store gets neither: the rest of the bot uses what the store modules
+  // build on them.
   const storeRoot = join(srcRoot, 'core', 'store');
-  const adapter = join(storeRoot, 'stateDatabase.ts');
-  assert.ok(existsSync(adapter));
+  const inner = [join(storeRoot, 'sqliteDriver.ts'), join(storeRoot, 'stateDatabase.ts')];
+  for (const file of inner) assert.ok(existsSync(file), file);
   const offenders: string[] = [];
   for (const file of listTypeScriptFiles(srcRoot)) {
     if (!relative(storeRoot, file).startsWith('..')) continue;
     for (const specifier of importSpecifiers(file)) {
-      if (isRelative(specifier) && resolve(dirname(file), specifier) === adapter) {
+      if (isRelative(specifier) && inner.includes(resolve(dirname(file), specifier))) {
         offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
       }
     }

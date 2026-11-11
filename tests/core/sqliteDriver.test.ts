@@ -107,19 +107,22 @@ function bodies(database: SqliteDatabase): string[] {
 }
 
 /**
- * Two-character windows over each CJK run, set apart from the text around it: the shape
- * SPEC-014 FR-8 indexes. `unicode61` alone reads a run, and a Latin word touching it, as one token.
+ * The shape SPEC-014 FR-8 indexes: each CJK run as its two-character windows followed by its
+ * last character, set apart from the text around it. `unicode61` alone reads a run, and a
+ * Latin word touching it, as one token.
  */
 const CJK_RUN = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af]+/gu;
-function bigrams(text: string): string {
-  return text.replace(CJK_RUN, (run) => {
-    if (run.length < 2) return ` ${run} `;
-    return ` ${Array.from({ length: run.length - 1 }, (_, index) => run.slice(index, index + 2)).join(' ')} `;
-  });
+function windows(run: string): string[] {
+  return Array.from({ length: run.length - 1 }, (_, index) => run.slice(index, index + 2));
 }
 
-function bigramQuery(text: string): string {
-  return `"${bigrams(text).trim().replace(/\s+/gu, ' ')}"`;
+function indexForm(text: string): string {
+  return text.replace(CJK_RUN, (run) => ` ${[...windows(run), run.slice(-1)].join(' ')} `);
+}
+
+/** One CJK word: its windows as a phrase, or a single character as a prefix of any token. */
+function cjkQuery(word: string): string {
+  return word.length < 2 ? `"${word}"*` : `"${windows(word).join(' ')}"`;
 }
 
 /**
@@ -320,7 +323,7 @@ test('a record stored as JSON text comes back exactly', () => {
   }
 });
 
-test('contentless FTS5 over two-character tokens finds Chinese words and the Latin words beside them', () => {
+test('contentless FTS5 over the indexed form finds Chinese words of any length and the Latin words beside them', () => {
   const database = new DatabaseSync(':memory:');
   try {
     // The record is the JSON; the index is built from the text inside it.
@@ -336,7 +339,7 @@ test('contentless FTS5 over two-character tokens finds Chinese words and the Lat
     const insertIndex = database.prepare('insert into entries_fts(rowid, terms) values (?, ?)');
     const add = (conversation: string, seq: number, text: string): void => {
       const id = insertEntry.run(conversation, seq, JSON.stringify({ seq, text })).lastInsertRowid;
-      insertIndex.run(id, bigrams(text));
+      insertIndex.run(id, indexForm(text));
     };
     const search = (query: string): string[] =>
       database
@@ -352,47 +355,70 @@ test('contentless FTS5 over two-character tokens finds Chinese words and the Lat
     add('home', 3, `alpha${NUL}omega 記得買茶葉`);
     add('home', 4, '用iPhone拍照');
     add('note', 1, '明天早上要去看牙醫，公園改天再去');
+    add('note', 2, '謝謝你，你好嗎');
     database.exec('commit');
+    const indexRows = (): number =>
+      Number(database.prepare('select count(*) as n from entries_fts_docsize').get()?.n);
+    assert.equal(indexRows(), 6);
 
-    assert.deepEqual(search(bigramQuery('牙醫')), ['note#1']);
-    assert.deepEqual(search(bigramQuery('公園')).sort(), ['home#1', 'note#1']);
-    assert.deepEqual(search(bigramQuery('去公園')), ['home#1']);
-    assert.deepEqual(search(bigramQuery('園公')), []);
+    assert.deepEqual(search(cjkQuery('牙醫')), ['note#1']);
+    assert.deepEqual(search(cjkQuery('公園')).sort(), ['home#1', 'note#1']);
+    assert.deepEqual(search(cjkQuery('去公園')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('園公')), []);
     assert.deepEqual(search('kettle'), ['home#2']);
     assert.deepEqual(search('KETTLE'), ['home#2']);
     // Written without spaces, and still a word of its own in the index.
     assert.deepEqual(search('iphone'), ['home#4']);
-    assert.deepEqual(search(bigramQuery('拍照')), ['home#4']);
+    assert.deepEqual(search(cjkQuery('拍照')), ['home#4']);
     assert.deepEqual(search('omega'), ['home#3']);
-    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
+    assert.deepEqual(search(cjkQuery('茶葉')), ['home#3']);
+    // One character reaches every place it occurs: as the first of a window, or as the
+    // last character of a run.
+    assert.deepEqual(search(cjkQuery('園')).sort(), ['home#1', 'note#1']);
+    assert.deepEqual(search(cjkQuery('步')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('醫')), ['note#1']);
+    assert.deepEqual(search(cjkQuery('貓')), []);
+    // The last character of a run also ends it: a phrase does not match across punctuation.
+    assert.deepEqual(search(cjkQuery('謝謝你')), ['note#2']);
+    assert.deepEqual(search(cjkQuery('謝你好')), []);
+    assert.deepEqual(search(cjkQuery('牙醫公園')), []);
 
-    // Deleting a conversation removes its rows and their index rows in one transaction.
+    // Deleting a conversation removes its rows and their index rows in one transaction. Both
+    // statements read big integers, for the reason the next test pins.
     database.exec('begin');
     const deleteIndex = database.prepare('delete from entries_fts where rowid = ?');
+    deleteIndex.setReadBigInts(true);
     for (const row of database
       .prepare('select id from entries where conversation_id = ?')
       .all('note')) {
       deleteIndex.run(Number(row.id));
     }
-    database.prepare('delete from entries where conversation_id = ?').run('note');
+    const deleteEntries = database.prepare('delete from entries where conversation_id = ?');
+    deleteEntries.setReadBigInts(true);
+    assert.equal(deleteEntries.run('note').changes, 2n);
     database.exec('commit');
-    assert.deepEqual(search(bigramQuery('牙醫')), []);
-    assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('牙醫')), []);
+    assert.deepEqual(search(cjkQuery('公園')), ['home#1']);
+    // Counted in the index itself: a search joins the entries and would hide a row left behind.
+    assert.equal(indexRows(), 4);
 
     // The index can be thrown away and rebuilt from the records, including the words after
     // a NUL character, which a rebuild from a raw TEXT column loses on Node.js 24.14.
+    // `delete-all` empties the index without reading it, so it also works on a damaged one.
     database.exec('begin');
-    database.exec('delete from entries_fts');
-    assert.deepEqual(search(bigramQuery('公園')), []);
+    database.exec(`insert into entries_fts(entries_fts) values('delete-all')`);
+    assert.equal(indexRows(), 0);
+    assert.deepEqual(search(cjkQuery('公園')), []);
     for (const row of database.prepare('select id, json from entries').all()) {
       const { text } = JSON.parse(String(row.json)) as { text: string };
-      insertIndex.run(Number(row.id), bigrams(text));
+      insertIndex.run(Number(row.id), indexForm(text));
     }
     database.exec('commit');
-    assert.deepEqual(search(bigramQuery('公園')), ['home#1']);
+    assert.deepEqual(search(cjkQuery('公園')), ['home#1']);
     assert.deepEqual(search('kettle'), ['home#2']);
     assert.deepEqual(search('omega'), ['home#3']);
-    assert.deepEqual(search(bigramQuery('茶葉')), ['home#3']);
+    assert.deepEqual(search(cjkQuery('茶葉')), ['home#3']);
+    assert.equal(indexRows(), 4);
   } finally {
     database.close();
   }

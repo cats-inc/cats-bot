@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1, FR-3, FR-8 and FR-9 proposed the same day wait for the owner (Open Questions). In progress: the driver, adapter and schema exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, proposed the same day, wait for the owner: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter and schema exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -38,8 +38,8 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Database
 
-1. FR-1: The database is `<bot root>/bot.db`, opened in WAL mode with `synchronous=NORMAL`
-   and a busy timeout.
+1. FR-1 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: The database is `<bot root>/bot.db`, opened in WAL mode with
+   `synchronous=NORMAL` and a busy timeout.
    - Only the core holding the instance lock opens it for writing, and only it changes rows.
      A host that takes the lock for one write while the bot is stopped (the CLI's
      `schedule add` and `schedule cancel`) is that writer for as long as it holds the lock.
@@ -52,28 +52,28 @@ verified migration moves existing bots over without losing or rewriting their hi
    - Every host closes its connection before a bot root is renamed or removed; Windows
      refuses both while one is open.
    - The restore command (FR-12) runs only while the bot is stopped.
-2. FR-2: All access goes through one adapter module, built on a driver module that is the
-   only one to name `node:sqlite`, so `better-sqlite3` can replace it if acceptance fails.
-   No module outside the store reaches the adapter. The adapter records the Node.js,
-   Electron and SQLite versions of the last writer in `meta`.
-3. FR-3: Tables (conceptual; exact columns are a PLAN-014 decision). Each table keeps its
-   record as JSON text; the other columns are derived from it for lookups and may be empty.
+2. FR-2 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: All access goes through one adapter module, built on a driver module
+   that is the only one to name `node:sqlite`, so `better-sqlite3` can replace it if
+   acceptance fails. No module outside the store reaches either of them. The adapter
+   records the Node.js, Electron and SQLite versions of the last writer in `meta`.
+3. FR-3 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Tables (conceptual; exact columns are a PLAN-014 decision). Each table
+   keeps its record as JSON text; the other columns are derived from it for lookups and
+   may be empty.
    - `meta`: schema version, migration record, driver versions;
    - `conversations`: the conversation record and its attachment (today's
      `conversations/<id>.json`);
    - `entries`: transcript entries keyed by (conversation id, seq), with kind, origin, time,
      text and the existing optional fields. An entry's row id is never reused;
-   - `responses`: one row per reply presentation, keyed by presentation id, with revision
-     and phase;
-   - `work_items`: the current state of each work item, and `work_events`: its transitions;
-   - `schedules`: the current state of each schedule;
-   - `events`: what the journal recorded besides work items and schedules (presence,
-     runtime, heartbeat, configuration and Boss Cat tool calls). Appended; the core does
-     not read it back;
+   - `responses`: one row per reply presentation, keyed by conversation and presentation
+     id, with revision and phase;
+   - `work_items` and `schedules`: the current state of each work item and schedule;
+   - `journal`: every line of today's journal, in the order it was written: each state a
+     work item or a schedule went through, and presence, runtime, heartbeat,
+     configuration and Boss Cat tool calls. Appended only;
    - `entries_fts`: the full-text index of FR-8.
-4. FR-4: Every table carries the schema version through `meta`. An unknown newer version
-   stops the core with a clear error and changes no row or table. A file that is not a bot
-   state database is refused the same way.
+4. FR-4 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every table carries the schema version through `meta`. An unknown newer
+   version stops the core with a clear error and changes no row, table or setting. A file
+   that is not a bot state database is refused the same way.
 
 #### Writes
 
@@ -83,24 +83,25 @@ verified migration moves existing bots over without losing or rewriting their hi
      rows in one transaction, after Runtime's close and delete.
 6. FR-6: A presentation checkpoint upserts its one `responses` row. Throttling stays as
    today (100 ms), and the cost no longer grows with the number of past replies.
-7. FR-7: A work-item transition updates `work_items` and appends `work_events` in one
-   transaction. Startup reads `work_items` and `schedules` directly.
-   - For items completed more than 30 days ago, all but the last transition row may be
-     pruned.
+7. FR-7 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: A work-item transition updates `work_items` and appends its line to
+   `journal` in one transaction, and a schedule change does the same with `schedules`.
+   Startup reads `work_items` and `schedules` directly.
+   - For items completed more than 30 days ago, all but the last of an item's journal
+     lines may be pruned.
    - The `work_items` row itself is never deleted, except with its conversation (FR-5).
 
 #### Search
 
-8. FR-8: Every entry's text is indexed in a contentless FTS5 table (`contentless_delete`),
-   keyed by the entry's row id. Before it is indexed, each Han, Kana and Hangul run is
+8. FR-8 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
+   (`contentless_delete`), keyed by the entry's row id. Before it is indexed, each Han, Kana and Hangul run is
    rewritten as overlapping 2-character tokens and set apart from the text around it. The
    rest is indexed as written, with `unicode61`.
 
    Queries are rewritten the same way and rank with BM25. A single CJK character is
    looked for as a substring of the text instead. Results carry kind and origin, so
    callers can drop tool output and other bots' messages (SPEC-015 trust levels).
-9. FR-9: The index is maintained in the same transaction as the entry. Rebuilding it from
-   the entries' JSON records is a supported maintenance command.
+9. FR-9 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: The index is maintained in the same transaction as the entry.
+   Rebuilding it from the entries' JSON records is a supported maintenance command.
 
 #### Reads
 
@@ -110,11 +111,12 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Migration
 
-11. FR-11: On the first start of the new version, the lock holder migrates a version-1 data
-    root:
+11. FR-11 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: On the first start of the new version, the lock holder migrates a
+    version-1 data root:
     - It copies the version-1 files into `migration-backup/<timestamp>/`.
     - It imports conversations, transcripts (keeping `seq`), presentations and the journal.
-      The journal is imported as current rows plus transitions.
+      The journal is imported line by line, in its order, and the last state of each work
+      item and schedule becomes its current row.
     - It verifies the import:
       - every source entry, presentation, work item and schedule is present and equal;
       - counts match per conversation;
@@ -183,7 +185,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Dependencies
 
-- `node:sqlite` in Electron 41 (Node 24.14, experimental), and FTS5 with
+- *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)* `node:sqlite` in Electron 41 (Node 24.14, experimental), and FTS5 with
   `contentless_delete`, which needs SQLite 3.43 or later (Electron 41 has 3.51.2).
 - [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md),
   [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
@@ -197,8 +199,11 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
 
-Proposed on 2026-11-11 after the driver acceptance of PLAN-014 task 1.1. The text above
-already carries them; they wait for the owner:
+Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found. The text above
+already carries every one of them, marked at its requirement. Nothing here is decided
+until the owner accepts it.
+
+Changes of design:
 
 - [ ] FR-1: a core opened without the lock reads through a reader connection. Proposed: yes.
   - Why: such a core reads the files directly today, and the driver's own read-only open
@@ -206,17 +211,38 @@ already carries them; they wait for the owner:
   - The other option routes those reads through the running core's channel. It still
     needs the reader connection while the bot is stopped.
   - ADR-021 decision 1 gets the same clarification.
-- [ ] FR-3: JSON text as the record in every table, and an `events` table for the journal's
-  other lines. Proposed: yes.
-  - Why: the Node.js 24.14 driver in Electron 41 returns a TEXT value only up to its first
-    NUL character, which JSON escapes; and the journal's other lines had no home.
+- [ ] FR-3, with FR-7 and FR-11: JSON text as the record in every table, and one `journal`
+  table holding every line of today's journal in order, in place of a `work_events`
+  table for work-item transitions alone. Proposed: yes.
+  - Why JSON: the Node.js 24.14 driver in Electron 41 returns a TEXT value only up to its
+    first NUL character, which JSON escapes; and a record keeps fields this version does
+    not know.
+  - Why one journal: the journal's other lines had no home; a schedule's history would
+    have been dropped; and lines split over several tables could only be put back in
+    order by their time, to the millisecond.
 - [ ] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
   external-content one, and one indexed form of the text in place of two. Proposed: yes.
-  - Why contentless: an external-content index would read the text back from a column,
-    which is the raw TEXT the driver can cut short.
+  - Why contentless: the indexed form of the text is produced in JavaScript and kept
+    nowhere else. An external-content index needs a column that holds what it indexes,
+    which would store every entry's text a second time, rewritten.
   - Why one form: `unicode61` reads a CJK run and a Latin word written against it as one
     token, so indexed as written `用iPhone拍照` cannot be found by `iPhone`. The rewritten
     form finds everything the as-written form does, and that word as well.
+
+Changes of wording that follow from the code, with no other decision in them:
+
+- [ ] FR-1 also names the writer the CLI is while it holds the lock for `schedule add` and
+  `schedule cancel`, as today, and has every host close its connection before a bot root
+  is moved.
+- [ ] FR-2: a driver module and an adapter module instead of one module, neither reachable
+  from outside the store; `meta` records the Node.js, Electron and SQLite versions.
+- [ ] FR-3: an entry's row id is never reused, and a presentation is keyed by its
+  conversation as well as its id.
+- [ ] FR-4: "changes nothing" became "changes no row, table or setting". Opening a database
+  that still has a write-ahead log makes SQLite fold that log into the file, even when
+  the open is then refused, so the file's bytes can change while its content does not.
+  A file that is not a bot state database is refused the same way.
+- [ ] Dependencies: no trigram tokenizer is used; `contentless_delete` needs SQLite 3.43.
 
 ## References
 

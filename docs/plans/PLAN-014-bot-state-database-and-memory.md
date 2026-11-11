@@ -64,7 +64,7 @@ security review. Embeddings come only if the evaluation asks for them.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 
-- [ ] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
+- [x] 1.1 Storage adapter over `node:sqlite`, schema, and `meta` with versions; driver
       acceptance on Windows, macOS and Linux under the shipped Electron.
   - [x] Driver module and acceptance test: `src/core/store/sqliteDriver.ts` and
         `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
@@ -108,11 +108,22 @@ security review. Embeddings come only if the evaluation asks for them.
       too adds nothing. SPEC-014 FR-8 said external-content and two forms.
     - **Changes read big integers.** After some deletes from the index, the last row id
       SQLite reports is one of the index's own, beyond 2^53. With the driver's default a
-      statement that ran then throws on Node.js 26 and returns a rounded number on
-      Node.js 24.14. The adapter runs every change with big integers on and returns the
+      statement that ran then throws on Node.js 26 and returns a number outside the
+      safe range on Node.js 24. The adapter runs every change with big integers on and returns the
       number of rows changed; an insert's row id is a separate call.
     - **A snapshot starts at its first read**, not at `begin`, so the adapter reads once
-      before it runs the work.
+      before it runs the work. A snapshot is for reading: a failure in one that the
+      caller catches does not fail a transaction around it, as a nested transaction's
+      does.
+    - **The journal is one table**, every line in the order it was written, with the
+      work item or schedule it is about. Work items and schedules keep a current row
+      each, in the order they first appeared, which is the order today's replay gives.
+      A column is in the schema only when a query or an accepted requirement uses it.
+    - **SQLite can end a transaction by itself**, after a full disk or an `or rollback`
+      conflict. Statements run after that would be committed one by one, so inside a
+      transaction the adapter refuses them and reports the transaction as lost.
+    - **The driver compiles only the first statement of a text** and says nothing about
+      the rest, so the adapter takes one statement at a time.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.
@@ -120,9 +131,12 @@ security review. Embeddings come only if the evaluation asks for them.
       Every host closes its connection before a root is moved, and a host that only reads
       holds one no longer than a read takes.
     - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects,
-      so the adapter builds the URI for such a path by hand. SQLite does not support WAL
-      on a network file system, so whether a bot root may live on a real share is a
-      question for the cutover; a share of the local machine works.
+      so the adapter builds the URI for such a path by hand, and a stopped bot's database
+      opens through one. That is all it shows. SQLite does not support WAL on a network
+      file system, and on one machine a reader that opened the database through
+      `\\localhost\C$` did not see what a writer on the local path committed afterwards.
+      Open for the cutover: refuse a bot root on a UNC path, or give it another journal
+      mode. Version-1 files work there today.
     - The test prints what each runtime does with a raw NUL and a read-only open in its
       `sqlite-driver runtime` line, in the CI log of every platform.
 - [ ] 1.2 Move writers and readers:
@@ -243,9 +257,11 @@ stall them.
 ## Files to Create/Modify
 
 - **Create**:
-  - `src/core/store/database.ts` (adapter), `schema.ts`, `migrate.ts`, `search.ts`;
+  - in `src/core/store/`: `sqliteDriver.ts`, `stateDatabase.ts` (adapter),
+    `stateSchema.ts`, `stateStore.ts`, `searchText.ts`, and the migration;
   - `src/core/memory/*` (records, recall, consolidation, rendering);
-  - tests under `tests/core/store/` and `tests/core/memory/`;
+  - tests under `tests/core/` (the store's run inside Electron too) and
+    `tests/core/memory/`;
   - fixtures of a version-1 data root.
 - **Modify**:
   - `src/core/conversations/store.ts`, `src/core/store/journal.ts`,

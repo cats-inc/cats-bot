@@ -73,23 +73,28 @@ FR-2).
 - **Location**: `tests/core/stateDatabase.test.ts`
 - **Scope**: `src/core/store/stateDatabase.ts` and `stateSchema.ts` (SPEC-014 FR-1 to FR-4):
   - a writer creating the schema on a new file and recording what wrote it;
-  - each table keeping a JSON record with index columns that may be empty, and an entry's
-    row id never being reused;
+  - each table keeping a JSON record with index columns that may be empty, an entry's
+    row id never being reused, and the journal keeping the order it was written in;
   - a database from a newer version, and a file that is not a bot state database, refused
-    and left as they were;
+    with their bytes and journal mode as they were;
+  - a schema that could not be finished leaving nothing behind, and a reader reading no
+    database a writer has not finished;
   - a reader that never creates a file, sees the writer's commits, reads one snapshot
     taken before its work starts, and accepts only queries;
   - a change reporting its rows, and an insert its row id, whatever row id the index
     left behind;
   - transactions that are all or nothing, including a nested failure the outer code
-    catches and work that returns a promise;
+    catches, work that returns a promise, and a transaction SQLite ended by itself; and a
+    failed read in a snapshot leaving the transaction around it to go on;
+  - one statement at a time, transactions opened only through the adapter, and an insert
+    that must add exactly one row;
   - closing twice, a closed database saying so, and Windows refusing a rename while a
     connection is open;
   - the URI for an existing database, including UNC roots, and on Windows a read through
     a share of the local drive.
 
-The architecture boundary test keeps the adapter out of every module outside
-`src/core/store/`.
+The architecture boundary test keeps the driver and the adapter out of every module
+outside `src/core/store/`.
 
 ### Bot state store and search text
 
@@ -128,8 +133,10 @@ npm run test:electron
 ```
 
 `scripts/test-in-electron.mjs` starts the Electron dependency in its Node.js mode with the
-test runner. It fails when Electron is not installed, when a test fails or is cancelled,
-and when a file defined no test, which the runner would otherwise count as a pass.
+test runner. It first asks that binary for its Electron version and requires the
+dependency's. It fails when Electron is not installed, when an argument is not an
+existing file, when a test fails or is cancelled, and when a file defined no test, which
+the runner would otherwise count as a pass.
 `tests/shell/testInElectron.test.ts` covers how it reads the report and that CI runs it
 on every platform. It also requires the `test:electron` script to name every test file
 under `tests/core/` that loads the driver, the adapter or a store module built on them.
@@ -726,6 +733,18 @@ YAML checks and unsigned candidate packages do not.
 `tests/shell/updates.test.ts` covers native-operation timeout fencing, completion
 identity, explicit consent, Settings main-frame ownership, drain order, multiple
 Bots, crashed/PID-reused installation leases and uncertain handoff recovery.
+Its download regressions advance a fake clock beyond the request deadline while
+bytes keep arriving, require successful checksum verification and installation
+preparation, and require unchanged/late progress to time out without breaking
+the pending native-operation fence. Before the inactivity-deadline fix, the
+advancing-download case failed with `The update request timed out. Please try again.`
+On 2026-11-11, installed macOS Bot 0.5.8 reproduced that error while fetching
+0.5.9: the partial ZIP stopped near 80% while a native error alert was open.
+After the owner dismissed it, the background download completed with the official
+SHA-256, but host state stayed `error` and no new ShipIt installation had started.
+Local validation passed the updater suite, typecheck and build. These fixtures do
+not install an update or prove an installed-app upgrade; the installed app was
+left unchanged during diagnosis.
 `tests/shell/releasePipeline.test.ts` covers immutable inputs, version ordering,
 draft ownership, signing configuration, source receipts and corrupted/missing
 updater assets. Fixtures never run an installer. Real renderer acceptance must use
