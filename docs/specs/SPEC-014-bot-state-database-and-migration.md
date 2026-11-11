@@ -70,7 +70,9 @@ verified migration moves existing bots over without losing or rewriting their hi
    - `entries`: transcript entries keyed by (conversation id, seq), with kind, origin, time,
      text and the existing optional fields. An entry's row id is never reused;
    - `responses`: one row per reply presentation, keyed by conversation and presentation
-     id, with revision and phase;
+     id, with revision and phase, and *(amended 2026-11-12, chosen under the owner's
+     instruction of that day; see Open Questions)* the highest `seq` it covers, by which a
+     page of the note finds the presentations reaching into it (FR-10);
    - `work_items` and `schedules`: the current state of each work item and schedule;
    - `deleted_work` *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)*: for each work item deleted with its
      conversation, its id, source reference and delivery id, and nothing it said;
@@ -144,6 +146,11 @@ verified migration moves existing bots over without losing or rewriting their hi
       start. Only the note of that conversation may send it, as `conversationTranscript`.
       A page never parts a presentation from the entries it covers, so the pages read back
       to the start are the whole conversation as `conversationTranscript` shows it.
+      `beforeSeq` is to be an `olderBeforeSeq` a page returned; another value may cut a
+      presentation from entries it covers, which that page then shows as they were written.
+    - A page reads its own entries and presentations, and the rest of the conversation only
+      through indexes, so that its time does not grow with the conversation: the newest
+      page of a conversation of 600,000 entries and 60,000 presentations takes 4 to 8 ms.
 
 #### Migration
 
@@ -324,8 +331,17 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
   file that is not one, aside whole, with its log, and says when there is nothing to
   restore. It looks for the version-1 files to put back before it moves anything.
 - [x] FR-10: a page holds 100 entries unless the note asks for another number, and at most
-  500. One larger than 1 MB is read again with half as many entries, down to one entry,
-  which is returned whatever its size, as `conversationTranscript` keeps its newest entry.
+  500. One larger than 1 MB keeps its newest part within 1 MB, cut where no presentation it
+  shows is parted from the entries it covers; a part that cannot be cut is returned
+  whatever its size, as `conversationTranscript` keeps its newest entry. It is read once.
+- [x] FR-3, FR-4 and FR-10: the state database's schema version is 2, which adds
+  `responses.covers` (the highest `seq` a presentation covers) and three indexes: the
+  presentations by `seq`, by how far they cover, and the bot entries by work item. A writer
+  brings a version-1 database to version 2 when it opens it, in one transaction, filling
+  `covers` from each presentation's JSON; a reader reads version 1 as it is. No release
+  wrote version 1, but builds of `main` since the cutover did, and one of them would write
+  presentations without `covers` into a database it took for its own: with the version
+  raised, it refuses the database instead, as FR-4 has it refuse a newer one.
 - [x] FR-10: a page reaches back to the start of any reply presentation that covers its first
   entry. A presentation that never bound its final entry is left out when a bot entry of
   its work item comes after it, as the whole transcript's projection leaves it out; for a

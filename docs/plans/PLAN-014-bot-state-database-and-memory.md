@@ -418,18 +418,54 @@ security review. Embeddings come only if the evaluation asks for them.
     `{ entries, olderBeforeSeq }`, from `BotCore` through the host commands
     (`src/core/host-api/commands.ts`), the note-only IPC list (`src/shell/electron/ipc.ts`)
     and the bridge (`src/renderer/bridge.ts`). `ConversationStore.presentationPage` makes a
-    page; the store's `workItemsWithBotEntryFrom` answers what a page needs to know of a
-    presentation after it. `tests/core/transcriptPaging.test.ts` reads pages of every size
-    back to the start of a conversation with every shape of reply and checks they are the
-    whole conversation as `conversationTranscript` shows it.
+    page from the store's indexed reads: its window of entries, the presentations reaching
+    into it (`presentationReach`, from `responses.covers`), its own presentations, and
+    whether a bot entry of a work item comes after it (`hasBotEntryOf`).
+    `tests/core/transcriptPaging.test.ts` reads pages of every size and budget back to the
+    start of a conversation with every shape of reply and checks they are the whole
+    conversation as `conversationTranscript` shows it.
+  - Schema version 2 (`src/core/store/stateSchema.ts`) adds `responses.covers` and three
+    indexes; a writer upgrades a version-1 database at open, in one transaction
+    (`tests/core/stateSchemaUpgrade.test.ts`, also a failed upgrade leaving version 1).
+    Raised rather than added to version 1, chosen 2026-11-12: builds of `main` since the
+    cutover wrote version 1, and one of them would write presentations without `covers`
+    into an upgraded database; with the version raised it refuses it.
+  - The independent review of the first version measured, on Node.js 26 with 600,000
+    entries and 60,000 presentations (320 MB of their JSON), the newest page at 15.9 to
+    17.3 s, its halving for a presentation over 1 MB at 113.6 s, and a page holding a
+    cancelled reply at 14.4 s: every page read and checked every presentation of the
+    conversation, and the lookup of a later bot entry scanned to its end. After the
+    rework, on the same build of that database (one run each, warm after the first): the
+    newest page 7.8 ms, 4.0 ms again; a middle page 8.7 ms; a page holding a cancelled
+    reply 6.6 ms; near the start 1.6 ms; 20 pages from the newest 220 ms; a presentation of
+    1.31 MB as the newest page 31 to 39 ms, read once. With 60,000 entries: 6.3 ms, 2.0 ms
+    again, 3.5 ms, 3.3 ms, 1.5 ms and 51 ms. The review's differential fuzz (300 seeds,
+    pages of 1 to 25 entries, and with budgets) finds the pages equal to
+    `conversationTranscript`, with damaged rows too; its sanity mode still finds the
+    difference it plants.
+  - Known, left as they are:
+    - A page that reaches back over a presentation the projection leaves out (one saved
+      before its final entry, with that entry after it) reads that presentation's entries
+      to cut them to the budget: 357 ms for a turn of 9,000 lines of 2 KB, and each page
+      over that turn reads them again (2.8 s for its 20 pages). The page itself stays
+      within 1 MB, unless one entry is larger.
+    - Pages read back to the start while a reply streams may lack a presentation that the
+      whole view shows as it was a moment later; the note merges the live events and is not
+      affected.
+    - The note takes the highest `seq` it holds for the end of what it read without a gap.
+    - The note checks whether its pages fill it when they change, not when it is resized.
+    - A record whose JSON lost its `seq` is shown as the whole transcript shows it; only
+      the page boundary is taken from its row (`entriesWindow`'s `firstSeq`).
+    - `conversationTranscript` itself still projects the whole conversation: 19 s for
+      60,000 entries in the review's database. The note no longer reads it.
   - The note (`src/renderer/note/NoteApp.tsx`) reads pages through `readNewestPages` and
     merges them with `mergeTranscriptEntries` (`src/renderer/note/transcript.ts`);
     `tests/renderer/transcriptPaging.test.ts` pages back while a reply streams.
   - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's
-    Open Questions: 100 entries a page, at most 500, 1 MB a page; a page reaches back to
-    the start of a presentation that covers its first entry; the note pages back within
-    120 pixels of the top or while its pages do not fill it, and reads at most 20 newest
-    pages after a turn.
+    Open Questions: 100 entries a page, at most 500, 1 MB a page, cut to its newest part
+    within it; a page reaches back to the start of a presentation that covers its first
+    entry; the note pages back within 120 pixels of the top or while its pages do not fill
+    it, and reads at most 20 newest pages after a turn; schema version 2.
   - The note no longer reads `conversationTranscript`; the command stays for other hosts.
 - [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
       report and `cats-bot restore`.

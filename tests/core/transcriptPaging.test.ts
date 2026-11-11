@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ConversationStore, TRANSCRIPT_PAGE_MAX } from '../../src/core/conversations/store.ts';
+import {
+  ConversationStore,
+  newestWithinBudget,
+  TRANSCRIPT_PAGE_MAX,
+} from '../../src/core/conversations/store.ts';
 import { runCoreCommand, type CoreCommandTarget } from '../../src/core/host-api/commands.ts';
 import { botPathsFor, stateDatabaseFile } from '../../src/core/store/paths.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
@@ -228,7 +232,7 @@ test('the core reads a page of the note: newest, before a seq, bounded, and whil
   }
 });
 
-test('a page larger than its budget is read again with fewer entries, down to one', async () => {
+test('the core keeps a page within its budget, and reads every page back to the start', async () => {
   const home = makeTempHome('cats-bot-paging-budget-');
   const { core } = openTestBot({ botsHome: home.botsHome, id: 'paging-budget' });
   try {
@@ -286,23 +290,166 @@ test('the host command checks the page it is asked for', async () => {
   await assert.rejects(runCoreCommand(target, 'conversationTranscriptPage', []), /conversationId/u);
 });
 
-test('the store finds which work items have a bot entry from a seq on, past one it cannot read', (t) => {
+test('the store answers a page by index: its window, the reach, its presentations and later bot entries', (t) => {
   const { conversations, id, db, file } = conversationOfEveryShape(t);
-  const a3 = conversations.transcript(id).find((entry) => entry.text === 'a3')!.seq;
-  const found = (from: number, ids: string[]) =>
-    [...db.workItemsWithBotEntryFrom(id, from, ids)].sort();
-  assert.deepEqual(found(1, ['w1', 'w2', 'w3', 'w4', 'w5']), ['w1', 'w3', 'w4']);
-  assert.deepEqual(found(a3, ['w1', 'w3']), ['w3']);
-  assert.deepEqual(found(a3 + 1, ['w3']), []);
-  assert.deepEqual(found(1, []), []);
-  assert.deepEqual([...db.workItemsWithBotEntryFrom('nobody', 1, ['w1'])], []);
-  // A record that is no longer JSON is passed over, not an error.
+  const seqOf = (text: string) =>
+    conversations.transcript(id).find((entry) => entry.text === text)!.seq;
+  const a3 = seqOf('a3');
+  assert.equal(db.hasBotEntryOf(id, 'w3', 1), true);
+  assert.equal(db.hasBotEntryOf(id, 'w3', a3), true);
+  assert.equal(db.hasBotEntryOf(id, 'w3', a3 + 1), false);
+  assert.equal(db.hasBotEntryOf(id, 'w2', 1), false, 'a cancelled reply wrote no bot entry');
+  assert.equal(db.hasBotEntryOf('nobody', 'w1', 1), false);
+  // w1's presentation starts at 2 and covers up to its final entry.
+  const a1 = seqOf('a1');
+  assert.equal(db.presentationReach(id, a1), 2);
+  assert.equal(db.presentationReach(id, 2), null);
+  assert.equal(db.presentationReach(id, seqOf('q2')), null);
+  assert.deepEqual(
+    db.responsesBetween(id, 2, seqOf('q3')).map((raw) => (raw as TranscriptEntry).workItemId),
+    ['w1', 'w2'],
+  );
+  assert.deepEqual(
+    db.responsesBetween(id, seqOf('q5')).map((raw) => (raw as TranscriptEntry).workItemId),
+    ['w5'],
+  );
+  assert.deepEqual(
+    db.entriesBetween(id, 1, 3).map((entry) => entry.seq),
+    [1, 2],
+  );
+  assert.equal(db.hasEntryBefore(id, 1), false);
+  assert.equal(db.hasEntryBefore(id, 2), true);
+
   const { DatabaseSync } = sqliteDriver();
   const raw = new DatabaseSync(file);
+  const q4 = seqOf('q4');
   try {
+    // A bot entry that is no longer JSON is written, and passed over, not an error.
     raw.exec(`update entries set json = 'not json' where seq = ${a3}`);
+    // S5: a record that lost its own seq still has its row's.
+    raw.exec(
+      `update entries set json = '{"kind":"owner","origin":"owner","text":"no seq"}' where seq = ${q4}`,
+    );
   } finally {
     raw.close();
   }
-  assert.deepEqual(found(1, ['w1', 'w3']), ['w1']);
+  assert.equal(db.hasBotEntryOf(id, 'w3', 1), false);
+  const window = db.entriesWindow(id, { limit: 3, beforeSeq: seqOf('q5') });
+  assert.equal(window.firstSeq, q4);
+  assert.deepEqual(
+    window.entries.map((entry) => entry.text),
+    ['no seq', 'note', 'a4'],
+  );
+  const page = conversations.presentationPage(id, { limit: 3, beforeSeq: seqOf('q5') });
+  assert.equal(page.olderBeforeSeq, q4);
+});
+
+test('a page over its budget keeps its newest part, cut where no shown presentation is parted', (t) => {
+  const { conversations, id } = conversationOfEveryShape(t);
+  for (const running of ['w5', undefined]) {
+    const whole = conversations.presentationTranscript(id, running);
+    const largest = Math.max(...whole.map((entry) => Buffer.byteLength(JSON.stringify(entry))));
+    for (const budget of [1, 200, 400, 700, 1200, 2500, largest * 3]) {
+      for (const limit of [1, 3, 7, 24]) {
+        const read = readAllPages((beforeSeq) =>
+          conversations.presentationPage(id, { limit, beforeSeq }, running, budget),
+        );
+        assert.deepEqual(read.entries, whole, `budget ${budget}, limit ${limit}`);
+      }
+    }
+  }
+  // Each page within its budget, unless one part that cannot be cut is larger.
+  const page = conversations.presentationPage(id, { limit: 24 }, 'w5', 700);
+  assert.ok(Buffer.byteLength(JSON.stringify(page.entries)) <= 700 || page.entries.length <= 2);
+  assert.notEqual(page.olderBeforeSeq, null);
+});
+
+test('the cut keeps every entry of a seq and the whole span of a shown presentation', () => {
+  const sized = (
+    seq: number,
+    bytes: number,
+    extra: Partial<TranscriptEntry> = {},
+  ): TranscriptEntry => ({
+    seq,
+    at: AT,
+    kind: 'owner',
+    origin: 'owner',
+    text: 'x'.repeat(bytes),
+    ...extra,
+  });
+  const shown = reply('w', 3, [3, 4], 'shown', { presentationTerminalSeq: 6 });
+  const page = [sized(1, 100), sized(2, 100), shown, sized(5, 100), sized(7, 100), sized(7, 100)];
+  const size = (entries: readonly TranscriptEntry[]) =>
+    entries.reduce((sum, entry) => sum + Buffer.byteLength(JSON.stringify(entry)) + 1, 1);
+  assert.deepEqual(newestWithinBudget(page, size(page)), { entries: page, cut: null });
+  // The two entries of seq 7 stay together; seq 5 lies in the span of the reply at 3.
+  assert.deepEqual(newestWithinBudget(page, size(page.slice(4))), {
+    entries: page.slice(4),
+    cut: 7,
+  });
+  assert.deepEqual(newestWithinBudget(page, size(page.slice(3))), {
+    entries: page.slice(4),
+    cut: 7,
+  });
+  assert.deepEqual(newestWithinBudget(page, size(page.slice(2))), {
+    entries: page.slice(2),
+    cut: 3,
+  });
+  // Over the budget even at its newest part: that part, whatever its size.
+  assert.deepEqual(newestWithinBudget(page, 1), { entries: page.slice(4), cut: 7 });
+  const one = [shown, sized(5, 100)];
+  assert.deepEqual(newestWithinBudget(one, 1), { entries: one, cut: null });
+});
+
+test('a presentation larger than the budget is read once and is the whole page', (t) => {
+  const { conversations, id, db } = conversationOfEveryShape(t);
+  const tools = Array.from(
+    { length: 300 },
+    (_, index) =>
+      conversations.append(id, {
+        kind: 'tool_use',
+        text: 'y'.repeat(4000),
+        origin: 'owner',
+        workItemId: 'w-long',
+      }).seq,
+  );
+  const final = conversations.append(id, {
+    kind: 'bot',
+    text: 'done',
+    origin: 'owner',
+    workItemId: 'w-long',
+  }).seq;
+  conversations.savePresentation(
+    id,
+    reply('w-long', tools[0]!, tools, 'done', {
+      presentationTerminalSeq: final,
+      presentation: {
+        ...reply('w-long', 0, [], 'done').presentation!,
+        blocks: tools.map((seq, index) => ({
+          id: `w-long:${index}`,
+          index,
+          kind: 'tool' as const,
+          status: 'complete' as const,
+          text: 'y'.repeat(4000),
+          title: null,
+          toolName: 'Read',
+          toolId: String(seq),
+        })),
+      },
+    }),
+  );
+  let windows = 0;
+  const window = db.entriesWindow.bind(db);
+  (db as { entriesWindow: typeof db.entriesWindow }).entriesWindow = (...args) => {
+    windows += 1;
+    return window(...args);
+  };
+  const page = conversations.presentationPage(id, { limit: 100 }, undefined, 1024 * 1024);
+  assert.equal(windows, 1);
+  assert.deepEqual(
+    page.entries.map((entry) => (entry.presentation ? `reply ${entry.workItemId}` : entry.kind)),
+    ['reply w-long'],
+  );
+  assert.ok(Buffer.byteLength(JSON.stringify(page.entries)) > 1024 * 1024);
+  assert.equal(page.olderBeforeSeq, tools[0]);
 });

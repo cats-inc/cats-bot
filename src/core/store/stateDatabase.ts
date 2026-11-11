@@ -9,7 +9,13 @@ import {
   type SqliteOutput,
   type SqliteStatement,
 } from './sqliteDriver.ts';
-import { STATE_APPLICATION_ID, STATE_SCHEMA_SQL, STATE_SCHEMA_VERSION } from './stateSchema.ts';
+import {
+  responseCovers,
+  STATE_APPLICATION_ID,
+  STATE_SCHEMA_SQL,
+  STATE_SCHEMA_UPGRADES,
+  STATE_SCHEMA_VERSION,
+} from './stateSchema.ts';
 
 /**
  * SPEC-014 FR-1, FR-2 and FR-4: the storage adapter over a bot's `bot.db`.
@@ -271,6 +277,7 @@ function openWriter(
     }
     connection.exec('pragma synchronous=normal');
     if (found === 'empty') createSchema(connection, options.now ?? (() => new Date()));
+    else if (found < STATE_SCHEMA_VERSION) upgradeSchema(connection, options.file);
     const database = new Connection(options.file, 'writer', connection);
     recordRuntime(database, sqlite);
     return database;
@@ -319,7 +326,7 @@ function exists(file: string): boolean {
  * Reads what the file is. All of it is read in one transaction, so that a writer creating
  * the schema at that moment is seen either before or after, never half-way.
  */
-function inspect(connection: SqliteDatabase, file: string): 'empty' | 'current' {
+function inspect(connection: SqliteDatabase, file: string): 'empty' | number {
   const notOurs = (why: string): StateDatabaseError =>
     new StateDatabaseError(
       'not_a_bot_database',
@@ -355,9 +362,55 @@ function inspect(connection: SqliteDatabase, file: string): 'empty' | 'current' 
         `${file} was written by a newer Cats Bot (schema ${version}; this version reads up to ${STATE_SCHEMA_VERSION}). No row or table was changed.`,
       );
     }
-    return 'current';
+    return version;
   } finally {
     rollback(connection);
+  }
+}
+
+/**
+ * A database of an earlier version brought to this one, step by step, in one transaction:
+ * all of it or none, so that a power cut leaves the earlier version for the next writer.
+ * A reader reads an earlier version as it is.
+ */
+function upgradeSchema(connection: SqliteDatabase, file: string): void {
+  connection.exec('begin immediate');
+  try {
+    const stored = Number(
+      connection.prepare(`select value from meta where key = 'schema_version'`).get()?.value,
+    );
+    for (let version = stored; version < STATE_SCHEMA_VERSION; version += 1) {
+      const step = STATE_SCHEMA_UPGRADES[version];
+      if (step === undefined) {
+        throw new Error(
+          `${file} is at schema version ${version}, which this version cannot upgrade`,
+        );
+      }
+      connection.exec(step);
+      // Version 2's covers, from each presentation's JSON; one that is not JSON covers nothing.
+      // Read first and written after, so that no row changes under the query reading it.
+      if (version === 1) {
+        const covers: Array<[number | bigint, number | null]> = [];
+        for (const row of connection.prepare('select rowid, json from responses').iterate()) {
+          let record: unknown;
+          try {
+            record = JSON.parse(String(row.json));
+          } catch {
+            record = null;
+          }
+          covers.push([row.rowid as number | bigint, responseCovers(record)]);
+        }
+        const set = connection.prepare('update responses set covers = ? where rowid = ?');
+        for (const [rowid, value] of covers) set.run(value, rowid);
+      }
+    }
+    connection
+      .prepare(`update meta set value = ? where key = 'schema_version'`)
+      .run(String(STATE_SCHEMA_VERSION));
+    connection.exec('commit');
+  } catch (error) {
+    rollback(connection);
+    throw error;
   }
 }
 

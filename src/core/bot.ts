@@ -1573,19 +1573,17 @@ export class BotCore implements BotHostApi {
 
   /**
    * SPEC-014 FR-10: one page of the conversation as the note shows it, the newest or the one
-   * before a `seq`. A page larger than the transcript budget is read again with half as many
-   * entries, down to one, which is returned whatever its size, as `conversationTranscript`
-   * keeps its newest entry.
+   * before `beforeSeq`, which is to be an `olderBeforeSeq` a page returned: another value
+   * may cut a reply presentation from entries it covers. A page larger than its budget keeps
+   * its newest part within it, down to one entry, which is returned whatever its size, as
+   * `conversationTranscript` keeps its newest entry.
    */
   conversationTranscriptPage(conversationId: string, request: TranscriptPageRequest = {}): TranscriptPage {
     const id = this.resolveConversationId(conversationId);
     const running = [...this.workItems.values()].find(item => item.conversationId === id && item.state === 'running');
-    let limit = Math.min(Math.max(Math.trunc(request.limit ?? TRANSCRIPT_PAGE_DEFAULT), 1), TRANSCRIPT_PAGE_MAX);
-    for (;;) {
-      const page = this.conversations.presentationPage(id, { limit, beforeSeq: request.beforeSeq }, running?.id);
-      if (limit === 1 || Buffer.byteLength(JSON.stringify(page.entries)) <= TRANSCRIPT_PAGE_BUDGET_BYTES) return page;
-      limit = Math.ceil(limit / 2);
-    }
+    const limit = Math.min(Math.max(Math.trunc(request.limit ?? TRANSCRIPT_PAGE_DEFAULT), 1), TRANSCRIPT_PAGE_MAX);
+    return this.conversations.presentationPage(id, { limit, beforeSeq: request.beforeSeq }, running?.id,
+      TRANSCRIPT_PAGE_BUDGET_BYTES);
   }
 
   /** The runtime's own transcript of the conversation's session (SPEC-001 A1, FR-28 evidence). */

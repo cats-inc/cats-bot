@@ -189,7 +189,11 @@ export interface TranscriptEntry {
 export interface TranscriptPageRequest {
   /** How many entries at most; 100 when not given, and never more than 500. */
   limit?: number;
-  /** Only entries before this `seq`; without it, the newest ones. */
+  /**
+   * Only entries before this `seq`; without it, the newest ones. It is to be an
+   * `olderBeforeSeq` a page returned: another value may cut a reply presentation from the
+   * entries it covers, and the page then shows them as they were written.
+   */
   beforeSeq?: number;
 }
 

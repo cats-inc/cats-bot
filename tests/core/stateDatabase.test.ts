@@ -254,7 +254,10 @@ test('a database from a newer version is refused and left as it was', () => {
   throwsCode(() => reader(file), 'newer_schema');
   assert.throws(
     () => writer(file),
-    /written by a newer Cats Bot \(schema 2; this version reads up to 1\)/u,
+    new RegExp(
+      `written by a newer Cats Bot \\(schema ${STATE_SCHEMA_VERSION + 1}; this version reads up to ${STATE_SCHEMA_VERSION}\\)`,
+      'u',
+    ),
   );
 
   assert.equal(digest(file), before);
