@@ -276,6 +276,14 @@ does not establish browser/desktop helper availability or successful invocation.
   take only types from the core. The renderer never sees the runtime's URL
   or key.
 
+  Utility windows additionally use `pageWindowState.ts`: independent placement
+  keys in the Hub or bot's `window-state.json`, with normal bounds, zoom state
+  and work-area clamping. Hub Settings' Data tab delegates to `hub/dataReset.ts`.
+  Reset drains cores, records consent, then purges before startup on relaunch;
+  `core/store/dataResetGuard.ts` fences headless/direct writers while consent is
+  pending. Runtime profiles are retained separately unless explicitly selected.
+  See [ADR-023](decisions/023-persist-utility-windows-and-reset-bot-data-offline.md).
+
 ### `src/core/transports/telegram.ts` and `src/core/secrets.ts`
 
 - **Purpose**: the optional Telegram binding (FR-19, FR-26) and where its

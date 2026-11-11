@@ -11,6 +11,7 @@ import { NotesTab } from './NotesTab.tsx';
 import { AppTab, GeneralTab, LifeTab, TelegramTab } from './OtherTabs.tsx';
 import { brandState } from './settingsLogic.ts';
 import { ToastContext } from './toast.ts';
+import { DataTab } from './DataTab.tsx';
 
 /**
  * The settings window (SPEC-002 FR-4): one per bot, opened from the tray, the
@@ -24,7 +25,7 @@ import { ToastContext } from './toast.ts';
 const api = window.catsBot;
 // A bot's settings reach only that bot; Cats Bot Settings holds the app and the bots (D17, D20).
 const BOT_TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
-const HUB_TABS = ['general', 'bots', 'clis'] as const;
+const HUB_TABS = ['general', 'bots', 'clis', 'data'] as const;
 type Tab = (typeof BOT_TABS)[number] | (typeof HUB_TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
   bot: 'Cat bot',
@@ -35,6 +36,7 @@ const TAB_LABELS: Record<Tab, string> = {
   general: 'General',
   bots: 'Cat bots',
   clis: 'Agent CLIs',
+  data: 'Data',
 };
 
 function isTabOf(tabs: readonly Tab[], value: string | null): value is Tab {
@@ -136,6 +138,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
           {tab === 'app' && <AppTab />}
           {tab === 'general' && <GeneralTab />}
           {tab === 'bots' && <BotsTab />}
+          {tab === 'data' && <DataTab />}
           {scope === 'hub' && clisOpened && <div className="clis-host" hidden={tab !== 'clis'}><AgentClisTab /></div>}
         </main>
       </div>

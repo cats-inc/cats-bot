@@ -118,6 +118,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     },
   },
   shell: {
+    resetData(request) {
+      return ipcRenderer.invoke('shell:resetData', request);
+    },
     updateState() {
       return ipcRenderer.invoke('shell:updateState');
     },

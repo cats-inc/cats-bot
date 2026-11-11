@@ -60,6 +60,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [020](./020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md) | Send the Owner to the macOS System Settings Pane a Permission Needs | Accepted | 2026-11-11 |
 | [021](./021-keep-each-bots-state-in-a-sqlite-database.md) | Keep Each Bot's State in a SQLite Database | Accepted | 2026-11-11 |
 | [022](./022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) | Give Each Bot Layered Memory It Consolidates While Asleep | Accepted | 2026-11-11 |
+| [023](./023-persist-utility-windows-and-reset-bot-data-offline.md) | Persist Utility Windows and Reset Bot Data Offline | Accepted | 2026-11-11 |
 
 <!-- Add new ADRs above this line -->
 

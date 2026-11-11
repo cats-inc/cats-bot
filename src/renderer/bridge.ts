@@ -221,6 +221,8 @@ export interface CatsBotBridge {
   };
   /** Settings-window only; the shell answers null to other windows. */
   shell: {
+    /** Hub Settings main frame only; stops the bots, then resets on restart. */
+    resetData(request: import('../shared/dataReset.ts').BotDataResetRequest): Promise<null>;
     updateState(): Promise<BotUpdateState>;
     updateAction(action: BotUpdateAction): Promise<BotUpdateState>;
     onUpdate(listener: (state: BotUpdateState) => void): Unsubscribe;

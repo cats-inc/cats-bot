@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import type { RemoteBotCore } from '../../core/host-api/remote.ts';
 import { readBotProfile } from '../../core/profile/initialize.ts';
 import type { BotHostEvent } from '../../core/types.ts';
@@ -72,7 +73,8 @@ export class BotPresenter {
       log: host.log,
       slot,
     });
-    this.settings = new SettingsWindow(pages);
+    this.settings = new SettingsWindow({ ...pages,
+      placement: { file: join(root, 'window-state.json'), key: 'settings', log: message => host.log(message, 'error') } });
     this.floating = new FloatingBot({
       ...pages,
       log: host.log,

@@ -93,6 +93,8 @@ import { relaunchForLinuxWindowing } from './linuxWindowing.ts';
 import { createLinuxRelaunch } from './linuxRelaunch.ts';
 import { createHostLogger, observeDisplays, observeHostApp, observeHostProcess, type HostLogger } from './hostDiagnostics.ts';
 import { diagnosticError } from '../../shared/diagnosticLog.ts';
+import { completePendingBotDataReset, prepareBotDataReset, validateBotDataReset } from './hub/dataReset.ts';
+import { createDataResetHandler, dataResetRelaunchArgs } from './dataResetHandler.ts';
 
 /**
  * PLAN-001 Phase 3 (ADR-001 §2, §8) and PLAN-009 Phases 2 and 3 (SPEC-008):
@@ -178,7 +180,7 @@ async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(1));
   // A launch may name the bot whose notes to open. SPEC-008 FR-27: refuse an
   // invalid id before it reaches any path.
-  const requested = args.id ?? readBotIdFromEnv();
+  let requested = args.id ?? readBotIdFromEnv();
   if (requested !== undefined && !isValidBotId(requested)) {
     dialog.showErrorBox('Cats Bot', new InvalidBotIdError(requested).message);
     app.exit(2);
@@ -240,6 +242,26 @@ async function main(): Promise<void> {
     return;
   }
   app.on('quit', () => hubLock.release());
+
+  const protectedResetRoots = [app.getAppPath(), app.getPath('userData')];
+  try {
+    const completedReset = completePendingBotDataReset(home, { protectedRoots: protectedResetRoots, beforeErase: () => {
+      // Hub preferences include the OS login item. Do this before erasure, so
+      // a failed OS operation retains the journal and can be retried.
+      if (readHubState(home)?.openAtLogin) {
+        if (process.platform === 'linux' && app.isPackaged) setLinuxAutostart(linuxAutostartPath(process.env, homedir()), false, process.execPath);
+        else if (process.platform === 'win32' || process.platform === 'darwin') app.setLoginItemSettings({ openAtLogin: false, args: [] });
+      }
+    } });
+    if (completedReset) {
+      requested = undefined;
+      delete args.provider;
+    }
+  } catch (error) {
+    dialog.showErrorBox('Cats Bot', `Data reset could not finish. Its pending request was kept. Close any cat bots running in another program, then reopen Cats Bot to retry.\n\n${errorMessage(error)}`);
+    app.quit();
+    return;
+  }
 
   const appPath = app.getAppPath();
   const assetsDir = join(appPath, 'assets');
@@ -383,6 +405,7 @@ async function main(): Promise<void> {
       preloadPath,
       rendererDir,
       iconPath,
+      placement: { file: join(home, 'window-state.json'), key: 'setup', log },
       create: async (input) => {
         const id = requested ?? deriveBotId(input.name);
         firstRunStartAtLogin = input.startAtLogin !== false;
@@ -476,12 +499,14 @@ async function main(): Promise<void> {
   }
 
   let quitting = false;
+  let resetting = false;
   // SPEC-008 FR-23: a development shell's executable would not start this app, so Linux offers it installed only.
   const linuxAutostart = process.platform === 'linux' && app.isPackaged ? linuxAutostartPath(process.env, homedir()) : null;
   const openAtLoginAvailable = process.platform === 'win32' || process.platform === 'darwin' || linuxAutostart !== null;
   const pages = { preloadPath, rendererDir, iconPath };
   // FR-5 and D20: Cats Bot Settings, with its General and Bots tabs, also reachable when no bot runs.
-  const hubSettings = new SettingsWindow(pages, { scope: 'hub' });
+  const hubSettings = new SettingsWindow({ ...pages,
+    placement: { file: join(home, 'window-state.json'), key: 'hub-settings', log } }, { scope: 'hub' });
   let tray: BotTray | null = null;
 
   const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: BossCatLimits } => {
@@ -854,6 +879,7 @@ async function main(): Promise<void> {
     status: hubStatus,
     // SPEC-009 FR-2: the owner assigns or clears the role from the CLI too.
     setBossCat: async (body) => {
+      if (quitting) throw new HubControlRefusal('Cats Bot is stopping.');
       const bot = body.bot;
       if (bot !== null && (typeof bot !== 'string' || !isValidBotId(bot))) throw new HubControlRefusal('Name a bot by its id, or clear the role.');
       try {
@@ -1066,7 +1092,7 @@ async function main(): Promise<void> {
   const fromCreate = (event: Electron.IpcMainInvokeEvent) =>
     createWindow !== null && !createWindow.isDestroyed() && event.sender.id === createWindow.webContents.id;
   const ownedMainFrame = (event: Electron.IpcMainInvokeEvent) =>
-    event.senderFrame === event.sender.mainFrame;
+    !resetting && event.senderFrame === event.sender.mainFrame;
   ipcMain.handle('ui:language', (event) => {
     if (!ownedMainFrame(event) || (!senderOf(event) && !fromHubSettings(event) && !fromCreate(event))) throw new Error('Unknown window');
     return languageState();
@@ -1218,7 +1244,8 @@ async function main(): Promise<void> {
       createWindow.focus();
       return;
     }
-    const window = createPageWindow(pages, { ...SETUP_WINDOW_SIZE, title: 'New cat bot' });
+    const window = createPageWindow({ ...pages,
+      placement: { file: join(home, 'window-state.json'), key: 'new-bot', log } }, { ...SETUP_WINDOW_SIZE, title: 'New cat bot' });
     createWindow = window;
     const checks = new AbortController();
     createChecks = checks;
@@ -1351,6 +1378,38 @@ async function main(): Promise<void> {
   });
 
   const isSettingsWindow = (id: number) => hubSettings.owns(id);
+  const resetData = createDataResetHandler<Electron.IpcMainInvokeEvent>({
+    owns: event => ownedMainFrame(event) && fromHubSettings(event),
+    busy: () => quitting || providerSetup.busy || creating || finishing || createWindow !== null
+      || ['checking', 'downloading', 'installing'].includes(updates.snapshot().phase),
+    drain: async () => {
+      // Validate storage before interrupting any bot. The actual purge rechecks
+      // under every instance lock in the fresh process.
+      validateBotDataReset(home, protectedResetRoots);
+      resetting = true;
+      quitting = true;
+      for (const controller of pendingConfirmations.keys()) controller.abort();
+      await manager.whenIdle();
+      for (const presenter of presented()) presenter.remember();
+      const processes = await Promise.all(presented().map(async presenter =>
+        [presenter.hosted.pid, (await presenter.core.status()).runtime.pid] as const));
+      const stopped = await stopAll();
+      if (stopped.some(result => result.status === 'rejected')
+        || processes.some(([corePid, runtimePid]) => processIsAlive(corePid) || (runtimePid && processIsAlive(runtimePid)))) {
+        throw new Error('A Bot Runtime has not stopped; data reset was cancelled.');
+      }
+    },
+    prepare: request => prepareBotDataReset(home, request, protectedResetRoots),
+    restart: () => {
+      try { relaunchHost(dataResetRelaunchArgs(process.argv.slice(1))); }
+      catch (error) {
+        log(`data reset relaunch failed: ${diagnosticError(error)}`, 'error');
+        dialog.showErrorBox('Cats Bot', t('The data reset request was saved. Reopen Cats Bot to finish resetting data.'));
+      } finally { closeAll(); }
+    },
+    recover: () => { resetting = false; quitting = false; void refreshTray(); },
+  });
+  ipcMain.handle('shell:resetData', (event, request: unknown) => resetData(event, request));
   ipcMain.handle('shell:updateState', (event) => {
     if (!isUpdateSender(event, isSettingsWindow)) throw new Error('Updates are available only from Settings.');
     return updates.snapshot();

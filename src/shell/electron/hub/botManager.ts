@@ -48,6 +48,9 @@ export class BotManager {
     return this.current;
   }
 
+  /** A reset drains changes already accepted before it closes ingress. */
+  whenIdle(): Promise<unknown> { return this.busy; }
+
   /** Bots that count toward the cap: registered and not archived. */
   activeCount(): number {
     return this.current.bots.filter((bot) => bot.archivedAt === null).length;

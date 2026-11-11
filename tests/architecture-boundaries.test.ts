@@ -198,9 +198,12 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const voice = target === join(srcRoot, 'shared', 'voice.ts');
         // ADR-020: the System Settings pane names a note or Settings may ask the shell to open.
         const systemSettings = target === join(srcRoot, 'shared', 'systemSettings.ts');
+        // The reset confirmation and request shape are shared with the host; no platform imports.
+        const dataReset = target === join(srcRoot, 'shared', 'dataReset.ts');
         if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
-          && !attachments && !screenshot && !voice && !systemSettings && (!typeOnly || !allowed.includes(target)))
+          && !attachments && !screenshot && !voice && !systemSettings && !dataReset && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
+        if (dataReset) assert.deepEqual(importSpecifiers(target), []);
         if (providerTools) {
           assert.deepEqual(importSpecifiers(target), ['../core/types.ts']);
           assert.match(readFileSync(target, 'utf8'), /^import type /u, 'provider tool metadata imports only the erased policy type');

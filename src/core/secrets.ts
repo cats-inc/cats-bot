@@ -1,7 +1,8 @@
 import { chmodSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 
 import { readJsonFile, writeFileAtomic } from './store/atomicFile.ts';
+import { assertBotDataResetNotPending } from './store/dataResetGuard.ts';
 
 /**
  * SPEC-001 NFR security / Open Question on token storage: secrets such as the
@@ -117,6 +118,7 @@ export class FileSecretStore implements SecretStore {
   }
 
   private write(file: SecretsFile): void {
+    assertBotDataResetNotPending(dirname(this.path));
     writeFileAtomic(this.path, `${JSON.stringify(file, null, 2)}\n`);
     try {
       chmodSync(this.path, 0o600);

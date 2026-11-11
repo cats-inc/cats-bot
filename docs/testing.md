@@ -58,9 +58,11 @@ last step, not the first.
   home sleeping in rest hours (the good night, a message at night, dozing off
   again, waking at the wake time, a start at night, the heartbeat off) and the
   morning greeting, and `assist` reviewing notes into the direct message.
-  `openTestBot` puts the wall clock in the bot's awake hours unless a test
-  passes `awake: false`, and tests on the wall clock set the rhythm with
-  `awakeNow()`, so the suite passes at any hour; run it with `TZ` set to a
+  `openTestBot` puts the injected clock (or the wall clock when none is supplied)
+  in the bot's awake hours unless a test passes `awake: false`. Wake-greeting
+  tests start at a fixed local noon, so their wake time belongs to the same local
+  day even when CI runs just after midnight. Other wall-clock tests set the rhythm
+  with `awakeNow()`; run the suites with `TZ` set to a
   night, just-after-bedtime and wake-window local time after changing the rhythm.
 
 ### Integration tests
@@ -293,6 +295,52 @@ released explicitly, without sleeps or real profile access.
   `tests/core/desktopControlCore.test.ts` runs `cats-bot desktop` against a
   running core with a fake helper. `tests/core/desktopControl.test.ts` covers
   the phase B guard fixtures (PLAN-006 P5).
+
+### Utility window placement and data reset
+
+`tests/shell/pageWindowState.test.ts` exercises the real page factory and Settings
+window against the controllable Electron double: independent saved positions,
+normal bounds through maximize/fullscreen, destroy-time flush, removed-monitor
+clamping, corrupt-file preservation and a close during page load.
+`tests/shell/dataReset.test.ts` checks default Runtime retention for active,
+archived and trashed bots, optional erasure of current/previously retained
+Runtime, interrupted purge retry, lock refusals, storage/junction protection,
+OS-preference failure, sender/confirmation/busy gating and startup arguments.
+It also removes the reset's lock during a purge and verifies core/init/lock
+entry points remain fenced, then checks CLI Telegram and stale secret/handoff
+writers cannot recreate an already purged bot directory.
+
+After building, run:
+
+```bash
+node scripts/testing/page-window-reset-acceptance.mjs
+```
+
+This launches three real Electron processes with disposable Bot/Electron storage.
+The first saves five independent utility placements and confirms the real
+localized Data dialog with Runtime unchecked. The second verifies placement
+from disk, completes the Bot-only reset and checks the retained Runtime, then
+confirms the dialog with Runtime checked. The third completes that purge and
+checks retained Runtime and consent are gone. Cancel leaves data untouched.
+The printed evidence directory contains screenshots and per-process results.
+No core, provider CLI, installed profile or OS login item is used by this fixture.
+Reset fixtures canonicalize their temporary root, including macOS's system
+`/var` alias; deliberate redirected-storage tests still verify refusal.
+
+On 2026-11-11 this native Windows x64/Electron 41.2.0 fixture passed all three
+processes; its Traditional Chinese confirmation screenshot was inspected.
+Typecheck and production build passed. Independent review's focused run passed
+63 tests and found no remaining blocker after the core/CLI fence fixes.
+The broad runs were not entirely green: the host Node 26 sandbox run had
+symlink/cache/process-cleanup failures; the Electron Node 24.14.0 run had
+794 tests (772 passed, 12 failed, 10 skipped), including Windows symlink
+privileges, temporary-directory cleanup, core-process harness/pipe failures,
+helper-grandchild readiness and a cross-user Git worktree ownership refusal.
+The normal host Node 26 run outside the sandbox subsequently passed 65 focused
+core lifecycle, process/channel, secrets, locks, reset and window tests, including
+the cases that failed through the Electron-as-Node process harness.
+These full-suite runs are not claimed as passing. Real OS reboot, monitor
+hot-plug and installed-app acceptance were not performed.
 
 ### Hub, cores and Boss Cat (PLAN-009, PLAN-010)
 

@@ -52,6 +52,7 @@ import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent }
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
+import { assertBotDataResetNotPending } from './store/dataResetGuard.ts';
 import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
 import {
@@ -381,6 +382,7 @@ export class BotCore implements BotHostApi {
 
   /** Loads an initialized bot without starting anything. */
   static open(options: BotCoreOptions): BotCore {
+    assertBotDataResetNotPending(options.root);
     const profile = readBotProfile(options.root);
     if (!profile) throw new BotNotInitializedError(options.root);
     return new BotCore(options, profile);
