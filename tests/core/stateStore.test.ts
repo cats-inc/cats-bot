@@ -418,16 +418,23 @@ test('a journal line that names no work item or schedule is kept and becomes nob
   assert.equal(count(file, 'journal'), odd.length);
 });
 
-test('a record that cannot be read is left out and reported, and the rest is read', () => {
-  const { file, store } = filled(['first about the kettle', 'second', 'third about the kettle']);
+test('a record that cannot be read is left out and reported once, and the rest is read', () => {
+  const { file, store } = filled([
+    'first about the kettle',
+    'second',
+    'third about the kettle',
+    'fourth about the kettle',
+    'fifth',
+  ]);
   store.appendJournal(work(workItem('w1', 'home', 'queued')));
   store.appendJournal(work(workItem('w2', 'home', 'queued')));
   store.close();
-  // As a damaged page would leave them: text that is no longer JSON.
+  // As a damaged page would leave them: text that is no longer JSON, or no longer a record.
   raw(file, (database) => {
     database.exec(
       `update entries set json = '{"seq":2,"text":"sec' where conversation_id = 'home' and seq = 2`,
     );
+    database.exec(`update entries set json = 'null' where conversation_id = 'home' and seq = 5`);
     database.exec(`update conversations set json = 'null and void' where id = 'note-1'`);
     database.exec(`update work_items set json = '' where id = 'w1'`);
     database.exec(`update meta set value = '0' where key = 'index_form'`);
@@ -439,18 +446,29 @@ test('a record that cannot be read is left out and reported, and the rest is rea
     warn: (message) => warnings.push(message),
   });
   try {
-    // The writer opened, and rebuilt the index without the entry it could not read.
-    assert.deepEqual(warnings, ['entry 2 of conversation home cannot be read and was left out']);
-    assert.deepEqual(hits(opened, 'kettle'), ['home#1', 'home#3']);
-    warnings.length = 0;
+    // The writer opened, and rebuilt the index without the entries it could not read.
+    assert.deepEqual(warnings, [
+      'entry 2 of conversation home cannot be read and was left out',
+      'entry 5 of conversation home cannot be read and was left out',
+    ]);
+    assert.deepEqual(hits(opened, 'kettle'), ['home#1', 'home#3', 'home#4']);
 
     assert.deepEqual(
       opened.entries('home').map((item) => item.seq),
-      [1, 3],
+      [1, 3, 4],
+    );
+    // A page is filled from further back, so that a damaged entry is not taken for the end.
+    assert.deepEqual(
+      opened.entriesPage('home', { limit: 1 }).map((item) => item.seq),
+      [4],
     );
     assert.deepEqual(
       opened.entriesPage('home', { limit: 2 }).map((item) => item.seq),
-      [3],
+      [3, 4],
+    );
+    assert.deepEqual(
+      opened.entriesPage('home', { limit: 2, beforeSeq: 3 }).map((item) => item.seq),
+      [1],
     );
     assert.deepEqual(
       (opened.conversations() as ConversationRecord[]).map((record) => record.id),
@@ -460,17 +478,34 @@ test('a record that cannot be read is left out and reported, and the rest is rea
       opened.workItems().map((item) => item.id),
       ['w2'],
     );
-    assert.deepEqual(warnings, [
-      'entry 2 of conversation home cannot be read and was left out',
-      'entry 2 of conversation home cannot be read and was left out',
+    // Each is reported once, however often it is read.
+    assert.deepEqual(warnings.slice(2), [
       'conversation note-1 cannot be read and was left out',
       'work item w1 cannot be read and was left out',
     ]);
-    // The numbering does not reuse the place of the entry that cannot be read.
-    assert.equal(opened.appendEntry('home', entry('fourth')).seq, 4);
+    // The numbering does not reuse the place of an entry that cannot be read.
+    assert.equal(opened.appendEntry('home', entry('sixth')).seq, 6);
   } finally {
     opened.close();
   }
+
+  // An entry damaged after it was indexed is still in the index. A search skips it and
+  // gives the next best ones instead of fewer than were asked for.
+  raw(file, (database) => {
+    database.exec(
+      `update entries set json = 'not json' where conversation_id = 'home' and seq = 4`,
+    );
+  });
+  withStore(file, 'writer', (again) => {
+    assert.deepEqual(
+      again.search('kettle', { limit: 2 }).map((hit) => hit.entry.seq),
+      [3, 1],
+    );
+    assert.deepEqual(
+      again.search('kettle', { limit: 1, conversationId: 'home' }).map((hit) => hit.entry.seq),
+      [3],
+    );
+  });
 });
 
 test('search finds Chinese words of any length, English ones, and words written against each other', () => {

@@ -112,7 +112,8 @@ outside `src/core/store/`.
   - the journal keeping every line in order, with the last state of each work item and
     schedule in the order each first appeared, and a line that names neither kept as a
     line;
-  - a record that cannot be read left out and reported, and the rest read;
+  - a record that cannot be read left out and reported once, the rest read, and a page
+    or a search filled from further on instead of coming back short;
   - search: Chinese words of one, two and three characters, English in any case, a Latin
     word written against Chinese, an emoji or a trade mark sign, full-width forms, Hangul
     letters typed on their own, every word required, a phrase not matching across
@@ -133,9 +134,11 @@ outside `src/core/store/`.
 - `searchText.test.ts` covers the rewriting itself: Chinese, Japanese with its long-vowel
   mark, Korean syllables and letters, Bopomofo, a character outside the Basic
   Multilingual Plane, emoji and punctuation as separators, symbols and circled or
-  superscript numbers standing apart, full-width, half-width and decomposed forms,
-  characters never shown, the dot inside a name, marks that join nothing, repeated
-  words, and query input that looks like query syntax.
+  Roman numbers standing apart, raised and lowered digits staying with their word,
+  full-width, half-width and decomposed forms, characters never shown, the dot inside a
+  Chinese name and the one between the items of a Japanese list, CJK punctuation
+  between two words, marks that join nothing, repeated words, and query input that
+  looks like query syntax.
 
 ### Store tests inside Electron
 

@@ -98,18 +98,20 @@ verified migration moves existing bots over without losing or rewriting their hi
 8. FR-8 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
    (`contentless_delete`), keyed by the entry's row id. Before it is indexed the text is
    rewritten:
-   - characters that are never shown are dropped, and so is the dot between the parts of
-     a name inside a CJK run;
-   - a symbol, a punctuation mark or a number that is not a plain digit stands apart
-     from the words beside it;
-   - compatibility forms are folded together (NFKC) and letters are lower-cased;
-   - whatever is then not a letter, a number or a mark is a space;
+   - characters that are never shown are dropped, and so is the dot Chinese writes
+     between the parts of a name inside a CJK run; a byte-order mark is a space;
+   - a symbol, or a number that is neither a plain digit nor raised or lowered, stands
+     apart from the words beside it;
+   - compatibility forms are folded together (NFKC), except the Hangul letters people
+     type on their own, and letters are lower-cased;
+   - whatever is then not a letter, a number or a mark is a space, and a mark with no
+     letter to sit on is dropped;
    - each Han, Kana, Hangul and Bopomofo run becomes its overlapping 2-character tokens,
      followed by its last character.
 
    A query is rewritten the same way and ranks with BM25. Every word typed must be
-   present, each as one phrase; punctuation next to a CJK run parts two words as a space
-   does. A single CJK character is found through the index too: it is the first character
+   present, each as one phrase; CJK punctuation, and any punctuation next to a CJK run,
+   parts two words as a space does. A single CJK character is found through the index too: it is the first character
    of a token or the last character of its run. A query of more than 200 characters or
    12 different words is refused. Results carry kind and origin, so callers can drop tool
    output and other bots' messages (SPEC-015 trust levels).

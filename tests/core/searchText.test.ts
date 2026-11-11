@@ -100,7 +100,10 @@ test('what is not a letter, a number or a mark separates words, whatever Unicode
   assert.deepEqual(tokens('㋿8年'), ['令和', '和', '8', '年']);
   // So does a number that is not a plain digit.
   assert.deepEqual(tokens('①apple ②banana'), ['1', 'apple', '2', 'banana']);
-  assert.deepEqual(tokens('E=mc²'), ['e', 'mc', '2']);
+  // A digit written raised or lowered is part of the word it follows.
+  assert.deepEqual(tokens('E=mc²'), ['e', 'mc2']);
+  assert.deepEqual(tokens('CO₂ and H₂O'), ['co2', 'and', 'h2o']);
+  assert.deepEqual(tokens('m²'), tokens('㎡'));
   assert.deepEqual(tokens('Final FantasyⅦ'), ['final', 'fantasy', 'vii']);
   assert.deepEqual(tokens('½ cup'), ['1', '2', 'cup']);
   // The ideographic zero is a character of its run.
@@ -157,23 +160,44 @@ test('each word typed becomes one phrase of the tokens it would be indexed as', 
   assert.equal(buildSearchQuery('a股b'), '"a 股 b"');
 });
 
-test('punctuation next to a CJK run parts two words, as a space does', () => {
+test('CJK punctuation, and any punctuation next to a CJK run, parts two words as a space does', () => {
   assert.equal(buildSearchQuery('公園、牙醫'), '"公園" AND "牙醫"');
   assert.equal(buildSearchQuery('公園，然後牙醫。'), '"公園" AND "然後 後牙 牙醫"');
   assert.equal(buildSearchQuery('kettle,茶壺'), '"kettle" AND "茶壺"');
   assert.equal(buildSearchQuery('茶壺(kettle)'), '"茶壺" AND "kettle"');
+  assert.equal(buildSearchQuery('茶壺（kettle）'), '"茶壺" AND "kettle"');
   assert.equal(buildSearchQuery('開心 (￣▽￣)'), '"開心"');
   assert.equal(buildSearchQuery('第①章'), '"第"* AND "1" AND "章"*');
+  // Between two Latin words as well, where a Latin comma would keep one phrase.
+  assert.equal(buildSearchQuery('LINE、Telegram'), '"line" AND "telegram"');
+  assert.equal(buildSearchQuery('LINE，Telegram；Signal'), '"line" AND "telegram" AND "signal"');
+  assert.equal(buildSearchQuery('LINE・Telegram'), '"line" AND "telegram"');
+  assert.equal(buildSearchQuery('LINE,Telegram'), '"line telegram"');
+  // Full-width letters and digits are not punctuation.
+  assert.equal(buildSearchQuery('ＡＢ１２３'), '"ab123"');
+  assert.equal(buildSearchQuery('々〇'), '"々〇"');
 });
 
-test('the dot between the parts of a name is not a break in it', () => {
+test('the dot Chinese writes inside a name is not a break in it', () => {
   // Written with the dot or without it, the name is the same run.
-  for (const dot of [0x00b7, 0x2027, 0x30fb]) {
+  for (const dot of [0x00b7, 0x2027]) {
     assert.deepEqual(tokens(`馬克${character(dot)}吐溫的書`), tokens('馬克吐溫的書'));
     assert.equal(buildSearchQuery(`馬克${character(dot)}吐溫`), '"馬克 克吐 吐溫"');
   }
-  assert.deepEqual(tokens('コーヒー・ショップ'), tokens('コーヒーショップ'));
-  // Between Latin letters it is punctuation like any other.
+  // The dot Japanese puts between the items of a list is another character, and parts them.
+  assert.deepEqual(tokens('東京・大阪'), ['東京', '京', '大阪', '阪']);
+  assert.deepEqual(tokens('コーヒー・ショップ'), [
+    'コー',
+    'ーヒ',
+    'ヒー',
+    'ー',
+    'ショ',
+    'ョッ',
+    'ップ',
+    'プ',
+  ]);
+  assert.equal(buildSearchQuery('東京・大阪'), '"東京" AND "大阪"');
+  // Between Latin letters, and at the end of a run, the dot is punctuation like any other.
   assert.deepEqual(tokens('a·b'), ['a', 'b']);
   assert.deepEqual(tokens('公園·'), ['公園', '園']);
 });

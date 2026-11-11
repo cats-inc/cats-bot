@@ -8,8 +8,8 @@
  * rewritten the same way:
  *
  * - characters that are never shown, such as a zero-width space, are dropped;
- * - a symbol, a punctuation mark or a number that is not a plain digit stands apart from the
- *   words beside it, so that `iPhone™` holds `iphone` and `E=mc²` holds `mc`;
+ * - a symbol, or a number that is neither a plain digit nor raised or lowered, stands apart
+ *   from the words beside it, so that `iPhone™` holds `iphone` and `①apple` holds `apple`;
  * - compatibility forms are folded together (NFKC) and letters are lower-cased;
  * - whatever is then not a letter, a number or a mark is a space;
  * - each CJK run becomes its overlapping two-character tokens, followed by its last character.
@@ -20,8 +20,8 @@
  */
 
 /**
- * Raised whenever `indexText` would give another result for the same text. The store rebuilds
- * an index that was made with a different number.
+ * To be raised, once a release has shipped an index, whenever `indexText` would give another
+ * result for the same text. The store rebuilds an index that was made with a different number.
  */
 export const INDEX_FORM = 1;
 
@@ -43,21 +43,32 @@ const CJK_CHARACTER = String.raw`(?=[\p{L}\p{N}])[${CJK_SCRIPTS}]`;
 const CJK_RUN = new RegExp(`(?:${CJK_CHARACTER})+`, 'gu');
 const CJK_RUNS_KEPT = new RegExp(`((?:${CJK_CHARACTER})+)`, 'u');
 /**
- * The dot written between the parts of a foreign name, as in `馬克·吐溫`. Inside a CJK run it
- * is dropped, so the name is found with the dot and without it.
+ * The dot Chinese writes between the parts of a foreign name, as in `馬克·吐溫`. Inside a CJK
+ * run it is dropped, so the name is found with the dot and without it. The dot Japanese
+ * writes between the items of a list is another character, and stays a separator.
  */
 const NAME_DOT = new RegExp(
-  `(?<=${CJK_CHARACTER})[${String.fromCharCode(0x00b7, 0x2027, 0x30fb, 0xff65)}]+(?=${CJK_CHARACTER})`,
+  `(?<=${CJK_CHARACTER})[${String.fromCharCode(0x00b7, 0x2027)}]+(?=${CJK_CHARACTER})`,
+  'gu',
+);
+/** Digits written raised or lowered, as in `CO₂` and `m²`: part of the word they follow. */
+const RAISED_OR_LOWERED = `${String.fromCharCode(0x00b2, 0x00b3, 0x00b9)}${from(0x2070, 0x209f)}`;
+/**
+ * What stands apart from the words beside it, so that spelling it out cannot join two of
+ * them: a symbol, and a number that is not a plain digit, such as a circled one or a Roman
+ * numeral. A number of a CJK run, as the ideographic zero is, stays in its run.
+ */
+const STANDS_APART = new RegExp(
+  String.raw`\p{S}|(?![${CJK_SCRIPTS}${RAISED_OR_LOWERED}])[\p{No}\p{Nl}]`,
   'gu',
 );
 /**
- * What stands apart from the words beside it: anything that is not a letter, a number or a
- * mark, and a number that is not a plain digit, such as a circled or superscript one, unless
- * it belongs to a CJK run as the ideographic zero does.
+ * Where one typed word ends and the next begins: a space, and the punctuation of CJK text,
+ * which lists things as a comma or a space does elsewhere.
  */
-const STANDS_APART = new RegExp(
-  String.raw`[^\p{L}\p{N}\p{M}]|(?![${CJK_SCRIPTS}])[\p{No}\p{Nl}]`,
-  'gu',
+const WORD_BREAK = new RegExp(
+  String.raw`(?:\s|(?![\p{L}\p{N}\p{M}])[${from(0x3000, 0x303f)}${from(0xfe30, 0xfe6f)}${from(0xff00, 0xff65)}${String.fromCharCode(0x30fb)}])+`,
+  'u',
 );
 /** Half-width Hangul letters, which NFKC would turn into the kind that joins into syllables. */
 const HALF_WIDTH_HANGUL = new RegExp(`[${from(0xffa1, 0xffdc)}]`, 'gu');
@@ -124,8 +135,9 @@ type Piece = { run: string[] } | { token: string };
 /**
  * Turns what a person typed into an FTS5 query, or null when it holds nothing to look for.
  *
- * Every word typed must be present. A word is what stands between spaces, and also what
- * stands on either side of punctuation next to a CJK run: `公園、牙醫` asks for both, anywhere.
+ * Every word typed must be present. A word is what stands between spaces or CJK punctuation,
+ * and also what stands on either side of any punctuation next to a CJK run: `公園、牙醫` and
+ * `LINE、Telegram` each ask for both, anywhere.
  * Each word is one phrase of the tokens the rewriting gives it: `v1.2.3` asks for `v1`, `2`
  * and `3` next to each other, `iPhone拍照` for `iphone` followed by `拍照`. A word that ends in
  * a single CJK character asks for any token starting with it. Nothing typed is read as query
@@ -137,7 +149,10 @@ export function buildSearchQuery(input: string): string | null {
   }
   // The same word twice asks for nothing more, and costs as much again.
   const phrases = new Set<string>();
-  for (const typed of input.replaceAll(BYTE_ORDER_MARK, ' ').replace(IGNORABLE, '').split(/\s+/u)) {
+  for (const typed of input
+    .replaceAll(BYTE_ORDER_MARK, ' ')
+    .replace(IGNORABLE, '')
+    .split(WORD_BREAK)) {
     for (const word of words(typed)) phrases.add(phrase(word));
   }
   if (phrases.size > MAX_QUERY_WORDS) {

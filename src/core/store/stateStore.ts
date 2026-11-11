@@ -118,7 +118,7 @@ export interface OpenBotStateStoreOptions {
 
 /**
  * Opens a bot's store. A writer also makes sure the index was built the way this version
- * searches it, and rebuilds one that was not: about a hundred seconds for a million entries.
+ * searches it, and rebuilds one that was not, which takes minutes for a million entries.
  */
 export function openBotStateStore(options: OpenBotStateStoreOptions): BotStateStore {
   const database = openStateDatabase(options);
@@ -175,6 +175,8 @@ export function searchSql(scoped: boolean): string {
 class Store implements BotStateStore {
   readonly #database: StateDatabase;
   readonly #warn: (message: string) => void;
+  /** What has been reported already: a record that cannot be read is read again and again. */
+  readonly #reported = new Set<string>();
   /** Whether the index was made the way this version searches it. */
   #indexMatches = false;
 
@@ -217,17 +219,46 @@ class Store implements BotStateStore {
     this.#indexMatches = true;
   }
 
-  /** The records of some rows, without the ones whose JSON cannot be read. */
-  #records<T>(rows: StateRow[], what: (row: StateRow) => string): T[] {
+  /**
+   * The records of some rows, without the ones that cannot be read: JSON that does not
+   * parse, or parses to something that is not a record. A journal line may hold anything.
+   */
+  #records<T>(rows: StateRow[], what: (row: StateRow) => string, anything = false): T[] {
     const records: T[] = [];
     for (const row of rows) {
+      let record: unknown;
       try {
-        records.push(JSON.parse(String(row.json)) as T);
+        record = JSON.parse(String(row.json));
       } catch {
-        this.#warn(`${what(row)} cannot be read and was left out`);
+        record = undefined;
       }
+      if (record === undefined || (!anything && !isRecord(record))) {
+        const message = `${what(row)} cannot be read and was left out`;
+        if (!this.#reported.has(message)) {
+          this.#reported.add(message);
+          this.#warn(message);
+        }
+        continue;
+      }
+      records.push(record as T);
     }
     return records;
+  }
+
+  /**
+   * Up to `count` records of the rows `fetch` gives. When some of them cannot be read it
+   * asks for more, so that a damaged record does not look like the end of what there is.
+   */
+  #filled<T>(
+    count: number,
+    fetch: (want: number) => StateRow[],
+    read: (rows: StateRow[]) => T[],
+  ): T[] {
+    for (let want = count; ; want *= 2) {
+      const rows = fetch(want);
+      const records = read(rows);
+      if (records.length >= count || rows.length < want) return records.slice(0, count);
+    }
   }
 
   #entryRecords(conversationId: string, rows: StateRow[]): TranscriptEntry[] {
@@ -281,20 +312,24 @@ class Store implements BotStateStore {
 
   entriesPage(conversationId: string, page: EntriesPage): TranscriptEntry[] {
     const count = positive(page.limit, 'limit');
-    const rows =
-      page.beforeSeq === undefined
-        ? this.#database.all(
-            'select seq, json from entries where conversation_id = ? order by seq desc limit ?',
-            conversationId,
-            count,
-          )
-        : this.#database.all(
-            'select seq, json from entries where conversation_id = ? and seq < ? order by seq desc limit ?',
-            conversationId,
-            page.beforeSeq,
-            count,
-          );
-    return this.#entryRecords(conversationId, rows.reverse());
+    const newestFirst = this.#filled(
+      count,
+      (want) =>
+        page.beforeSeq === undefined
+          ? this.#database.all(
+              'select seq, json from entries where conversation_id = ? order by seq desc limit ?',
+              conversationId,
+              want,
+            )
+          : this.#database.all(
+              'select seq, json from entries where conversation_id = ? and seq < ? order by seq desc limit ?',
+              conversationId,
+              page.beforeSeq,
+              want,
+            ),
+      (rows) => this.#entryRecords(conversationId, rows),
+    );
+    return newestFirst.reverse();
   }
 
   entriesAfter(conversationId: string, seq: number): TranscriptEntry[] {
@@ -427,7 +462,7 @@ class Store implements BotStateStore {
       ref === undefined
         ? this.#database.all('select id, json from journal order by id')
         : this.#database.all('select id, json from journal where ref = ? order by id', ref);
-    return this.#records(rows, (row) => `journal line ${String(row.id)}`);
+    return this.#records(rows, (row) => `journal line ${String(row.id)}`, true);
   }
 
   workItems(): WorkItem[] {
@@ -453,17 +488,22 @@ class Store implements BotStateStore {
         'The search index of this bot was made by another version of Cats Bot. The bot rebuilds it when it starts with this version.',
       );
     }
-    const rows =
-      options.conversationId === undefined
-        ? this.#database.all(searchSql(false), match, count)
-        : this.#database.all(searchSql(true), match, options.conversationId, count);
-    const hits: SearchHit[] = [];
-    for (const row of rows) {
-      const conversationId = String(row.conversation_id);
-      for (const entry of this.#entryRecords(conversationId, [row]))
-        hits.push({ conversationId, entry });
-    }
-    return hits;
+    const { conversationId } = options;
+    return this.#filled(
+      count,
+      (want) =>
+        conversationId === undefined
+          ? this.#database.all(searchSql(false), match, want)
+          : this.#database.all(searchSql(true), match, conversationId, want),
+      (rows) =>
+        rows.flatMap((row) => {
+          const found = String(row.conversation_id);
+          return this.#entryRecords(found, [row]).map((entry) => ({
+            conversationId: found,
+            entry,
+          }));
+        }),
+    );
   }
 
   rebuildIndex(): number {
