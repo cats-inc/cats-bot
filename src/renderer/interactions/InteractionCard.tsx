@@ -2,9 +2,23 @@ import { t, useI18n } from '../i18n.ts';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BotInteraction, InteractionAnswer, InteractionField } from '../../core/types.ts';
 
-function Field({ field }: { field: InteractionField }) {
+/** A field the owner answers by typing, rather than by choosing a listed value or yes or no. */
+export function isTypedField(field: InteractionField): boolean {
+  return field.type !== 'boolean' && !(field.options && !field.allowOther);
+}
+
+function Field({ field, locked }: { field: InteractionField; locked?: boolean }) {
   useI18n();
   const name = `field:${field.id}`;
+  if (locked) {
+    // SPEC-012 FR-6: in a contact note the owner chooses but does not type.
+    return (
+      <p className="provider-field provider-field-locked">
+        <span>{field.label}{field.required ? ' *' : ''}</span>
+        <small>{t('A typed answer cannot be sent from a contact note.')}</small>
+      </p>
+    );
+  }
   // Schema required means the key exists, not that strings/arrays are nonempty.
   const common = { name, required: field.required && (['number', 'integer', 'boolean'].includes(field.type)
     || (field.type === 'string' && (field.minLength ?? 0) > 0)), autoComplete: 'off' };
@@ -72,9 +86,12 @@ function Field({ field }: { field: InteractionField }) {
 export function InteractionCard({
   interaction: i,
   refresh,
+  choicesOnly = false,
 }: {
   interaction: BotInteraction;
-  refresh(): Promise<void>
+  refresh(): Promise<void>;
+  /** SPEC-012 FR-6: a contact note, where the owner answers only by choosing. */
+  choicesOnly?: boolean;
 }) {
   useI18n();
   const [busy, setBusy] = useState(false);
@@ -89,12 +106,17 @@ export function InteractionCard({
   const send = async (action: InteractionAnswer['action'], choice?: string) => {
     if (!active || busy) return;
     if (action === 'accept' && !form.current?.reportValidity()) return;
+    if (action === 'accept' && choicesOnly && i.prompt?.fields?.some((f) => f.required && isTypedField(f))) {
+      setError(t('This request needs a typed answer, which cannot be given from a contact note. Decline or cancel it.'));
+      return;
+    }
     const data = new FormData(form.current!);
     const answer: InteractionAnswer = { action, ...(choice ? { choice } : {}) };
     if (action === 'accept') {
       if (i.prompt?.fields?.length) {
         const values: NonNullable<InteractionAnswer['values']> = Object.create(null);
         for (const f of i.prompt.fields) {
+          if (choicesOnly && isTypedField(f)) continue;
           const raw = data.get(`field:${f.id}`);
           const enumerated = f.options && !f.allowOther;
           const decode = (value: FormDataEntryValue) =>
@@ -154,7 +176,7 @@ export function InteractionCard({
         <form ref={form} onSubmit={submit}>
           <fieldset disabled={busy}>
             {i.prompt?.fields?.map((f) => (
-              <Field key={f.id} field={f} />
+              <Field key={f.id} field={f} locked={choicesOnly && isTypedField(f)} />
             ))}
             {i.prompt?.permissions?.map((p) => (
               <label key={p.id}>

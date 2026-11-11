@@ -40,6 +40,7 @@ import { arrangeFloating } from './floatingPlacement.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
 import { BossCatBroker } from './hub/bossCatBroker.ts';
+import { PeerBoardsPusher } from './hub/peerBoards.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, startAtLoginByDefault, writeHubState, type HubState } from './hub/hubState.ts';
 import {
@@ -171,6 +172,8 @@ interface BotRow {
   bossCat: boolean;
   /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
   bossCatTools: boolean | null;
+  /** SPEC-012 FR-12: whether the Boss Cat may see this bot's status. */
+  bossCatSees: boolean;
 }
 
 async function main(): Promise<void> {
@@ -539,6 +542,7 @@ async function main(): Promise<void> {
         bossCatTools: registry.bossCat.holder === bot.id && profile !== null
           && !providerCanOfferSessionTools(profile.executionTarget.provider, profile.providerPolicy) ? false
           : null,
+        bossCatSees: bot.bossCatSees,
       };
     });
     const known = new Set(registry.bots.map((bot) => bot.id));
@@ -602,6 +606,8 @@ async function main(): Promise<void> {
       pendingConfirmations.delete(controller);
     }
   };
+  // SPEC-012 FR-10: the other bots' boards for the Boss Cat; set once the broker exists below.
+  let peerBoards: PeerBoardsPusher | null = null;
   /** FR-3: every running core hears whether it holds the role. */
   const announceHolder = () => {
     const holder = manager.registry.bossCat.holder;
@@ -610,6 +616,7 @@ async function main(): Promise<void> {
     for (const presenter of presented()) {
       void presenter.core.setBossCat(presenter.botId === holder).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
     }
+    void peerBoards?.push();
     botsChanged();
   };
   // FR-5: a new bot is created with the provider-first page.
@@ -625,6 +632,7 @@ async function main(): Promise<void> {
     limits: () => manager.registry.limits,
     bots: () => listBots().bots.filter((bot) => bot.state !== 'archived').map(({ id, name, state }) => ({ id, name, state })),
     core: (id) => runners.get(id)?.handle?.core ?? null,
+    sees: (id) => manager.entry(id)?.bossCatSees ?? true,
     atBotCap: () => manager.activeCount() >= manager.registry.maxBots,
     setupNeeded: (provider) => {
       if (providerOnPath(provider)) return 'none';
@@ -659,6 +667,14 @@ async function main(): Promise<void> {
     confirm: askOwner,
     log,
   });
+  peerBoards = new PeerBoardsPusher({
+    holder: () => manager.registry.bossCat.holder,
+    bots: () => listBots().bots.map(({ id, name, state }) => ({ id, name, state })),
+    core: (id) => runners.get(id)?.handle?.core ?? null,
+    sees: (id) => manager.entry(id)?.bossCatSees ?? true,
+    log,
+  });
+  peerBoards.start();
   const botsChanged = () => {
     void refreshTray();
     hubSettings.browserWindow?.webContents.send('hub:botsChanged');
@@ -717,6 +733,7 @@ async function main(): Promise<void> {
   const quit = () => {
     if (quitting) return;
     quitting = true;
+    peerBoards?.stop();
     for (const presenter of presented()) presenter.remember();
     providerSetup.cancelCheck();
     void providerSetup
@@ -1334,6 +1351,12 @@ async function main(): Promise<void> {
         case 'startAutomatically':
           if (typeof value !== 'boolean') throw new Error('Invalid value');
           await manager.setStartAutomatically(id, value);
+          break;
+        case 'bossCatSees':
+          // SPEC-012 FR-12: the hub applies it at once.
+          if (typeof value !== 'boolean') throw new Error('Invalid value');
+          await manager.setBossCatSees(id, value);
+          void peerBoards?.push();
           break;
         case 'moveUp':
         case 'moveDown': {

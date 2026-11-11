@@ -3,9 +3,33 @@ import { join } from 'node:path';
 import type { RuntimeClient, RuntimeStreamEvent } from '../runtime/client.ts';
 import { writeJsonAtomic } from '../store/atomicFile.ts';
 import { INTERACTION_KINDS, type BotInteraction, type BotInteractionResponse, type BotInteractionSnapshot,
-  type WorkItem } from '../types.ts';
+  type InteractionAnswer, type WorkItem } from '../types.ts';
 
 const live = (i: BotInteraction) => i.status === 'pending' || i.status === 'responding';
+
+/**
+ * SPEC-012 FR-6: in a contact note the owner answers a provider request by
+ * choosing (accept, decline or cancel, a listed choice, listed options, yes or
+ * no, listed grants), never by typing: typed text and numbers would be the
+ * owner's words in a session another bot talks to.
+ */
+export function assertChoicesOnly(interaction: BotInteraction, answer: InteractionAnswer | undefined): void {
+  const refuse = (): never => {
+    throw new Error('In a contact note only listed choices can be sent; typed answers stay with the owner.');
+  };
+  if (!answer || !['accept', 'decline', 'cancel'].includes(answer.action)) refuse();
+  const prompt = interaction.prompt;
+  if (answer!.choice !== undefined && !prompt?.choices?.some((choice) => choice.id === answer!.choice)) refuse();
+  if (answer!.grants?.some((grant) => !prompt?.permissions?.some((permission) => permission.id === grant))) refuse();
+  for (const [key, value] of Object.entries(answer!.values ?? {})) {
+    const field = prompt?.fields?.find((entry) => entry.id === key);
+    if (!field) refuse();
+    if (typeof value === 'boolean' && field!.type === 'boolean') continue;
+    const listed = field!.options && !field!.allowOther ? new Set(field!.options.map((option) => option.id)) : null;
+    const values = Array.isArray(value) ? value : [value];
+    if (!listed || values.some((entry) => typeof entry !== 'string' || !listed.has(entry))) refuse();
+  }
+}
 const receipt = (i: BotInteraction): BotInteraction => {
   return { botId: i.botId, conversationId: i.conversationId, workItemId: i.workItemId,
     interactionId: i.interactionId, sessionId: i.sessionId, workerGeneration: i.workerGeneration,
@@ -151,7 +175,8 @@ export class BotInteractions {
       interactions: structuredClone([...this.entries.values()].filter(i => i.conversationId === conversationId)) };
   }
 
-  async respond(conversationId: string, id: string, body: BotInteractionResponse): Promise<void> {
+  async respond(conversationId: string, id: string, body: BotInteractionResponse,
+    options: { choicesOnly?: boolean } = {}): Promise<void> {
     const context = this.contexts.get(conversationId);
     if (!context || !body || context.item.id !== body.workItemId || context.executionId !== body.executionId
       || context.generation !== body.workerGeneration) throw new Error('Provider request is stale or belongs to another conversation.');
@@ -159,6 +184,7 @@ export class BotInteractions {
     if (this.contexts.get(conversationId) !== context || !current || current.workItemId !== body.workItemId) {
       throw new Error('Provider request is no longer active.');
     }
+    if (options.choicesOnly) assertChoicesOnly(current, body.answer);
     // Runtime owns strict answer validation, revision checking and duplicate delivery.
     const response = await context.client.respondInteraction(current.sessionId, id, {
       expectedRevision: body.expectedRevision, idempotencyKey: body.idempotencyKey, answer: body.answer,

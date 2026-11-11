@@ -172,6 +172,11 @@ test('order and start-automatically are kept per bot (FR-5)', async () => {
   await assert.rejects(manager.reorder(['a', 'b']), /every cat bot once/u);
   await manager.setStartAutomatically('a', false);
   assert.equal(saved(root).bots.find((bot) => bot.id === 'a')?.startAutomatically, false);
+  // SPEC-012 FR-12: the owner's switch for what the Boss Cat may see, on by default.
+  assert.equal(saved(root).bots.find((bot) => bot.id === 'b')?.bossCatSees, true);
+  await manager.setBossCatSees('b', false);
+  assert.equal(saved(root).bots.find((bot) => bot.id === 'b')?.bossCatSees, false);
+  await assert.rejects(manager.setBossCatSees('nobody', true), /no cat bot/u);
 });
 
 test('a core that ends unasked restarts with backoff, then stays failed (FR-9)', async () => {

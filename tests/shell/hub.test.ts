@@ -51,7 +51,7 @@ test('the registry round-trips, fills defaults and keeps a corrupt file as it is
   const defaults = readRegistry(root);
   assert.equal(defaults.state, 'ok');
   if (defaults.state === 'ok') {
-    assert.deepEqual(defaults.registry.bots[0], { id: 'mochi', order: 0, startAutomatically: true, createdAt: new Date(0).toISOString(), archivedAt: null });
+    assert.deepEqual(defaults.registry.bots[0], { id: 'mochi', order: 0, startAutomatically: true, bossCatSees: true, createdAt: new Date(0).toISOString(), archivedAt: null });
     assert.equal(defaults.registry.bossCat.holder, null);
   }
 

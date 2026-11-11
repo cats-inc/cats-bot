@@ -221,7 +221,7 @@ test('notes: home first, then the most recently active; ages read like a person 
   const record = (id: string, role: 'home' | 'note', last: string | null, created = '2026-10-01T00:00:00.000Z'): ConversationRecord => ({
     schemaVersion: 1, id, role, title: id, createdAt: created, updatedAt: created,
     attachment: { state: 'none', sessionId: null, provider: null, model: null, configRevision: null } as unknown as ConversationRecord['attachment'],
-    unreadCount: 0, lastOwnerMessageAt: last, lastBotMessageAt: null, checkpoint: null,
+    unreadCount: 0, lastOwnerMessageAt: last, lastBotMessageAt: null, checkpoint: null, contactOf: null, contactName: null,
   });
   const sorted = sortNotes([
     record('old', 'note', '2026-10-02T00:00:00.000Z'),

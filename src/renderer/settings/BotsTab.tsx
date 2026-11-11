@@ -30,6 +30,7 @@ function BotLine({ bot, first, last, ordered, act }: {
   useI18n();
   const running = bot.state === 'running' || bot.state === 'starting';
   const autoId = `bot-auto-${bot.id}`;
+  const seesId = `bot-sees-${bot.id}`;
   return (
     <li className={`bot-line is-${bot.state}`} data-bot={bot.id}>
       <span className="bot-face" aria-hidden="true">
@@ -61,6 +62,23 @@ function BotLine({ bot, first, last, ordered, act }: {
               onChange={(event) => act('startAutomatically', event.target.checked)}
             />
           </label>
+          {!bot.bossCat && (
+            // SPEC-012 FR-12: the Boss Cat's own row has nothing to show itself.
+            <label
+              className="bot-auto"
+              htmlFor={seesId}
+              title={t('Lets the Boss Cat see this bot\'s state, failed turns, waiting decisions and note titles, never its messages. It does not stop the Boss Cat from messaging this bot.')}
+            >
+              <span>{t('Boss Cat sees status')}</span>
+              <input
+                type="checkbox"
+                className="switch"
+                id={seesId}
+                checked={bot.bossCatSees}
+                onChange={(event) => act('bossCatSees', event.target.checked)}
+              />
+            </label>
+          )}
           {running
             ? <button type="button" className="bot-run" onClick={() => act('stop')}>{t('Stop')}</button>
             : <button type="button" className="bot-run" disabled={bot.state === 'external' || bot.state === 'missing'} onClick={() => act('start')}>{t('Start')}</button>}

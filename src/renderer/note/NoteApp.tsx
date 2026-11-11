@@ -228,6 +228,10 @@ export function NoteApp() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('Cats Bot');
+
+  // Undefined until the header is read: nothing is sent before the window knows what note this is.
+  // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
+  const [contact, setContact] = useState<{ bot: string; other: string } | null | undefined>(undefined);
   const [speakerName, setSpeakerName] = useState('Cats Bot');
   // SPEC-008 FR-29: replies carry the bot's look; nothing until its profile is read.
   const [speakerAvatar, setSpeakerAvatar] = useState<string | undefined>(undefined);
@@ -287,12 +291,21 @@ export function NoteApp() {
   }, []);
 
   const refreshHeader = useCallback(async () => {
-    const conversations = await api.invoke('listConversations');
+    const conversations = await api.invoke('listConversations').catch((error: unknown) => {
+      // The core still refuses a write into a contact note; the window does not lock up.
+      setContact((current) => current ?? null);
+      throw error;
+    });
     const record = conversations.find((item) => item.id === conversation.current)
       ?? (requested === 'home' ? conversations.find((item) => item.role === 'home') : undefined);
-    if (!record) return;
+    if (!record) {
+      setContact((current) => current ?? null);
+      return;
+    }
     conversation.current = record.id;
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
+    // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
+    setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
     setSpeakerAvatar(avatarUrl(profile.avatar));
     setTitle(`${profile.name} · ${conversationTitle(record)}${noteRoleSuffix(status.bossCat)}`);
@@ -420,7 +433,7 @@ export function NoteApp() {
 
   const send = async () => {
     const text = draft.trim();
-    if ((!text && files.length === 0) || runningRef.current || busy) return;
+    if ((!text && files.length === 0) || runningRef.current || busy || contact !== null) return;
     const tooLarge = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
     if (tooLarge) {
       setEntries((current) => [...current, localEntry('error',
@@ -528,7 +541,7 @@ export function NoteApp() {
           ✕
         </button>
       </header>
-      <DesktopControlBar model={desktop} />
+      {contact === null && <DesktopControlBar model={desktop} />}
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
         onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
         <button type="button" className="conversation-details-toggle" aria-pressed={showDetails}
@@ -545,7 +558,7 @@ export function NoteApp() {
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
           const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
           return <Entry key={item.key} entry={item.entry} conversationId={conversation.current}
-            retry={failed ? { onRetry: () => void retry(failed) } : undefined}
+            retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined}
             settingsPane={settingsPanes.current.get(item.entry.seq)} />;
         })}
         {pending && (
@@ -559,6 +572,7 @@ export function NoteApp() {
               key={`${i.workerGeneration}:${i.interactionId}`}
               interaction={i}
               refresh={refreshInteractions}
+              choicesOnly={Boolean(contact)}
             />
           ))}
           {grantRequests.map((r) => (
@@ -566,7 +580,27 @@ export function NoteApp() {
           ))}
         </div>
       </main>
-      <footer className="note-composer">
+      {contact ? (
+        <footer className="note-composer note-contact" id="contact-note">
+          <p>
+            {t('This is the contact note between {bot} and {other}. You can read it but not write in it. To talk to {bot}, use its direct message.', contact)}
+          </p>
+          <div className="note-actions">
+            <button type="button" id="open-direct-message" onClick={() => void api.window.openConversation('home')}>
+              {t('Open the direct message')}
+            </button>
+            <span className="note-spacer" />
+            <button
+              className="note-cancel"
+              id="cancel"
+              hidden={!busy}
+              onClick={() => void api.invoke('cancelTurn', conversation.current)}
+            >
+              {t('Cancel')}
+            </button>
+          </div>
+        </footer>
+      ) : <footer className="note-composer">
         {files.length > 0 && <div className="composerAttachments">
           {files.map((file, index) => <AttachmentCard key={`${file.name}-${file.size}-${index}`} file={file} disabled={busy}
             onRemove={() => setFiles((current) => current.filter((_, i) => i !== index))} />)}
@@ -630,7 +664,7 @@ export function NoteApp() {
             if (selected.length > 0) setFiles((current) => [...current, ...selected]);
             input.value = '';
           }} />
-      </footer>
+      </footer>}
     </>
   );
 }

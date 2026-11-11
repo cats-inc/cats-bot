@@ -71,8 +71,9 @@ the owner writes. Neither a restart of the app nor a reboot counts as an answer.
    answer, so it is not counted as unanswered (FR-9).
 9. FR-9: Only a message from the owner answers: the newest `lastOwnerMessageAt` across all
    of the bot's conversations, including Telegram messages into home. Another bot's message
-   (SPEC-009 FR-7), a restart, a reboot or opening a window do not count. A heartbeat that
-   spoke is unanswered until the owner writes after it; a `[quiet]` reply is not counted.
+   (SPEC-009 FR-7), a restart, a reboot or opening a window do not count, and neither does a
+   contact note (SPEC-012), where the owner never writes. A heartbeat that spoke is unanswered
+   until the owner writes after it; a `[quiet]` reply is not counted.
 10. FR-10: The regular delay is multiplied by `2^n`, `n` being the unanswered count (1, 2,
     4, 8, 16). After 5 unanswered heartbeats in a row nothing is scheduled until the owner
     writes; the owner writing sets the count to 0 and draws the next heartbeat afresh.
@@ -89,7 +90,8 @@ the owner writes. Neither a restart of the app nor a reboot counts as an answer.
     switch, the mode, bedtime and the wake window (with Desktop's labels), the wake and
     regular delays, and either the next heartbeat or that it waits for the owner.
 13. FR-13: An `assist` heartbeat carries a review the core builds without the model: every
-    one of the bot's conversations (home and notes) whose owner last wrote within 14 days,
+    one of the bot's conversations (home and notes, contact notes excluded; SPEC-012) whose
+    owner last wrote within 14 days,
     newest first, each with its last 6 owner, reply and error lines (unprompted replies
     marked), each line at most 240 characters and the whole at most 6,000. When the budget
     runs short a conversation keeps its heading and the owner's last line, and any that

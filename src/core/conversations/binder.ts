@@ -4,7 +4,7 @@ import { effectiveReplyLanguage } from '../profile/profile.ts';
 import { replyLanguageInstruction } from '../../shared/language.ts';
 import { RuntimeHttpError, type CreateSessionRequest, type RuntimeClient, type RuntimeMcpServer } from '../runtime/client.ts';
 import { isProviderSessionUnavailable, REBUILT_SESSION_NOTICE } from '../runtime/providerSession.ts';
-import type { BotProfile, ConversationRecord, SessionAttachment } from '../types.ts';
+import type { BotProfile, ConversationRecord, SessionAttachment, TranscriptEntry } from '../types.ts';
 
 /**
  * SPEC-001 FR-11 / FR-27: how a conversation gets a usable runtime session.
@@ -64,6 +64,19 @@ export function isNoCapacity(message: string): boolean {
 function sessionLabel(conversation: ConversationRecord, profile: BotProfile): string {
   return Array.from(`Cats Bot · ${profile.name} · ${conversation.title}`
     .replace(/[\u0000-\u001f\u007f]/gu, ' ')).slice(0, 160).join('');
+}
+
+/**
+ * SPEC-012 FR-8: what a contact note's new session is handed, by allow-list:
+ * the other bot's messages, and this bot's replies to those messages and to
+ * the owner's decisions. Anything the owner wrote there before the note became
+ * a contact note is left out, and so is whatever could echo it: replies to the
+ * owner's messages or reminders, reminder receipts and recovery notices.
+ */
+function inContactHandoff(entry: TranscriptEntry): boolean {
+  if (entry.kind === 'owner') return entry.origin === 'bot';
+  if (entry.kind === 'bot') return entry.origin === 'event';
+  return false;
 }
 
 export class SessionBinder {
@@ -199,7 +212,8 @@ export class SessionBinder {
     const isPending = this.deps.isPendingWorkItem;
     const pack = buildHandoffPack(
       this.deps.conversations.transcript(conversation.id)
-        .filter((entry) => !(isPending && entry.kind === 'owner' && entry.workItemId && isPending(entry.workItemId))),
+        .filter((entry) => !(isPending && entry.kind === 'owner' && entry.workItemId && isPending(entry.workItemId)))
+        .filter((entry) => !conversation.contactOf || inContactHandoff(entry)),
     );
     const request: CreateSessionRequest = {
       provider: profile.executionTarget.provider,

@@ -176,6 +176,16 @@ export const zhTW: Record<string, string> = {
   'New cat bot': '新增機器貓',
   'Delete…': '刪除…',
   'Auto-start': '自動啟動',
+  'Boss Cat sees status': '讓主控貓看到這隻貓的狀態',
+  "Lets the Boss Cat see this bot's state, failed turns, waiting decisions and note titles, never its messages. It does not stop the Boss Cat from messaging this bot.":
+    '讓主控貓看到這隻機器貓的狀態、失敗的工作、等你決定的事和便箋標題，但看不到訊息內容。這不會阻止主控貓傳訊息給它。',
+  'Contact with {name}': '與 {name} 的聯絡簿',
+  'This is the contact note between {bot} and {other}. You can read it but not write in it. To talk to {bot}, use its direct message.':
+    '這是 {bot} 和 {other} 的聯絡簿，你可以看，但不能在這裡輸入。要跟 {bot} 說話，請到它的私訊。',
+  'Open the direct message': '開啟私訊',
+  'A typed answer cannot be sent from a contact note.': '在聯絡簿裡不能送出打字的回答。',
+  'This request needs a typed answer, which cannot be given from a contact note. Decline or cancel it.':
+    '這個請求需要打字回答，但聯絡簿裡不能這樣回答。請拒絕或取消它。',
   'Move up': '上移',
   'Move down': '下移',
   'Running in another program': '在其他程式中執行',
