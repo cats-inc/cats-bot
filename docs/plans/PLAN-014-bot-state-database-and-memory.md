@@ -58,7 +58,7 @@ security review. Embeddings come only if the evaluation asks for them.
     Runtime's own API key it can also reach every target through the loopback API.
   - Runtime must keep its own key and backend credentials out of every child process, and
     let an instance admit only text-only sessions.
-  - Proposed as Runtime SPEC-043 R10 (cats-runtime#217); it awaits the owner and needs
+  - Specified in Runtime SPEC-043 R10 (accepted 2026-11-11, not implemented). It needs
     Runtime's next minor line.
   - It blocks P4.6 only.
 

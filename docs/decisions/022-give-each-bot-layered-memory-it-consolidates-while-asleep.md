@@ -31,9 +31,9 @@ recorded; the intent is unchanged:
 - The owner therefore chose to let a bot name a separate consolidation target. Without one,
   the bot's own execution target is used.
 - A separate target waits on one more Runtime change: Runtime's own key and backend
-  credentials must not reach the processes Runtime starts (Runtime SPEC-043 R10, proposed).
+  credentials must not reach the processes Runtime starts (Runtime SPEC-043 R10).
 - The key-handling, consent and local-model rules under decision 6 were added while this
-  was written up. They await the owner's confirmation.
+  was written up, after a security review. The owner confirmed them the same day.
 
 Nothing is implemented. Before any memory injection or consolidation:
 
