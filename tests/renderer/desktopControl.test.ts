@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { DesktopControlCapability, DesktopControlState, DesktopGrantRequest } from '../../src/core/types.ts';
+import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 import {
   enabledNotesText,
   grantCardText,
@@ -119,7 +120,14 @@ test('the Settings switch is hidden off Windows, disabled where the helper canno
   assert.deepEqual(settingsRow({ ...state(), conversation: undefined }), { hidden: false, disabled: false, note: null });
   assert.equal(settingsRow({ ...state(), available: false, reason: 'not_windows', enabled: false }).hidden, true);
   assert.deepEqual(settingsRow({ ...state(), available: false, reason: 'not_windows', enabled: true }),
-    { hidden: false, disabled: false, note: 'Not available on this computer: it works only on Windows.' });
+    { hidden: false, disabled: false, note: 'Not available on this computer: the macOS and Linux versions are not built yet.' });
+  acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
+  try {
+    assert.equal(settingsRow({ ...state(), available: false, reason: 'not_windows', enabled: true }).note,
+      '這台電腦無法使用：macOS 與 Linux 版本尚未完成。');
+  } finally {
+    acceptLanguage({ preference: 'en', locale: 'en' });
+  }
   assert.deepEqual(settingsRow({ ...state(), available: false, reason: 'handshake_failed', enabled: false }), {
     hidden: false, disabled: true,
     note: 'Not available on this computer: the desktop control helper did not answer correctly; turn desktop control off and on in Settings to retry.',
