@@ -107,8 +107,9 @@ outside `src/core/store/`.
 - **Location**: `scripts/testing/measure-store-performance.mjs`, with
   `tests/shell/storePerformance.test.ts` and the manual `.github/workflows/store-performance.yaml`.
 - **Scope**: SPEC-014's performance targets (PLAN-014 task 1.7) on made-up data: append, the
-  newest 50 entries, and two-character Chinese searches over all entries, in a conversation
-  of 60% of them and in one of 2%. The test runs it on 2,000 entries; the workflow on a
+  newest 50 entries, and searches over all entries, in a conversation of 60% of them and in
+  one of 2%: two-character Chinese words found in few, some and most entries, one character,
+  and two common words together. The test runs it on 2,000 entries; the workflow on a
   million, on Windows, macOS and Linux, under Node.js and inside Electron. It reports and
   does not gate.
 

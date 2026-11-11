@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
  * SPEC-014's performance targets on made-up data (PLAN-014 task 1.7): appending an entry,
- * reading the newest 50, and two-character Chinese searches over about a million entries.
+ * reading the newest 50, and searches over about a million entries: two-character Chinese
+ * words found in few, some and most entries, one character, and two common words together,
+ * each over every conversation, the largest and a small one. The 100 ms target is
+ * SPEC-014's for a two-character query; the other searches are measured against it too.
  *
  * Usage:
  *   node scripts/testing/measure-store-performance.mjs [--entries <n>] [--json]
@@ -61,7 +64,9 @@ export async function measure(options, repositoryRoot = resolve(import.meta.dirn
   );
   const directory = mkdtempSync(join(tmpdir(), 'cats-bot-store-performance-'));
   let seed = 7;
-  const random = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  // `Math.imul` keeps the product in 32 bits; a plain product loses its low bits past 2^53,
+  // and the sequence then repeats after about ten thousand numbers.
+  const random = () => (seed = (Math.imul(seed, 1103515245) + 12345) & 0x7fffffff) / 0x7fffffff;
   const at = '2026-11-11T08:00:00.000Z';
   try {
     const store = openBotStateStore({ file: join(directory, 'bot.db'), mode: 'writer' });
@@ -130,6 +135,8 @@ export async function measure(options, repositoryRoot = resolve(import.meta.dirn
       ['牙醫', 'rare'],
       ['公園', 'some'],
       ['今天', 'most'],
+      ['天', 'one character'],
+      ['今天 我們', 'two common words'],
     ]) {
       for (const scope of [undefined, 'big', 'note-3']) {
         searches[`${label} ${query} in ${scope ?? 'all'}`] = timed(
@@ -176,7 +183,7 @@ if (invoked) {
     );
     for (const [label, ms] of Object.entries(result.searchesMs)) {
       process.stdout.write(
-        `${label.padEnd(24)} ${String(ms).padStart(8)} ms (target ${TARGETS.twoCharacterQueryMs})\n`,
+        `${label.padEnd(36)} ${String(ms).padStart(8)} ms (target ${TARGETS.twoCharacterQueryMs})\n`,
       );
     }
   }

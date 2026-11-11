@@ -131,10 +131,14 @@ verified migration moves existing bots over without losing or rewriting their hi
    output and other bots' messages (SPEC-015 trust levels).
 
    *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)* A search ranks the newest 1,000 matches with BM25,
-   read backwards from the index, so that a word in a large share of the entries costs about
-   what a rare one does; a better match older than those is found by narrowing the query or
-   the conversation. Each entry's indexed terms end with a term for its conversation, which
-   narrows a search of one conversation inside the index itself.
+   read backwards from the index, so that it fetches and sorts at most 1,000 entries however
+   common its words are; a better match older than those is found by narrowing the query or
+   the conversation. Ranking still counts every entry that holds each of its words, so a word
+   in a large share of the entries costs more than a rare one. Each entry's indexed terms end
+   with a term for its conversation, which no text and no query can hold, and which narrows a
+   search of one conversation inside the index itself. The version-1 import numbers entries
+   in the order of their times across conversations, so that the newest matches are the newest
+   entries after the migration as well.
 9. FR-9 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
    it from the entries' JSON records is a supported maintenance command. It does not read
    the index, so it repairs a damaged one. A writer runs it by itself when the way text
@@ -360,7 +364,13 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
   from the index, instead of every match, and each entry's indexed terms end with a term
   for its conversation. A common word had taken up to 3.4 s over a million entries. A
   better match older than those 1,000 is found only by narrowing the query or the
-  conversation.
+  conversation, and a search asks for at most 1,000 results.
+- [x] FR-8: the conversation's term begins with a character of private use, which the
+  tokenizer keeps inside a token and the rewriting of text turns into a space, so nobody can
+  type it or write it into an entry of another conversation.
+- [x] FR-3 and FR-8: the version-1 import gives entries row ids in the order of their times
+  across all conversations (an entry is never earlier than the one before it in its
+  conversation), instead of one conversation after another in the order of file names.
 
 Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruction:
 

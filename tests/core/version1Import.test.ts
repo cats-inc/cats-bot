@@ -794,3 +794,59 @@ test('a record that holds a large array is checked without running out of stack'
   assert.deepEqual(report.mismatches, []);
   assert.equal(report.finished, true);
 });
+
+test('imported entries are numbered by time across conversations, so a search reads the newest first', () => {
+  const paths = freshRoot();
+  // File names sort `bot-…`, `conv-…`, `home`: the newest entries are in the first file.
+  const at = (minute: number): string => new Date(Date.parse(AT) + minute * 60_000).toISOString();
+  for (const id of ['bot-mochi', 'conv-1a2b3c4d', 'home']) {
+    writeJsonAtomic(conversationFile(paths, id), conversation(id));
+  }
+  for (let seq = 1; seq <= 4; seq += 1) {
+    appendTranscript(paths, 'home', entry(seq, `kettle h${seq}`, { at: at(seq) }));
+    appendTranscript(paths, 'conv-1a2b3c4d', entry(seq, `kettle n${seq}`, { at: at(10 + seq) }));
+    // A clock set back in the middle: never before the entry before it.
+    appendTranscript(paths, 'bot-mochi', entry(seq, `kettle m${seq}`, { at: at(seq === 3 ? 0 : 20 + seq) }));
+  }
+  // A time that cannot be read takes the one before it.
+  appendTranscript(paths, 'home', entry(5, 'kettle h5', { at: 'not a time' }));
+  const report = imported(paths);
+  assert.equal(report.finished, true);
+  withStore(paths, (store) => {
+    const newest = store.search('kettle', { limit: 13 });
+    // Texts of one shape rank equal, and equal ranks come newest first, by row id.
+    assert.deepEqual(
+      newest.map((hit) => hit.entry.text),
+      [
+        'kettle m4',
+        'kettle m3',
+        'kettle m2',
+        'kettle m1',
+        'kettle n4',
+        'kettle n3',
+        'kettle n2',
+        'kettle n1',
+        'kettle h5',
+        'kettle h4',
+        'kettle h3',
+        'kettle h2',
+        'kettle h1',
+      ],
+    );
+    // The entries keep their own seq and record.
+    assert.deepEqual(
+      store.entries('bot-mochi').map((stored) => stored.seq),
+      [1, 2, 3, 4],
+    );
+    assert.equal(store.entries('home')[4]!.at, 'not a time');
+    // And what is written after the import is numbered after all of them.
+    assert.deepEqual(report.mismatches, []);
+  });
+  const store = openBotStateStore({ file: databaseOf(paths), mode: 'writer' });
+  try {
+    store.appendEntry('home', { at: at(99), kind: 'owner', origin: 'owner', text: 'kettle l1' } as never);
+    assert.equal(store.search('kettle', { limit: 1 })[0]!.entry.text, 'kettle l1');
+  } finally {
+    store.close();
+  }
+});

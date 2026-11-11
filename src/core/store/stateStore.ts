@@ -50,7 +50,10 @@ export interface EntriesPage {
 }
 
 export interface SearchOptions {
-  /** Default 50. */
+  /**
+   * Default 50. At most `RANKED_MATCHES` (1,000), the matches a search ranks; more is refused,
+   * rather than quietly returning fewer.
+   */
   limit?: number;
   conversationId?: string;
 }
@@ -112,8 +115,15 @@ export interface BotStateStore {
    * FR-11, for the version-1 import: entries stored as they are given, each keeping its
    * `seq`, and indexed in the same transaction. Each `seq` must be greater than the one
    * before it and than any the conversation already holds. The conversation must exist.
+   * `rowIds`, one for each entry, are the row ids they are stored under: the import gives
+   * them in time order across conversations (FR-8). Later entries are numbered after the
+   * highest.
    */
-  importEntries(conversationId: string, entries: readonly TranscriptEntry[]): void;
+  importEntries(
+    conversationId: string,
+    entries: readonly TranscriptEntry[],
+    rowIds?: ArrayLike<number>,
+  ): void;
   /** Whether the store holds no record of any kind. */
   isEmpty(): boolean;
   /** FR-11: what the version-1 import recorded when it finished, or undefined. */
@@ -161,8 +171,10 @@ export interface BotStateStore {
   schedules(): ScheduleRecord[];
 
   /**
-   * FR-8: entries holding every word of `query`, best match first. It runs on the store's
-   * own connection, and a word found in a large share of the entries takes seconds there.
+   * FR-8: entries holding every word of `query`, best match first among the newest 1,000 that
+   * hold them (`RANKED_MATCHES`). It runs on the store's own connection: a word found in a
+   * large share of the entries takes tens to hundreds of milliseconds over a million of them,
+   * since ranking counts every entry that holds each word (PLAN-014 task 1.7).
    */
   search(query: string, options?: SearchOptions): SearchHit[];
   /**
@@ -177,6 +189,8 @@ export interface OpenBotStateStoreOptions {
   mode: StateDatabaseMode;
   busyTimeoutMs?: number;
   now?: () => Date;
+  /** See `OpenStateDatabaseOptions.cacheSizeKiB`. */
+  cacheSizeKiB?: number;
   /** Receives problems that are not fatal, such as a record that cannot be read. */
   warn?: (message: string) => void;
 }
@@ -200,7 +214,8 @@ export function openBotStateStore(options: OpenBotStateStoreOptions): BotStateSt
 const DEFAULT_SEARCH_LIMIT = 50;
 /**
  * PLAN-014 task 1.7: a search ranks the newest this many matches and no more, so that a word
- * in a large share of the entries costs what a rare one does.
+ * in a large share of the entries does not fetch and sort all of them. Ranking each still
+ * counts every entry that holds its words, which grows with how common they are.
  */
 export const RANKED_MATCHES = 1000;
 const REBUILD_BATCH = 500;
@@ -224,11 +239,6 @@ function positive(value: number, name: string): number {
   return value;
 }
 
-/**
- * The two shapes of a search. `cross join` keeps SQLite from starting at the entries: for
- * one conversation, the SQLite in Electron 41 otherwise walks every entry of it and asks
- * the index about each.
- */
 /**
  * The newest matches with their rank, read backwards inside the index, which the index does in
  * milliseconds; reading forwards from a row id, or ranking every match, takes seconds on a
@@ -518,19 +528,31 @@ class Store implements BotStateStore {
     });
   }
 
-  importEntries(conversationId: string, entries: readonly TranscriptEntry[]): void {
+  importEntries(
+    conversationId: string,
+    entries: readonly TranscriptEntry[],
+    rowIds?: ArrayLike<number>,
+  ): void {
+    if (rowIds !== undefined && rowIds.length !== entries.length) {
+      throw new RangeError('importEntries needs one row id for each entry');
+    }
     this.#database.transaction(() => {
       this.#requireConversation(conversationId);
       let last = this.lastSeq(conversationId);
-      for (const entry of entries) {
+      for (const [index, entry] of entries.entries()) {
         const seq: unknown = entry.seq;
         if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq <= last) {
           throw new RangeError(
             `Entry ${String(seq)} of conversation ${conversationId} does not come after entry ${last}`,
           );
         }
+        const given = rowIds?.[index];
+        if (given !== undefined && (!Number.isSafeInteger(given) || given < 1)) {
+          throw new RangeError(`Row id ${String(given)} is not a positive whole number`);
+        }
         const id = this.#database.insert(
-          'insert into entries(conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?)',
+          'insert into entries(id, conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?, ?)',
+          given ?? null,
           conversationId,
           seq,
           text(entry.kind),
@@ -753,6 +775,9 @@ class Store implements BotStateStore {
     const match = buildSearchQuery(query);
     if (!match) return [];
     const count = positive(options.limit ?? DEFAULT_SEARCH_LIMIT, 'limit');
+    if (count > RANKED_MATCHES) {
+      throw new RangeError(`limit must be at most ${RANKED_MATCHES}, the matches a search ranks`);
+    }
     if (!this.#indexMatches) {
       throw new Error(
         'The search index of this bot was made by another version of Cats Bot. The bot rebuilds it when it starts with this version.',

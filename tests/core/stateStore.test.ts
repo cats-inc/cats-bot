@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { INDEX_FORM, MAX_QUERY_LENGTH } from '../../src/core/store/searchText.ts';
+import { conversationTerm, INDEX_FORM, MAX_QUERY_LENGTH } from '../../src/core/store/searchText.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { StateDatabaseError } from '../../src/core/store/stateDatabase.ts';
 import {
@@ -765,10 +765,12 @@ test('a search ranks the newest matches, so a better match older than them is no
     assert.equal(best[0]!.entry.text, 'kettle kettle');
     assert.equal(
       store
-        .search('kettle', { limit: RANKED_MATCHES + 5 })
+        .search('kettle', { limit: RANKED_MATCHES })
         .some((hit) => hit.entry.text === 'kettle kettle kettle kettle'),
       false,
     );
+    // No more than it ranks is asked for.
+    assert.throws(() => store.search('kettle', { limit: RANKED_MATCHES + 1 }), RangeError);
     // Within one conversation the newest of its own matches are ranked, by its term: home
     // holds fewer than RANKED_MATCHES of them, so its oldest and best is found there.
     const inHome = store.search('kettle', { limit: 3, conversationId: 'home' });
@@ -780,6 +782,28 @@ test('a search ranks the newest matches, so a better match older than them is no
         .every((hit) => hit.conversationId === 'note-1'),
     );
   });
+});
+
+test("a conversation's term can be neither typed nor written into another conversation's entries", () => {
+  const term = conversationTerm('home');
+  const { store } = filled(['remember the kettle', 'the garden'], ['a note']);
+  try {
+    // Typed in any form, it finds nothing: what a person types is rewritten into other tokens.
+    for (const typed of [term, term.slice(1), `zc${term.slice(1)}`, term.toUpperCase()]) {
+      assert.deepEqual(hits(store, typed), [], JSON.stringify(typed));
+    }
+    // Entries of another conversation that carry it, newer than all of home's: they neither
+    // hide home's matches from a search of home nor show up in it.
+    store.transaction(() => {
+      for (let index = 0; index < RANKED_MATCHES + 5; index += 1) {
+        store.appendEntry('note-1', entry(`${term} kettle ${term.slice(1)}`));
+      }
+    });
+    assert.deepEqual(hits(store, 'kettle', 'home'), ['home#1']);
+    assert.equal(hits(store, 'kettle', 'note-1').length, RANKED_MATCHES);
+  } finally {
+    store.close();
+  }
 });
 
 test('every piece of a CJK run is found, and nothing that is in no run', () => {
@@ -940,6 +964,9 @@ test('an index made the way another version searched is rebuilt when a writer op
     assert.deepEqual(hits(opened, '公園'), ['home#1']);
     assert.deepEqual(hits(opened, 'kettle'), ['home#2']);
     assert.deepEqual(hits(opened, 'something'), []);
+    // A search of one conversation finds its entries by the terms the rebuild gave them.
+    assert.deepEqual(hits(opened, '公園', 'home'), ['home#1']);
+    assert.deepEqual(hits(opened, 'kettle', 'note-1'), []);
   });
   assert.equal(
     raw(

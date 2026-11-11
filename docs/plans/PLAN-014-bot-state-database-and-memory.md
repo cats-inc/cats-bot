@@ -613,25 +613,66 @@ security review. Embeddings come only if the evaluation asks for them.
     - Reading every work item: 2.2 to 2.7 s. Reading the whole journal: 9.2 s.
   - Done, chosen 2026-11-12 under the owner's instruction: each entry's indexed terms end
     with a term for its conversation (index form 2, rebuilt by itself on first open), and a
-    search ranks the newest 1,000 matches, read backwards from the index. Reading forwards
-    from a row id, or ranking every match, is what took seconds: BM25 reads the whole
-    doclist of every phrase, and the index has no quick way forwards from a row id.
-    - Measured on Windows inside Electron 41 (SQLite 3.51.2), 999,010 made-up entries,
-      medians of five runs, while another test run shared the machine:
-      - newest 50 entries 0.3 ms; a two-character word over all entries 9 to 56 ms, in a
-        conversation of 21,000 entries 4 to 27 ms; an English word 11 to 20 ms. Within the
-        100 ms target.
-      - In the one conversation of 600,000 entries a two-character word takes 69 to
-        120 ms; the commonest of them, in most entries, misses the target by about 20 ms.
-        Its conversation's term is in 600,000 doclist entries, which BM25 reads.
-      - Not under a target: one common character (a prefix query) 0.3 to 0.4 s; two common
-        words together 95 to 147 ms.
-      - Before: 74 ms to 3.4 s for the same queries.
+    search ranks the newest 1,000 matches, read backwards from the index, and returns at
+    most 1,000. Reading forwards from a row id, or ranking every match, is what took
+    seconds: the index has no quick way forwards from a row id.
+    - The conversation's term begins with U+E000, a character of private use: SQLite's
+      tokenizer keeps it inside a token (checked with SQLite 3.51.2 in Electron 41 and
+      3.54.0 in Node.js 26) and `indexText` turns it into a space, so no text and no query
+      holds such a token. Its first form, `zc` and hex digits, could be typed, and entries
+      of another conversation carrying it hid a search of the right one.
+    - The version-1 import numbers entries in the order of their times across
+      conversations, so that "the newest 1,000" are the newest entries after the
+      migration too; before, they followed the order of file names (`bot-…`, `conv-…`,
+      `home`). It reads each transcript once more for the times, and gives one
+      conversation's entries row ids all over the table, which SQLite writes more slowly;
+      larger transactions (50,000 entries) and a 256 MiB page cache for the import's
+      connection take back part of that. Measured with Node.js 26 on 300,000 made-up
+      entries on a shared machine, one run each: 31 interleaved conversations 31.4 s
+      before, 66.1 s after; one conversation 35.9 s before, 47.2 s after.
+    - Ranking still costs something that grows with how common each word is: BM25 counts
+      the whole doclist of each phrase it ranks, the conversation's term included. A
+      search of one conversation therefore costs in proportion to that conversation's size,
+      whatever the word: the review measured a rare word in a conversation of 600,000
+      entries at 46 to 68 ms, where it took 0.5 ms before.
+    - Measured with the committed script inside Electron 41 (SQLite 3.51.2) on Windows,
+      1,000,000 made-up entries, medians of five runs, two runs on a machine that other
+      test runs shared (absolute times there are two to three times what a quiet machine
+      gives). Under SPEC-014's 100 ms target only where said:
+      - Append 7.3 to 13.6 ms at the 95th percentile: misses its 5 ms target on this
+        machine. Newest 50 entries 0.5 to 0.8 ms: within its 20 ms.
+      - A rare two-character word: 19 to 30 ms over all entries and in a conversation of
+        2% of them, within; 151 to 204 ms in the conversation of 60%, missed.
+      - A word in some entries (公園): 52 to 89 ms over all and in the small conversation,
+        within; 187 to 314 ms in the large one, missed.
+      - A word in most entries (今天): 131 to 194 ms over all, 154 to 205 ms in the small
+        conversation, 294 to 496 ms in the large one, all missed.
+      - One common character: 0.7 to 1.6 s everywhere. Two common words together: 139 to
+        558 ms. Missed.
+      - The independent review measured, on the same kind of machine, a word in most
+        entries at 53 to 130 ms in a conversation of 21,000 entries (one five-run median
+        155.9 ms), 97 to 350 ms in the large conversation, and 公園 there at 66 to
+        226 ms.
+      - Before this change the same kind of queries took 74 ms to 3.4 s. The numbers here
+        come from a script whose made-up text no longer repeats after ten thousand
+        entries; the first measurements of this task used text that did, with only a few
+        hundred different entries, and were lower.
     - `scripts/testing/measure-store-performance.mjs` makes such a database and measures
       every target; the manual `store performance` workflow runs it on the three platforms,
       under Node.js and inside Electron, once it is on `main`.
-    - Left as they are: searching on a reader off the core's thread, and a cap on how much
-      of one entry is indexed.
+    - Known and left as they are:
+      - The cost of a search of one conversation grows with that conversation's size (see
+        above). Ranking only the words typed, in a second step, is the way to remove it.
+      - The conversation's term changes the ranking inside small conversations, where it
+        is rare: an entry with more of the words can rank below a shorter one. The review
+        found the order changed in 104 of 208 queries, the matches themselves only where
+        more than 1,000 matched.
+      - The next change of index form rebuilds the index when a writer opens, before the
+        core publishes its channel: a million entries took 154 to 171 s, past the hub's
+        60 s start. Form 1 never shipped, so 0.6 is not affected; the next form change
+        has to give the start the time the migration gets.
+      - Searching on a reader off the core's thread, and a cap on how much of one entry is
+        indexed.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 

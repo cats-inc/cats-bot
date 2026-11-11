@@ -29,7 +29,7 @@ test('the store measurement reads its arguments and measures every target', asyn
   const result = await measure({ entries: 2000, json: true });
   assert.equal(result.entries, 2000);
   assert.ok(result.appendP95Ms >= 0 && result.newest50Ms >= 0);
-  assert.deepEqual(Object.keys(result.searchesMs).length, 9);
+  assert.deepEqual(Object.keys(result.searchesMs).length, 15);
   assert.equal(result.runtime.platform, process.platform);
 });
 
@@ -43,4 +43,8 @@ test('the manual workflow measures on every platform, under Node.js and inside E
     assert.ok(workflow.includes(os), os);
   assert.match(workflow, /node scripts\/testing\/measure-store-performance\.mjs/u);
   assert.match(workflow, /ELECTRON_RUN_AS_NODE: '1'/u);
+  // The input is passed as a variable, never written into the script.
+  assert.doesNotMatch(workflow, /run:[^\n]*\$\{\{/u);
+  assert.doesNotMatch(workflow, /--entries "\$\{\{/u);
+  assert.equal(workflow.match(/ENTRIES: \$\{\{ inputs\.entries \}\}/gu)?.length, 2);
 });

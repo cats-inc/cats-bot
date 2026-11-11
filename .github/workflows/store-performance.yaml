@@ -35,14 +35,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The input reaches the commands as a variable, never as text of the script.
       - name: Measure under Node.js
         shell: bash
-        run: node scripts/testing/measure-store-performance.mjs --entries "${{ inputs.entries }}" | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          ENTRIES: ${{ inputs.entries }}
+        run: |
+          { echo '```'; node scripts/testing/measure-store-performance.mjs --entries "$ENTRIES"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Measure inside Electron
         shell: bash
         env:
           ELECTRON_RUN_AS_NODE: '1'
+          ENTRIES: ${{ inputs.entries }}
         run: |
           electron=$(node -p "require('electron')")
-          "$electron" scripts/testing/measure-store-performance.mjs --entries "${{ inputs.entries }}" | tee -a "$GITHUB_STEP_SUMMARY"
+          { echo '```'; "$electron" scripts/testing/measure-store-performance.mjs --entries "$ENTRIES"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"

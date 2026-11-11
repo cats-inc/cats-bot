@@ -71,6 +71,11 @@ export interface OpenStateDatabaseOptions {
   /** How long a statement waits for another connection's lock. Default 5000. */
   busyTimeoutMs?: number;
   now?: () => Date;
+  /**
+   * A writer's page cache, in KiB, for work that writes all over the file, such as the
+   * version-1 import; SQLite's own 2 MiB otherwise.
+   */
+  cacheSizeKiB?: number;
 }
 
 export type StateRow = Record<string, SqliteOutput>;
@@ -266,6 +271,13 @@ function openWriter(
   const connection = new DatabaseSync(options.file);
   try {
     connection.exec(`pragma busy_timeout=${busyTimeoutMs}`);
+    if (options.cacheSizeKiB !== undefined) {
+      if (!Number.isSafeInteger(options.cacheSizeKiB) || options.cacheSizeKiB < 1) {
+        throw new TypeError('cacheSizeKiB must be a positive integer');
+      }
+      // A negative size is in KiB rather than in pages.
+      connection.exec(`pragma cache_size=-${options.cacheSizeKiB}`);
+    }
     // Before anything that changes a row, a table or a setting: a database from a newer
     // version, or a file that is not ours, keeps all of them as they were found (FR-4).
     const found = inspect(connection, options.file);

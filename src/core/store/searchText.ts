@@ -29,12 +29,20 @@ import { createHash } from 'node:crypto';
 export const INDEX_FORM = 2;
 
 /**
+ * The character a conversation term begins with: one of private use, which SQLite's tokenizer
+ * keeps inside a token and `indexText` turns into a space, so that no entry's text and no
+ * query can hold a token that begins with it (checked with SQLite 3.51 and 3.54).
+ */
+const CONVERSATION_MARK = String.fromCodePoint(0xe000);
+
+/**
  * PLAN-014 task 1.7: the term an entry's conversation adds to its terms, so that the index
- * itself narrows a search to one conversation. Letters and digits only, which the tokenizer
- * keeps as one token, and a prefix no rewritten text begins a token with.
+ * itself narrows a search to one conversation. Nobody can type it or write it into an entry,
+ * so it neither finds a conversation's entries by itself nor makes another conversation's
+ * entries look like this one's.
  */
 export function conversationTerm(conversationId: string): string {
-  return `zc${createHash('sha256').update(conversationId).digest('hex').slice(0, 24)}`;
+  return `${CONVERSATION_MARK}${createHash('sha256').update(conversationId).digest('hex').slice(0, 24)}`;
 }
 
 /** A query longer than this is refused: nobody searches for a page of text. */
