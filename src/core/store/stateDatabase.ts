@@ -54,6 +54,11 @@ export class StateDatabaseError extends Error {
   }
 }
 
+export interface TransactionOptions {
+  /** Synced to the disk when it commits. Only for the outermost transaction. */
+  durable?: boolean;
+}
+
 export interface OpenStateDatabaseOptions {
   file: string;
   mode: StateDatabaseMode;
@@ -104,8 +109,12 @@ export interface StateDatabase {
    * transaction. If nested work changed rows and then failed, the whole transaction fails,
    * even when the outer code catches the error; nested work that failed before it changed
    * anything is the caller's to handle. Refused on a reader.
+   *
+   * A `durable` transaction is synced to the disk when it commits (`synchronous=FULL`),
+   * where an ordinary one may be lost to a power cut, though never half kept. It must be
+   * the outermost transaction: SQLite changes that setting only between transactions.
    */
-  transaction<T>(work: () => Synchronous<T>): T;
+  transaction<T>(work: () => Synchronous<T>, options?: TransactionOptions): T;
   /**
    * Runs `work` against one snapshot, taken before `work` starts, so that several queries
    * agree with each other whatever is committed meanwhile. It is for reading: on its own
@@ -420,10 +429,22 @@ class Connection implements StateDatabase {
     return Number(lastInsertRowid);
   }
 
-  transaction<T>(work: () => Synchronous<T>): T {
+  transaction<T>(work: () => Synchronous<T>, options: TransactionOptions = {}): T {
     this.#assertWriter();
     this.#assertNotReading();
-    return this.#within('transaction', work);
+    if (!options.durable) return this.#within('transaction', work);
+    if (this.#depth > 0) {
+      throw new TypeError('A durable transaction must be the outermost one');
+    }
+    // SQLite refuses to change the safety level inside a transaction.
+    const connection = this.#open();
+    connection.exec('pragma synchronous=full');
+    try {
+      return this.#within('transaction', work);
+    } finally {
+      // `work` may have closed the database.
+      if (this.#connection === connection) connection.exec('pragma synchronous=normal');
+    }
   }
 
   snapshot<T>(work: () => Synchronous<T>): T {

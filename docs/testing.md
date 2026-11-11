@@ -145,6 +145,28 @@ outside `src/core/store/`.
   between two words, marks that join nothing, repeated words, and query input that
   looks like query syntax.
 
+### Version-1 import
+
+- **Location**: `tests/core/version1Import.test.ts`
+- **Scope**: `src/core/store/version1Import.ts` and the store's import calls (SPEC-014
+  FR-11). Nothing calls the import yet.
+  - a data root written by today's own writers imported whole: every `seq` kept, each
+    record equal to what today's readers read, field order included, a NUL character
+    and a lone surrogate, the entries searchable, and the marker written;
+  - an empty data root, a conversation file named otherwise than its id, and a
+    transcript in batches of any size;
+  - what a crash leaves (a cut line, a line written onto it, a delete half done) and
+    files no reader of today reads, reported by file and line and the rest imported;
+  - a sidecar replaced by its backup, or left out when neither can be read;
+  - each problem that stops the import, listed with every other problem, with no
+    journal line and no marker written;
+  - a database that does not match the files, a record the store cannot read, and a
+    failure on the way to the marker, each leaving no marker and no journal;
+  - the journal and the marker written in one durable transaction after the rest, and
+    a database that already holds records refused.
+- `stateStore.test.ts` covers `importEntries`: each `seq` kept in order and after what
+  the conversation holds, a batch all or nothing, and the entries indexed.
+
 ### Store tests inside Electron
 
 `npm test` runs the store's test files above under Node.js. The core runs inside

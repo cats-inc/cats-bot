@@ -534,6 +534,63 @@ test('a page filled from further back holds no more entries than were asked for'
   }
 });
 
+test('the version-1 import keeps each seq, in order and after what a conversation holds', () => {
+  const file = freshFile();
+  const at = (seq: number, text: string): TranscriptEntry => ({ seq, ...entry(text) });
+  withStore(file, 'writer', (store) => {
+    assert.equal(store.isEmpty(), true);
+    store.saveConversation(conversation('home'));
+    assert.equal(store.isEmpty(), false);
+
+    store.importEntries('home', [at(2, 'one kettle'), at(7, 'two')]);
+    assert.deepEqual(
+      store.entries('home').map((item) => item.seq),
+      [2, 7],
+    );
+    // Imported entries are indexed, and the numbering goes on after them.
+    assert.deepEqual(hits(store, 'kettle'), ['home#2']);
+    assert.equal(store.appendEntry('home', entry('three')).seq, 8);
+
+    for (const seq of [8, 3, 9.5, Number.NaN, '9']) {
+      assert.throws(
+        () => store.importEntries('home', [{ ...at(9, 'bad'), seq } as unknown as TranscriptEntry]),
+        /does not come after entry 8/u,
+        String(seq),
+      );
+    }
+    // A batch is all or nothing.
+    assert.throws(
+      () => store.importEntries('home', [at(9, 'nine'), at(9, 'again')]),
+      /Entry 9 of conversation home does not come after entry 9/u,
+    );
+    assert.deepEqual(
+      store.entries('home').map((item) => item.seq),
+      [2, 7, 8],
+    );
+    assert.throws(
+      () => store.importEntries('nobody', [at(1, 'x')]),
+      /Unknown conversation nobody/u,
+    );
+
+    assert.equal(store.importMarker(), undefined);
+    store.setImportMarker('{"from":1}');
+    assert.equal(store.importMarker(), '{"from":1}');
+  });
+  withStore(file, 'reader', (store) => assert.equal(store.importMarker(), '{"from":1}'));
+
+  // Any kind of record makes a store not empty.
+  for (const make of [
+    (store: BotStateStore) => store.appendJournal(work(workItem('w1', 'home', 'queued'))),
+    (store: BotStateStore) =>
+      store.appendJournal({ type: 'presence', at: AT } as unknown as JournalEntry),
+  ]) {
+    withStore(freshFile(), 'writer', (store) => {
+      make(store);
+      assert.equal(store.isEmpty(), false);
+    });
+  }
+});
+
 test('search finds Chinese words of any length, English ones, and words written against each other', () => {
   const { store } = filled(
     [

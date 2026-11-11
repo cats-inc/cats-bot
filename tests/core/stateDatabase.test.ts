@@ -628,6 +628,57 @@ test('a transaction is all or nothing', () => {
   }
 });
 
+test('a durable transaction is synced when it commits, and only as the outermost one', () => {
+  const database = writer(join(freshDirectory(), 'bot.db'));
+  const add = (id: string): void => {
+    database.run('insert into conversations(id, json) values (?, ?)', id, '{}');
+  };
+  const level = (): unknown => database.get('pragma synchronous')?.synchronous;
+  try {
+    assert.equal(level(), 1);
+    database.transaction(
+      () => {
+        assert.equal(level(), 2);
+        add('a');
+        // Nested work joins it.
+        database.transaction(() => add('b'));
+      },
+      { durable: true },
+    );
+    assert.equal(level(), 1);
+    assert.deepEqual(conversations(database), ['a', 'b']);
+
+    // The setting comes back after a failure as well.
+    assert.throws(
+      () =>
+        database.transaction(
+          () => {
+            add('c');
+            throw new Error('stop');
+          },
+          { durable: true },
+        ),
+      /stop/u,
+    );
+    assert.equal(level(), 1);
+    assert.deepEqual(conversations(database), ['a', 'b']);
+
+    // SQLite keeps the setting it had when the transaction began.
+    assert.throws(
+      () => database.transaction(() => database.transaction(() => add('d'), { durable: true })),
+      /must be the outermost one/u,
+    );
+    assert.throws(
+      () => database.snapshot(() => database.transaction(() => add('d'), { durable: true })),
+      /A snapshot is for reading/u,
+    );
+    assert.equal(level(), 1);
+    assert.deepEqual(conversations(database), ['a', 'b']);
+  } finally {
+    database.close();
+  }
+});
+
 test('a transaction SQLite ended by itself keeps nothing, and nothing written after it', () => {
   const database = writer(join(freshDirectory(), 'bot.db'));
   const add = (id: string): number =>
