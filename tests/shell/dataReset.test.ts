@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -19,7 +19,8 @@ test('reset relaunch keeps the isolated Electron profile and returns to setup ra
     ['.', '--user-data-dir=C:/profile', '--remote-debugging-port=0']);
 });
 function fixture(t: TestContext) {
-  const root = mkdtempSync(join(tmpdir(), 'cats-data-reset-'));
+  // macOS exposes its temporary directory through /var -> /private/var.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cats-data-reset-')));
   const home = join(root, 'catsbot');
   const put = (name: string, value = name) => {
     const file = join(home, name); mkdirSync(dirname(file), { recursive: true }); writeFileSync(file, value); return file;

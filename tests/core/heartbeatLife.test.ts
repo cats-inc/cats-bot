@@ -23,7 +23,9 @@ const fast = {
 };
 const MINUTE = 60_000;
 
-function clock(start: number) {
+// Wake-greeting assertions need a wake time on the same local day. A wall-clock
+// start just after midnight puts awakeNow's wake time on the previous day.
+function clock(start = new Date(2026, 10, 11, 12).getTime()) {
   const began = Date.now();
   let offset = 0;
   return {
@@ -52,7 +54,7 @@ async function beat(core: BotCore): Promise<{ kind: string | undefined; item: Wo
 }
 
 test('unanswered messages double the wait, survive a restart, and stop after five until the owner writes (SPEC-011 FR-9, FR-10)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const rhythm = awakeNow(time.now(), { sinceWake: 60, untilBed: 20 * 60 });
   const options = {
     botsHome: home.botsHome,
@@ -112,7 +114,7 @@ test('unanswered messages double the wait, survive a restart, and stop after fiv
 });
 
 test('home sleeps in rest hours after one good night, a message wakes it, and it wakes on its own in the morning (SPEC-011 FR-5, FR-16 to FR-18)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   // Bedtime in 30 minutes, the wake time five hours ago: no greeting is due now.
   const rhythm = awakeNow(time.now(), { sinceWake: 5 * 60, untilBed: 30 });
   const { core } = openTestBot({
@@ -182,7 +184,7 @@ test('home sleeps in rest hours after one good night, a message wakes it, and it
 });
 
 test('assist sleeps without a good night; talking past bedtime means no good night (SPEC-011 FR-17)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const { core: assist } = openTestBot({
     botsHome: home.botsHome,
     id: 'rhythm-assist',
@@ -229,7 +231,7 @@ test('assist sleeps without a good night; talking past bedtime means no good nig
 });
 
 test('a bot started in rest hours stays asleep until a message; with the heartbeat off home stays awake all night (SPEC-011 FR-16)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const night = awakeNow(time.now(), { sinceWake: 16 * 60, untilBed: -60 });
   const { core: late } = openTestBot({
     botsHome: home.botsHome,
@@ -274,7 +276,7 @@ test('a bot started in rest hours stays asleep until a message; with the heartbe
 });
 
 test('assist looks over its own notes and follows up in its direct message; nothing new means no turn (SPEC-011 FR-13, FR-14)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const { core } = openTestBot({
     botsHome: home.botsHome,
     id: 'assist',
@@ -315,7 +317,7 @@ test('assist looks over its own notes and follows up in its direct message; noth
 });
 
 test('a restart keeps the count and the schedule: an overdue heartbeat waits the wake delay and greets no second time (SPEC-011 FR-7, FR-11)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const options = {
     botsHome: home.botsHome,
     id: 'restart',
@@ -362,7 +364,7 @@ test('a restart keeps the count and the schedule: an overdue heartbeat waits the
 });
 
 test('a good morning deferred because the owner is talking is not said later (SPEC-011 FR-7)', async () => {
-  const time = clock(Date.now());
+  const time = clock();
   const { core } = openTestBot({
     botsHome: home.botsHome,
     id: 'deferred-wake',

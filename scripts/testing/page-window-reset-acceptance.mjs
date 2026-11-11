@@ -4,14 +4,14 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 
 const script = import.meta.filename;
 const repo = resolve(import.meta.dirname, '../..');
 if (!process.versions.electron) {
-  const root = mkdtempSync(join(tmpdir(), 'cats-window-reset-'));
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'cats-window-reset-')));
   const executable = createRequire(import.meta.url)('electron');
   const env = { ...process.env }; delete env.ELECTRON_RUN_AS_NODE;
   for (const phase of ['save', 'restore', 'runtime']) {
@@ -30,7 +30,7 @@ if (!process.versions.electron) {
   const { createDataResetHandler } = await import('../../dist/shell/electron/dataResetHandler.js');
   const phase = process.argv.find(arg => arg.startsWith('--phase='))?.slice(8);
   const root = process.argv.find(arg => arg.startsWith('--evidence='))?.slice(11);
-  assert.ok(root && resolve(root).startsWith(resolve(tmpdir())), 'Use only disposable evidence storage');
+  assert.ok(root && resolve(root).startsWith(realpathSync(tmpdir())), 'Use only disposable evidence storage');
   const home = join(root, 'reset-home');
   app.setPath('userData', join(root, 'electron'));
   app.on('window-all-closed', () => {});

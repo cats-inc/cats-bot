@@ -21,9 +21,10 @@ const fast = {
 };
 
 function clock(start = Date.now()) {
+  const began = Date.now();
   let offset = 0;
   return {
-    now: () => new Date(start + offset + (Date.now() - start)),
+    now: () => new Date(start + offset + (Date.now() - began)),
     advance(ms: number) {
       offset += ms;
     },
@@ -95,8 +96,9 @@ test('a tick during a running turn neither resumes, rebuilds nor cancels (A2 bus
 });
 
 test('a quiet heartbeat leaves a journal entry but no message; a spoken one is a bot message with a notification (FR-25)', async () => {
-  const zeroDelay = { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0, ...awakeNow() };
-  const { core: quiet } = openTestBot({ botsHome: home.botsHome, id: 'quiet', core: { ...fast, life: { random: () => 0 } } });
+  const time = clock(new Date(2026, 10, 11, 12).getTime());
+  const zeroDelay = { enabled: true, wakeMinMinutes: 0, wakeMaxMinutes: 0, regularMinMinutes: 0, regularMaxMinutes: 0, ...awakeNow(time.now()) };
+  const { core: quiet } = openTestBot({ botsHome: home.botsHome, id: 'quiet', core: { ...fast, now: time.now, life: { random: () => 0 } } });
   await quiet.start();
   try {
     await quiet.updateProfile({ heartbeat: zeroDelay });
@@ -120,7 +122,7 @@ test('a quiet heartbeat leaves a journal entry but no message; a spoken one is a
   const { core: spoken } = openTestBot({
     botsHome: home.botsHome,
     id: 'spoken',
-    core: { ...fast, life: { random: () => 0 } },
+    core: { ...fast, now: time.now, life: { random: () => 0 } },
     runtimeEnv: { FAKE_HEARTBEAT_REPLY: 'Good morning! The plants look thirsty.' },
   });
   await spoken.start();

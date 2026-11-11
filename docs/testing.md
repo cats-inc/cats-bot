@@ -58,9 +58,11 @@ last step, not the first.
   home sleeping in rest hours (the good night, a message at night, dozing off
   again, waking at the wake time, a start at night, the heartbeat off) and the
   morning greeting, and `assist` reviewing notes into the direct message.
-  `openTestBot` puts the wall clock in the bot's awake hours unless a test
-  passes `awake: false`, and tests on the wall clock set the rhythm with
-  `awakeNow()`, so the suite passes at any hour; run it with `TZ` set to a
+  `openTestBot` puts the injected clock (or the wall clock when none is supplied)
+  in the bot's awake hours unless a test passes `awake: false`. Wake-greeting
+  tests start at a fixed local noon, so their wake time belongs to the same local
+  day even when CI runs just after midnight. Other wall-clock tests set the rhythm
+  with `awakeNow()`; run the suites with `TZ` set to a
   night, just-after-bedtime and wake-window local time after changing the rhythm.
 
 ### Integration tests
@@ -322,6 +324,8 @@ confirms the dialog with Runtime checked. The third completes that purge and
 checks retained Runtime and consent are gone. Cancel leaves data untouched.
 The printed evidence directory contains screenshots and per-process results.
 No core, provider CLI, installed profile or OS login item is used by this fixture.
+Reset fixtures canonicalize their temporary root, including macOS's system
+`/var` alias; deliberate redirected-storage tests still verify refusal.
 
 On 2026-11-11 this native Windows x64/Electron 41.2.0 fixture passed all three
 processes; its Traditional Chinese confirmation screenshot was inspected.

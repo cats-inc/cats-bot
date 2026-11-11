@@ -87,7 +87,7 @@ export function openTestBot(options: TestBotOptions): { core: BotCore; root: str
     ...options.profile,
   });
   if (options.awake !== false) {
-    saveProfile(botPathsFor(root), { ...profile, heartbeat: { ...profile.heartbeat, ...awakeNow(new Date(), { sinceWake: 5 * 60, untilBed: 12 * 60 }) } });
+    saveProfile(botPathsFor(root), { ...profile, heartbeat: { ...profile.heartbeat, ...awakeNow(options.core?.now?.() ?? new Date(), { sinceWake: 5 * 60, untilBed: 12 * 60 }) } });
   }
   const core = BotCore.open({
     root,
