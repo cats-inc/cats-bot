@@ -53,6 +53,14 @@ security review. Embeddings come only if the evaluation asks for them.
     mechanism.
   - Bot must check the `textOnly` capability and the create readback before it sends
     anything. An older Runtime would return an ordinary session.
+- [ ] Runtime: **credentials stay out of the processes Runtime starts.**
+  - Today a tool-capable process started by Runtime can read Runtime's environment. With
+    Runtime's own API key it can also reach every target through the loopback API.
+  - Runtime must keep its own key and backend credentials out of every child process, and
+    let an instance admit only text-only sessions.
+  - Specified in Runtime SPEC-043 R10 (accepted 2026-11-11, not implemented). It needs
+    Runtime's next minor line.
+  - It blocks P4.6 only.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 
@@ -117,6 +125,24 @@ controls all of it.
       automatic additions and the approval queue.
 - [ ] 4.4 Token caps per run and per day, usage records, batch halving and skip listing.
 - [ ] 4.5 Optional dream diary, off by default.
+- [ ] 4.6 Separate consolidation target (SPEC-015 FR-19), blocked on P0's credential
+      prerequisite:
+  - an optional profile field, normalized field by field;
+  - try first, end to end, a private Runtime that runs a CLI target and an API or local
+    target together;
+  - the private Runtime's generated configuration with the second target, marked as
+    admitting only text-only sessions, with a literal endpoint for a local model, and the
+    restart rules when it changes;
+  - the key in `secrets.json`:
+    - a write that fails without a cipher backed by the operating system's credential
+      store, and a read that refuses an unencrypted entry;
+    - placed only in the environment the supervisor builds for the Runtime process, under a
+      Cats-private name;
+    - deleted when the target is removed;
+  - settings with the provider named, the consent text, the loopback or remote note for a
+    local model, and the reason when consolidation is off;
+  - acceptance against a Runtime API-backend target, which needs Runtime SPEC-043 R7 and
+    R10.
 
 **Deliverables**: bots improve their memory overnight within a known cost, and no batch can
 stall them.

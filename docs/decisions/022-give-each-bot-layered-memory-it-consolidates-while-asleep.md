@@ -17,8 +17,23 @@ recorded; the intent is unchanged:
   so core memory stays small and the handoff budget only grows once it can be delivered
   once.
 - **Consolidation target.** Each bot's private Runtime runs one provider, so a cheaper
-  consolidation target means a cheaper model of the same provider.
+  consolidation target meant a cheaper model of the same provider. The amendment below
+  replaces this.
 - **Bot tool writes** are validated, with trust derived from the cited evidence.
+
+**Amended later on 2026-11-11: the consolidation target (decision 6).**
+
+- Runtime's audit for its text-only sessions
+  ([Runtime SPEC-043](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-043-text-only-sessions.md))
+  found that no CLI adapter can run without tools today. codex and grok have no known
+  mechanism.
+- Kept on the bot's own provider, consolidation would be unavailable to most bots.
+- The owner therefore chose to let a bot name a separate consolidation target. Without one,
+  the bot's own execution target is used.
+- A separate target waits on one more Runtime change: Runtime's own key and backend
+  credentials must not reach the processes Runtime starts (Runtime SPEC-043 R10).
+- The key-handling, consent and local-model rules under decision 6 were added while this
+  was written up, after a security review. The owner confirmed them the same day.
 
 Nothing is implemented. Before any memory injection or consolidation:
 
@@ -60,7 +75,8 @@ It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
 - **Tool-free sessions.** A session with no tools, no handoff and no provider-native project
   memory, deletable with its history, is not yet offered by Runtime. It is the same
   prerequisite as SPEC-012 FR-13. Runtime ADR-050's ephemeral sessions are verified for Codex
-  only.
+  only. Runtime has since specified it as a text-only session (Runtime SPEC-043), which a
+  target offers only on evidence.
 
 ## Decision
 
@@ -111,10 +127,10 @@ It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
 6. **Consolidation ("dreaming").**
    - **When**: once per local day, after the direct message falls asleep in rest hours
      (SPEC-011), and only when some conversation has evidence past its watermark.
-   - **Session**: an owner-invisible, low-priority, cancellable work item. The Runtime
-     session is tool-free, handoff-free and memory-free, deletable with its history, and
-     ephemeral where supported. It is not enabled until Runtime offers such a session for
-     the bot's provider; there is no fallback to a tool-capable session.
+   - **Session**: an owner-invisible, low-priority, cancellable work item. It runs in a
+     Runtime text-only session: no tools, no handoff, no native memory, and no resumable
+     native conversation. It is not enabled until Runtime offers such a session for the
+     consolidation target; there is no fallback to a tool-capable session.
    - **Batches**: evidence goes in token-bounded batches, and each conversation's watermark
      advances per applied batch.
    - **Output**: structured proposals (add, merge, supersede, retire, summarize) with
@@ -122,8 +138,31 @@ It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
      guard.
    - **Applying**: additions and summaries apply automatically; merges, supersessions and
      retirements wait for the owner. Every change is versioned and restorable.
-   - **Model and cost**: it uses the bot's own provider, optionally with a cheaper model of
-     that provider. There is a per-run and a daily token cap, recorded as usage, and Runtime
+   - **Target**: the bot's own execution target, unless the owner names a separate
+     consolidation target for that bot.
+     - A separate target is a second target in the bot's private Runtime that offers
+       text-only sessions. Runtime's API backends, including a local model, are the expected
+       first ones.
+     - It is used for consolidation only. Every conversation still runs on the bot's one
+       execution target (ADR-001 §3).
+     - Naming another provider sends it everything a consolidation run reads: the owner's
+       and the bot's lines from the direct message and notes, the core memory, and the
+       recalled memory pages. The owner chooses it per bot, in settings that say so. It is
+       never chosen automatically.
+     - A key for that provider is stored only where the operating system's credential store
+       encrypts it. It reaches the private Runtime through an environment variable with a
+       Cats-private name that only that process receives, never through a configuration
+       file.
+     - A tool-capable process started by Runtime can read Runtime's environment today, and
+       with Runtime's own key it can reach every target. A separate target therefore cannot
+       be enabled until Runtime keeps its own key and backend credentials out of every
+       process it starts, and admits only text-only sessions on that target.
+     - A local model keeps text on the machine only on a loopback address. Any other address
+       needs the same consent as another provider.
+     - These rules do not protect against a process that runs as the owner's OS user.
+     - If the target in use does not offer text-only sessions, consolidation is off and the
+       settings say why. Bot never falls back from one target to another by itself.
+   - **Cost**: there is a per-run and a daily token cap, recorded as usage, and Runtime
      guardrails stop it.
 7. **Search.**
    - BM25 over the bigram-indexed store, with a recency tie-break. Single CJK characters use
@@ -156,9 +195,13 @@ The owner chose the proposed option for each:
    additions automatic; edits and removals approved. Rejected: every N turns (Hermes; no
    shared prompt cache exists for a wrapped CLI), weekly proposals only (Paperclip), or
    approving everything. See SPEC-015 FR-13–FR-18, FR-20 and FR-22.
-6. **Consolidation model and cost**: the bot's own provider, optionally a cheaper model of
-   it, with per-run and daily token caps. Rejected: a fixed cheap model, or consolidation
-   only on the owner's request. See SPEC-015 FR-19.
+6. **Consolidation target and cost**, as amended: the bot's own execution target by default,
+   or a separate consolidation target the owner names for that bot, with per-run and daily
+   token caps.
+   - Rejected: the bot's own provider only (the first choice, which would leave codex and
+     grok bots without consolidation), a fixed cheap model for every bot, or consolidation
+     only on the owner's request.
+   - See SPEC-015 FR-14 and FR-19.
 
 ## Consequences
 
@@ -182,6 +225,9 @@ The owner chose the proposed option for each:
 - Two Runtime capabilities do not exist yet: turn-scoped context, and a tool-free deletable
   session.
 - More owner-facing surface: memory settings and an approval queue.
+- A separate consolidation target sends conversation text and memory to a second provider
+  when the owner picks one, needs its own key and billing, and makes the private Runtime
+  host two targets. It also depends on a third Runtime change.
 
 ### Neutral
 
