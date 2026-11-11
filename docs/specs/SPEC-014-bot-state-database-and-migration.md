@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the core keeps every bot's records in its database since the cutover; paging, snapshots and export are still to come ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the core keeps every bot's records in its database since the cutover, with its check, snapshots and export; paging is still to come ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -178,10 +178,10 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Safety and export
 
-13. FR-13: Once a day, while idle, the core writes a consistent snapshot with
+13. FR-13 *(amended 2026-11-12; see Open Questions)*: Once a day, while idle, the core writes a consistent snapshot with
     `VACUUM INTO` to `backups/` and keeps the last three. Startup runs `PRAGMA quick_check`.
     A failure stops the core with a report and the newest snapshot's path.
-14. FR-14: `cats-bot export <conversation>` writes the conversation as JSONL entries plus
+14. FR-14 *(amended 2026-11-12; see Open Questions)*: `cats-bot export <conversation>` writes the conversation as JSONL entries plus
     presentations, for portability and inspection.
 15. FR-15: No automatic deletion of evidence. Retention beyond conversation deletion is a
     later decision.
@@ -317,6 +317,31 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
 - [x] FR-11: `cats-bot restore` sets a database it cannot open as its own, a newer one or a
   file that is not one, aside whole, with its log, and says when there is nothing to
   restore. It looks for the version-1 files to put back before it moves anything.
+
+Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruction:
+
+- [x] FR-13: the check and the snapshot read the database on a read-only connection of
+  their own, in a worker thread, so the core goes on answering. Measured inside Electron 41
+  on a 330 MB database of a million entries, the check took 16 to 17 s and the snapshot
+  9 s; on a larger bot the check would not fit in the hub's minute to start. So the
+  check runs once the core has started, and a check that fails stops the core with its
+  report, as the requirement says, a little later than the start itself.
+- [x] FR-13: a snapshot is taken only after this run's check passed, so a damaged
+  database never pushes a good snapshot out. It is written as `bot-<time>.db.partial`
+  and renamed when whole; the three newest whole ones are kept.
+- [x] FR-13: the report is `state-check-<time>.txt` in the bot's folder. It lists what
+  SQLite found, names the newest snapshot and says how to put it in place: quit the bot,
+  move `bot.db`, `bot.db-wal` and `bot.db-shm` aside, copy the snapshot as `bot.db`. No
+  command does this. A database SQLite cannot open at all is reported the same way, by
+  any host that opens the bot.
+- [x] FR-14: an export is one JSON object per line: the conversation's record (`type`
+  `conversation`), its entries in `seq` order (`entry`), then its reply presentations by
+  `seq` and id (`presentation`), each record as it was stored. A bot not migrated yet is
+  exported from its version-1 files, read as the import reads them, so the exports from
+  before and after the migration are equal byte for byte. `--output <file>` writes a
+  file instead of standard output.
+- [x] PLAN-014 task 1.3: `cats-bot reindex` rebuilds the index while the bot is stopped,
+  migrating a bot of 0.5 first, as any write while it is stopped does.
 
 ## References
 

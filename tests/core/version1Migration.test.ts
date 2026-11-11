@@ -346,6 +346,12 @@ test('an import that does not finish leaves the version-1 files as they were, wi
   );
   assert.match(readFileSync(second.summary, 'utf8'), /## Error\n\nthe disk is full/u);
   assert.equal(existsSync(stateDatabaseFile(failing)), false);
+  // Run again once the disk has room: the same copy, and no report of the run before.
+  const third = migrate(failing);
+  assert.ok(third.outcome === 'migrated' && third.summary === null);
+  assert.equal(third.backup, second.backup);
+  assert.equal(existsSync(second.summary), false);
+  assert.equal(existsSync(second.report), false);
 });
 
 test('a migration stopped before any step is finished by the next run', () => {

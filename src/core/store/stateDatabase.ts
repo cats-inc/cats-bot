@@ -161,6 +161,7 @@ const INSERT = /^\s*insert\b/iu;
 const KEEPS_HALF = /\bor\s+fail\b/iu;
 const TRANSACTION_CONTROL = /^\s*(?:begin|commit|end|rollback|savepoint|release)\b/iu;
 /** SQLite's primary result codes, as the driver reports them in `errcode`. */
+const SQLITE_CORRUPT = 11;
 const SQLITE_CANTOPEN = 14;
 const SQLITE_NOTADB = 26;
 
@@ -180,17 +181,74 @@ export function openStateDatabase(options: OpenStateDatabaseOptions): StateDatab
  * `pathToFileURL` turns a UNC path into a URL with a host, which SQLite rejects, so that
  * shape is built by hand.
  */
-export function existingDatabaseUri(file: string, windows = process.platform === 'win32'): string {
+export function existingDatabaseUri(
+  file: string,
+  windows = process.platform === 'win32',
+  mode: 'rw' | 'ro' = 'rw',
+): string {
   // Also turns forward slashes into the platform's separator before the shapes are told apart.
   const absolute = (windows ? win32 : posix).resolve(file);
   const unc = windows ? /^\\\\(?:\?\\UNC\\)?([^\\?.][^\\]*)\\(.+)$/iu.exec(absolute) : null;
   if (unc) {
     const path = unc[2]!.split('\\').map(encodeURIComponent).join('/');
-    return `file:////${unc[1]!}/${path}?mode=rw`;
+    return `file:////${unc[1]!}/${path}?mode=${mode}`;
   }
   const url = pathToFileURL(absolute, { windows });
-  url.searchParams.set('mode', 'rw');
+  url.searchParams.set('mode', mode);
   return url.href;
+}
+
+/**
+ * SPEC-014 FR-13: what `pragma quick_check` finds wrong with the database at `file`, or
+ * nothing. It reads on a read-only connection of its own, beside the core's writer; a
+ * database SQLite cannot read at all is one problem.
+ */
+export function checkDatabaseFile(file: string): string[] {
+  try {
+    return withReadOnlyConnection(file, (connection) => {
+      const rows = connection.prepare('pragma quick_check').all();
+      const found = rows.map((row) => String(Object.values(row)[0]));
+      return found.length === 1 && found[0] === 'ok' ? [] : found;
+    });
+  } catch (error) {
+    const code = sqliteCode(error);
+    if (code === SQLITE_CORRUPT || code === SQLITE_NOTADB) {
+      return [error instanceof Error ? error.message : String(error)];
+    }
+    throw error;
+  }
+}
+
+/**
+ * SPEC-014 FR-13: a consistent copy of the database at `file`, written to `target` by
+ * `vacuum into`, which must not exist. It reads one snapshot on a read-only connection of
+ * its own, so the core's writer goes on meanwhile.
+ */
+export function snapshotDatabaseFile(file: string, target: string): void {
+  withReadOnlyConnection(file, (connection) => {
+    connection.prepare('vacuum into ?').run(target);
+  });
+}
+
+/** Whether SQLite failed because the file is damaged or is not a database. */
+export function isDamagedDatabaseError(error: unknown): boolean {
+  if (error instanceof StateDatabaseError) return error.code === 'not_a_bot_database';
+  const code = sqliteCode(error);
+  return code === SQLITE_CORRUPT || code === SQLITE_NOTADB;
+}
+
+function withReadOnlyConnection<T>(file: string, work: (connection: SqliteDatabase) => T): T {
+  const { DatabaseSync } = sqliteDriver();
+  if (!exists(file)) throw new StateDatabaseError('missing', `${file} holds no bot state yet`);
+  const connection = new DatabaseSync(existingDatabaseUri(file, undefined, 'ro'), {
+    readOnly: true,
+  });
+  try {
+    connection.exec(`pragma busy_timeout=${DEFAULT_BUSY_TIMEOUT_MS}`);
+    return work(connection);
+  } finally {
+    connection.close();
+  }
 }
 
 function openWriter(

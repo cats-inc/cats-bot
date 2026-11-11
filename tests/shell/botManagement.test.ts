@@ -275,6 +275,35 @@ test('a stop while a core starts ends that start at once, a migration included (
   assert.equal(runner.state, 'stopped', 'no restart follows');
 });
 
+test('a start right after a stop follows the stopped start, and is no failure', async () => {
+  const states: string[] = [];
+  let starts = 0;
+  const runner = new CoreRunner<string>('mochi', {
+    // The first start runs until it is stopped; the next one starts at once.
+    start: (signal) => {
+      starts += 1;
+      if (starts > 1) return Promise.resolve(`core ${starts}`);
+      return new Promise<string>((_, reject) => {
+        signal.addEventListener('abort', () => setTimeout(() => reject(new Error('stopped')), 20));
+      });
+    },
+    stop: async () => undefined,
+    onLost: () => undefined,
+    isExternal: () => false,
+    changed: () => states.push(runner.state),
+    log: () => { throw new Error('a stopped start is not a failure to log'); },
+    delaysMs: [5],
+  });
+  void runner.start();
+  const stopping = runner.stop();
+  const again = runner.start();
+  await stopping;
+  assert.equal(await again, 'core 2');
+  assert.equal(runner.state, 'running');
+  assert.equal(states.includes('failed'), false, states.join(' '));
+  await runner.stop();
+});
+
 test('an archived id is reserved: run and init refuse it, and a derived id is numbered past it (FR-5, FR-27)', async () => {
   const { root, manager } = setUp(['mochi', 'old-catsbot']);
   await manager.archive('old-catsbot');

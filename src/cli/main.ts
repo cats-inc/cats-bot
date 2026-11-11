@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
@@ -13,9 +13,16 @@ import { callHubControl } from '../core/host-api/hubControl.ts';
 import { createFileLogger } from '../core/log.ts';
 import { boundStderrLog } from '../shared/stderrLog.ts';
 import { diagnosticError } from '../shared/diagnosticLog.ts';
-import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
+import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome, stateDatabaseFile } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
 import { restoreVersion1 } from '../core/store/version1Migration.ts';
+import {
+  conversationFromDatabase,
+  conversationFromVersion1,
+  exportLines,
+  type ConversationContent,
+} from '../core/store/conversationExport.ts';
+import { openBotStateStore, StateDatabaseError } from '../core/store/stateStore.ts';
 import { STATE_DATABASE_PROFILE_RAISE } from '../core/profile/profile.ts';
 
 /**
@@ -95,6 +102,11 @@ Commands:
   hub boss-cat <id> | --clear            make a bot the Boss Cat, or clear the role (through the hub)
   restore [--json]                       put the bot's version-1 files back for an older Cats Bot, while
                                          the bot is stopped; its database is set aside, not removed
+  export <conversation|home> [--output <file>]
+                                         write a conversation as JSON lines: its record, its entries
+                                         and its reply presentations; read from the version-1 files
+                                         when the bot was not migrated yet
+  reindex                                rebuild the search index from the entries, while the bot is stopped
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -337,6 +349,66 @@ async function commandRestore(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promi
     process.stdout.write(`The database was set aside as ${result.setAside}. What was written after the migration is there, not in the version-1 files.\n`);
   }
   for (const name of result.leftInArchive) process.stdout.write(`Still in archive/v1: ${name}\n`);
+  return 0;
+}
+
+/**
+ * SPEC-014 FR-14: a conversation as JSON lines, from the database once the bot was
+ * migrated, or from its version-1 files before. It only reads, while the bot runs too.
+ */
+async function commandExport(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const [conversation] = parsed.positional;
+  if (!conversation) {
+    process.stderr.write('export needs a conversation id (or home)\n');
+    return 2;
+  }
+  const target = resolveTarget(parsed, env);
+  const paths = botPathsFor(target.root);
+  const warnings: string[] = [];
+  let content: ConversationContent | null = null;
+  let store;
+  try {
+    store = openBotStateStore({ file: stateDatabaseFile(paths), mode: 'reader', warn: (message) => warnings.push(message) });
+  } catch (error) {
+    if (!(error instanceof StateDatabaseError && error.code === 'missing')) throw error;
+  }
+  let migrated = false;
+  try {
+    migrated = store?.importMarker() !== undefined;
+    if (migrated) content = conversationFromDatabase(store!, conversation);
+  } finally {
+    store?.close();
+  }
+  if (!migrated) {
+    // Not migrated yet: the version-1 files, read as the migration will import them.
+    const read = conversationFromVersion1(paths, conversation);
+    if (read) {
+      content = read.content;
+      warnings.push(...read.problems);
+    }
+  }
+  if (!content) {
+    process.stderr.write(`No conversation ${conversation}\n`);
+    return 1;
+  }
+  const text = exportLines(content).join('');
+  const output = flagString(parsed.flags, 'output');
+  if (output) writeFileSync(output, text);
+  else process.stdout.write(text);
+  for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`);
+  return 0;
+}
+
+/** PLAN-014 task 1.3: the search index rebuilt from the entries, while the bot is stopped. */
+async function commandReindex(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  if (target.running) {
+    throw new Error(`The bot is running (pid ${target.running.pid}); quit it before rebuilding its search index`);
+  }
+  const core = BotCore.open({ root: target.root, log: (line) => process.stderr.write(`${line}\n`), tools: false });
+  const started = Date.now();
+  const indexed = core.rebuildSearchIndex();
+  process.stdout.write(`The search index holds ${indexed} entries again (${((Date.now() - started) / 1000).toFixed(1)} s).\n`);
   return 0;
 }
 
@@ -743,6 +815,10 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandHub(parsed, env);
       case 'restore':
         return await commandRestore(parsed, env);
+      case 'export':
+        return await commandExport(parsed, env);
+      case 'reindex':
+        return await commandReindex(parsed, env);
       case undefined:
       case 'help':
       case '--help':

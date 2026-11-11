@@ -86,7 +86,9 @@ freeze of the storage format.
    `profile.json`, `bot.db` (since 0.6, SPEC-014: conversation metadata and attachments, transcripts,
    reply presentations, and the journal of work items, schedules and state transitions; until 0.6 these
    were `conversations/<conversationId>.json`, `transcripts/<conversationId>.jsonl`, `presentations/` and
-   `journal.jsonl`, which the first start of 0.6 copies to `migration-backup/` and moves to `archive/v1/`),
+   `journal.jsonl`, which the first start of 0.6 copies to `migration-backup/` and moves to `archive/v1/`;
+   `backups/` keeps its three newest daily snapshots, and `state-check-<time>.txt` is the report of a
+   check that failed),
    `runtime/` (used as `CATS_RUNTIME_DIR`), `logs/`; plus the core's `life.json` (time of the last tick),
    `instance.lock.json`, `handoff/`, `secrets.json` (the Telegram token and the like, see Open Questions),
    `telegram-state.json` (the last admitted `update_id`, not secret), and the shell's own `shell-state.json`
