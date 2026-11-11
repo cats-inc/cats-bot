@@ -55,11 +55,13 @@ verified migration moves existing bots over without losing or rewriting their hi
 2. FR-2 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: All access goes through one adapter module, built on a driver module
    that is the only one to name `node:sqlite`, so `better-sqlite3` can replace it if
    acceptance fails. No module outside the store reaches either of them. The adapter
-   records the Node.js, Electron and SQLite versions of the last writer in `meta`.
+   records the Node.js, Electron, SQLite and Unicode versions of the last writer in
+   `meta`.
 3. FR-3 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Tables (conceptual; exact columns are a PLAN-014 decision). Each table
    keeps its record as JSON text; the other columns are derived from it for lookups and
    may be empty.
-   - `meta`: schema version, migration record, driver versions;
+   - `meta`: schema version, migration record, the versions of FR-2, and the number of
+     the way text is indexed (FR-9);
    - `conversations`: the conversation record and its attachment (today's
      `conversations/<id>.json`);
    - `entries`: transcript entries keyed by (conversation id, seq), with kind, origin, time,
@@ -69,7 +71,8 @@ verified migration moves existing bots over without losing or rewriting their hi
    - `work_items` and `schedules`: the current state of each work item and schedule;
    - `journal`: every line of today's journal, in the order it was written: each state a
      work item or a schedule went through, and presence, runtime, heartbeat,
-     configuration and Boss Cat tool calls. Appended only;
+     configuration and Boss Cat tool calls. A line is never changed; it leaves only by
+     FR-7's pruning or with its conversation;
    - `entries_fts`: the full-text index of FR-8.
 4. FR-4 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every table carries the schema version through `meta`. An unknown newer
    version stops the core with a clear error and changes no row, table or setting. A file
@@ -235,7 +238,8 @@ Changes of wording that follow from the code, with no other decision in them:
   `schedule cancel`, as today, and has every host close its connection before a bot root
   is moved.
 - [ ] FR-2: a driver module and an adapter module instead of one module, neither reachable
-  from outside the store; `meta` records the Node.js, Electron and SQLite versions.
+  from outside the store; `meta` records the Node.js, Electron, SQLite and Unicode
+  versions.
 - [ ] FR-3: an entry's row id is never reused, and a presentation is keyed by its
   conversation as well as its id.
 - [ ] FR-4: "changes nothing" became "changes no row, table or setting". Opening a database

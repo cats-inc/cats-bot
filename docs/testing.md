@@ -83,9 +83,10 @@ FR-2).
     taken before its work starts, and accepts only queries;
   - a change reporting its rows, and an insert its row id, whatever row id the index
     left behind;
-  - transactions that are all or nothing, including a nested failure the outer code
-    catches, work that returns a promise, and a transaction SQLite ended by itself; and a
-    failed read in a snapshot leaving the transaction around it to go on;
+  - transactions that are all or nothing, including work that returns a promise and a
+    transaction SQLite ended by itself; nested work failing the whole transaction when it
+    had changed rows, and leaving it to go on when it had not; a snapshot on its own
+    taking no change;
   - one statement at a time, transactions opened only through the adapter, and an insert
     that must add exactly one row;
   - closing twice, a closed database saying so, and Windows refusing a rename while a

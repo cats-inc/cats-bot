@@ -64,6 +64,9 @@ The following is proposed.
    - A presentation is one row per reply, upserted.
    - A work item is one current-state row plus an appended transition row, written in one
      transaction.
+   - Proposed clarification, 2026-11-11, waiting for the owner (SPEC-014 Open Questions):
+     the transition rows are lines of one journal table that keeps every journal line in
+     order, a schedule's among them, and every table keeps its record as JSON text.
    - Startup reads current rows instead of replaying history.
 4. **A full-text index** is part of the store. Han, Kana and Hangul runs are indexed as
    overlapping bigrams beside the normal text, because trigram and unicode61 miss
