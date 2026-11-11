@@ -24,7 +24,7 @@ function fixture(t: { after(fn: () => void): void }, state: AttachmentState = 's
   const saved = (id: string) => ({ state, sessionId: `runtime-${id}`, providerSessionId: `native-${id}`,
     provider: 'codex', model: null, configRevision: profile.configRevision });
   store.setAttachment('home', saved('home'));
-  const calls = { inspect: [] as string[], resume: [] as Array<{ id: string; body: unknown }>, create: [] as unknown[], overlay: [] as string[] };
+  const calls = { inspect: [] as string[], resume: [] as Array<{ id: string; body: unknown }>, create: [] as unknown[], overlay: [] as string[], retired: [] as string[] };
   const client = {
     getSession: async (id: string): Promise<RuntimeSessionView> => {
       calls.inspect.push(id); return { id, status: 'closed', providerName: 'codex', providerSessionId: id.replace('runtime-', 'native-') };
@@ -37,12 +37,16 @@ function fixture(t: { after(fn: () => void): void }, state: AttachmentState = 's
       calls.create.push(body); return { id: `new-${calls.create.length}`, status: 'initializing' };
     },
   };
+  let attempted: boolean | undefined = false;
   const makeBinder = (conversations = store) => new SessionBinder({ client: () => client as unknown as RuntimeClient,
     profile: () => profile, conversations, now, log: () => {},
     mcpServers: () => [{ name: 'fixture', transport: 'http', url: 'http://127.0.0.1:1', auth: { kind: 'bearer_env', token: 'fresh-test-token' } }],
     sessionCreated: id => { calls.overlay.push(id); },
+    retireSession: id => { calls.retired.push(id); },
+    ...(attempted !== undefined ? { hasAttemptedSessionTurn: () => attempted! } : {}),
   });
-  return { paths, now, store, profile, saved, calls, client, binder: makeBinder(), makeBinder };
+  return { paths, now, store, profile, saved, calls, client, binder: makeBinder(), makeBinder,
+    setAttempted(value: boolean | undefined) { attempted = value; } };
 }
 
 for (const state of ['sleeping', 'closed', 'failed'] as const) {
@@ -56,6 +60,55 @@ for (const state of ['sleeping', 'closed', 'failed'] as const) {
     assert.equal(f.store.home().attachment.providerSessionId, 'native-home');
     assert.deepEqual(f.calls.overlay, ['runtime-home']);
     assert.equal((f.calls.resume[0]!.body as { mcpServers: Array<{ auth: { token: string } }> }).mcpServers[0]!.auth.token, 'fresh-test-token');
+  });
+}
+
+for (const id of ['home', 'note']) {
+  test(`an unstarted closed CLI session for ${id} rebuilds once with its conversation handoff`, async t => {
+    const f = fixture(t, 'failed');
+    if (id === 'note') { f.store.create('Note', 'note', id); f.store.setAttachment(id, f.saved(id)); }
+    f.store.setAttachment(id, { providerSessionId: null });
+    f.store.append(id, { kind: 'owner', origin: 'owner', text: 'Keep my previous conversation' });
+    f.client.getSession = async sessionId => ({ id: sessionId, status: 'closed', providerName: 'codex',
+      providerBackend: 'cli', origin: 'runtime', messageCount: 0 });
+    const [first, joined] = await Promise.all([f.binder.bind(id), f.binder.bind(id)]);
+    assert.deepEqual(first, { ok: true, sessionId: 'new-1', how: 'created' });
+    assert.equal(joined, first);
+    assert.equal(f.calls.resume.length, 0);
+    assert.equal(f.calls.create.length, 1);
+    assert.match((f.calls.create[0] as { instructions: string }).instructions, /Keep my previous conversation/u);
+    assert.deepEqual(f.calls.retired, [`runtime-${id}`]);
+    assert.equal(f.store.require(id).attachment.replacementPending, true);
+    assert.equal(f.store.transcript(id).filter(entry => entry.text.includes('a new session starts')).length, 1);
+    if (id === 'note') assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+
+    // Even if the new zero-turn worker also stops, restarting cannot create
+    // another replacement before this one has completed a turn.
+    f.store.setAttachment(id, { state: 'sleeping' });
+    const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
+    assert.equal((await f.makeBinder(reloaded).bind(id)).ok, false);
+    assert.equal(f.calls.create.length, 1);
+  });
+}
+
+for (const condition of ['live', 'closing', 'used', 'count_unknown', 'origin_unknown', 'discovered', 'backend_unknown', 'api', 'saved_native', 'observed_native', 'attempted', 'attempt_unknown', 'source_path', 'provider_path', 'current_run', 'last_run']) {
+  test(`an absent native ID does not authorize replacement when ${condition}`, async t => {
+    const f = fixture(t);
+    if (condition === 'attempted' || condition === 'attempt_unknown') f.setAttempted(condition === 'attempted' ? true : undefined);
+    f.store.setAttachment('home', { providerSessionId: condition === 'saved_native' ? 'native-home' : null });
+    f.client.getSession = async id => ({ id, status: condition === 'live' ? 'ready' : condition === 'closing' ? 'closing' : 'closed',
+      providerName: 'codex', providerBackend: condition === 'api' ? 'api' : condition === 'backend_unknown' ? undefined : 'cli',
+      origin: condition === 'discovered' ? 'discovered' : condition === 'origin_unknown' ? undefined : 'runtime',
+      messageCount: condition === 'used' ? 1 : condition === 'count_unknown' ? undefined : 0,
+      ...(condition === 'source_path' ? { sourcePath: 'fixture-history.jsonl' } : {}),
+      ...(condition === 'provider_path' ? { providerSourcePath: 'fixture-native.jsonl' } : {}),
+      ...(condition === 'current_run' ? { inspection: { currentRun: { status: 'running' } } } : {}),
+      ...(condition === 'last_run' ? { inspection: { lastRun: { status: 'failed' } } } : {}),
+      ...(condition === 'observed_native' ? { providerSessionId: 'native-home' } : {}) });
+    f.client.resumeSession = async () => { throw new RuntimeHttpError(400, 'No provider session ID to resume', null); };
+    assert.equal((await f.makeBinder().bind('home')).ok, condition === 'live');
+    assert.equal(f.calls.create.length, 0);
+    assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
   });
 }
 
