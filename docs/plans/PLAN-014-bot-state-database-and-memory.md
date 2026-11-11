@@ -34,12 +34,25 @@ security review. Embeddings come only if the evaluation asks for them.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
 - [ ] Runtime: a **turn-scoped context** field, delivered for one execution and not persisted.
+  - Specified in Runtime
+    [SPEC-042](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-042-turn-scoped-context.md)
+    (approved 2026-11-11, not implemented).
   - Today a send's `instructions` replaces the session's.
   - It blocks P2.2, P3.2's live delta and P5.2's one-time handoff.
-- [ ] Runtime: a **tool-free session** on the providers bots use (SPEC-012 FR-13, Runtime
-      ADR-050). It has no MCP, no file or command tools, no handoff and no provider-native
-      project memory; it is deletable with its history and ephemeral where supported.
+  - Bot must check the `turnContext` capability before using it, and keep each turn within
+    the size Runtime reports for the target.
+- [ ] Runtime: a **text-only session** on the providers bots use (SPEC-012 FR-13).
+  - Specified in Runtime
+    [SPEC-043](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-043-text-only-sessions.md)
+    (approved 2026-11-11, not implemented).
+  - It has no tools, no MCP, no handoff and no provider-native memory, keeps no resumable
+    native conversation, and is deletable with its content.
   - It blocks P4 and P5, and is shared with SPEC-012 Phase 2.
+  - No CLI adapter qualifies yet. Runtime's first phase is per-provider research; API
+    backends and claude are the first candidates, and codex and grok have no known
+    mechanism.
+  - Bot must check the `textOnly` capability and the create readback before it sends
+    anything. An older Runtime would return an ordinary session.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 

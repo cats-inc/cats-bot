@@ -7,7 +7,7 @@
 | **Status** | Approved by the owner on 2026-11-11 with [ADR-022](../decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md)'s proposed defaults and the proposed answers below. Not implemented. Implementation waits for an independent security review and the Runtime prerequisites of [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P0 |
 | **Owner** | Bot core memory |
 | **Reviewer** | Owner; independent security review before implementation (as for SPEC-009 and SPEC-012) |
-| **Depends on** | [SPEC-014](SPEC-014-bot-state-database-and-migration.md); a Runtime turn-scoped context field that is not persisted; a Runtime tool-free session (SPEC-012 FR-13, Runtime ADR-050) |
+| **Depends on** | [SPEC-014](SPEC-014-bot-state-database-and-migration.md); Runtime turn-scoped context ([Runtime SPEC-042](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-042-turn-scoped-context.md)); a Runtime text-only session ([Runtime SPEC-043](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-043-text-only-sessions.md), SPEC-012 FR-13). Both are approved and not implemented |
 | **Updates when implemented** | SPEC-001 FR-11 and FR-12 (session instructions, handoff pack); SPEC-011 FR-13 (the assist review may read working summaries) |
 
 ## Summary
@@ -62,9 +62,9 @@ A bot remembers its owner across sessions, provider changes and restarts.
   claim links to the evidence entries it came from.
 - **Working summary**: one summary per conversation, rewritten by consolidation. Contact
   notes have none.
-- **Turn-scoped context**: text delivered for one execution only and not persisted. It is a
-  Runtime capability that does not exist yet; turn `instructions` persist, so they are not
-  it.
+- **Turn-scoped context**: text delivered for one execution only and not persisted. It is
+  Runtime's `turnContext` field (Runtime SPEC-042), which is specified and not yet
+  implemented; turn `instructions` persist, so they are not it.
 - **Consolidation**: the nightly run that proposes memory changes. In product copy it is
   called dreaming (做夢).
 - **Watermark**: the last evidence entry per conversation that consolidation has
@@ -126,8 +126,11 @@ A bot remembers its owner across sessions, provider changes and restarts.
    - for tool-capable providers, a pointer to `memory_search`.
 
    The budget scales with the target model's context window, between 12,000 and 48,000
-   characters. The provider's native history then carries the handoff, and it is not re-sent
-   with every turn.
+   characters, and never exceeds the turn size Runtime reports for the target
+   (`maxTurnInputChars`, Runtime SPEC-042 R5). Adapters that pass the prompt as a process
+   argument cannot carry more than about 32,000 characters in total on Windows. The
+   provider's native history then carries the handoff, and it is not re-sent with every
+   turn.
 9. FR-9: Otherwise the handoff stays as today: in the session instructions with SPEC-001
    FR-12's 12,000-character cap. When a working summary exists, it replaces the clipped
    older part.
@@ -162,16 +165,23 @@ A bot remembers its owner across sessions, provider changes and restarts.
       can be cancelled.
     - **Skips.** It is skipped while Runtime is unavailable, a guardrail is active or a turn
       is running.
-14. FR-14: It runs in a Runtime session that is ephemeral where supported (Runtime ADR-050)
-    and can be deleted together with its history, and that has none of the following:
+14. FR-14: It runs in a Runtime text-only session (Runtime SPEC-043). Such a session keeps
+    no resumable native conversation, can be deleted together with its content, and has
+    none of the following:
     - MCP servers;
     - file or command tools;
     - a handoff pack;
-    - provider-native project memory.
+    - provider-native memory.
 
-    This is the same prerequisite as SPEC-012 FR-13. If the bot's provider cannot offer such
-    a session, consolidation stays off for that bot, and its settings say why. The session
-    is deleted after each run.
+    This is the same prerequisite as SPEC-012 FR-13.
+    - **Checks.** The core reads Runtime's `textOnly` capability before it creates the
+      session and confirms the create readback before it sends anything. Without both, it
+      sends nothing and deletes the session.
+    - **Unsupported providers.** If the bot's provider cannot offer such a session,
+      consolidation stays off for that bot, and its settings say why. At Runtime's baseline
+      no CLI adapter qualifies yet.
+    - **Output.** A text-only turn's text arrives when the turn ends, not as a stream.
+    - **Deletion.** The session is deleted after each run.
 15. FR-15: Input:
     - **Evidence** past each conversation's watermark, from `dm` and `note` conversations
       only. It contains owner and bot lines only: tool output is shown as "[tool output
