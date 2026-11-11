@@ -131,8 +131,23 @@ security review. Embeddings come only if the evaluation asks for them.
   - presentations (row upsert, existing 100 ms throttle);
   - work items and transitions; schedules;
   - startup without journal replay.
+  - [x] The store they move to: `src/core/store/stateStore.ts`, with
+        `tests/core/stateStore.test.ts`. It keeps and returns every record as the JSON it
+        was given. Nothing in the core uses it yet.
+    - An entry and its index row are written in one transaction, and a caller can put the
+      conversation's own change in the same one.
+    - Deleting a conversation also deletes its work items and their transitions, which
+      hold the owner's prompts (SPEC-014 FR-7). Today's journal keeps them. Schedules
+      stay, for the caller to cancel as it does now.
+    - The journal's other lines go to `events`. Nothing reads them back.
+  - [ ] The cutover: `ConversationStore`, the presentation store and the journal use it.
 - [ ] 1.3 Full-text index with the bigram column, query builder, the LIKE path for single
       characters, and a rebuild command.
+  - [x] `src/core/store/searchText.ts` rewrites an entry's text and a person's query, and
+        the store's `search` and `rebuildIndex` use it; `tests/core/searchText.test.ts`.
+    - A single CJK character is first looked for in the JSON record in SQL and then
+      tested exactly on the text. Asking SQLite for the text stops at a NUL character.
+  - [ ] The `cats-bot` command that rebuilds the index.
 - [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
       working.
 - [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure

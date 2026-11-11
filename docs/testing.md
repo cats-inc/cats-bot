@@ -91,11 +91,37 @@ FR-2).
 The architecture boundary test keeps the adapter out of every module outside
 `src/core/store/`.
 
+### Bot state store and search text
+
+- **Location**: `tests/core/stateStore.test.ts`, `tests/core/searchText.test.ts`
+- **Scope**: `src/core/store/stateStore.ts` and `searchText.ts` (SPEC-014 FR-3 and FR-5 to
+  FR-10). Nothing in the core uses the store yet.
+  - a conversation record stored whole, replaced in place, and read back as given,
+    including a field this version does not know;
+  - an entry getting the next `seq` of its conversation and coming back exactly,
+    whatever its text holds, with the numbering carrying on after a restart;
+  - the newest entries, or the ones before a `seq`, in order;
+  - one row per reply presentation, replaced at each checkpoint;
+  - a work item's current row and every transition, schedules, and the journal's other
+    lines;
+  - search: Chinese words of one, two and three characters, English in any case, a Latin
+    word written against Chinese, every word required, nothing typed read as query
+    syntax, one conversation, a limit;
+  - the index thrown away and rebuilt from the JSON records, with the words after a NUL
+    character still found;
+  - deleting a conversation removing its entries, index rows, presentations and work
+    items, and leaving every other conversation whole;
+  - an entry and its conversation changing together or not at all;
+  - a reader reading and searching beside the writer, and every change refused.
+- `searchText.test.ts` covers the rewriting itself: Chinese, Japanese with its long-vowel
+  mark, Korean, punctuation of those scripts, a character outside the Basic Multilingual
+  Plane, and query input that looks like query syntax.
+
 ### Store tests inside Electron
 
-`npm test` runs both files above under Node.js. The core runs inside Electron, whose
-Node.js and SQLite are different builds, so CI runs them once more there on every
-platform:
+`npm test` runs the store's test files above under Node.js. The core runs inside
+Electron, whose Node.js and SQLite are different builds, so CI runs them once more there
+on every platform:
 
 ```bash
 npm run test:electron
