@@ -269,9 +269,7 @@ test('a version-1 root is copied aside, imported, its profile raised and its fil
   assert.deepEqual(readFileSync(`${paths.profile}.v2.bak`), profileBytes);
   assert.equal(olderBotReads(paths), false);
   const read = loadProfile(paths, placeholder(paths), true);
-  assert.ok(
-    read.ok && read.profile.schemaVersion === 3,
-  );
+  assert.ok(read.ok && read.profile.schemaVersion === 3);
 
   // A second run finds nothing to do.
   const again = migrate(paths);
@@ -624,6 +622,7 @@ test('restoring puts the files back, sets the database aside and lowers the prof
   kept.close();
   // Restoring again finds nothing more to do.
   assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), {
+    changed: false,
     setAside: null,
     leftInArchive: [],
   });
@@ -694,7 +693,14 @@ test('a restore stopped before any step leaves a root the new version starts on,
       // the new version refuses to import again, and a second restore finishes.
       assert.deepEqual(versionOneFiles(paths), before);
       assert.equal(existsSync(stateDatabaseFile(paths)), false);
+      // Started now, it says how to finish, and names the database the restore set aside.
+      assert.throws(
+        () => migrate(paths),
+        /If a restore was stopped, run `cats-bot restore` again to finish it \(the database it set aside: bot\.db\.set-aside-/u,
+      );
+      // The second restore lowers the profile, which is all that was left.
       assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), {
+        changed: true,
         setAside: null,
         leftInArchive: [],
       });

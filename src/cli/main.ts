@@ -328,6 +328,10 @@ async function commandRestore(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promi
     process.stdout.write(`${JSON.stringify({ restored: true, ...result }, null, 2)}\n`);
     return 0;
   }
+  if (!result.changed) {
+    process.stdout.write('Nothing to restore: this bot was not migrated, and an older Cats Bot reads it as it is.\n');
+    return 0;
+  }
   process.stdout.write('The version-1 files are back; an older Cats Bot can start this bot again.\n');
   if (result.setAside) {
     process.stdout.write(`The database was set aside as ${result.setAside}. What was written after the migration is there, not in the version-1 files.\n`);

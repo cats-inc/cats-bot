@@ -6,6 +6,7 @@ import { ChannelError, HostChannelClient, readChannelOwner, type ChannelHostIden
 import { remoteBotCore, type RemoteBotCore } from '../../core/host-api/remote.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor } from '../../core/store/paths.ts';
+import { stateMigrationPending } from '../../core/profile/initialize.ts';
 import { rotateStderrLog } from '../../shared/stderrLog.ts';
 import { processIsAlive } from './update/installation.ts';
 
@@ -161,7 +162,14 @@ function connect(root: string, options: CoreHostOptions): Promise<HostChannelCli
   return HostChannelClient.connect(root, { host: options.host, ...(options.services ? { services: options.services } : {}) });
 }
 
+/**
+ * SPEC-014 FR-11: a core that migrates a bot's version-1 files publishes its channel once the
+ * migration has finished, which takes minutes for a large bot.
+ */
+const MIGRATION_START_TIMEOUT_MS = 60 * 60_000;
+
 async function startCore(root: string, launch: CoreLaunch, options: CoreHostOptions): Promise<HostedCore> {
+  const migrating = stateMigrationPending(root);
   const logFile = coreLogFile(root);
   const errorFile = coreErrorFile(root);
   mkdirSync(join(errorFile, '..'), { recursive: true });
@@ -187,7 +195,7 @@ async function startCore(root: string, launch: CoreLaunch, options: CoreHostOpti
   const published = await waitFor(() => {
     if (ended) return 'ended';
     return pid && readChannelOwner(root)?.pid === pid ? 'published' : null;
-  }, options.startTimeoutMs ?? 60_000);
+  }, options.startTimeoutMs ?? (migrating ? MIGRATION_START_TIMEOUT_MS : 60_000));
   if (published !== 'published') {
     if (pid && !ended) killTree(pid);
     throw new Error(`The cat bot core did not start (${ended ?? 'timed out'}). See ${errorFile} and ${logFile}.`);

@@ -50,8 +50,8 @@ import {
  * A database this version cannot open as its own, a newer one included, stops the migration
  * and is never removed. Every removal goes through `removeTree`, never `rmSync`, which in
  * Electron 41 fails on a read-only file and ends the process on some paths outside ASCII.
- * Nothing calls these yet; the cutover wires them into the core's start and adds
- * `cats-bot restore` (PLAN-014 task 1.5).
+ * The core migrates when it opens the bot for writing, under the lock: at start and for a
+ * write a host makes while the bot is stopped. `cats-bot restore` restores.
  */
 
 /** The steps, in order, for a test that stops the migration before one of them. */
@@ -191,6 +191,8 @@ export interface RestoreVersion1Options {
 }
 
 export interface RestoreResult {
+  /** Whether anything was put back, set aside or lowered: false for a bot never migrated. */
+  changed: boolean;
   /** Where the database was set aside, or null when there was none. */
   setAside: string | null;
   /** What `archive/v1/` still holds: items made again after the migration and kept there. */
@@ -215,6 +217,16 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
     throw new Error('The bot is running; stop it before restoring its version-1 files');
   try {
     const archive = version1ArchiveDirectory(paths);
+    const file = stateDatabaseFile(paths);
+    let setAside: string | null = null;
+    let changed = false;
+    // A database this version cannot open, a newer one or a file that is not one, cannot be
+    // folded; it is set aside whole, with its log, before anything else, so that the restore
+    // can go on and an older Bot starts on the files.
+    if (existsSync(file) && !isOwnDatabase(file)) {
+      setAside = setAsideWhole(file, now());
+      changed = true;
+    }
     before('files');
     for (const item of version1Items(paths)) {
       const archived = join(archive, basename(item));
@@ -228,6 +240,7 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
         rmdirSync(item);
       }
       renameSync(archived, item);
+      changed = true;
     }
     if (!version1Items(paths).some((item) => existsSync(item))) {
       throw new Error(
@@ -235,8 +248,6 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
       );
     }
 
-    const file = stateDatabaseFile(paths);
-    let setAside: string | null = null;
     before('database');
     if (existsSync(file)) {
       // Fold the log into the database, so that the file set aside holds everything. The
@@ -251,6 +262,7 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
       setAside = freeName(`${file}.set-aside-${stamp(now())}`);
       try {
         renameSync(file, setAside);
+        changed = true;
       } catch (error) {
         throw new Error(
           `Another program has bot.db open (${errorCode(error)}); close it and restore again. The files are back.`,
@@ -259,9 +271,9 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
       }
     }
     before('profile');
-    lowerProfile(paths, options.profile, now());
+    if (lowerProfile(paths, options.profile, now())) changed = true;
     const leftInArchive = existsSync(archive) ? readdirSync(archive).sort() : [];
-    return { setAside, leftInArchive };
+    return { changed, setAside, leftInArchive };
   } finally {
     lock.release();
   }
@@ -303,9 +315,15 @@ function backupOf(paths: BotPaths, marker: string | undefined): string | null {
 function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise): void {
   const profile = parseRecord(readText(paths.profile));
   if (profile?.schemaVersion === raise.to) {
+    const asides = readdirSync(paths.root).filter(
+      (name) =>
+        name.startsWith('bot.db.set-aside-') && !name.endsWith('-wal') && !name.endsWith('-shm'),
+    );
     throw new Error(
-      `${paths.profile} says this bot was migrated, but bot.db holds no finished import. ` +
-        'Put the database back, or restore the version-1 files; nothing was imported again.',
+      `${paths.profile} says this bot was migrated, but bot.db holds no finished import; nothing ` +
+        'was imported again. If a restore was stopped, run `cats-bot restore` again to finish it' +
+        (asides.length > 0 ? ` (the database it set aside: ${asides.join(', ')})` : '') +
+        '; otherwise put the database back.',
     );
   }
   if (profile === null || profile.schemaVersion !== raise.from) {
@@ -495,11 +513,12 @@ function raiseProfile(paths: BotPaths, raise: ProfileRaise, backup: string | nul
   writeJsonAtomic(paths.profile, { ...profile, schemaVersion: raise.to });
 }
 
-function lowerProfile(paths: BotPaths, raise: ProfileRaise, at: Date): void {
+/** Whether the profile was lowered; false when it is at the version before already. */
+function lowerProfile(paths: BotPaths, raise: ProfileRaise, at: Date): boolean {
   const text = readText(paths.profile);
   const profile = parseRecord(text);
   if (profile === null) throw new Error(`${paths.profile} cannot be read; it was not lowered`);
-  if (profile.schemaVersion === raise.from) return;
+  if (profile.schemaVersion === raise.from) return false;
   if (profile.schemaVersion !== raise.to) {
     throw new Error(
       `${paths.profile} has schema version ${String(profile.schemaVersion)}; restoring lowers ${raise.to} to ${raise.from}`,
@@ -507,6 +526,28 @@ function lowerProfile(paths: BotPaths, raise: ProfileRaise, at: Date): void {
   }
   keepCopy(paths.profile, text!, `${paths.profile}.v${raise.to}.bak`, at);
   writeJsonAtomic(paths.profile, { ...profile, schemaVersion: raise.from });
+  return true;
+}
+
+/** Whether this version opens the file as its own state database. */
+function isOwnDatabase(file: string): boolean {
+  try {
+    openBotStateStore({ file, mode: 'reader' }).close();
+    return true;
+  } catch (error) {
+    if (error instanceof StateDatabaseError && error.code !== 'missing') return false;
+    throw error;
+  }
+}
+
+/** A database, its log and its shared memory renamed together, under names SQLite pairs. */
+function setAsideWhole(file: string, at: Date): string {
+  const name = freeName(`${file}.set-aside-${stamp(at)}`);
+  renameSync(file, name);
+  for (const suffix of ['-wal', '-shm']) {
+    if (existsSync(`${file}${suffix}`)) renameSync(`${file}${suffix}`, `${name}${suffix}`);
+  }
+  return name;
 }
 
 /** A copy of `text` at `copy`, or beside it under the time when another copy is there. */

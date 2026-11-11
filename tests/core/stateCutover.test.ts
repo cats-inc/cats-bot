@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 import { BotCore, MigrationNotFinishedError, initializeBot } from '../../src/core/bot.ts';
+import { stateMigrationPending } from '../../src/core/profile/initialize.ts';
+import { STATE_DATABASE_PROFILE_RAISE } from '../../src/core/profile/profile.ts';
+import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { main } from '../../src/cli/main.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import { readInstanceLock } from '../../src/core/store/lock.ts';
@@ -14,6 +17,7 @@ import {
 } from '../../src/core/store/paths.ts';
 import {
   migrationBackupDirectory,
+  restoreVersion1,
   version1ArchiveDirectory,
 } from '../../src/core/store/version1Migration.ts';
 import type { WorkItem } from '../../src/core/types.ts';
@@ -333,4 +337,175 @@ test('cats-bot restore puts the version-1 files back while the bot is stopped', 
   } finally {
     await running.stop();
   }
+});
+
+test('the hub waits longer for a core that migrates', () => {
+  const { root, paths } = versionOneBot('old-pending');
+  assert.equal(stateMigrationPending(root), true);
+  const { root: fresh } = initializeBot(home.botsHome, {
+    id: 'new-pending',
+    name: 'New',
+    provider: 'claude',
+  });
+  assert.equal(stateMigrationPending(fresh), false);
+  rmSync(paths.profile);
+  assert.equal(stateMigrationPending(root), false, 'a bot without a profile is no bot');
+});
+
+test('work items 0.5 kept for a deleted conversation are forgotten, and the others recovered', async () => {
+  const { root, paths } = versionOneBot('old-orphans');
+  const at = new Date(Date.now() - 3 * 24 * 3_600_000).toISOString();
+  const orphanRun = {
+    ...createWorkItem(
+      {
+        kind: 'owner_message',
+        source: 'owner',
+        conversationId: 'gone-note',
+        prompt: 'from a deleted note',
+      },
+      new Date(at),
+    ),
+    state: 'running',
+    attempts: 1,
+  };
+  const orphanAsk = {
+    ...createWorkItem(
+      {
+        kind: 'event',
+        source: 'ask_owner',
+        conversationId: 'gone-note',
+        prompt: 'a question from a deleted note',
+      },
+      new Date(at),
+    ),
+    state: 'awaiting_owner',
+  };
+  const homeRun = {
+    ...createWorkItem(
+      { kind: 'owner_message', source: 'owner', conversationId: 'home', prompt: 'still home' },
+      new Date(at),
+    ),
+    state: 'running',
+    attempts: 1,
+  };
+  writeFileSync(
+    paths.journal,
+    `${readFileSync(paths.journal, 'utf8')}${[orphanRun, orphanAsk, homeRun].map((item) => JSON.stringify({ type: 'work', at, item })).join('\n')}\n`,
+  );
+  const core = BotCore.open(coreOptions(root));
+  const asked = waitForEvent(
+    core,
+    (event) => event.type === 'work.awaitingOwner' && event.workItem.id === homeRun.id,
+  );
+  await core.start();
+  try {
+    await asked;
+    const ids = core.listWorkItems().map((item) => item.id);
+    assert.equal(ids.includes(orphanRun.id) || ids.includes(orphanAsk.id), false);
+    assert.equal(core.getWorkItem(homeRun.id)?.state, 'awaiting_owner');
+  } finally {
+    await core.stop();
+  }
+  const journal = readStateJournal(root);
+  assert.equal(journal.workItems.has(orphanRun.id), false);
+  assert.equal(JSON.stringify(journal.entries).includes('from a deleted note'), false);
+});
+
+test("a deleted conversation's work items leave the core at once", async () => {
+  const { core } = openTestBot({ botsHome: home.botsHome, id: 'delete-memory' });
+  await core.start();
+  try {
+    const note = await core.createConversation('Note');
+    const done = await sendAndWait(core, note.id, 'in the note');
+    await core.deleteConversation(note.id);
+    assert.equal(core.getWorkItem(done.id), undefined);
+    assert.equal(
+      core.listWorkItems().some((item) => item.conversationId === note.id),
+      false,
+    );
+  } finally {
+    await core.stop();
+  }
+});
+
+test('init in a folder that holds version-1 files keeps them for the first start to migrate', async () => {
+  const { root, paths } = versionOneBot('old-init');
+  rmSync(paths.profile);
+  initializeBot(home.botsHome, { id: 'old-init', name: 'Old Init', provider: 'claude' });
+  assert.equal(profileVersion(paths), 2);
+  assert.equal(existsSync(stateDatabaseFile(paths)), false);
+  const core = BotCore.open(coreOptions(root));
+  await core.start();
+  try {
+    assert.deepEqual(
+      core
+        .transcript('home')
+        .map((entry) => entry.text)
+        .slice(0, 2),
+      ['written by 0.5', 'answered by 0.5'],
+    );
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a host without the lock says so when the database is not one this version reads', () => {
+  const { root } = openTestBot({ botsHome: home.botsHome, id: 'newer-read' });
+  const { DatabaseSync } = sqliteDriver();
+  const database = new DatabaseSync(stateDatabaseFile(botPathsFor(root)));
+  database.exec(`update meta set value = '99' where key = 'schema_version'`);
+  database.close();
+  assert.throws(() => BotCore.open(coreOptions(root)), /written by a newer Cats Bot/u);
+});
+
+test('cats-bot restore sets a database it cannot open aside whole, and says when there is nothing to do', async () => {
+  const { root, paths } = versionOneBot('old-foreign');
+  const core = BotCore.open(coreOptions(root));
+  await core.start();
+  await core.stop();
+  writeFileSync(stateDatabaseFile(paths), 'not a database, but somebody may want it');
+  const result = restoreVersion1({ paths, profile: STATE_DATABASE_PROFILE_RAISE });
+  assert.equal(result.changed, true);
+  assert.ok(result.setAside);
+  assert.equal(readFileSync(result.setAside, 'utf8'), 'not a database, but somebody may want it');
+  assert.equal(profileVersion(paths), 2);
+  assert.ok(existsSync(transcriptFile(paths, 'home')));
+
+  // A bot never migrated: nothing is moved, and the CLI says so.
+  const { paths: untouched } = versionOneBot('old-untouched');
+  assert.equal(
+    restoreVersion1({ paths: untouched, profile: STATE_DATABASE_PROFILE_RAISE }).changed,
+    false,
+  );
+  const written: string[] = [];
+  const write = process.stdout.write.bind(process.stdout);
+  process.stdout.write = ((chunk: string) => {
+    written.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    assert.equal(
+      await main(['restore', '--id', 'old-untouched'], {
+        ...process.env,
+        CATS_BOT_HOME: home.root,
+      }),
+      0,
+    );
+  } finally {
+    process.stdout.write = write;
+  }
+  assert.match(written.join(''), /Nothing to restore/u);
+});
+
+test('a core whose start failed refuses a second start', async () => {
+  const { root, paths } = versionOneBot('old-second-start');
+  writeFileSync(
+    transcriptFile(paths, 'home'),
+    `${readFileSync(transcriptFile(paths, 'home'), 'utf8')}${JSON.stringify({ seq: 1, at: AT, kind: 'owner', origin: 'owner', text: 'again' })}\n`,
+  );
+  const core = BotCore.open(coreOptions(root));
+  await assert.rejects(core.start(), MigrationNotFinishedError);
+  await assert.rejects(core.start(), /open it again/u);
+  assert.equal(readInstanceLock(paths), null);
+  await core.stop();
 });

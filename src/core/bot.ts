@@ -476,9 +476,9 @@ export class BotCore implements BotHostApi {
         warn: (message) => this.log(`warn ${message}`),
       });
     } catch (error) {
-      if (!(error instanceof StateDatabaseError)) throw error;
-      this.log(`read-only host: no state database to read (${error.code})`);
-      return;
+      // A bot not migrated yet has no database; one this version cannot read is an error.
+      if (error instanceof StateDatabaseError && error.code === 'missing') return;
+      throw error;
     }
     this.stateStore = reader;
     try {
@@ -500,7 +500,10 @@ export class BotCore implements BotHostApi {
     const loaded = loadProfile(this.paths, this.profile, true);
     if (!loaded.ok) throw new Error('Profile upgrade failed; original data and backup were preserved.');
     const migration = migrateVersion1({ paths: this.paths, profile: STATE_DATABASE_PROFILE_RAISE, now: this.now });
-    if (migration.outcome === 'not_migrated') throw new MigrationNotFinishedError(migration.summary);
+    if (migration.outcome === 'not_migrated') {
+      this.log(`error the bot's data could not be moved into its database; see ${migration.summary}`);
+      throw new MigrationNotFinishedError(migration.summary);
+    }
     if (migration.imported) {
       const { conversations, entries, journalLines } = migration.imported.counts;
       this.log(`version-1 files moved into the state database: ${conversations} conversations, ${entries} entries, ${journalLines} journal lines`);
@@ -515,6 +518,10 @@ export class BotCore implements BotHostApi {
       now: this.now,
       warn: (message) => this.log(`warn ${message}`),
     });
+    // SPEC-014 FR-7 (chosen 2026-11-12): work items 0.5 kept for conversations deleted
+    // before are deleted as the conversation's would have been, leaving what deleted_work keeps.
+    const forgotten = this.stateStore.forgetWorkWithoutConversation();
+    if (forgotten > 0) this.log(`${forgotten} work item(s) of deleted conversations forgotten`);
     this.conversations.load();
     this.loadJournal();
   }
@@ -940,6 +947,8 @@ export class BotCore implements BotHostApi {
 
   async start(): Promise<void> {
     if (this.started) throw new Error('Bot core already started');
+    // A start that failed stopped this core; a new one is opened to try again.
+    if (this.stopped) throw new Error('This bot core was stopped; open it again to start it');
     const lock = acquireInstanceLock(this.paths);
     if (!lock.held) throw new BotInstanceRunningError(lock.owner);
     this.started = true;
@@ -1871,6 +1880,8 @@ export class BotCore implements BotHostApi {
       this.log(`desktop control switch of deleted conversation ${record.id} kept: ${error instanceof Error ? error.message : 'error'}`);
     }
     this.conversations.remove(record.id);
+    // SPEC-014 FR-7: its work items went with it, in memory as on disk.
+    for (const [id, item] of this.workItems) if (item.conversationId === record.id) this.workItems.delete(id);
     this.runner.forget(record.id);
     this.views.delete(record.id);
     this.focusedViews.delete(record.id);

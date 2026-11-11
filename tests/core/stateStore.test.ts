@@ -981,6 +981,57 @@ test('deleting a conversation removes its entries, index rows, presentations and
   assert.equal(count(file, 'work_items'), 1);
 });
 
+test('a work item that cannot be read never stops its conversation from being deleted', () => {
+  const file = freshFile();
+  withStore(file, 'writer', (store) => {
+    store.saveConversation(conversation('note-1'));
+    store.appendJournal(
+      work(
+        workItem('w1', 'note-1', 'queued', {
+          sourceRef: 'note:1',
+          chain: { deliveryId: 'd1' },
+        } as never),
+      ),
+    );
+    store.appendJournal(work(workItem('w2', 'note-1', 'queued')));
+  });
+  raw(file, (database) => database.exec(`update work_items set json = 'not json' where id = 'w2'`));
+  withStore(file, 'writer', (store) => {
+    store.deleteConversation('note-1');
+    assert.deepEqual(store.workItems(), []);
+    assert.equal(store.isDeletedSource('note:1'), true);
+    assert.deepEqual(store.deletedDeliveries(['d1', 'd2']), [{ id: 'w1', deliveryId: 'd1' }]);
+  });
+  // The unreadable one keeps only its id.
+  assert.equal(count(file, 'deleted_work'), 2);
+});
+
+test('work items whose conversation is gone are forgotten as a deletion would, the others kept', () => {
+  const file = freshFile();
+  withStore(file, 'writer', (store) => {
+    store.saveConversation(conversation('home'));
+    store.appendJournal(work(workItem('w-home', 'home', 'running')));
+    // As 0.5 kept them after deleting a note: a work item of a conversation that is gone.
+    store.appendJournal(
+      work(workItem('w-gone', 'gone-note', 'queued', { sourceRef: 'note:9' } as never)),
+    );
+    store.appendJournal(
+      work(workItem('w-gone', 'gone-note', 'running', { sourceRef: 'note:9' } as never)),
+    );
+    store.appendJournal(work(workItem('w-gone-2', 'gone-note', 'awaiting_owner')));
+    assert.equal(store.forgetWorkWithoutConversation(), 2);
+    assert.deepEqual(
+      store.workItems().map((item) => item.id),
+      ['w-home'],
+    );
+    assert.deepEqual(store.journal('w-gone'), []);
+    assert.equal(store.journal('w-home').length, 1);
+    assert.equal(store.isDeletedSource('note:9'), true);
+    // Nothing left to forget the next time.
+    assert.equal(store.forgetWorkWithoutConversation(), 0);
+  });
+});
+
 test('an entry and its conversation change together or not at all', () => {
   const { store } = filled([]);
   try {

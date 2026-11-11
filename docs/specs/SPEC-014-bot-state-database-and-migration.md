@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter, schema, store and search exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the core keeps every bot's records in its database since the cutover; paging, snapshots and export are still to come ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -299,7 +299,18 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
   cancelled and not admitted again. Without it, a delivery the hub sent again after a
   restart would come in as new, and the hub would wait for an answer that never came.
 - [x] FR-7: a work item whose conversation no longer exists is not written.
-- [x] FR-11: a new bot's database is made by `cats-bot init`, before its profile.
+- [x] FR-7: work items 0.5 kept for conversations deleted before are deleted, as their
+  conversation's would have been, each time the core opens the database for writing; until
+  then the recovery at start would ask the owner about them again.
+- [x] FR-11: a new bot's database is made by `cats-bot init`, before its profile. Run in a
+  folder that still holds version-1 files, `init` writes the profile at the version before
+  and leaves the files for the first start to migrate.
+- [x] FR-11: the hub gives a core whose profile is at a version before the database an hour
+  to start instead of a minute, since it migrates first. A migration that does not finish
+  is written to the bot's `core.log` with the path of its report.
+- [x] FR-11: `cats-bot restore` sets a database it cannot open as its own, a newer one or a
+  file that is not one, aside whole, with its log, and says when there is nothing to
+  restore.
 
 ## References
 

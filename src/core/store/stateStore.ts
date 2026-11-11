@@ -29,6 +29,15 @@ import {
  * of a file is today.
  */
 
+/**
+ * What `deleted_work` keeps of a work item. A record that is not JSON keeps only its id, so
+ * that it never stops its conversation from being deleted.
+ */
+const DELETED_WORK_SELECT = `select id,
+  case when json_valid(json) then json_extract(json, '$.sourceRef') end,
+  case when json_valid(json) then json_extract(json, '$.chain.deliveryId') end
+  from work_items`;
+
 /** The `meta` key the version-1 import writes when it has finished (FR-11). */
 const IMPORT_MARKER = 'version1_import';
 
@@ -111,6 +120,11 @@ export interface BotStateStore {
    * delivery handled before cannot come in as a new one.
    */
   isDeletedSource(sourceRef: string): boolean;
+  /**
+   * FR-7: work items whose conversation no longer exists, as 0.5 kept them, deleted as their
+   * conversation's would have been, with what `deleted_work` keeps. Returns how many.
+   */
+  forgetWorkWithoutConversation(): number;
   /** FR-7: the deliveries, among those named, whose work item went with a deleted conversation. */
   deletedDeliveries(deliveryIds: readonly string[]): Array<{ id: string; deliveryId: string }>;
   /** The journal in the order it was written; with `ref`, the lines about one work item or schedule. */
@@ -317,9 +331,8 @@ class Store implements BotStateStore {
       this.#database.run('delete from entries where conversation_id = ?', id);
       this.#database.run('delete from responses where conversation_id = ?', id);
       this.#database.run(
-        `insert or ignore into deleted_work(id, source_ref, delivery_id)
-         select id, json_extract(json, '$.sourceRef'), json_extract(json, '$.chain.deliveryId')
-         from work_items where conversation_id = ?`,
+        `insert or ignore into deleted_work(id, source_ref, delivery_id) ${DELETED_WORK_SELECT}
+         where conversation_id = ?`,
         id,
       );
       this.#database.run(
@@ -496,6 +509,19 @@ class Store implements BotStateStore {
         text(presentation.phase),
         JSON.stringify(entry),
       );
+    });
+  }
+
+  forgetWorkWithoutConversation(): number {
+    return this.#database.transaction(() => {
+      const orphans = `select id from work_items where conversation_id is not null
+        and conversation_id not in (select id from conversations)`;
+      this.#database.run(
+        `insert or ignore into deleted_work(id, source_ref, delivery_id) ${DELETED_WORK_SELECT}
+         where id in (${orphans})`,
+      );
+      this.#database.run(`delete from journal where type = 'work' and ref in (${orphans})`);
+      return this.#database.run(`delete from work_items where id in (${orphans})`);
     });
   }
 

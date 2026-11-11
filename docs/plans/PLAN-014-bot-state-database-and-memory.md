@@ -242,6 +242,32 @@ security review. Embeddings come only if the evaluation asks for them.
         does not support WAL there. The release notes say to keep `CATS_BOT_HOME` on a
         local disk; nothing refuses one.
       - Two presentations with the same `seq` come back ordered by their id.
+      - From the first review of the cutover, each with a test that fails without it:
+        - The hub waits an hour, not a minute, for a core whose bot migrates first; a
+          large bot's migration took longer than the minute.
+        - Work items 0.5 kept for deleted conversations are deleted at every open for
+          writing, as a deletion would; otherwise the recovery at start asked the owner
+          about them, and they held the bot back from expiring work.
+        - Deleting a conversation removes its work items from the core at once.
+        - A host without the lock reports a database it cannot read, instead of showing
+          nothing; only a missing one is a bot not migrated yet.
+        - A migration that does not finish is written to `core.log` with its report's
+          path; a core whose start failed refuses a second start.
+        - `cats-bot init` in a folder with version-1 files leaves them for the first
+          start to migrate; `cats-bot restore` sets a database it cannot open aside whole
+          and says when there is nothing to restore, and a migration stopped by an
+          unfinished restore says to run it again.
+        - A work item whose record is not JSON never stops its conversation from being
+          deleted.
+        - The architecture rule names each way of reaching a version-1 file (namespace,
+          default and dynamic imports, every import statement, `journal.jsonl`,
+          `botPathsFor(...)` and destructuring), and the cutover's tests also run inside
+          Electron.
+      - For the release notes (1.8): the copies in `migration-backup/` and `archive/v1/`
+        keep what the bot held before, deleted conversations' prompts included, until the
+        owner removes them; a bot root on a network share is not supported; the hub shows
+        a migration that failed only as a bot that did not start, with the reason in
+        `core.log`.
     - A record that cannot be read: a search still returns the entries of a conversation
       whose own record cannot be read, and a work item whose current row cannot be read
       is missing from the list while its journal lines remain. The import's check has to
