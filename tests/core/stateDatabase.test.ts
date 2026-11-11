@@ -527,54 +527,46 @@ test('a transaction is all or nothing', () => {
     });
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
 
-    // A failure inside takes the whole transaction with it, even when the outer code carries on.
-    assert.throws(
-      () =>
+    // Nested work that changed rows and then failed takes the whole transaction with it,
+    // even when the outer code carries on: half of it must not be kept. The failure the
+    // caller did not see is what the error carries.
+    for (const nested of ['transaction', 'snapshot'] as const) {
+      try {
         database.transaction(() => {
           add('e');
           try {
-            database.transaction(() => {
+            database[nested](() => {
               add('f');
-              throw new Error('inner');
+              throw new Error('inner write');
             });
           } catch {
             // carried on regardless
           }
           add('g');
-        }),
-      /nested transaction failed/u,
-    );
-    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
-
-    // The failure the caller did not see is what the error carries.
-    try {
-      database.transaction(() => {
-        try {
-          database.transaction(() => {
-            throw new Error('inner write');
-          });
-        } catch {
-          // carried on regardless
-        }
-        add('g');
-      });
-      assert.fail('the transaction should have failed');
-    } catch (error) {
-      assert.match(String((error as Error).cause), /inner write/u);
+        });
+        assert.fail('the transaction should have failed');
+      } catch (error) {
+        assert.match((error as Error).message, /Nested work changed rows and then failed/u);
+        assert.match(String((error as Error).cause), /inner write/u);
+      }
+      assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
     }
-    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
 
-    // A snapshot is for reading. A read that fails inside a transaction, such as a search
-    // with words the index cannot take, is the caller's to handle: the transaction goes on.
+    // Nested work that failed before it changed anything left nothing half made, so it is
+    // the caller's to handle and the transaction goes on: a read that failed, or a check
+    // that refused.
     database.transaction(() => {
       add('e');
-      assert.throws(
-        () =>
-          database.snapshot(() => {
-            throw new Error('inner read');
-          }),
-        /inner read/u,
-      );
+      for (const nested of ['transaction', 'snapshot'] as const) {
+        assert.throws(
+          () =>
+            database[nested](() => {
+              conversations(database);
+              throw new Error('inner read');
+            }),
+          /inner read/u,
+        );
+      }
       add('f');
     });
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd', 'e', 'f']);
@@ -592,16 +584,28 @@ test('a transaction is all or nothing', () => {
     );
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
 
-    // A write inside a snapshot is still one transaction.
+    // A snapshot opened on its own is for reading: it takes no change and no transaction.
+    database.snapshot(() => {
+      assert.throws(() => add('i'), /A snapshot is for reading/u);
+      assert.throws(
+        () => database.insert('insert into conversations(id, json) values (?, ?)', 'i', '{}'),
+        /A snapshot is for reading/u,
+      );
+      assert.throws(() => database.transaction(() => add('i')), /A snapshot is for reading/u);
+      assert.deepEqual(
+        database.snapshot(() => conversations(database)),
+        ['a', 'b', 'c', 'd'],
+      );
+    });
+    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
+    // And the database takes changes again once it has ended, however it ended.
     assert.throws(
       () =>
         database.snapshot(() => {
-          database.transaction(() => add('i'));
-          throw new Error('after the write');
+          throw new Error('stop reading');
         }),
-      /after the write/u,
+      /stop reading/u,
     );
-    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
     database.transaction(() => add('i'));
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd', 'i']);
   } finally {

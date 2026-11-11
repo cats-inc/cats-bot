@@ -112,9 +112,12 @@ security review. Embeddings come only if the evaluation asks for them.
       safe range on Node.js 24. The adapter runs every change with big integers on and returns the
       number of rows changed; an insert's row id is a separate call.
     - **A snapshot starts at its first read**, not at `begin`, so the adapter reads once
-      before it runs the work. A snapshot is for reading: a failure in one that the
-      caller catches does not fail a transaction around it, as a nested transaction's
-      does.
+      before it runs the work. A snapshot opened on its own is for reading and takes no
+      change.
+    - **Nested work fails the whole transaction only when it had changed rows.** Half of
+      a change must not be kept by a caller that catches the error and carries on, while
+      a read that failed, or a check that refused before anything was written, is the
+      caller's to handle.
     - **The journal is one table**, every line in the order it was written, with the
       work item or schedule it is about. Work items and schedules keep a current row
       each, in the order they first appeared, which is the order today's replay gives.

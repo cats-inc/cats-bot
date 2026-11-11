@@ -93,16 +93,16 @@ export interface StateDatabase {
   insert(sql: string, ...parameters: SqliteInput[]): number;
   /**
    * All of `work` or none of it. `work` is synchronous: a function that awaits would write
-   * after the transaction had ended. A nested call joins the outer transaction, and a
-   * failure inside it fails the whole transaction even when the outer code catches the
-   * error. Refused on a reader.
+   * after the transaction had ended. A nested `transaction` or `snapshot` joins the outer
+   * transaction. If nested work changed rows and then failed, the whole transaction fails,
+   * even when the outer code catches the error; nested work that failed before it changed
+   * anything is the caller's to handle. Refused on a reader.
    */
   transaction<T>(work: () => Synchronous<T>): T;
   /**
    * Runs `work` against one snapshot, taken before `work` starts, so that several queries
-   * agree with each other whatever is committed meanwhile. Inside a transaction it joins
-   * it. It is for reading: unlike a nested transaction, a failure in it that the outer
-   * code catches leaves the outer transaction to go on.
+   * agree with each other whatever is committed meanwhile. It is for reading: on its own
+   * it refuses a change and a transaction inside it. Inside a transaction it joins it.
    */
   snapshot<T>(work: () => Synchronous<T>): T;
   meta(key: string): string | undefined;
@@ -341,7 +341,11 @@ class Connection implements StateDatabase {
   readonly #queries = new Map<string, SqliteStatement>();
   readonly #changes = new Map<string, SqliteStatement>();
   #depth = 0;
-  /** Set when a nested piece of work failed: the transaction can only be rolled back. */
+  /** What the outermost call opened, while one is open. */
+  #outer: 'transaction' | 'snapshot' | null = null;
+  /** How many statements have changed rows; tells whether nested work changed anything. */
+  #writes = 0;
+  /** Set when nested work changed rows and then failed: the transaction can only be rolled back. */
   #failure: { cause: unknown } | null = null;
 
   constructor(file: string, mode: StateDatabaseMode, connection: SqliteDatabase) {
@@ -363,7 +367,9 @@ class Connection implements StateDatabase {
   }
 
   run(sql: string, ...parameters: SqliteInput[]): number {
-    return Number(this.#change(sql).run(...parameters).changes);
+    const { changes } = this.#change(sql).run(...parameters);
+    this.#writes += 1;
+    return Number(changes);
   }
 
   insert(sql: string, ...parameters: SqliteInput[]): number {
@@ -373,6 +379,7 @@ class Connection implements StateDatabase {
       );
     if (!INSERT.test(sql)) throw misuse();
     const { changes, lastInsertRowid } = this.#change(sql).run(...parameters);
+    this.#writes += 1;
     // Without a new row, SQLite's last row id is still that of some earlier statement.
     if (Number(changes) !== 1 || lastInsertRowid > Number.MAX_SAFE_INTEGER) throw misuse();
     return Number(lastInsertRowid);
@@ -380,6 +387,7 @@ class Connection implements StateDatabase {
 
   transaction<T>(work: () => Synchronous<T>): T {
     this.#assertWriter();
+    this.#assertNotReading();
     return this.#within('transaction', work);
   }
 
@@ -407,6 +415,7 @@ class Connection implements StateDatabase {
     this.#queries.clear();
     this.#changes.clear();
     this.#depth = 0;
+    this.#outer = null;
     connection.close();
   }
 
@@ -421,6 +430,15 @@ class Connection implements StateDatabase {
       throw new StateDatabaseError(
         'read_only',
         `${this.file} is open for reading; only the core that holds the bot's lock changes it`,
+      );
+    }
+  }
+
+  /** A snapshot opened on its own is for reading, and stays that way to its end. */
+  #assertNotReading(): void {
+    if (this.#outer === 'snapshot') {
+      throw new TypeError(
+        'A snapshot is for reading; change rows in a transaction, opened outside it',
       );
     }
   }
@@ -462,6 +480,7 @@ class Connection implements StateDatabase {
    */
   #change(sql: string): SqliteStatement {
     this.#assertWriter();
+    this.#assertNotReading();
     const connection = this.#open();
     assertOneStatement(sql);
     this.#assertTransaction(connection);
@@ -489,12 +508,13 @@ class Connection implements StateDatabase {
     if (this.#depth > 0) {
       this.#assertTransaction(connection);
       this.#depth += 1;
+      const writes = this.#writes;
       try {
         return synchronous(work());
       } catch (error) {
-        // Changes half made must not be committed by an outer caller that carries on. A
-        // snapshot is for reading, so its failure leaves nothing half made.
-        if (kind === 'transaction') this.#failure ??= { cause: error };
+        // Changes half made must not be committed by an outer caller that carries on. Work
+        // that failed before it changed anything, such as a read, leaves nothing half made.
+        if (this.#writes !== writes) this.#failure ??= { cause: error };
         throw error;
       } finally {
         // `close()` inside the work has already set the depth to nothing.
@@ -512,16 +532,19 @@ class Connection implements StateDatabase {
       }
     }
     this.#depth = 1;
+    this.#outer = kind;
     this.#failure = null;
     let result: T;
     try {
       result = synchronous(work());
     } catch (error) {
       this.#depth = 0;
+      this.#outer = null;
       if (this.#connection) rollback(connection);
       throw error;
     }
     this.#depth = 0;
+    this.#outer = null;
     // `work` may have closed the database, which rolled the transaction back.
     if (!this.#connection) {
       throw new StateDatabaseError('closed', `${this.file} was closed inside a transaction`);
@@ -536,7 +559,7 @@ class Connection implements StateDatabase {
     if (failure) {
       rollback(connection);
       throw new Error(
-        'A nested transaction failed and its error was caught; the whole transaction was rolled back.',
+        'Nested work changed rows and then failed, and its error was caught; the whole transaction was rolled back.',
         { cause: failure.cause },
       );
     }
