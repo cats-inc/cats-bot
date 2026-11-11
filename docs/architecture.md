@@ -182,8 +182,10 @@ does not establish browser/desktop helper availability or successful invocation.
   the transcript and re-sends a turn that produced nothing, once; the same
   unknown pre-output failure for two different prompts in one session rebuilds
   for the next turn only. Replacement evidence and its one-attempt fence
-  survive host restarts; a rebuilt session is not rebuilt again before a turn
-  completes. Ambiguous resume failures preserve the saved IDs. Heartbeat
+  survive host restarts; a rebuilt session that attempted a turn is not rebuilt
+  again before a turn completes. A closed replacement proven to have never
+  attempted a turn can be replaced when a work item is about to send, while
+  reconcile alone stays fenced. Ambiguous resume failures preserve the saved IDs. Heartbeat
   errors stay out of the conversation; the journal keeps the failed work
   item's error.
 
