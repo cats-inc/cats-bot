@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `fb50e59ab2244bd2c45ae93fa11345cb7507011c`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-fb50e59a.tgz`; 1,836,241 bytes.
-SHA-256: `256fb37a5b218fc9137910969a5d3b4c1e77a138f09273d8caa6018b0d087a76`.
+Source `3232270e81831d64d35ccd678cc6d54f2c88b2e1`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-3232270e.tgz`; 1,836,422 bytes.
+SHA-256: `d14b74da87e3b8272443f1d53adc22686af6b896fc4b667dce5fb3e17e7c5192`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -14,6 +14,8 @@ SHA-256: `256fb37a5b218fc9137910969a5d3b4c1e77a138f09273d8caa6018b0d087a76`.
 
 Runtime #214 preserves terminal `provider_session_unavailable` evidence, and
 #215 adds explicit native-history retention and best-effort names for Codex.
+Runtime #218 also classifies the archived Codex thread/resume rejection, so
+the product can hand off its conversation without unarchiving the native thread.
 Internal jobs can request ephemeral history; persistent Bot conversations retain
 their native identity and receive a bounded name through Runtime. The Bot restart
 repair resumes its saved Runtime record with fresh host descriptors. Neither the

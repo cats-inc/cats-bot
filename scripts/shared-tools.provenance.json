@@ -3,7 +3,7 @@
   "sources": [
     {
       "repository": "cats-inc/cats-one",
-      "commit": "0ddce6621b4f0b60b93bfee7c617ee5ecab01eb9",
+      "commit": "f8b0d8a6e566b44d788ffc77912665ef46b738d3",
       "files": [
         {
           "source": "scripts/shared/sync-agent-skills.mjs",
@@ -63,7 +63,7 @@
     },
     {
       "repository": "cats-inc/cats-platform",
-      "commit": "7fbc2be8e20a19fe47999e28af5af5a36c7089e3",
+      "commit": "018097ca51a982eccb0f0cd9de89eac058c3a453",
       "files": [
         {
           "source": "scripts/shared/renderer-cdp.mjs",
