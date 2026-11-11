@@ -264,13 +264,19 @@ function emptyCounts(): Version1Counts {
 }
 
 /**
- * File names as the file system compares them. Windows and macOS do not tell case apart by
- * default, so a file named otherwise than a conversation's id may still be its file.
+ * Which file a path reaches. Whether two names reach one file is the file system's to say:
+ * Windows and macOS ignore case by default, though not in every directory, and do not fold
+ * case the way JavaScript does.
  */
-const sameName: (name: string) => string =
-  process.platform === 'win32' || process.platform === 'darwin'
-    ? (name) => name.toLowerCase()
-    : (name) => name;
+function fileKey(file: string): string {
+  try {
+    const stat = statSync(file, { bigint: true });
+    if (stat.ino !== 0n) return `${String(stat.dev)}:${String(stat.ino)}`;
+  } catch {
+    // Missing, or a name no file can have.
+  }
+  return `path:${file}`;
+}
 
 /** The conversation records, and every other file of the three directories accounted for. */
 function readSources(paths: BotPaths, problems: Problems): Sources {
@@ -298,28 +304,27 @@ function readSources(paths: BotPaths, problems: Problems): Sources {
     }
     conversations.set(value.id, { file, value });
   }
-  const ids = new Set([...conversations.keys()].map(sameName));
+  // The files the conversations' own paths reach, which is what the import reads.
+  const ids = [...conversations.keys()];
+  const transcripts = new Set(ids.map((id) => fileKey(transcriptFile(paths, id))));
+  const directory = presentationsDirectory(paths);
+  const sidecars = new Set(ids.map((id) => fileKey(join(directory, `${id}.json`))));
+  const backups = new Set(ids.map((id) => fileKey(join(directory, `${id}.json.bak`))));
 
   for (const name of listDirectory(paths.transcripts)) {
     const file = join(paths.transcripts, name);
     if (!name.endsWith('.jsonl')) {
       problems.push(problem('not_read', paths.root, file));
-    } else if (!ids.has(sameName(name.slice(0, -'.jsonl'.length)))) {
+    } else if (!transcripts.has(fileKey(file))) {
       problems.push(problem('no_conversation', paths.root, file));
     }
   }
 
-  const directory = presentationsDirectory(paths);
   for (const name of listDirectory(directory)) {
     const file = join(directory, name);
     if (name.endsWith('.json')) {
-      if (!ids.has(sameName(name.slice(0, -'.json'.length)))) {
-        problems.push(problem('no_conversation', paths.root, file));
-      }
-    } else if (
-      !name.endsWith('.json.bak') ||
-      !ids.has(sameName(name.slice(0, -'.json.bak'.length)))
-    ) {
+      if (!sidecars.has(fileKey(file))) problems.push(problem('no_conversation', paths.root, file));
+    } else if (!name.endsWith('.json.bak') || !backups.has(fileKey(file))) {
       // A backup is accounted for with its sidecar; anything else is not read.
       problems.push(problem('not_read', paths.root, file));
     }
@@ -523,9 +528,8 @@ function verify(
       }
     }
   }
-  if (ignored.blocked) found.push('the files now hold a problem that stops the import');
-
   const lines = readLineSource(paths.root, paths.journal, ignored).values;
+  if (ignored.blocked) found.push('the files now hold a problem that stops the import');
   const keptLines = store.journal();
   if (lines.length !== journalLines || keptLines.length !== lines.length) {
     found.push(`journal: ${lines.length} lines in the file, ${keptLines.length} in the database`);
@@ -566,7 +570,10 @@ function keepsAsJson(value: unknown): boolean {
   while (pending.length > 0) {
     const next = pending.pop();
     if (typeof next === 'number' && !Number.isFinite(next)) return false;
-    if (typeof next === 'object' && next !== null) pending.push(...Object.values(next));
+    // One at a time: spread into a call, a large array would overflow the stack.
+    if (typeof next === 'object' && next !== null) {
+      for (const value of Object.values(next)) pending.push(value);
+    }
   }
   return true;
 }

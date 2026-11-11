@@ -166,8 +166,9 @@ outside `src/core/store/`.
   - a database that does not match the files, the files changing while the check runs,
     a record the store cannot read, a number JSON cannot keep, and a failure on the way
     to the marker, each leaving no marker and no journal;
-  - a conversation called `__proto__` counted, and on Windows and macOS a file named in
-    another case found as the conversation's own;
+  - a conversation called `__proto__` counted, a record holding an array of 300,000
+    values checked, and a file named in another case taken as the conversation's own
+    exactly when its path reaches that file;
   - the journal and the marker written in one durable transaction after the rest, and
     a database that already holds records refused.
 - `stateStore.test.ts` covers `importEntries`: each `seq` kept in order and after what

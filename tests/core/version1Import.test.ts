@@ -762,17 +762,32 @@ test('a number JSON cannot keep is a difference, and odd ids are counted', () =>
   );
 });
 
-test(
-  "a file named in another case is the conversation's own where the file system ignores case",
-  { skip: process.platform !== 'win32' && process.platform !== 'darwin' },
-  () => {
-    const paths = freshRoot();
-    writeJsonAtomic(conversationFile(paths, 'Note-A'), conversation('Note-A'));
-    mkdirSync(paths.transcripts, { recursive: true });
-    writeFileSync(join(paths.transcripts, 'note-a.jsonl'), `${JSON.stringify(entry(1, 'one'))}\n`);
-    const report = imported(paths);
-    assert.equal(report.finished, true);
+test("a file named in another case is the conversation's own only where it reaches the same file", () => {
+  const paths = freshRoot();
+  writeJsonAtomic(conversationFile(paths, 'Note-A'), conversation('Note-A'));
+  mkdirSync(paths.transcripts, { recursive: true });
+  const other = join(paths.transcripts, 'note-a.jsonl');
+  writeFileSync(other, `${JSON.stringify(entry(1, 'one'))}\n`);
+  // Whether the conversation's own path reaches that file is the file system's to say.
+  const same = existsSync(transcriptFile(paths, 'Note-A'));
+  const report = imported(paths);
+  assert.equal(report.finished, true);
+  if (same) {
     assert.deepEqual(report.problems, []);
     withStore(paths, (store) => assert.equal(store.entries('Note-A').length, 1));
-  },
-);
+  } else {
+    assert.deepEqual(kinds(report), ['no_conversation transcripts/note-a.jsonl']);
+    withStore(paths, (store) => assert.equal(store.entries('Note-A').length, 0));
+  }
+});
+
+test('a record that holds a large array is checked without running out of stack', () => {
+  const paths = freshRoot();
+  // Spread into one call, as many values as this would overflow the stack.
+  const many = Array.from({ length: 300_000 }, (_, index) => index);
+  writeJsonAtomic(conversationFile(paths, 'home'), conversation('home', { many }));
+  appendTranscript(paths, 'home', entry(1, 'one', { many } as never));
+  const report = imported(paths);
+  assert.deepEqual(report.mismatches, []);
+  assert.equal(report.finished, true);
+});
