@@ -715,11 +715,74 @@ test('one statement at a time, and transactions only through the adapter', () =>
         ),
       reads,
     );
+    // However the table is written, the word that changes it is what counts.
+    for (const table of [
+      'main.conversations',
+      '"conversations"',
+      'conversations as c',
+      'conversations indexed by sqlite_autoindex_conversations_1',
+    ]) {
+      assert.throws(
+        () => database.get(`with one as (select 1) update ${table} set json = '[]' returning id`),
+        reads,
+        table,
+      );
+    }
+    assert.throws(
+      () => database.get(`with one as (select 1) delete/* all */from conversations returning id`),
+      reads,
+    );
     assert.throws(() => database.get('pragma journal_mode=delete'), reads);
     assert.throws(() => database.get('pragma wal_checkpoint(truncate)'), reads);
+    // Named with nothing after it, a pragma may act instead of telling a setting: these
+    // two write statistics and move the log into the file. The first does so as a table too.
+    assert.throws(() => database.get('pragma optimize'), reads);
+    assert.throws(() => database.all('pragma wal_checkpoint'), reads);
+    assert.throws(() => database.all('select * from pragma_optimize'), reads);
+    assert.throws(() => database.snapshot(() => database.all('PRAGMA  Optimize ')), reads);
+    assert.equal(
+      database.get(`select count(*) as made from sqlite_master where name like 'sqlite_stat%'`)
+        ?.made,
+      0,
+    );
     assert.equal(database.get('pragma journal_mode')?.journal_mode, 'wal');
-    // A function of that name is not a statement.
+    assert.equal(database.get(' PRAGMA Synchronous ')?.synchronous, 1);
+    // A function of that name is not a statement, nor is a word in a string, a name or a
+    // comment.
     assert.equal(database.get(`select replace('kettle', 'k', 'K') as word`)?.word, 'Kettle');
+    assert.equal(
+      database.get(`select 'delete from it''s' as "update" -- insert nothing`)?.update,
+      "delete from it's",
+    );
+    assert.deepEqual(
+      { ...database.get('select 1 as [insert], 2 as `delete` /* update */') },
+      { insert: 1, delete: 2 },
+    );
+    assert.deepEqual(conversations(database), ['a', 'b']);
+
+    // `run` changes rows and nothing else. After any other statement, the count SQLite
+    // gives is still that of the last insert, update or delete.
+    const rows = /run\(\) and insert\(\) change rows/u;
+    for (const sql of [
+      'pragma optimize',
+      'pragma journal_mode=delete',
+      'create table other(id integer primary key)',
+      'drop table conversations',
+      'vacuum',
+      'select id from conversations',
+      'with one as (select 1 as id) select id from one',
+      `with one as (select 'delete from conversations' as id) select id from one`,
+    ]) {
+      assert.throws(() => database.run(sql), rows, sql);
+    }
+    assert.equal(database.get('pragma journal_mode')?.journal_mode, 'wal');
+    database.run('insert into conversations(id, json) values (?, ?)', 'c', '{}');
+    assert.equal(
+      database.run(`with gone as (select 'c' as id) delete from conversations where id in gone`),
+      1,
+    );
+    // A statement that changes no row says so, whatever the one before it changed.
+    assert.equal(database.run(`delete from conversations where id = 'nobody'`), 0);
     assert.deepEqual(conversations(database), ['a', 'b']);
 
     // A statement that fails must be undone whole, which `or fail` does not do.

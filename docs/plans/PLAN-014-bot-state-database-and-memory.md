@@ -127,6 +127,15 @@ security review. Embeddings come only if the evaluation asks for them.
       transaction the adapter refuses them and reports the transaction as lost.
     - **The driver compiles only the first statement of a text** and says nothing about
       the rest, so the adapter takes one statement at a time.
+    - **SQLite counts changed rows for an insert, an update or a delete only**, and keeps
+      the last count through every other statement. The adapter's `run` therefore takes
+      those three and nothing else; a pragma, a `create` or a `vacuum` gets a call of its
+      own when a later task needs one.
+    - **A pragma named with nothing after it is not always a read.** `optimize` writes
+      statistics, also when a query calls it as a table, and `wal_checkpoint` moves the
+      log into the file. The adapter's `get` and `all` read three settings by name, and
+      refuse a query that holds an insert, an update, a delete or a pragma called as a
+      table, however the table it changes is written.
     - **Snapshots.** `VACUUM INTO` does not replace an existing database, but it accepts an
       existing empty file and can leave a partial file when interrupted. A snapshot is
       written under a new name and renamed when complete.

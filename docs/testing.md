@@ -89,6 +89,9 @@ FR-2).
     taking no change;
   - one statement at a time, transactions opened only through the adapter, and an insert
     that must add exactly one row;
+  - `get` and `all` taking a query that changes nothing or the name of one of three
+    settings, whatever a string, a quoted name or a comment in it says, and `run` taking
+    an insert, an update or a delete and nothing else;
   - closing twice, a closed database saying so, and Windows refusing a rename while a
     connection is open;
   - the URI for an existing database, including UNC roots, and on Windows a read through
