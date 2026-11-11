@@ -1,0 +1,48 @@
+name: store performance
+
+# PLAN-014 task 1.7: SPEC-014's performance targets, measured by hand on a million made-up
+# entries on every platform, under Node.js and inside the shipped Electron. It reports; it
+# does not gate. The numbers are in each job's log and summary.
+on:
+  workflow_dispatch:
+    inputs:
+      entries:
+        description: Entries to make
+        default: '1000000'
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: measure (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Measure under Node.js
+        shell: bash
+        run: node scripts/testing/measure-store-performance.mjs --entries "${{ inputs.entries }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Measure inside Electron
+        shell: bash
+        env:
+          ELECTRON_RUN_AS_NODE: '1'
+        run: |
+          electron=$(node -p "require('electron')")
+          "$electron" scripts/testing/measure-store-performance.mjs --entries "${{ inputs.entries }}" | tee -a "$GITHUB_STEP_SUMMARY"

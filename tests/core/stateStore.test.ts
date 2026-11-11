@@ -9,7 +9,9 @@ import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { StateDatabaseError } from '../../src/core/store/stateDatabase.ts';
 import {
   openBotStateStore,
-  searchSql,
+  RANKED_MATCHES,
+  SEARCH_CANDIDATES_SQL,
+  SEARCH_ENTRY_SQL,
   type BotStateStore,
 } from '../../src/core/store/stateStore.ts';
 import type {
@@ -714,33 +716,70 @@ test('the best match comes first, with and without a conversation', () => {
   }
 });
 
-test('a search starts at the index, never at the entries of a conversation', () => {
-  // The SQLite in Electron 41 would otherwise walk every entry of the conversation and ask
-  // the index about each: half a minute for a long direct message.
+test('a search reads the newest matches backwards in the index, and their records by row id', () => {
+  // Ranking every match, or reading forwards from a row id, takes seconds on a million
+  // entries; reading the newest ones backwards takes milliseconds (PLAN-014 task 1.7).
   const { file, store } = filled(
     Array.from({ length: 300 }, (_, index) => `entry ${index} about the kettle`),
   );
   store.close();
-  const plan = (scoped: boolean): string[] =>
-    raw(file, (database) =>
-      database
-        .prepare(`explain query plan ${searchSql(scoped)}`)
-        .all(...(scoped ? ['"kettle"', 'home', 50] : ['"kettle"', 50]))
-        .map((row) => String(row.detail)),
+  raw(file, (database) => {
+    const candidates = database
+      .prepare(`explain query plan ${SEARCH_CANDIDATES_SQL}`)
+      .all('"kettle"', 50)
+      .map((row) => String(row.detail));
+    assert.deepEqual(candidates.length, 1, candidates.join(' | '));
+    assert.match(candidates[0]!, /^SCAN entries_fts VIRTUAL TABLE INDEX/u);
+    // No sort of its own: the index gives the rows newest first.
+    assert.equal(
+      candidates.some((step) => /TEMP B-TREE/u.test(step)),
+      false,
+      candidates.join(' | '),
     );
-  for (const scoped of [true, false]) {
-    const steps = plan(scoped);
+    const entry = database
+      .prepare(`explain query plan ${SEARCH_ENTRY_SQL}`)
+      .all(1)
+      .map((row) => String(row.detail));
+    assert.deepEqual(entry, ['SEARCH entries USING INTEGER PRIMARY KEY (rowid=?)']);
+  });
+});
+
+test('a search ranks the newest matches, so a better match older than them is not found', () => {
+  const file = freshFile();
+  withStore(file, 'writer', (store) => {
+    store.saveConversation(conversation('home'));
+    store.saveConversation(conversation('note-1'));
+    store.transaction(() => {
+      // The best match of all, and older than the newest RANKED_MATCHES.
+      store.appendEntry('home', entry('kettle kettle kettle kettle'));
+      for (let index = 0; index < RANKED_MATCHES; index += 1) {
+        store.appendEntry(
+          index % 2 ? 'home' : 'note-1',
+          entry(`a kettle and a long line of other words, number ${index}`),
+        );
+      }
+      // The best of the newest.
+      store.appendEntry('home', entry('kettle kettle'));
+    });
+    const best = store.search('kettle', { limit: 1 });
+    assert.equal(best[0]!.entry.text, 'kettle kettle');
+    assert.equal(
+      store
+        .search('kettle', { limit: RANKED_MATCHES + 5 })
+        .some((hit) => hit.entry.text === 'kettle kettle kettle kettle'),
+      false,
+    );
+    // Within one conversation the newest of its own matches are ranked, by its term: home
+    // holds fewer than RANKED_MATCHES of them, so its oldest and best is found there.
+    const inHome = store.search('kettle', { limit: 3, conversationId: 'home' });
+    assert.equal(inHome[0]!.entry.text, 'kettle kettle kettle kettle');
+    assert.ok(inHome.every((hit) => hit.conversationId === 'home'));
     assert.ok(
-      steps.some((step) => /entries_fts VIRTUAL TABLE/u.test(step)),
-      steps.join(' | '),
+      store
+        .search('kettle', { limit: 3, conversationId: 'note-1' })
+        .every((hit) => hit.conversationId === 'note-1'),
     );
-    // The entries are only ever fetched one by one, by the row id the index gave.
-    assert.deepEqual(
-      steps.filter((step) => /^(?:SCAN|SEARCH) e\b/u.test(step)),
-      ['SEARCH e USING INTEGER PRIMARY KEY (rowid=?)'],
-      steps.join(' | '),
-    );
-  }
+  });
 });
 
 test('every piece of a CJK run is found, and nothing that is in no run', () => {

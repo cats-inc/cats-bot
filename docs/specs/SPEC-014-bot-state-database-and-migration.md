@@ -129,6 +129,12 @@ verified migration moves existing bots over without losing or rewriting their hi
    of a token or the last character of its run. A query of more than 200 characters or
    12 different words is refused. Results carry kind and origin, so callers can drop tool
    output and other bots' messages (SPEC-015 trust levels).
+
+   *(amended 2026-11-12, chosen under the owner's instruction of that day; see Open Questions)* A search ranks the newest 1,000 matches with BM25,
+   read backwards from the index, so that a word in a large share of the entries costs about
+   what a rare one does; a better match older than those is found by narrowing the query or
+   the conversation. Each entry's indexed terms end with a term for its conversation, which
+   narrows a search of one conversation inside the index itself.
 9. FR-9 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
    it from the entries' JSON records is a supported maintenance command. It does not read
    the index, so it repairs a damaged one. A writer runs it by itself when the way text

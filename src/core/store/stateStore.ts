@@ -5,7 +5,7 @@ import type {
   TranscriptEntry,
   WorkItem,
 } from '../types.ts';
-import { buildSearchQuery, INDEX_FORM, indexText } from './searchText.ts';
+import { buildSearchQuery, conversationTerm, INDEX_FORM, indexText } from './searchText.ts';
 import { BOT_ENTRY_WORK_ITEM, responseCovers } from './stateSchema.ts';
 export { StateDatabaseError, type StateDatabaseErrorCode } from './stateDatabase.ts';
 import {
@@ -198,6 +198,11 @@ export function openBotStateStore(options: OpenBotStateStoreOptions): BotStateSt
 }
 
 const DEFAULT_SEARCH_LIMIT = 50;
+/**
+ * PLAN-014 task 1.7: a search ranks the newest this many matches and no more, so that a word
+ * in a large share of the entries costs what a rare one does.
+ */
+export const RANKED_MATCHES = 1000;
 const REBUILD_BATCH = 500;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -224,18 +229,15 @@ function positive(value: number, name: string): number {
  * one conversation, the SQLite in Electron 41 otherwise walks every entry of it and asks
  * the index about each.
  */
-export function searchSql(scoped: boolean): string {
-  return scoped
-    ? `select e.conversation_id as conversation_id, e.seq as seq, e.json as json
-       from entries_fts cross join entries e on e.id = entries_fts.rowid
-       where entries_fts match ? and e.conversation_id = ?
-       order by entries_fts.rank, e.id desc limit ?`
-    : // Ranked and cut down inside the index, before any record is fetched.
-      `select e.conversation_id as conversation_id, e.seq as seq, e.json as json
-       from (select rowid, rank from entries_fts where entries_fts match ? order by rank, rowid desc limit ?) hit
-       cross join entries e on e.id = hit.rowid
-       order by hit.rank, e.id desc`;
-}
+/**
+ * The newest matches with their rank, read backwards inside the index, which the index does in
+ * milliseconds; reading forwards from a row id, or ranking every match, takes seconds on a
+ * million entries (PLAN-014 task 1.7).
+ */
+export const SEARCH_CANDIDATES_SQL = `select rowid, rank from entries_fts where entries_fts match ?
+       order by rowid desc limit ?`;
+/** A candidate's record, by the row id the index gave. */
+export const SEARCH_ENTRY_SQL = 'select conversation_id, seq, json from entries where id = ?';
 
 class Store implements BotStateStore {
   readonly #database: StateDatabase;
@@ -511,7 +513,7 @@ class Store implements BotStateStore {
         text(full.at),
         JSON.stringify(full),
       );
-      this.#index(id, full.text);
+      this.#index(id, full.text, conversationId);
       return full;
     });
   }
@@ -536,7 +538,7 @@ class Store implements BotStateStore {
           text(entry.at),
           JSON.stringify(entry),
         );
-        this.#index(id, entry.text);
+        this.#index(id, entry.text, conversationId);
         last = seq;
       }
     });
@@ -567,11 +569,15 @@ class Store implements BotStateStore {
     }
   }
 
-  #index(rowid: number, body: unknown): void {
+  #index(rowid: number, body: unknown, conversationId: string): void {
     if (typeof body !== 'string') return;
     const terms = indexText(body);
     if (terms.trim() === '') return;
-    this.#database.run('insert into entries_fts(rowid, terms) values (?, ?)', rowid, terms);
+    this.#database.run(
+      'insert into entries_fts(rowid, terms) values (?, ?)',
+      rowid,
+      `${terms} ${conversationTerm(conversationId)}`,
+    );
   }
 
   responses(conversationId: string): unknown[] {
@@ -753,21 +759,38 @@ class Store implements BotStateStore {
       );
     }
     const { conversationId } = options;
-    return this.#filled(
-      count,
-      (want) =>
-        conversationId === undefined
-          ? this.#database.all(searchSql(false), match, want)
-          : this.#database.all(searchSql(true), match, conversationId, want),
-      (rows) =>
-        rows.flatMap((row) => {
-          const found = String(row.conversation_id);
-          return this.#entryRecords(found, [row]).map((entry) => ({
-            conversationId: found,
-            entry,
-          }));
-        }),
+    return this.#database.snapshot(() =>
+      conversationId === undefined
+        ? this.#ranked(match, count, null)
+        : this.#ranked(
+            `"${conversationTerm(conversationId)}" AND (${match})`,
+            count,
+            conversationId,
+          ),
     );
+  }
+
+  /**
+   * Up to `count` of the newest `RANKED_MATCHES` matches, best first; a record that cannot be
+   * read is passed over for the next, and one of another conversation when `only` names one.
+   */
+  #ranked(match: string, count: number, only: string | null): SearchHit[] {
+    const candidates = this.#database
+      .all(SEARCH_CANDIDATES_SQL, match, RANKED_MATCHES)
+      .map((row) => ({ rowid: Number(row.rowid), rank: Number(row.rank) }))
+      .sort((a, b) => a.rank - b.rank || b.rowid - a.rowid);
+    const hits: SearchHit[] = [];
+    for (const candidate of candidates) {
+      const row = this.#database.get(SEARCH_ENTRY_SQL, candidate.rowid);
+      if (!row) continue;
+      const found = String(row.conversation_id);
+      if (only !== null && found !== only) continue;
+      const [entry] = this.#entryRecords(found, [row]);
+      if (!entry) continue;
+      hits.push({ conversationId: found, entry });
+      if (hits.length >= count) break;
+    }
+    return hits;
   }
 
   rebuildIndex(): number {
@@ -785,7 +808,7 @@ class Store implements BotStateStore {
         for (const row of rows) {
           after = Number(row.id);
           const [entry] = this.#entryRecords(String(row.conversation_id), [row]);
-          if (entry) this.#index(after, entry.text);
+          if (entry) this.#index(after, entry.text, String(row.conversation_id));
         }
       }
       return Number(this.#database.get('select count(*) as n from entries_fts_docsize')?.n);

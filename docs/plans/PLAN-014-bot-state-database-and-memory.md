@@ -611,10 +611,27 @@ security review. Embeddings come only if the evaluation asks for them.
     - Deleting a conversation of 17,600 entries: 7.3 s. One of 49,600 entries with a
       work item each: 19.6 s (one run each).
     - Reading every work item: 2.2 to 2.7 s. Reading the whole journal: 9.2 s.
-  - Ways to meet the search target: a token for the conversation in the index, so the
-    index itself narrows to it; a limit on how many matches are ranked; and searching on
-    a reader connection off the core's thread. Open as well: whether to cap how much of
-    one entry is indexed.
+  - Done, chosen 2026-11-12 under the owner's instruction: each entry's indexed terms end
+    with a term for its conversation (index form 2, rebuilt by itself on first open), and a
+    search ranks the newest 1,000 matches, read backwards from the index. Reading forwards
+    from a row id, or ranking every match, is what took seconds: BM25 reads the whole
+    doclist of every phrase, and the index has no quick way forwards from a row id.
+    - Measured on Windows inside Electron 41 (SQLite 3.51.2), 999,010 made-up entries,
+      medians of five runs, while another test run shared the machine:
+      - newest 50 entries 0.3 ms; a two-character word over all entries 9 to 56 ms, in a
+        conversation of 21,000 entries 4 to 27 ms; an English word 11 to 20 ms. Within the
+        100 ms target.
+      - In the one conversation of 600,000 entries a two-character word takes 69 to
+        120 ms; the commonest of them, in most entries, misses the target by about 20 ms.
+        Its conversation's term is in 600,000 doclist entries, which BM25 reads.
+      - Not under a target: one common character (a prefix query) 0.3 to 0.4 s; two common
+        words together 95 to 147 ms.
+      - Before: 74 ms to 3.4 s for the same queries.
+    - `scripts/testing/measure-store-performance.mjs` makes such a database and measures
+      every target; the manual `store performance` workflow runs it on the three platforms,
+      under Node.js and inside Electron, once it is on `main`.
+    - Left as they are: searching on a reader off the core's thread, and a cap on how much
+      of one entry is indexed.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 

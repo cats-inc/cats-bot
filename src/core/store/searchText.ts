@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * SPEC-014 FR-8: the text side of the full-text index.
  *
@@ -22,8 +24,18 @@
 /**
  * To be raised, once a release has shipped an index, whenever `indexText` would give another
  * result for the same text. The store rebuilds an index that was made with a different number.
+ * 2: each entry's terms end with its conversation's term (PLAN-014 task 1.7).
  */
-export const INDEX_FORM = 1;
+export const INDEX_FORM = 2;
+
+/**
+ * PLAN-014 task 1.7: the term an entry's conversation adds to its terms, so that the index
+ * itself narrows a search to one conversation. Letters and digits only, which the tokenizer
+ * keeps as one token, and a prefix no rewritten text begins a token with.
+ */
+export function conversationTerm(conversationId: string): string {
+  return `zc${createHash('sha256').update(conversationId).digest('hex').slice(0, 24)}`;
+}
 
 /** A query longer than this is refused: nobody searches for a page of text. */
 export const MAX_QUERY_LENGTH = 200;
