@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 (D1, D2) and split into two phases the same day after the independent security review (D3). Phase 1 may be implemented. Phase 2 waits for FR-13's Runtime capabilities. Neither is implemented |
+| **Status** | Approved by the owner on 2026-11-11 (D1, D2) and split into two phases the same day after the independent security review (D3). Phase 1 implemented on 2026-11-11 (see Implementation Notes). Phase 2 waits for FR-13's Runtime capabilities |
 | **Owner** | Product owner |
 | **Reviewer** | Owner; independent security review on 2026-11-11 (see Security Review) |
 | **Updates** | SPEC-009 FR-4 (`hub_bot_status`), FR-9 (its audit) and FR-10 (contact notes); PLAN-009 D29 (the sender conversation becomes a read-only contact note); SPEC-011 FR-13 and FR-14 (the Boss Cat's `assist` heartbeat) |
@@ -81,8 +81,9 @@ alone would protect the direct message and the Boss Cat's tools.
      - how many owner decisions wait (`ask_owner`, approvals, provider interactions), as counts
        only;
      - each with its conversation id;
-     - turns with source `bot` and contact notes are left out, so the Boss Cat's own traffic
-       never creates attention;
+     - turns with source `bot`, heartbeat turns and contact notes are left out, decisions waiting
+       in a contact note included, so the Boss Cat's own traffic and a recurring heartbeat retry
+       never create attention;
    - schedules: how many, and the next due time;
    - notes: the 20 most recently active notes, contact notes excluded. Each has its id, its
      title, the owner's and the bot's last message times, and whether its last turn failed,
@@ -96,24 +97,49 @@ alone would protect the direct message and the Boss Cat's tools.
    - Titles are set by the owner, or by the bot when it creates a note. They are never derived
      from a message.
    - Nothing else leaves the core through the board: no message text, prompt, tool argument,
-     schedule prompt, decision content, error text, memory, file path or secret.
+     schedule prompt, decision content, error text, memory, file path or secret. It does not
+     say which bots wrote to this one either.
+   - Work item, conversation and note ids on a board hold only letters, digits, `-` and `_`; a
+     board read by the hub or pushed to the holder must name the bot it was asked for, and
+     carries the hub's name for it.
 4. FR-4: A board call runs no model turn and is not a hop (SPEC-009 FR-8). The hub limits it
    to 30 calls an hour per holder, and journals it with ids only (SPEC-009 FR-9).
 
 #### Contact notes
 
-5. FR-5: A contact note carries `contactOf`, the other bot's id. That field, not the `bot-`
-   prefix of its id, makes it a contact note.
+5. FR-5: A contact note carries `contactOf`, the other bot's id, and `contactName`, its name,
+   refreshed from each of its deliveries. `contactOf`, not the `bot-` prefix of its id, makes
+   it a contact note.
    - The field is set at creation, and once on existing `bot-<id>` conversations whose id names
      a valid bot. The upgrade is additive, validated, backed up and atomic, per the version
      policy. An older version ignores the field.
+   - Every host treats such a conversation as a contact note from the moment it is read, and
+     marks a session it had as stale (FR-8). Only a running core writes the upgrade, after
+     copying the old file to `conversations/.backup/<id>.before-contact-note.json`; a read-only
+     host (`status`, `conversations`, the offline CLI) writes nothing. When the copy fails, the
+     upgrade stays in memory and is applied again on the next start; the note's next change is
+     written either way, since the upgrade only adds what an older version ignores.
    - The note is shown as 「與 {name} 的聯絡簿」 (en "Contact with {name}").
 6. FR-6: The owner can open, read, scroll and delete a contact note, but cannot write in it.
    - The composer is replaced by: 「這是 {holder} 和 {bot} 的聯絡簿，你可以看，但不能在這裡輸入。要跟 {bot} 說話，請到它的私訊。」
    - A button opens that bot's direct message.
    - The core refuses, with that reason, every owner-written path into a conversation with
      `contactOf`: `sendOwnerMessage` from the note window, the CLI and the handoff directory;
-     `retryOwnerMessage`; and `setConversationDesktopControl`.
+     `retryOwnerMessage`; `addOwnerAttachment` (files, region screenshots); turning
+     `setConversationDesktopControl` on; `renameConversation`; and `createSchedule` by anyone
+     but the note's own agent, from the handoff directory and the offline CLI alike.
+   - Owner work left in a contact note from before the upgrade never reaches its session. On
+     start, before anything runs, the core cancels the owner's reminders there and drops owner
+     messages still queued there. The note's own schedule list never shows a reminder the owner
+     set there. As a last check before any turn runs, such a message or reminder ends failed,
+     and the reminder is cancelled.
+   - A provider request there is answered by choosing only: accept, decline or cancel, a listed
+     choice, listed options, yes or no, listed grants. Typed text and numbers are refused by the
+     core, and the request card shows such fields as unavailable.
+   - The note window hides the composer, dictation, attachments, screenshots, retry and the
+     desktop-control bar there, keeps Cancel for a running turn, and sends nothing before it
+     knows which kind of note it shows. Settings hides rename. A desktop-control switch left on
+     in a note from before the upgrade is turned off on start.
    - Telegram reaches only the direct message, so it never writes into a contact note.
 7. FR-7: The owner's decisions stay answerable in a contact note: approvals, `ask_owner`
    questions and provider interactions.
@@ -121,11 +147,14 @@ alone would protect the direct message and the Boss Cat's tools.
      is not owner-present, so it has no desktop control (SPEC-006). It writes no owner entry and
      does not set `lastOwnerMessageAt`, so it never counts as the owner writing (SPEC-011 FR-9).
    - An interrupted delivery ends failed and is never rerun (PLAN-009 D28, SPEC-001 FR-28).
-8. FR-8: Every session of a contact note is created from a handoff that leaves out owner-written
-   entries (and Phase 2's status entries): new, stale and rebuilt sessions alike. That includes
-   SPEC-001 FR-27's rebuild after a configuration change, FR-28's recovery, and the rebuild when
-   the provider session is gone. Earlier owner words in such a note therefore never reach a
-   reply.
+8. FR-8: Every session of a contact note is created from a handoff built by allow-list: the
+   other bot's messages, and this bot's replies to those messages and to the owner's decisions
+   (origin `event`). Everything else is left out: owner-written entries, replies to the owner's
+   messages or reminders that could echo them, reminder receipts, recovery notices and system
+   entries (and Phase 2's status entries). This holds for new, stale and rebuilt sessions alike,
+   including SPEC-001 FR-27's rebuild after a configuration change, FR-28's recovery, and the
+   rebuild when the provider session is gone. Earlier owner words in such a note therefore never
+   reach a reply.
 9. FR-9: A contact note shows every message between the two bots, so the owner sees exactly
    what passed.
 
@@ -142,12 +171,25 @@ alone would protect the direct message and the Boss Cat's tools.
     - The prompt asks the Boss Cat to find a bot whose work needs the owner, suggest one next
       step in its own direct message naming the bot and the note (D2), and not repeat a
       suggestion it already made.
-    - While the holder runs a heartbeat, its core refuses every `cats-hub` call from that
-      turn. A heartbeat can therefore only suggest. Handing work on with `hub_message_bot`
-      stays an owner-present turn, after the owner agrees.
-11. FR-11: The `assist` skip (SPEC-011 FR-14) also fingerprints the peer section's attention
-    items and waiting counts. A quiet review with no change in any bot's attention runs no
-    turn. A heartbeat that speaks counts toward the back-off as before (SPEC-011 FR-10).
+    - The holder's core takes a `cats-hub` call only from a live, not cancelled turn in the
+      calling conversation, so a late call after a cancel or a lost stream is refused.
+    - It refuses every call from a heartbeat, and from the turns of a schedule the heartbeat's
+      agent created (`fromHeartbeat`), at any depth: a reminder such a reminder sets is marked
+      too, and so is an agent's reminder that matches no live turn. A reminder the owner sets
+      is never marked. A heartbeat can therefore only suggest. Handing work on with
+      `hub_message_bot` waits for a turn the owner or another bot started.
+    - An `ask_owner` question from a heartbeat that the owner approves is the owner's word: its
+      follow-up is the owner's turn, with the hub tools (SPEC-001 FR-30).
+11. FR-11: The `assist` skip (SPEC-011 FR-14) also looks at the peer section's marks:
+    - each attention item, and each waiting decision counted as "at least k";
+    - only a mark the last quiet look did not see runs a turn;
+    - a bot that drops out (stopped, timed out, switched off) or has fewer decisions waiting is
+      no news;
+    - its return with the same picture is no news either;
+    - a bot on the current push keeps only the marks it shows now, so a decision answered and a
+      new one asked later is news again; a missing bot keeps its marks.
+
+    A heartbeat that speaks counts toward the back-off as before (SPEC-011 FR-10).
 
 #### The owner's control
 
@@ -156,6 +198,9 @@ alone would protect the direct message and the Boss Cat's tools.
       peer section leaves it out.
     - The hub applies it, and pushes fresh peer boards as soon as it changes.
     - The switch does not affect `hub_message_bot`, and the setting's hint says so.
+    - It is stored as `bossCatSees` on the bot's registry entry, additive. An older build drops
+      the field on its next save, which turns the switch back on; the owner sets it again after
+      upgrading.
 
 ### Phase 2 (deferred): status questions
 
@@ -252,6 +297,53 @@ alone would protect the direct message and the Boss Cat's tools.
 - The upgrade marks existing `bot-<id>` conversations, keeps a backup and survives a failed
   write.
 
+## Implementation Notes (Phase 1, 2026-11-11)
+
+- **Core.**
+  - `src/core/hub/status.ts` builds the board (`buildWorkBoard`, `cleanBoardText`).
+  - `src/core/hub/peers.ts` validates pushed boards (`asPeerBoards`) and builds the peer
+    section with its fingerprint.
+  - `workStatus` and `setPeerBoards` are host-only commands.
+  - `BotCore` keeps the pushed boards only while it holds the role, drops its own board,
+    stamps their arrival, and uses them for five minutes.
+  - `callHub` and `createSchedule` ask `liveTurn` which turn a call belongs to: none (a late
+    call), the heartbeat's, or another. `fromHeartbeat` is inherited by the reminders such a
+    reminder sets.
+  - `start` puts owner work in contact notes away (`settleContactNotes`), the bot tools'
+    schedule list leaves out owner reminders there, and `runItem` checks once more before a
+    turn runs (`ownerWordsInContactNote`).
+  - `ProviderInteractions.respond` takes `choicesOnly` (`assertChoicesOnly`) for contact notes.
+- **Contact notes.**
+  - `ConversationStore.load` upgrades `bot-<id>` notes in memory in every host and marks a
+    session they had `stale`, so the next bind rebuilds it through `binder.create`, the one
+    place every new session's handoff is built, by allow-list (`inContactHandoff`).
+  - `BotCore.start` calls `persistUpgrades`, which copies each file to
+    `conversations/.backup/<id>.before-contact-note.json` and then replaces it atomically. If
+    the copy fails, the note is still a contact note in memory, so the refusals and the
+    allow-list hold; only the file stays as it was until the next start or change.
+  - Interrupted turns in a contact note end failed and are never rerun. A recovery approval
+    left there from before is cancelled.
+  - Contact notes are left out of the `assist` review and of "the owner answered"
+    (SPEC-011 FR-9, FR-13).
+- **Hub.**
+  - `hub_bot_status` covers every other bot (never the caller), reads each board through
+    `readWorkBoard` (validated, the right bot, the hub's name), and answers only if the caller
+    still holds the role after the reads.
+  - `PeerBoardsPusher` pushes every minute and on a role or switch change, through the same
+    `readWorkBoard`. Passes do not overlap, and each core has a 5-second timeout.
+  - Settings → Bots shows the switch on every bot but the holder.
+- **Tests.**
+  - `tests/core/workBoard.test.ts`, `tests/core/contactNotes.test.ts` and
+    `tests/shell/bossCatStatus.test.ts` cover the board, the peer section, validation, the
+    contact-note upgrade and refusals, decisions as events, the handoff allow-list (with
+    echoes and reminder receipts), owner work queued before the upgrade, typed answers, the
+    board tool's limit, switch and holder recheck, forged boards, pushing, the 1-0-1 decision
+    case, and the heartbeat and late-call refusals.
+  - The heartbeat and late-call refusals are tested by setting the core's running turn
+    directly; no end-to-end test drives a model's `cats-hub` call from a heartbeat.
+  - Titles in the tray and the note window are covered by the language and tray menu tests.
+  - The note window's contact footer and the Bots switch have no rendering test.
+
 ## Decisions
 
 - D1 (2026-11-11, the owner): note titles reach the Boss Cat by default, although they can
@@ -284,6 +376,40 @@ An independent review on 2026-11-11 found the following, now addressed:
   - "API limits, not a boundary" was not restated. Now Keeps.
   - Goals contradicted D1, and named Telegram groups as a source; a bot receives Telegram only
     in its direct message. Now Goals and FR-6.
+
+## Implementation Review (Phase 1, 2026-11-11)
+
+An independent review of the Phase 1 change found the following, fixed before merge:
+
+- **High.**
+  - H1: the contact-note handoff left out only owner entries, so replies that echoed the owner,
+    reminder receipts and recovery notices still reached the new session; and the upgrade kept
+    a session that had seen only the owner's reminders. Now FR-8's allow-list, and every
+    upgraded session is rebuilt (FR-5).
+  - H2: the offline CLI's `schedule add`, a reminder the owner set before the upgrade, and an
+    owner message still queued from then could reach a contact note's session; until it fired,
+    such a reminder's prompt also showed in the note's own schedule list. Now FR-6:
+    `createSchedule` refuses, start puts such work away, the list leaves it out, and the last
+    check before a turn runs.
+- **Medium.**
+  - M1: `fromHeartbeat` was not inherited by a reminder a heartbeat's reminder set. Now FR-10.
+  - M2: the hub gate looked only at whatever ran at that moment, so a late call after a cancel
+    passed, and an owner's reminder made during a heartbeat was marked. Now FR-10's
+    live-turn check.
+  - M3: marks only grew, so a question answered and a new one asked later was missed. Now
+    FR-11.
+  - M4: a provider request in a contact note took typed text. Now FR-6.
+  - M5: a running turn in a contact note could not be cancelled. Now FR-6.
+- **Low.**
+  - L1: the pusher trusted a board's id and name. Now FR-3 and `readWorkBoard`.
+  - L2: `hub_bot_status` answered a former holder after a role change mid-read. Now checked.
+  - L3: the board listed contact notes by name. Removed (FR-3).
+  - L4: decisions waiting in a contact note counted as attention. Now FR-2.
+  - L5: a failed upgrade write left no backup before the next change, and read-only hosts
+    wrote. Now FR-5.
+  - L6: an approved heartbeat question runs as the owner's turn. Kept, and stated in FR-10.
+  - L7: a desktop-control switch left on, the composer before the header loads, and a
+    misplaced comment. Fixed (FR-6).
 
 ## References
 

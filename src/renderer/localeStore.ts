@@ -16,8 +16,18 @@ export function acceptLanguage(next: LanguageState): void {
 export const t = (message: string, values?: Record<string, unknown>) =>
   translate(state.locale, message, values);
 
-/** Translate the built-in direct-message title; preserve owner-assigned titles. */
-export const conversationTitle = (record: { role: string; title: string }) =>
-  record.role === 'home' && ['Home', 'Direct message'].includes(record.title)
-    ? t('Direct message')
-    : record.title;
+/**
+ * Translate the built-in direct-message title; preserve owner-assigned titles.
+ * SPEC-012 FR-5: a contact note is named after the other bot.
+ */
+export const conversationTitle = (record: {
+  role: string;
+  title: string;
+  contactOf?: string | null;
+  contactName?: string | null;
+}) =>
+  record.contactOf
+    ? t('Contact with {name}', { name: record.contactName ?? record.contactOf })
+    : record.role === 'home' && ['Home', 'Direct message'].includes(record.title)
+      ? t('Direct message')
+      : record.title;

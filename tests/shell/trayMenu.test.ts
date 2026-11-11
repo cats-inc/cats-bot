@@ -82,6 +82,8 @@ function conversation(id: string, role: 'home' | 'note', unreadCount: number, ti
     lastOwnerMessageAt: null,
     lastBotMessageAt: null,
     checkpoint: null,
+    contactOf: null,
+    contactName: null,
   };
 }
 
@@ -104,6 +106,27 @@ const status: BotStatus = {
   lock: null,
   telegram: { enabled: false, polling: false, ownerChatId: null },
 };
+
+test('a contact note is listed by the other bot\'s name (SPEC-012 FR-5)', () => {
+  const template = buildBotMenuTemplate({
+    botName: 'Mochi',
+    status,
+    conversations: [
+      conversation('home', 'home', 0, 'Home'),
+      { ...conversation('bot-ada', 'note', 2, 'Messages from Ada'), contactOf: 'ada', contactName: 'Ada' },
+    ],
+    heartbeatEnabled: true,
+    awaitingOwner: 0,
+    floatingVisible: true,
+    desktopControl: DESKTOP_OFF,
+    locale: 'zh-TW',
+  }, {
+    onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
+    onToggleFloating: () => {}, onStopDesktopControl: () => {},
+  } as unknown as BotMenuActions);
+  const submenu = template.flatMap((item) => (item as { submenu?: Array<{ label?: string }> }).submenu ?? []);
+  assert.ok(submenu.some((item) => item.label === '與 Ada 的聯絡簿 (2)'), JSON.stringify(submenu.map((item) => item.label)));
+});
 
 test('the Cat menu operates on its own conversations, settings and heartbeat', () => {
   const clicks: string[] = [];

@@ -1,8 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
 
 import { readJsonFile, writeJsonAtomic } from '../store/atomicFile.ts';
-import { conversationFile, transcriptFile, type BotPaths } from '../store/paths.ts';
+import { conversationFile, isValidBotId, transcriptFile, type BotPaths } from '../store/paths.ts';
 import { appendTranscript, readTranscript } from '../store/transcript.ts';
 import { deletePresentations, readPresentations, savePresentation, projectPresentationTranscript } from '../store/presentation.ts';
 import type {
@@ -101,7 +102,19 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
     lastOwnerMessageAt: stringOrNull(raw.lastOwnerMessageAt),
     lastBotMessageAt: stringOrNull(raw.lastBotMessageAt),
     checkpoint,
+    contactOf: role === 'note' && typeof raw.contactOf === 'string' && isValidBotId(raw.contactOf) ? raw.contactOf : null,
+    contactName: role === 'note' && typeof raw.contactName === 'string' && raw.contactName.trim()
+      ? raw.contactName.trim().slice(0, 80)
+      : null,
   };
+}
+
+/** PLAN-009 D29's sender conversations, `bot-<sender id>`, named "Messages from <name>". */
+const SENDER_CONVERSATION = /^bot-(.+)$/u;
+const SENDER_TITLE = /^Messages from (.+)$/u;
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export interface ConversationStoreOptions {
@@ -117,6 +130,8 @@ export class ConversationStore {
   private readonly warn: (message: string) => void;
   private readonly records = new Map<string, ConversationRecord>();
   private readonly nextSeq = new Map<string, number>();
+  /** SPEC-012 FR-5: contact notes upgraded in memory whose files still hold the old record. */
+  private readonly unwrittenUpgrades = new Set<string>();
 
   constructor(options: ConversationStoreOptions) {
     this.paths = options.paths;
@@ -127,6 +142,7 @@ export class ConversationStore {
   load(): void {
     this.records.clear();
     this.nextSeq.clear();
+    this.unwrittenUpgrades.clear();
     mkdirSync(this.paths.conversations, { recursive: true });
     const now = this.now().toISOString();
     for (const name of readdirSync(this.paths.conversations).sort()) {
@@ -142,8 +158,72 @@ export class ConversationStore {
         this.warn(`conversation ${name}: not a conversation record; left untouched`);
         continue;
       }
-      this.records.set(record.id, record);
+      this.records.set(record.id, this.upgradeContactNote(record));
     }
+  }
+
+  /**
+   * SPEC-012 FR-5 / FR-8: a sender conversation from before contact notes is
+   * one from the moment it is read, in every host. Its session may have seen
+   * words the owner wrote there, so it is marked stale and the next one starts
+   * from a handoff without them. Only a running core writes the upgrade
+   * (`persistUpgrades`), after a copy of the old file; read-only hosts never do.
+   */
+  private upgradeContactNote(record: ConversationRecord): ConversationRecord {
+    if (record.role !== 'note' || record.contactOf) return record;
+    const sender = SENDER_CONVERSATION.exec(record.id)?.[1];
+    if (!sender || !isValidBotId(sender)) return record;
+    this.unwrittenUpgrades.add(record.id);
+    return {
+      ...record,
+      contactOf: sender,
+      contactName: SENDER_TITLE.exec(record.title)?.[1]?.trim().slice(0, 80) || sender,
+      ...(record.attachment.sessionId ? { attachment: { ...record.attachment, state: 'stale' as const } } : {}),
+    };
+  }
+
+  /**
+   * Writes the contact note upgrades `load` applied in memory. A note whose
+   * old file cannot be copied aside stays upgraded in memory only, and is
+   * upgraded again on the next start; its next change is written either way.
+   */
+  persistUpgrades(): void {
+    for (const id of [...this.unwrittenUpgrades]) {
+      const record = this.records.get(id);
+      if (!record) {
+        this.unwrittenUpgrades.delete(id);
+        continue;
+      }
+      if (!this.backUpBeforeUpgrade(id)) continue;
+      try {
+        this.write(record);
+      } catch (error) {
+        this.warn(`conversation ${id}: contact note upgrade was not written (${errorText(error)}); applied in memory`);
+      }
+    }
+  }
+
+  /** The old file, copied aside once before an upgraded record replaces it. */
+  private backUpBeforeUpgrade(id: string): boolean {
+    try {
+      const file = conversationFile(this.paths, id);
+      const backups = join(this.paths.conversations, '.backup');
+      mkdirSync(backups, { recursive: true });
+      const backup = join(backups, `${id}.before-contact-note.json`);
+      if (!existsSync(backup) && existsSync(file)) copyFileSync(file, backup);
+      return true;
+    } catch (error) {
+      this.warn(`conversation ${id}: the file before the contact note upgrade could not be copied aside (${errorText(error)})`);
+      return false;
+    }
+  }
+
+  private write(record: ConversationRecord): void {
+    // A change to a note upgraded only in memory still tries the copy first; the record is
+    // written either way, since the upgrade only adds what an older version ignores.
+    if (this.unwrittenUpgrades.has(record.id)) this.backUpBeforeUpgrade(record.id);
+    writeJsonAtomic(conversationFile(this.paths, record.id), record);
+    this.unwrittenUpgrades.delete(record.id);
   }
 
   list(): ConversationRecord[] {
@@ -170,7 +250,12 @@ export class ConversationStore {
     return this.create('Direct message', 'home', 'home');
   }
 
-  create(title: string, role: ConversationRole = 'note', id?: string): ConversationRecord {
+  create(
+    title: string,
+    role: ConversationRole = 'note',
+    id?: string,
+    contact?: { botId: string; name: string },
+  ): ConversationRecord {
     const now = this.now().toISOString();
     const record: ConversationRecord = {
       schemaVersion: 1,
@@ -184,9 +269,11 @@ export class ConversationStore {
       lastOwnerMessageAt: null,
       lastBotMessageAt: null,
       checkpoint: null,
+      contactOf: role === 'note' && contact ? contact.botId : null,
+      contactName: role === 'note' && contact ? contact.name.slice(0, 80) : null,
     };
     this.records.set(record.id, record);
-    writeJsonAtomic(conversationFile(this.paths, record.id), record);
+    this.write(record);
     return record;
   }
 
@@ -196,7 +283,7 @@ export class ConversationStore {
     mutate(next);
     next.updatedAt = this.now().toISOString();
     this.records.set(id, next);
-    writeJsonAtomic(conversationFile(this.paths, id), next);
+    this.write(next);
     return next;
   }
 
@@ -213,6 +300,7 @@ export class ConversationStore {
     if (record.role === 'home') throw new Error('The direct message cannot be deleted');
     this.records.delete(id);
     this.nextSeq.delete(id);
+    this.unwrittenUpgrades.delete(id);
     rmSync(conversationFile(this.paths, id), { force: true });
     rmSync(transcriptFile(this.paths, id), { force: true });
     deletePresentations(this.paths, id);

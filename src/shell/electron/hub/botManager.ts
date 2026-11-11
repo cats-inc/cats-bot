@@ -156,6 +156,14 @@ export class BotManager {
     });
   }
 
+  /** SPEC-012 FR-12: whether the Boss Cat may see this bot's status. */
+  setBossCatSees(id: string, value: boolean): Promise<void> {
+    return this.serial(() => {
+      if (!this.entry(id)) throw new BotManagementError(`There is no cat bot ${id}.`);
+      this.save({ ...this.current, bots: this.current.bots.map((bot) => (bot.id === id ? { ...bot, bossCatSees: value } : bot)) });
+    });
+  }
+
   /** The order of the bots that are not archived, as given; archived ones keep theirs after them. */
   reorder(ids: string[]): Promise<void> {
     return this.serial(() => {

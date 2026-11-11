@@ -6,6 +6,7 @@ import { resolveHeartbeatRhythm, type HeartbeatRhythm } from '../../shared/heart
 import type {
   BotHostEvent,
   BotProfile,
+  BotWorkBoard,
   EffectiveHeartbeatMode,
   HeartbeatKind,
   HeartbeatResult,
@@ -26,6 +27,7 @@ import {
   HEARTBEAT_WAKE_WINDOW_MS,
   pickHeartbeatDelayMs,
 } from './heartbeat.ts';
+import { buildPeerSection } from '../hub/peers.ts';
 import { buildWorkReview } from './review.ts';
 import { afterFiring, isDue, settleMissed } from './schedules.ts';
 
@@ -109,6 +111,8 @@ export interface LifeLoopDependencies {
   profile(): BotProfile;
   /** SPEC-011 FR-1: the profile's mode, with `auto` resolved by the Boss Cat role. */
   heartbeatMode(): EffectiveHeartbeatMode;
+  /** SPEC-012 FR-10: the other bots' fresh boards while this bot is the Boss Cat; none otherwise. */
+  peerBoards?(): BotWorkBoard[];
   conversations: ConversationStore;
   binder: SessionBinder;
   client(): RuntimeClient | null;
@@ -609,10 +613,16 @@ export class LifeLoop {
     });
   }
 
-  /** The owner's latest message in any conversation; another bot's message is not the owner's. */
+  /**
+   * The owner's latest message in any conversation; another bot's message is not the owner's,
+   * and a contact note (SPEC-012), where the owner never writes, does not count.
+   */
   private lastOwnerAt(): number {
     let latest = Number.NEGATIVE_INFINITY;
-    for (const record of this.deps.conversations.list()) latest = Math.max(latest, ms(record.lastOwnerMessageAt));
+    for (const record of this.deps.conversations.list()) {
+      if (record.contactOf) continue;
+      latest = Math.max(latest, ms(record.lastOwnerMessageAt));
+    }
     return latest;
   }
 
@@ -733,22 +743,45 @@ export class LifeLoop {
     if (mode === 'assist') {
       // SPEC-011 FR-13 / FR-14: no turn when there is nothing to look over, or nothing new since a quiet look.
       const built = buildWorkReview(
-        this.deps.conversations.list().map((record) => ({
+        // SPEC-012: another bot's contact note is not the owner's work.
+        this.deps.conversations.list().filter((record) => !record.contactOf).map((record) => ({
           record,
           transcript: () => this.deps.conversations.transcript(record.id),
         })),
         this.deps.awaitingOwner(),
         now,
       );
-      if (!built || built.fingerprint === this.beat.reviewedThrough) {
+      // SPEC-012 FR-10 / FR-11: the Boss Cat also looks at the other bots' boards. Its own review
+      // runs again when it changes; the other bots' only when something new appears there.
+      const boards = this.deps.peerBoards?.() ?? [];
+      const peers = buildPeerSection(boards, now);
+      const previous = this.beat.reviewedThrough;
+      const hash = previous?.indexOf('#') ?? -1;
+      const previousOwn = previous === null ? null : hash < 0 ? previous : previous.slice(0, hash);
+      const previousMarks = new Set(previous === null || hash < 0 ? [] : previous.slice(hash + 1).split(',').filter(Boolean));
+      const currentMarks = peers?.marks ?? [];
+      const nothingNew = previous !== null
+        && (built?.fingerprint ?? '') === (previousOwn ?? '')
+        && currentMarks.every((mark) => previousMarks.has(mark));
+      // A bot on this push shows what it has now, so a mark it no longer shows is forgotten and
+      // comes back as news; a bot missing from the push keeps its marks, so returning is not news.
+      const present = new Set(boards.map((board) => board.id));
+      const kept = [...previousMarks].filter((mark) => !present.has(mark.slice(0, mark.indexOf(':'))));
+      const marksNow = [...new Set([...kept, ...currentMarks])].slice(-500);
+      const seen = built || peers ? `${built?.fingerprint ?? ''}#${marksNow.join(',')}` : null;
+      if (seen === null || nothingNew) {
+        if (previous !== null && kept.length + currentMarks.length < previousMarks.size) {
+          this.beat.reviewedThrough = `${previousOwn ?? ''}#${marksNow.join(',')}`;
+          this.persist();
+        }
         if (kind === 'wake') this.beat.lastWakeAt = now.toISOString();
         this.scheduleHeartbeat('regular', now.getTime());
         report.heartbeat = { kind, action: 'skipped_nothing_to_review' };
-        this.deps.log(`heartbeat ${kind} skipped: ${built ? 'nothing new since the last review' : 'nothing to review'}`);
+        this.deps.log(`heartbeat ${kind} skipped: ${seen ? 'nothing new since the last review' : 'nothing to review'}`);
         return;
       }
-      review = built.text;
-      fingerprint = built.fingerprint;
+      review = [built?.text, peers?.text].filter((part): part is string => Boolean(part)).join('\n\n');
+      fingerprint = seen;
     }
 
     this.queueHeartbeat(kind, now, review, fingerprint);

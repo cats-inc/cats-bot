@@ -26,6 +26,11 @@ export interface RegistryBot {
   id: string;
   order: number;
   startAutomatically: boolean;
+  /**
+   * SPEC-012 FR-12: whether the Boss Cat may see this bot's status board. On by
+   * default; an older build drops the field on its next save, which turns it back on.
+   */
+  bossCatSees: boolean;
   createdAt: string;
   archivedAt: string | null;
 }
@@ -111,6 +116,7 @@ export function normalizeRegistry(raw: unknown): BotRegistry {
       id: entry.id,
       order: Number.isFinite(entry.order) ? Number(entry.order) : index,
       startAutomatically: typeof entry.startAutomatically === 'boolean' ? entry.startAutomatically : true,
+      bossCatSees: typeof entry.bossCatSees === 'boolean' ? entry.bossCatSees : true,
       createdAt: typeof entry.createdAt === 'string' ? entry.createdAt : new Date(0).toISOString(),
       archivedAt: typeof entry.archivedAt === 'string' ? entry.archivedAt : null,
     });
@@ -249,5 +255,5 @@ export function adoptionOrder(existing: string[], requested: string | undefined,
 export function addBot(registry: BotRegistry, id: string, now: Date = new Date()): BotRegistry {
   if (registry.bots.some((bot) => bot.id === id)) return registry;
   const order = registry.bots.reduce((max, bot) => Math.max(max, bot.order + 1), 0);
-  return { ...registry, bots: [...registry.bots, { id, order, startAutomatically: true, createdAt: now.toISOString(), archivedAt: null }] };
+  return { ...registry, bots: [...registry.bots, { id, order, startAutomatically: true, bossCatSees: true, createdAt: now.toISOString(), archivedAt: null }] };
 }

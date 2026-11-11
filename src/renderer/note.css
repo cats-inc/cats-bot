@@ -218,6 +218,31 @@ textarea {
   background: #e8dcc0;
 }
 
+/* SPEC-012 FR-6: a contact note shows a notice where the composer would be. */
+.note-contact p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.note-contact .note-actions {
+  justify-content: flex-start;
+  align-items: center;
+}
+
+#open-direct-message {
+  border: 1px solid #d9cc92;
+  border-radius: 6px;
+  padding: 5px 12px;
+  background: #fffdf2;
+  cursor: pointer;
+  font: inherit;
+}
+
+.provider-field-locked small {
+  color: var(--muted);
+}
+
 /* SPEC-003 FR-4: one card per tool call, a single line until opened. */
 .tool-card {
   align-self: stretch;
