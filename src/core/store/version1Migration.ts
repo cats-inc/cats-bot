@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import {
+  accessSync,
   constants,
   copyFileSync,
   existsSync,
@@ -8,15 +9,15 @@ import {
   readFileSync,
   renameSync,
   rmdirSync,
-  rmSync,
   statSync,
-  writeFileSync,
 } from 'node:fs';
 import { basename, join, relative, sep } from 'node:path';
+import { createProfile, loadProfile } from '../profile/profile.ts';
 import { writeFileAtomic, writeJsonAtomic } from './atomicFile.ts';
 import { acquireInstanceLock, readInstanceLock } from './lock.ts';
 import { stateDatabaseFile, type BotPaths } from './paths.ts';
 import { presentationsDirectory } from './presentation.ts';
+import { removeTree } from './removeTree.ts';
 import { StateDatabaseError } from './stateDatabase.ts';
 import { openBotStateStore } from './stateStore.ts';
 import {
@@ -28,22 +29,29 @@ import {
 /**
  * SPEC-014 FR-11 and FR-12: a bot's version-1 files moved into its state database, and back.
  *
- * `migrateVersion1` decides what to do from the database's marker, never from which
- * directories exist, since today's code makes them again when it finds none:
+ * `migrateVersion1` decides what to do from the database's marker and the profile's schema
+ * version, never from which directories exist, since today's code makes them again when it
+ * finds none:
  *
- * - no marker: whatever database there is was left by an import that did not finish, and is
- *   removed with its `-wal` and `-shm`. The version-1 files are copied aside, a manifest
+ * - no marker, profile at `from`: whatever database there is was left by an import that did
+ *   not finish, and is removed with its `-wal` and `-shm`. The profile is checked first as
+ *   today's Bot checks it, and for being writable, so that nothing is imported that could
+ *   not be finished. The version-1 files and the profile are copied aside, a manifest
  *   written last, and imported. When the import does not finish, a JSON and a Markdown
  *   report are written beside the copy, the database is removed, and the version-1 files
  *   stay as they were;
+ * - no marker, profile at `to`: the root was migrated and its database is gone. Importing
+ *   again would start the bot on files it stopped reading, so the migration stops;
  * - a marker: the database is the bot's. The profile's schema version is raised, so that an
  *   older Bot refuses the root instead of starting on files that are no longer read, and
  *   the version-1 files are moved to `archive/v1/`, each as far as it can be. Both steps
  *   are repeated at the next start until they are done.
  *
  * A database this version cannot open as its own, a newer one included, stops the migration
- * and is never removed. Nothing calls these yet; the cutover wires them into the core's start
- * and adds `cats-bot restore` (PLAN-014 task 1.5).
+ * and is never removed. Every removal goes through `removeTree`, never `rmSync`, which in
+ * Electron 41 fails on a read-only file and ends the process on some paths outside ASCII.
+ * Nothing calls these yet; the cutover wires them into the core's start and adds
+ * `cats-bot restore` (PLAN-014 task 1.5).
  */
 
 /** The steps, in order, for a test that stops the migration before one of them. */
@@ -83,7 +91,6 @@ export type MigrationResult =
     };
 
 const MANIFEST = 'manifest.json';
-const IN_PROGRESS = 'copy-in-progress';
 
 /** The files of the version-1 store, copied aside and then archived. `profile.json` stays. */
 export function version1Items(paths: BotPaths): string[] {
@@ -106,10 +113,12 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
     throw new Error("The version-1 migration runs only in the process that holds the bot's lock");
   }
   const file = stateDatabaseFile(paths);
+  let marker = readMarker(file);
   let imported: Version1ImportReport | null = null;
   let backup: string | null = null;
 
-  if (!isFinished(file)) {
+  if (marker === undefined) {
+    checkProfileBeforeImport(paths, options.profile);
     before('discard');
     removeDatabase(file);
     removeIncompleteCopies(paths);
@@ -123,6 +132,7 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
         paths,
         file,
         now,
+        marker: { backup: basename(backup) },
         ...(options.open ? { open: options.open } : {}),
       });
     } catch (thrown) {
@@ -135,10 +145,11 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
       return { outcome: 'not_migrated', backup, ...written };
     }
     imported = report;
+    marker = readMarker(file);
   }
 
   before('profile');
-  raiseProfile(paths, options.profile, now());
+  raiseProfile(paths, options.profile, backupOf(paths, marker), now());
   const notArchived: string[] = [];
   for (const item of version1Items(paths)) {
     if (!existsSync(item)) continue;
@@ -161,14 +172,23 @@ export interface RestoreVersion1Options {
   beforeStep?: (step: 'files' | 'database' | 'profile') => void;
 }
 
+export interface RestoreResult {
+  /** Where the database was set aside, or null when there was none. */
+  setAside: string | null;
+  /** What `archive/v1/` still holds: items made again after the migration and kept there. */
+  leftInArchive: string[];
+}
+
 /**
  * SPEC-014 FR-12: the version-1 files put back from `archive/v1/`, for a downgrade, while the
- * bot is stopped. It takes the bot's lock itself. In this order, so that a crash on the way
- * leaves a root either version starts on: the files go back, the database is set aside under
- * a new name, and the profile's schema version is lowered. What was written to the database
- * after the migration is in the set-aside file and not in the version-1 files.
+ * bot is stopped. It takes the bot's lock itself. In this order: the files go back; the
+ * database's log is folded into it and the database is set aside whole under a new name;
+ * the profile's schema version is lowered. A crash between two steps leaves a root the new
+ * version starts on (it still holds its database) or one it refuses to import again (the
+ * profile still says migrated), and running the restore again finishes it. What was written
+ * to the database after the migration is in the set-aside file, not in the version-1 files.
  */
-export function restoreVersion1(options: RestoreVersion1Options): { setAside: string | null } {
+export function restoreVersion1(options: RestoreVersion1Options): RestoreResult {
   const { paths } = options;
   const now = options.now ?? (() => new Date());
   const before = options.beforeStep ?? (() => {});
@@ -191,87 +211,187 @@ export function restoreVersion1(options: RestoreVersion1Options): { setAside: st
       }
       renameSync(archived, item);
     }
+    if (!version1Items(paths).some((item) => existsSync(item))) {
+      throw new Error(
+        'Neither the bot root nor archive/v1 holds the version-1 files; nothing was restored',
+      );
+    }
+
     const file = stateDatabaseFile(paths);
     let setAside: string | null = null;
     before('database');
     if (existsSync(file)) {
-      setAside = freeName(`${file}.set-aside-${stamp(now())}`);
-      // The log and the shared memory go with it, under the names SQLite looks for.
-      for (const suffix of ['-wal', '-shm']) {
-        if (existsSync(`${file}${suffix}`)) renameSync(`${file}${suffix}`, `${setAside}${suffix}`);
+      // Fold the log into the database, so that the file set aside holds everything. The
+      // last connection to close does that; another one still open keeps the log.
+      openBotStateStore({ file, mode: 'writer' }).close();
+      if (existsSync(`${file}-wal`)) {
+        throw new Error(
+          'Another program has bot.db open; close it and restore again. The files are back.',
+        );
       }
-      renameSync(file, setAside);
+      removeTree(`${file}-shm`);
+      setAside = freeName(`${file}.set-aside-${stamp(now())}`);
+      try {
+        renameSync(file, setAside);
+      } catch (error) {
+        throw new Error(
+          `Another program has bot.db open (${errorCode(error)}); close it and restore again. The files are back.`,
+          { cause: error },
+        );
+      }
     }
     before('profile');
     lowerProfile(paths, options.profile, now());
-    return { setAside };
+    const leftInArchive = existsSync(archive) ? readdirSync(archive).sort() : [];
+    return { setAside, leftInArchive };
   } finally {
     lock.release();
   }
 }
 
-/** Whether the file is this version's state database with the import's marker. */
-function isFinished(file: string): boolean {
-  if (!existsSync(file)) return false;
+/** The import's marker, or undefined when there is no finished database. */
+function readMarker(file: string): string | undefined {
+  if (!existsSync(file)) return undefined;
   let store;
   try {
     store = openBotStateStore({ file, mode: 'reader' });
   } catch (error) {
-    if (error instanceof StateDatabaseError && error.code === 'missing') return false;
+    if (error instanceof StateDatabaseError && error.code === 'missing') return undefined;
     // A newer database, or a file that is not one, is never removed.
     throw error;
   }
   try {
-    return store.importMarker() !== undefined;
+    return store.importMarker();
   } finally {
     store.close();
   }
 }
 
-/**
- * The database an unfinished import left, with its log, or a log and shared memory left
- * without a database. A new database would not replay a log of another one (measured on
- * both runtimes), but nothing is left to try.
- */
-function removeDatabase(file: string): void {
-  for (const suffix of ['', '-wal', '-shm']) rmSync(`${file}${suffix}`, { force: true });
+/** The copy of the files the finished import read, as its marker names it. */
+function backupOf(paths: BotPaths, marker: string | undefined): string | null {
+  try {
+    const name = (JSON.parse(marker ?? 'null') as { backup?: unknown } | null)?.backup;
+    return typeof name === 'string' ? join(migrationBackupDirectory(paths), name) : null;
+  } catch {
+    return null;
+  }
 }
 
-/** Copies an earlier run could not finish: they hold the mark they were made with. */
+/**
+ * The profile as today's Bot reads it, at the version the raise starts from, and writable:
+ * otherwise the import would finish and the raise after it fail at every start, while an
+ * older Bot went on writing files the migration has stopped reading.
+ */
+function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise): void {
+  const profile = parseRecord(readText(paths.profile));
+  if (profile?.schemaVersion === raise.to) {
+    throw new Error(
+      `${paths.profile} says this bot was migrated, but bot.db holds no finished import. ` +
+        'Put the database back, or restore the version-1 files; nothing was imported again.',
+    );
+  }
+  if (profile === null || profile.schemaVersion !== raise.from) {
+    throw new Error(
+      `${paths.profile} cannot be read at schema version ${raise.from}; nothing was migrated`,
+    );
+  }
+  const placeholder = createProfile({
+    id: 'bot',
+    name: 'bot',
+    provider: 'claude',
+    cwd: paths.root,
+  });
+  const loaded = loadProfile(paths, placeholder);
+  if (!loaded.ok) {
+    throw new Error(
+      `${paths.profile} is not a profile today's Bot reads (${loaded.reason === 'corrupt' ? loaded.error : 'missing'}); nothing was migrated`,
+    );
+  }
+  try {
+    accessSync(paths.profile, constants.W_OK);
+  } catch (error) {
+    throw new Error(
+      `${paths.profile} cannot be written (${errorCode(error)}); nothing was migrated`,
+    );
+  }
+}
+
+/** A database and its log and shared memory, by their names, whichever of them exist. */
+function removeDatabase(file: string): void {
+  for (const suffix of ['', '-wal', '-shm']) removeTree(`${file}${suffix}`);
+}
+
+/** A copy is finished once its manifest is written; any other copy is removed. */
 function removeIncompleteCopies(paths: BotPaths): void {
   const directory = migrationBackupDirectory(paths);
   if (!existsSync(directory)) return;
   for (const name of readdirSync(directory)) {
     const copy = join(directory, name);
-    if (existsSync(join(copy, IN_PROGRESS))) rmSync(copy, { recursive: true, force: true });
+    if (!existsSync(join(copy, MANIFEST))) removeTree(copy);
   }
 }
 
+interface ManifestFile {
+  path: string;
+  size: number;
+  sha256: string;
+}
+
 /**
- * The version-1 files and the profile, copied to `migration-backup/<time>/`. The copy is
- * marked as in progress until its manifest, which lists every file with its size and
- * SHA-256, is written last.
+ * The version-1 files and the profile, copied to `migration-backup/<time>/` with a manifest
+ * of every file's size and SHA-256 written last. When the newest finished copy holds the
+ * same files, it is used again, so that an import that does not finish does not add a copy
+ * at every start.
  */
 function copyAside(paths: BotPaths, at: Date): string {
+  const items = [...version1Items(paths), paths.profile].filter((item) => existsSync(item));
+  const files = items
+    .flatMap((item) => (statSync(item).isDirectory() ? listFiles(item) : [item]))
+    .map((file) => describe(file, relative(paths.root, file)))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  const newest = finishedCopies(paths).at(-1);
+  if (newest && sameFiles(newest.files, files)) return newest.directory;
+
   const copy = freeName(join(migrationBackupDirectory(paths), stamp(at)));
   mkdirSync(copy, { recursive: true });
-  writeFileSync(join(copy, IN_PROGRESS), '');
-  for (const item of [...version1Items(paths), paths.profile]) {
-    if (existsSync(item)) copyTree(item, join(copy, basename(item)));
+  for (const item of items) copyTree(item, join(copy, basename(item)));
+  const copied = listFiles(copy)
+    .map((file) => describe(file, relative(copy, file)))
+    .sort((a, b) => a.path.localeCompare(b.path));
+  if (!sameFiles(copied, files)) {
+    throw new Error(`The copy in ${copy} does not match the version-1 files; nothing was imported`);
   }
-  const files = listFiles(copy)
-    .filter((file) => file !== join(copy, IN_PROGRESS))
-    .map((file) => {
-      const bytes = readFileSync(file);
-      return {
-        path: relative(copy, file).split(sep).join('/'),
-        size: bytes.length,
-        sha256: createHash('sha256').update(bytes).digest('hex'),
-      };
-    });
-  writeJsonAtomic(join(copy, MANIFEST), { version: 1, madeAt: at.toISOString(), files });
-  rmSync(join(copy, IN_PROGRESS));
+  writeJsonAtomic(join(copy, MANIFEST), { version: 1, madeAt: at.toISOString(), files: copied });
   return copy;
+}
+
+function describe(file: string, path: string): ManifestFile {
+  const bytes = readFileSync(file);
+  return {
+    path: path.split(sep).join('/'),
+    size: bytes.length,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+  };
+}
+
+/** Finished copies, oldest first, with what their manifests list. */
+function finishedCopies(paths: BotPaths): Array<{ directory: string; files: ManifestFile[] }> {
+  const directory = migrationBackupDirectory(paths);
+  if (!existsSync(directory)) return [];
+  const found: Array<{ directory: string; files: ManifestFile[] }> = [];
+  for (const name of readdirSync(directory).sort()) {
+    const manifest = parseRecord(readText(join(directory, name, MANIFEST)));
+    if (manifest && Array.isArray(manifest.files)) {
+      found.push({ directory: join(directory, name), files: manifest.files as ManifestFile[] });
+    }
+  }
+  return found;
+}
+
+function sameFiles(a: ManifestFile[], b: ManifestFile[]): boolean {
+  const key = (files: ManifestFile[]): string =>
+    JSON.stringify(files.map((file) => [file.path, file.size, file.sha256]));
+  return key(a) === key(b);
 }
 
 /** FR-12: why the import did not finish, beside the copy, as JSON and as Markdown. */
@@ -308,8 +428,9 @@ function writeReport(
       if (list.length === 0) continue;
       lines.push(`## ${title}`, '');
       for (const found of list) {
+        const more = (found.count ?? 0) - (found.lines?.length ?? 0);
         const where = found.lines
-          ? ` line ${found.lines.join(', ')}${(found.count ?? 0) > found.lines.length ? ` and ${(found.count ?? 0) - found.lines.length} more` : ''}`
+          ? ` line ${found.lines.join(', ')}${more > 0 ? ` and ${more} more` : ''}`
           : '';
         const other = found.otherFile ? ` and ${found.otherFile}` : '';
         const reason = found.reason ? ` (${found.reason})` : '';
@@ -324,22 +445,24 @@ function writeReport(
     }
   }
   const markdown = join(copy, 'report.md');
-  writeFileAtomic(markdown, `${lines.join('\n')}`);
+  writeFileAtomic(markdown, lines.join('\n'));
   return { report: json, summary: markdown };
 }
 
 /**
  * The profile's schema version raised, after a copy of the profile as it was. A profile a
- * power cut left unreadable after an earlier run's copy is raised from that copy.
+ * power cut left unreadable during the raise is raised from the copy this migration made
+ * before it imported, which its marker names, and from no other.
  */
-function raiseProfile(paths: BotPaths, raise: ProfileRaise, at: Date): void {
-  const backup = `${paths.profile}.v${raise.from}.bak`;
+function raiseProfile(paths: BotPaths, raise: ProfileRaise, backup: string | null, at: Date): void {
   let text = readText(paths.profile);
   let profile = parseRecord(text);
   if (profile === null) {
-    const copy = parseRecord(readText(backup));
+    const copy = backup === null ? null : parseRecord(readText(join(backup, 'profile.json')));
     if (copy === null || copy.schemaVersion !== raise.from) {
-      throw new Error(`${paths.profile} cannot be read, and no copy of it was made to raise from`);
+      throw new Error(
+        `${paths.profile} cannot be read, and the copy the migration made of it cannot either`,
+      );
     }
     profile = copy;
     text = null;
@@ -350,7 +473,7 @@ function raiseProfile(paths: BotPaths, raise: ProfileRaise, at: Date): void {
       `${paths.profile} has schema version ${String(profile.schemaVersion)}; the migration raises ${raise.from} to ${raise.to}`,
     );
   }
-  if (text !== null) keepCopy(paths.profile, text, backup, at);
+  if (text !== null) keepCopy(paths.profile, text, `${paths.profile}.v${raise.from}.bak`, at);
   writeJsonAtomic(paths.profile, { ...profile, schemaVersion: raise.to });
 }
 
@@ -400,10 +523,6 @@ function moveInto(item: string, archive: string, at: Date): void {
   renameSync(item, target);
 }
 
-function stamp(at: Date): string {
-  return at.toISOString().replace(/[:.]/gu, '-');
-}
-
 /**
  * A file, or a directory with everything in it, copied to a path that does not exist yet.
  * Not `cpSync`: in Electron 41 (Node.js 24.14) on Windows it ends the process when it copies
@@ -417,6 +536,10 @@ function copyTree(source: string, target: string): void {
   }
   mkdirSync(target);
   for (const name of readdirSync(source)) copyTree(join(source, name), join(target, name));
+}
+
+function stamp(at: Date): string {
+  return at.toISOString().replace(/[:.]/gu, '-');
 }
 
 /** `name`, or `name-2`, `name-3` and so on, whichever does not exist. */

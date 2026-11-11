@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import {
   appendFileSync,
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -26,6 +27,7 @@ import {
   type BotPaths,
 } from '../../src/core/store/paths.ts';
 import { savePresentation } from '../../src/core/store/presentation.ts';
+import { removeTree } from '../../src/core/store/removeTree.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { openBotStateStore } from '../../src/core/store/stateStore.ts';
 import { appendTranscript, readTranscript } from '../../src/core/store/transcript.ts';
@@ -47,7 +49,8 @@ import type {
 } from '../../src/core/types.ts';
 
 const scratch = mkdtempSync(join(tmpdir(), 'cats bot 遷移 '));
-after(() => rmSync(scratch, { recursive: true, force: true }));
+// Not `rmSync`, which in Electron 41 ends the process on a read-only file under some paths.
+after(() => removeTree(scratch));
 let made = 0;
 
 const AT = '2026-11-11T08:00:00.000Z';
@@ -103,9 +106,9 @@ function workItem(id: string, state: WorkItem['state']): WorkItem {
 }
 
 /** A bot as today's core leaves it, profile included. */
-function versionOneBot(): BotPaths {
+function versionOneBot(name = 'bot'): BotPaths {
   made += 1;
-  const paths = botPathsFor(join(scratch, `bot-${made}`));
+  const paths = botPathsFor(join(scratch, `${name}-${made}`));
   mkdirSync(paths.root, { recursive: true });
   saveProfile(
     paths,
@@ -431,42 +434,107 @@ test('a database without a marker is removed, a newer one never', () => {
   }
 });
 
-test('a profile a power cut left unreadable after its copy is raised from the copy', () => {
+const stopBeforeProfile = {
+  beforeStep: (step: MigrationStep): void => {
+    if (step === 'profile') throw new Error('stop');
+  },
+};
+
+test("a profile a power cut left unreadable during the raise is raised from this migration's copy", () => {
   const paths = versionOneBot();
   const before = versionOneFiles(paths);
   const original = profileOf(paths);
-  // The import finished; the run stopped before the raise.
-  assert.throws(
-    () =>
-      migrate(paths, {
-        beforeStep: (step) => {
-          if (step === 'profile') throw new Error('stop');
-        },
-      }),
-    /stop/u,
-  );
-  // As a raise that had copied the profile and then lost the file it replaced.
-  writeFileSync(`${paths.profile}.v2.bak`, readFileSync(paths.profile));
+  // The import finished; the run stopped before the raise, and the profile was lost.
+  assert.throws(() => migrate(paths, stopBeforeProfile), /stop/u);
   writeFileSync(paths.profile, '');
   assert.equal(migrate(paths).outcome, 'migrated');
   assertMigrated(paths, before, original);
 
-  // Without a copy there is nothing to raise from, and the start stops.
+  // After a restore and a change, a second migration raises from its own copy, not from
+  // the copy the first one kept: the narrower permission stays narrow.
+  const again = versionOneBot();
+  const profile = loadProfile(again, placeholder(again));
+  assert.ok(profile.ok);
+  saveProfile(again, {
+    ...profile.profile,
+    permissions: { ...profile.profile.permissions, permissionMode: 'skip' },
+  });
+  migrate(again);
+  restoreVersion1({ paths: again, profile: RAISE, now });
+  const lowered = loadProfile(again, placeholder(again));
+  assert.ok(lowered.ok);
+  saveProfile(again, {
+    ...lowered.profile,
+    name: 'Mochi Two',
+    permissions: { ...lowered.profile.permissions, permissionMode: 'default' },
+  });
+  const changed = profileOf(again);
+  assert.throws(() => migrate(again, stopBeforeProfile), /stop/u);
+  writeFileSync(again.profile, '');
+  assert.equal(migrate(again).outcome, 'migrated');
+  assert.deepEqual(profileOf(again), { ...changed, schemaVersion: 3 });
+
+  // Without that copy there is nothing to raise from, and the start stops.
   const lost = versionOneBot();
-  assert.throws(
-    () =>
-      migrate(lost, {
-        beforeStep: (step) => {
-          if (step === 'profile') throw new Error('stop');
-        },
-      }),
-    /stop/u,
-  );
+  assert.throws(() => migrate(lost, stopBeforeProfile), /stop/u);
+  const [copy] = readdirSync(migrationBackupDirectory(lost));
+  rmSync(join(migrationBackupDirectory(lost), copy!, 'profile.json'));
   writeFileSync(lost.profile, '');
-  assert.throws(() => migrate(lost), /cannot be read, and no copy of it was made/u);
+  assert.throws(
+    () => migrate(lost),
+    /cannot be read, and the copy the migration made of it cannot either/u,
+  );
   // A profile of a version the raise does not start from stops it too.
   writeJsonAtomic(lost.profile, { ...original, schemaVersion: 1 });
   assert.throws(() => migrate(lost), /schema version 1; the migration raises 2 to 3/u);
+});
+
+test('the profile is checked before anything is imported', () => {
+  // Read-only: the raise after the import would fail at every start.
+  const readOnly = versionOneBot();
+  chmodSync(readOnly.profile, 0o444);
+  try {
+    assert.throws(() => migrate(readOnly), /cannot be written/u);
+  } finally {
+    chmodSync(readOnly.profile, 0o666);
+  }
+  // One today's Bot refuses.
+  const refused = versionOneBot();
+  writeJsonAtomic(refused.profile, { ...profileOf(refused), permissions: { cwd: 1 } });
+  assert.throws(() => migrate(refused), /is not a profile today's Bot reads/u);
+  // Of a version the raise does not start from.
+  const older = versionOneBot();
+  writeJsonAtomic(older.profile, { ...profileOf(older), schemaVersion: 1 });
+  assert.throws(() => migrate(older), /cannot be read at schema version 2/u);
+  for (const paths of [readOnly, refused, older]) {
+    assert.equal(existsSync(stateDatabaseFile(paths)), false);
+    assert.equal(existsSync(migrationBackupDirectory(paths)), false);
+  }
+
+  // Raised, with no finished database: the bot was migrated and its database is gone.
+  const migrated = versionOneBot();
+  migrate(migrated);
+  rmSync(stateDatabaseFile(migrated));
+  assert.throws(
+    () => migrate(migrated),
+    /says this bot was migrated, but bot\.db holds no finished import/u,
+  );
+  assert.equal(existsSync(stateDatabaseFile(migrated)), false);
+});
+
+test('an import that does not finish again uses the copy it made before', () => {
+  const paths = versionOneBot();
+  appendTranscript(paths, 'home', entry(1, 'out of order'));
+  const first = migrate(paths);
+  const second = migrate(paths);
+  assert.ok(first.outcome === 'not_migrated' && second.outcome === 'not_migrated');
+  assert.equal(first.backup, second.backup);
+  assert.equal(readdirSync(migrationBackupDirectory(paths)).length, 1);
+  // A change to the files makes a new copy.
+  appendJournal(paths, { type: 'work', at: AT, item: workItem('w2', 'queued') });
+  const third = migrate(paths);
+  assert.ok(third.outcome === 'not_migrated' && third.backup !== first.backup);
+  assert.equal(readdirSync(migrationBackupDirectory(paths)).length, 2);
 });
 
 test('what is made again after the archive is kept beside it, or removed when empty', () => {
@@ -537,7 +605,12 @@ test('restoring puts the files back, sets the database aside and lowers the prof
   assert.notEqual(kept.importMarker(), undefined);
   kept.close();
   // Restoring again finds nothing more to do.
-  assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), { setAside: null });
+  assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), {
+    setAside: null,
+    leftInArchive: [],
+  });
+  // The raised profile is kept beside the lowered one.
+  assert.equal(JSON.parse(readFileSync(`${paths.profile}.v3.bak`, 'utf8')).schemaVersion, 3);
 
   // Today's Bot writes on; then the new version migrates again.
   appendTranscript(paths, 'home', entry(3, 'written by the older Bot'));
@@ -603,7 +676,10 @@ test('a restore stopped before any step leaves a root one of the versions starts
       // and today's Bot starts once a second restore has lowered the profile.
       assert.deepEqual(versionOneFiles(paths), before);
       assert.equal(existsSync(stateDatabaseFile(paths)), false);
-      assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), { setAside: null });
+      assert.deepEqual(restoreVersion1({ paths, profile: RAISE, now }), {
+        setAside: null,
+        leftInArchive: [],
+      });
       assert.deepEqual(profileOf(paths), original);
     } else {
       // The database is still the bot's: the new version archives the files again.
@@ -625,4 +701,113 @@ test('a copy an earlier run could not finish is removed, a finished one kept', (
   assert.equal(migrate(paths).outcome, 'migrated');
   assert.equal(existsSync(unfinished), false);
   assert.equal(existsSync(finished), true);
+});
+
+test('a restore folds the log of a core that was killed into the database it sets aside', () => {
+  const paths = versionOneBot();
+  migrate(paths);
+  const file = stateDatabaseFile(paths);
+  // A core killed with writes in its log: copy the three files while it still holds them.
+  const core = openBotStateStore({ file, mode: 'writer' });
+  core.appendJournal({
+    type: 'presence',
+    at: AT,
+    note: 'only in the log',
+  } as unknown as JournalEntry);
+  const held = new Map<string, Buffer>();
+  for (const suffix of ['', '-wal', '-shm']) held.set(suffix, readFileSync(`${file}${suffix}`));
+  core.close();
+  for (const [suffix, bytes] of held) writeFileSync(`${file}${suffix}`, bytes);
+  assert.ok(held.get('-wal')!.length > 0);
+
+  const { setAside } = restoreVersion1({ paths, profile: RAISE, now });
+  for (const suffix of ['-wal', '-shm']) {
+    assert.equal(existsSync(`${file}${suffix}`), false, suffix);
+    assert.equal(existsSync(`${setAside!}${suffix}`), false, suffix);
+  }
+  const kept = openBotStateStore({ file: setAside!, mode: 'reader' });
+  try {
+    assert.equal(kept.journal().at(-1)?.type, 'presence');
+  } finally {
+    kept.close();
+  }
+});
+
+test('a restore stops while another program has the database open, and finishes once it is closed', () => {
+  const paths = versionOneBot();
+  migrate(paths);
+  const other = new (sqliteDriver().DatabaseSync)(stateDatabaseFile(paths));
+  // Reading opens the log, as a program that reads the database holds it.
+  other.prepare('select count(*) as n from meta').get();
+  try {
+    assert.throws(
+      () => restoreVersion1({ paths, profile: RAISE, now }),
+      /Another program has bot\.db open/u,
+    );
+    assert.equal(existsSync(stateDatabaseFile(paths)), true);
+    assert.equal(profileOf(paths).schemaVersion, 3);
+  } finally {
+    other.close();
+  }
+  const { setAside } = restoreVersion1({ paths, profile: RAISE, now });
+  assert.ok(setAside);
+  assert.equal(profileOf(paths).schemaVersion, 2);
+});
+
+test('a restore with nothing to put back changes nothing, and names what it leaves in the archive', () => {
+  const paths = versionOneBot();
+  migrate(paths);
+  rmSync(version1ArchiveDirectory(paths), { recursive: true });
+  assert.throws(
+    () => restoreVersion1({ paths, profile: RAISE, now }),
+    /Neither the bot root nor archive\/v1/u,
+  );
+  assert.equal(existsSync(stateDatabaseFile(paths)), true);
+  assert.equal(profileOf(paths).schemaVersion, 3);
+
+  // What was kept beside an archived item is named; an empty directory made again in the
+  // root gives way to the item put back.
+  const kept = versionOneBot();
+  migrate(kept);
+  mkdirSync(kept.transcripts);
+  writeFileSync(join(kept.transcripts, 'note-b.jsonl'), `${JSON.stringify(entry(1, 'late'))}\n`);
+  migrate(kept);
+  mkdirSync(kept.conversations);
+  const result = restoreVersion1({ paths: kept, profile: RAISE, now });
+  assert.equal(result.leftInArchive.length, 1);
+  assert.match(result.leftInArchive[0]!, /^transcripts\./u);
+  assert.equal(readTranscript(kept, 'home').length, 2);
+});
+
+test('the profile is raised before any file is archived', () => {
+  const paths = versionOneBot();
+  assert.throws(
+    () =>
+      migrate(paths, {
+        beforeStep: (step) => {
+          if (step === 'archive') {
+            assert.equal(profileOf(paths).schemaVersion, 3);
+            throw new Error('stop');
+          }
+        },
+      }),
+    /stop/u,
+  );
+});
+
+test('an unfinished copy holding a read-only file is removed, under a path in any script', () => {
+  // Korean, an emoji and simplified Chinese: outside the code page a Traditional Chinese
+  // Windows uses for its older calls, which is where Electron's own removal fails.
+  const paths = versionOneBot('이동 🐱 迁移');
+  const unfinished = join(migrationBackupDirectory(paths), 'unfinished');
+  mkdirSync(join(unfinished, 'transcripts'), { recursive: true });
+  writeFileSync(join(unfinished, 'transcripts', 'home.jsonl'), 'half');
+  chmodSync(join(unfinished, 'transcripts', 'home.jsonl'), 0o444);
+  // A read-only file in the version-1 files is copied read-only.
+  chmodSync(transcriptFile(paths, 'note-a'), 0o444);
+  const before = versionOneFiles(paths);
+  const original = profileOf(paths);
+  assert.equal(migrate(paths).outcome, 'migrated');
+  assert.equal(existsSync(unfinished), false);
+  assertMigrated(paths, before, original);
 });

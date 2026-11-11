@@ -128,6 +128,8 @@ export interface ImportVersion1Options {
   batchSize?: number;
   /** Opens the store; a test replaces it to see what a failure on the way leaves. */
   open?: (options: OpenBotStateStoreOptions) => BotStateStore;
+  /** More fields for the marker, such as which copy of the files the import read. */
+  marker?: Record<string, unknown>;
 }
 
 const LINES_LISTED = 20;
@@ -223,6 +225,7 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
           if (mismatches.length > 0) throw new VerificationFailed();
           store.setImportMarker(
             JSON.stringify({
+              ...options.marker,
               from: 1,
               finishedAt: now().toISOString(),
               conversations: counts.conversations,
