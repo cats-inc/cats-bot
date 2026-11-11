@@ -71,12 +71,7 @@ function stoppedBot(): { directory: string; file: string } {
   const file = join(directory, 'bot.db');
   const database = writer(file);
   try {
-    database.run(
-      'insert into conversations(id, role, json) values (?, ?, ?)',
-      'home',
-      'home',
-      '{"id":"home"}',
-    );
+    database.run('insert into conversations(id, json) values (?, ?)', 'home', '{"id":"home"}');
   } finally {
     database.close();
   }
@@ -122,11 +117,10 @@ test('a writer creates the schema on a new file and records what wrote it', () =
       'conversations',
       'entries',
       'entries_fts',
-      'events',
+      'journal',
       'meta',
       'responses',
       'schedules',
-      'work_events',
       'work_items',
     ]);
     assert.equal(database.meta('schema_version'), String(STATE_SCHEMA_VERSION));
@@ -136,10 +130,12 @@ test('a writer creates the schema on a new file and records what wrote it', () =
       node: string;
       electron: string | null;
       sqlite: string;
+      unicode: string | null;
     };
     assert.equal(runtime.node, process.versions.node);
     assert.equal(runtime.electron, process.versions.electron ?? null);
     assert.match(runtime.sqlite, /^\d+\.\d+\.\d+/u);
+    assert.equal(runtime.unicode, process.versions.unicode ?? null);
     assert.equal(database.get('pragma application_id')?.application_id, STATE_APPLICATION_ID);
     assert.equal(database.get('pragma journal_mode')?.journal_mode, 'wal');
     assert.equal(database.get('pragma synchronous')?.synchronous, 1);
@@ -225,10 +221,20 @@ test('each table keeps a JSON record, with index columns that may be empty', () 
     );
 
     database.run('insert into work_items(id, json) values (?, ?)', 'w1', '{}');
-    database.run('insert into work_events(work_item_id, json) values (?, ?)', 'w1', '{}');
     database.run('insert into schedules(id, json) values (?, ?)', 's1', '{}');
-    database.run('insert into events(json) values (?)', '{}');
-    assert.equal(database.get('select count(*) as n from events')?.n, 1);
+    // The journal keeps its lines in the order they were written, and never reuses an id.
+    const line = 'insert into journal(type, ref, json) values (?, ?, ?)';
+    const ids = [
+      database.insert(line, 'work', 'w1', '{}'),
+      database.insert(line, 'runtime', null, '{}'),
+      database.insert(line, 'work', 'w1', '{}'),
+    ];
+    assert.deepEqual(
+      database.all(`select id from journal where ref = ? order by id`, 'w1').map((row) => row.id),
+      [ids[0], ids[2]],
+    );
+    database.run('delete from journal where id = ?', ids[2]!);
+    assert.ok(database.insert(line, 'runtime', null, '{}') > ids[2]!);
   } finally {
     database.close();
   }
@@ -544,8 +550,8 @@ test('a transaction is all or nothing', () => {
     try {
       database.transaction(() => {
         try {
-          database.snapshot(() => {
-            throw new Error('inner read');
+          database.transaction(() => {
+            throw new Error('inner write');
           });
         } catch {
           // carried on regardless
@@ -554,9 +560,25 @@ test('a transaction is all or nothing', () => {
       });
       assert.fail('the transaction should have failed');
     } catch (error) {
-      assert.match(String((error as Error).cause), /inner read/u);
+      assert.match(String((error as Error).cause), /inner write/u);
     }
     assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd']);
+
+    // A snapshot is for reading. A read that fails inside a transaction, such as a search
+    // with words the index cannot take, is the caller's to handle: the transaction goes on.
+    database.transaction(() => {
+      add('e');
+      assert.throws(
+        () =>
+          database.snapshot(() => {
+            throw new Error('inner read');
+          }),
+        /inner read/u,
+      );
+      add('f');
+    });
+    assert.deepEqual(conversations(database), ['a', 'b', 'c', 'd', 'e', 'f']);
+    database.run(`delete from conversations where id in ('e', 'f')`);
 
     // Work that returns a promise would commit before it had finished. The types refuse it,
     // and so does the adapter when the types are not looking.

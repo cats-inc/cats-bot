@@ -73,8 +73,8 @@ FR-2).
 - **Location**: `tests/core/stateDatabase.test.ts`
 - **Scope**: `src/core/store/stateDatabase.ts` and `stateSchema.ts` (SPEC-014 FR-1 to FR-4):
   - a writer creating the schema on a new file and recording what wrote it;
-  - each table keeping a JSON record with index columns that may be empty, and an entry's
-    row id never being reused;
+  - each table keeping a JSON record with index columns that may be empty, an entry's
+    row id never being reused, and the journal keeping the order it was written in;
   - a database from a newer version, and a file that is not a bot state database, refused
     with their bytes and journal mode as they were;
   - a schema that could not be finished leaving nothing behind, and a reader reading no
@@ -84,7 +84,8 @@ FR-2).
   - a change reporting its rows, and an insert its row id, whatever row id the index
     left behind;
   - transactions that are all or nothing, including a nested failure the outer code
-    catches, work that returns a promise, and a transaction SQLite ended by itself;
+    catches, work that returns a promise, and a transaction SQLite ended by itself; and a
+    failed read in a snapshot leaving the transaction around it to go on;
   - one statement at a time, transactions opened only through the adapter, and an insert
     that must add exactly one row;
   - closing twice, a closed database saying so, and Windows refusing a rename while a

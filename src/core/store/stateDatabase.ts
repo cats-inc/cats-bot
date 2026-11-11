@@ -69,6 +69,8 @@ export interface StateRuntime {
   node: string;
   electron: string | null;
   sqlite: string;
+  /** The Unicode version text is normalised and split by before it is indexed. */
+  unicode: string | null;
 }
 
 /** What a transaction's work may return: anything but a promise. */
@@ -99,7 +101,8 @@ export interface StateDatabase {
   /**
    * Runs `work` against one snapshot, taken before `work` starts, so that several queries
    * agree with each other whatever is committed meanwhile. Inside a transaction it joins
-   * it, and a failure in it fails that transaction.
+   * it. It is for reading: unlike a nested transaction, a failure in it that the outer
+   * code catches leaves the outer transaction to go on.
    */
   snapshot<T>(work: () => Synchronous<T>): T;
   meta(key: string): string | undefined;
@@ -278,6 +281,7 @@ function recordRuntime(database: StateDatabase, sqlite: string): void {
     node: process.versions.node,
     electron: process.versions.electron ?? null,
     sqlite,
+    unicode: process.versions.unicode ?? null,
   };
   const value = JSON.stringify(runtime);
   if (database.meta('runtime') !== value) database.setMeta('runtime', value);
@@ -376,11 +380,11 @@ class Connection implements StateDatabase {
 
   transaction<T>(work: () => Synchronous<T>): T {
     this.#assertWriter();
-    return this.#within('begin immediate', work, false);
+    return this.#within('transaction', work);
   }
 
   snapshot<T>(work: () => Synchronous<T>): T {
-    return this.#within('begin', work, true);
+    return this.#within('snapshot', work);
   }
 
   meta(key: string): string | undefined {
@@ -480,7 +484,7 @@ class Connection implements StateDatabase {
     return statement;
   }
 
-  #within<T>(begin: string, work: () => Synchronous<T>, readNow: boolean): T {
+  #within<T>(kind: 'transaction' | 'snapshot', work: () => Synchronous<T>): T {
     const connection = this.#open();
     if (this.#depth > 0) {
       this.#assertTransaction(connection);
@@ -488,15 +492,17 @@ class Connection implements StateDatabase {
       try {
         return synchronous(work());
       } catch (error) {
-        this.#failure ??= { cause: error };
+        // Changes half made must not be committed by an outer caller that carries on. A
+        // snapshot is for reading, so its failure leaves nothing half made.
+        if (kind === 'transaction') this.#failure ??= { cause: error };
         throw error;
       } finally {
         // `close()` inside the work has already set the depth to nothing.
         this.#depth = Math.max(0, this.#depth - 1);
       }
     }
-    connection.exec(begin);
-    if (readNow) {
+    connection.exec(kind === 'transaction' ? 'begin immediate' : 'begin');
+    if (kind === 'snapshot') {
       // A plain `begin` takes its snapshot at the first read, so read once before `work`.
       try {
         connection.exec('select 1 from sqlite_master limit 1');
