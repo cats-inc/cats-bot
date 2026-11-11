@@ -35,6 +35,9 @@ test('switching locale updates product copy while retaining owner names and mess
     assert.equal(conversationTitle({ role: 'home', title: 'Home' }), '私訊');
     assert.equal(conversationTitle({ role: 'home', title: 'My private desk' }), 'My private desk');
     assert.equal(conversationTitle({ role: 'note', title: 'Home' }), 'Home');
+    // SPEC-012 FR-5: a contact note is named after the other bot, whatever its stored title.
+    assert.equal(conversationTitle({ role: 'note', title: 'Messages from Ada', contactOf: 'ada', contactName: 'Ada' }), '與 Ada 的聯絡簿');
+    assert.equal(conversationTitle({ role: 'note', title: 'x', contactOf: 'ada', contactName: null }), '與 ada 的聯絡簿');
     assert.equal(translate('zh-TW', 'Used by {names}', { names: 'Mochi' }), 'Mochi 在用');
     assert.equal(
       translate('zh-TW', 'A provider returned this message'),

@@ -68,6 +68,7 @@ import type {
   BotProfile,
   BotProfilePatch,
   BotStatus,
+  BotWorkBoard,
   EffectiveHeartbeatMode,
   ConversationRecord,
   HandoffMessage,
@@ -82,6 +83,8 @@ import type {
   DesktopGrantDecision,
   SessionCapabilitiesSnapshot,
 } from './types.ts';
+import { PEER_BOARDS_MAX_AGE_MS } from './hub/peers.ts';
+import { buildWorkBoard } from './hub/status.ts';
 
 /**
  * The resident bot core (ADR-001 §2): owns the profile, conversations, the
@@ -176,6 +179,15 @@ interface RunningTurn {
 
 const PACKAGE_VERSION = '0.1.0';
 
+/** SPEC-012 FR-6: why the owner cannot write in a contact note. */
+export class ContactNoteError extends Error {
+  constructor(botName: string, contactName: string) {
+    super(`This is the contact note between ${botName} and ${contactName}. The owner can read it but not write in it; `
+      + `write to ${botName} in its direct message instead.`);
+    this.name = 'ContactNoteError';
+  }
+}
+
 export class BotCore implements BotHostApi {
   readonly paths: BotPaths;
   private profile: BotProfile;
@@ -198,6 +210,8 @@ export class BotCore implements BotHostApi {
   /** SPEC-009 FR-3: the Boss Cat's `cats-hub` tools, offered only while the hub reports this bot as holder. */
   private readonly hubTools: BotToolServer | null;
   private bossCatRole = false;
+  /** SPEC-012 FR-10: the other bots' boards the hub last pushed, with when they arrived. */
+  private peerBoards: { boards: BotWorkBoard[]; receivedAt: number } | null = null;
   /** Sessions given `cats-hub` by their last send, so a change of role reaches them at the next send. */
   private readonly hubSessions = new Set<string>();
   private readonly desktopSwitches: DesktopControlSwitches;
@@ -294,7 +308,9 @@ export class BotCore implements BotHostApi {
         serverVersion: PACKAGE_VERSION,
         handlers: createBotToolHandlers({
           createSchedule: (input) => this.createSchedule(input),
-          listSchedules: () => this.scheduleRecords(),
+          // SPEC-012 FR-6: a contact note's session never lists a reminder the owner set there.
+          listSchedules: () => this.scheduleRecords()
+            .filter((schedule) => schedule.createdBy === 'agent' || !this.conversations.get(schedule.conversationId)?.contactOf),
           cancelSchedule: (id) => this.cancelScheduleRecord(id),
           askOwner: (conversationId, question) => this.askOwner(conversationId, question),
           now: this.now,
@@ -346,6 +362,7 @@ export class BotCore implements BotHostApi {
       random: life.random ?? Math.random,
       profile: () => this.profile,
       heartbeatMode: () => this.heartbeatMode(),
+      peerBoards: () => this.freshPeerBoards(),
       conversations: this.conversations,
       binder: this.binder,
       client: () => this.client(),
@@ -473,13 +490,77 @@ export class BotCore implements BotHostApi {
     return mode === 'auto' ? (this.bossCatRole ? 'assist' : 'companion') : mode;
   }
 
+  /** SPEC-012 FR-1: this bot's board for the hub; a pure read that never binds or wakes a session. */
+  workStatus(): BotWorkBoard {
+    const conversations = this.conversations.list();
+    const inContactNotes = conversations
+      .filter((record) => record.contactOf)
+      .reduce((total, record) => total + this.interactions.pending(record.id), 0);
+    return buildWorkBoard({
+      status: this.status(),
+      conversations,
+      workItems: [...this.workItems.values()],
+      schedules: this.scheduleRecords(),
+      waitingInteractions: Math.max(0, this.interactions.pending() - inContactNotes),
+      now: this.now(),
+    });
+  }
+
+  /**
+   * SPEC-012 FR-10: the hub's latest copy of the other bots' boards. Kept only
+   * while this bot holds the role, never with this bot's own board, and stamped
+   * with when it arrived here.
+   */
+  setPeerBoards(boards: BotWorkBoard[]): void {
+    if (!this.bossCatRole) {
+      this.peerBoards = null;
+      return;
+    }
+    this.peerBoards = {
+      boards: boards.filter((board) => board.id !== this.profile.id),
+      receivedAt: this.now().getTime(),
+    };
+  }
+
+  /** The other bots' boards while they are fresh; none when the copy is old or absent. */
+  private freshPeerBoards(): BotWorkBoard[] {
+    const copy = this.peerBoards;
+    if (!copy || !this.bossCatRole || this.now().getTime() - copy.receivedAt > PEER_BOARDS_MAX_AGE_MS) return [];
+    return copy.boards;
+  }
+
   /** SPEC-009 FR-3: the hub's word on whether this bot holds the Boss Cat role. */
   setBossCat(holder: boolean): void {
+    // SPEC-012 FR-10: the other bots' boards belong to the role, not to the bot.
+    if (!holder) this.peerBoards = null;
     if (this.bossCatRole === holder) return;
     this.bossCatRole = holder;
     this.log(holder ? 'Boss Cat role held' : 'Boss Cat role not held');
     // The notes show the role (FR-10).
     for (const conversation of this.conversations.list()) this.bus.emit({ type: 'conversation.updated', conversation });
+  }
+
+  /**
+   * SPEC-012 FR-10: the turn a tool call from this conversation belongs to, and
+   * whether it comes from the heartbeat: a heartbeat itself, or a reminder a
+   * heartbeat set (at any depth). Null when no live turn runs there, so a late
+   * call is never taken for a turn the owner started.
+   */
+  private liveTurn(conversationIdOrAlias: string): { fromHeartbeat: boolean } | null {
+    const running = this.running;
+    if (!running || this.stopped || running.controller.signal.aborted) return null;
+    let conversationId: string;
+    try {
+      conversationId = this.resolveConversationId(conversationIdOrAlias);
+    } catch {
+      return null;
+    }
+    if (running.item.conversationId !== conversationId) return null;
+    const { item } = running;
+    return {
+      fromHeartbeat: item.kind === 'heartbeat'
+        || (item.kind === 'schedule' && this.schedules.get(item.source)?.fromHeartbeat === true),
+    };
   }
 
   /**
@@ -489,8 +570,16 @@ export class BotCore implements BotHostApi {
    */
   private async callHub(call: HubCall): Promise<ToolCallResult> {
     let result: ToolCallResult;
+    const turn = this.liveTurn(call.conversationId);
     if (!this.bossCatRole) {
       result = { text: 'This bot does not hold the Boss Cat role.', isError: true };
+    } else if (!turn) {
+      // SPEC-012 FR-10: a late call after a cancel or a lost stream is not taken for a live turn.
+      result = { text: 'Hub tools work only during a turn in this conversation, and this turn has ended.', isError: true };
+    } else if (turn.fromHeartbeat) {
+      // SPEC-012 FR-10: a heartbeat, and a reminder it set, can only suggest; handing work on
+      // waits for a turn the owner or another bot started.
+      result = { text: 'Hub tools are not available during a heartbeat. Suggest the next step to your owner instead.', isError: true };
     } else {
       try {
         result = hubAnswer(await this.channel.hubCall({ ...call, conversationId: this.resolveConversationId(call.conversationId) }));
@@ -560,10 +649,28 @@ export class BotCore implements BotHostApi {
   private senderConversation(from: string, fromName: string): string {
     const id = `bot-${from}`;
     const existing = this.conversations.get(id);
-    if (existing) return existing.id;
-    const created = this.conversations.create(`Messages from ${fromName}`, 'note', id);
+    if (existing) {
+      // SPEC-012 FR-5: the contact note keeps the sender's current name.
+      if (existing.contactOf === from && existing.contactName !== fromName.slice(0, 80)) {
+        this.conversations.update(id, (record) => {
+          record.contactName = fromName.slice(0, 80);
+        });
+      }
+      return existing.id;
+    }
+    const created = this.conversations.create(`Messages from ${fromName}`, 'note', id, { botId: from, name: fromName });
     this.log(`conversation ${id} created for messages from bot ${from}`);
     return created.id;
+  }
+
+  /**
+   * SPEC-012 FR-6: the owner can read a contact note but never write in it,
+   * from any surface, so the owner's words never reach another bot from there.
+   */
+  private refuseInContactNote(conversationId: string): void {
+    const record = this.conversations.get(conversationId);
+    if (!record?.contactOf) return;
+    throw new ContactNoteError(this.profile.name, record.contactName ?? record.contactOf);
   }
 
   /** SPEC-009 FR-12: how the named deliveries stand, from the journal, so a reply finished while the hub was away is found. */
@@ -745,6 +852,14 @@ export class BotCore implements BotHostApi {
     this.conversations.home();
     this.loadJournal();
     this.desktopSwitches.load();
+    // SPEC-012 FR-5: the running core writes the contact note upgrades; a desktop control
+    // switch left on in a note from before is turned off, since its bar is gone there.
+    this.conversations.persistUpgrades();
+    for (const record of this.conversations.list()) {
+      if (record.contactOf && this.desktopSwitches.isEnabled(record.id)) {
+        this.withWriteLock(() => this.desktop.setConversation(record.id, false));
+      }
+    }
 
     // SPEC-001 FR-28: whatever was running when the core died is interrupted, never rerun.
     const pending: WorkItem[] = [];
@@ -765,6 +880,7 @@ export class BotCore implements BotHostApi {
     for (const item of pending.sort((a, b) => a.createdAt.localeCompare(b.createdAt))) {
       this.queue.enqueue(item);
     }
+    this.settleContactNotes();
 
     await this.hubTools?.start();
     if (this.toolServer) {
@@ -995,9 +1111,11 @@ export class BotCore implements BotHostApi {
         break;
       case 'schedule_create': {
         const { at, ...input } = payload as unknown as Omit<CreateScheduleInput, 'at'> & { at?: string };
+        const scheduleConversation = this.resolveConversationId(input.conversationId ?? message.conversationId ?? 'home');
+        this.refuseInContactNote(scheduleConversation);
         this.createSchedule({
           ...input,
-          conversationId: this.resolveConversationId(input.conversationId ?? message.conversationId ?? 'home'),
+          conversationId: scheduleConversation,
           ...(at ? { at: new Date(at) } : {}),
         });
         break;
@@ -1124,7 +1242,8 @@ export class BotCore implements BotHostApi {
     if (this.stopped || this.running?.item.conversationId !== record.id || this.running.controller.signal.aborted) {
       throw new Error('No live provider turn in this conversation.');
     }
-    await this.interactions.respond(record.id, interactionId, response);
+    // SPEC-012 FR-6: in a contact note the owner can choose, but not type an answer.
+    await this.interactions.respond(record.id, interactionId, response, { choicesOnly: Boolean(record.contactOf) });
   }
 
   async sessionCapabilities(conversationId: string, refresh = false): Promise<SessionCapabilitiesSnapshot> {
@@ -1154,6 +1273,7 @@ export class BotCore implements BotHostApi {
   async setConversationDesktopControl(conversationId: string, enabled: boolean): Promise<DesktopControlState> {
     if (typeof enabled !== 'boolean') throw new Error('enabled must be true or false');
     const id = this.resolveConversationId(conversationId);
+    if (enabled) this.refuseInContactNote(id);
     this.withWriteLock(() => this.desktop.setConversation(id, enabled));
     return this.desktopControlState(id);
   }
@@ -1229,7 +1349,16 @@ export class BotCore implements BotHostApi {
 
   createSchedule(input: CreateScheduleInput): ScheduleRecord {
     const conversationId = this.resolveConversationId(input.conversationId);
-    const schedule = this.saveSchedule(buildSchedule({ ...input, conversationId }, this.now()));
+    // SPEC-012 FR-6: in a contact note only the note's own agent sets reminders; the owner's
+    // words never go there, from the CLI either.
+    if (input.createdBy !== 'agent') this.refuseInContactNote(conversationId);
+    // SPEC-012 FR-10: a heartbeat cannot reach the hub later through a reminder it sets, nor
+    // through one that reminder sets. An agent's call that matches no live turn counts as one.
+    const fromHeartbeat = input.createdBy === 'agent' && this.liveTurn(conversationId)?.fromHeartbeat !== false;
+    const schedule = this.saveSchedule({
+      ...buildSchedule({ ...input, conversationId }, this.now()),
+      ...(fromHeartbeat ? { fromHeartbeat: true } : {}),
+    });
     this.conversations.append(conversationId, {
       kind: 'system',
       origin: 'schedule',
@@ -1295,6 +1424,12 @@ export class BotCore implements BotHostApi {
     if (item.state !== 'awaiting_owner') throw new Error(`Work item ${workItemId} is ${item.state}, not awaiting the owner`);
     const now = this.now();
     const answer = decision === 'approve' ? 'approved' : 'denied';
+    if (item.source === 'recovery' && this.conversations.get(item.conversationId)?.contactOf) {
+      // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
+      this.record(transitionWorkItem(item, 'cancelled', now, { error: 'a turn in a contact note is not run again' }));
+      this.log(`approval ${item.id} cancelled: contact note`);
+      return;
+    }
     if (item.source === 'recovery') {
       if (decision === 'approve') {
         this.record(transitionWorkItem(item, 'completed', now, { result: { text: `owner asked to rerun`, completedAt: now.toISOString() } }));
@@ -1311,7 +1446,21 @@ export class BotCore implements BotHostApi {
       notification: { ...(item.notification ?? { deliveredAt: now.toISOString() }), seenAt: now.toISOString() },
     }));
     this.log(`approval ${item.id} ${answer}`);
-    await this.sendOwnerMessage(item.conversationId, `Decision on your question "${item.prompt}": ${answer}.`);
+    const decisionText = `Decision on your question "${item.prompt}": ${answer}.`;
+    if (this.conversations.get(item.conversationId)?.contactOf) {
+      // SPEC-012 FR-7: in a contact note the answer goes on as an event, not as the owner's
+      // message: no owner entry, no owner presence, and it never counts as the owner writing.
+      const followUp = createWorkItem({ kind: 'event', source: 'decision', conversationId: item.conversationId, prompt: decisionText }, now);
+      this.conversations.append(item.conversationId, {
+        kind: 'system', origin: 'event', text: `The owner ${answer} the question.`, workItemId: followUp.id,
+      });
+      this.record(followUp);
+      this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(item.conversationId) });
+      this.queue.enqueue(followUp);
+      this.pump();
+      return;
+    }
+    await this.sendOwnerMessage(item.conversationId, decisionText);
   }
 
   private expireWorkItem(item: WorkItem, reason: string): void {
@@ -1344,6 +1493,12 @@ export class BotCore implements BotHostApi {
             notification: { deliveredAt: now.toISOString(), seenAt: null },
           })));
           this.log(`recovery ${item.id}: completed by runtime evidence`);
+        } else if (verdict.verdict === 'awaiting_owner' && this.conversations.get(item.conversationId)?.contactOf) {
+          // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
+          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+            error: `the turn was interrupted (${verdict.evidence}) and is not run again in a contact note`,
+          })));
+          this.log(`recovery ${item.id}: a turn in a contact note ended interrupted (${verdict.evidence})`);
         } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
           // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
           this.finish(this.record(transitionWorkItem(item, 'failed', now, {
@@ -1536,6 +1691,7 @@ export class BotCore implements BotHostApi {
 
   /** SPEC-002 FR-5: a note's title is the owner's to choose; the home conversation keeps its role. */
   async renameConversation(conversationId: string, title: string): Promise<ConversationRecord> {
+    this.refuseInContactNote(this.resolveConversationId(conversationId));
     const trimmed = title.trim();
     if (!trimmed) throw new Error('A title cannot be empty');
     const record = this.conversations.update(this.resolveConversationId(conversationId), (next) => {
@@ -1618,6 +1774,7 @@ export class BotCore implements BotHostApi {
     sourceRef?: string,
   ): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
+    this.refuseInContactNote(id);
     const prompt = text.trim();
     if (!prompt) throw new Error('An owner message needs text');
     const item: WorkItem = {
@@ -1638,6 +1795,7 @@ export class BotCore implements BotHostApi {
    */
   async retryOwnerMessage(conversationId: string, workItemId: string): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
+    this.refuseInContactNote(id);
     const item = this.workItems.get(workItemId);
     if (!item || item.conversationId !== id || item.kind !== 'owner_message') {
       throw new Error(`No owner message ${workItemId} in this conversation`);
@@ -1666,7 +1824,7 @@ export class BotCore implements BotHostApi {
    * for the provider CLI to read. The note then sends the message with the file's path in front of the text.
    */
   async addOwnerAttachment(conversationId: string, name: string, data: string): Promise<StoredAttachment> {
-    this.resolveConversationId(conversationId);
+    this.refuseInContactNote(this.resolveConversationId(conversationId));
     return storeAttachment(this.profile.permissions.cwd, name, Buffer.from(data, 'base64'));
   }
 
@@ -1819,10 +1977,15 @@ export class BotCore implements BotHostApi {
     }));
     if (this.running?.item.id === admitted.id) this.running = { item: admitted, controller };
     let outcome: TurnOutcome;
-    try {
-      outcome = await this.runner.run(admitted, controller);
-    } catch (error) {
-      outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
+    const refused = this.ownerWordsInContactNote(admitted);
+    if (refused) {
+      outcome = { kind: 'failed', reason: refused };
+    } else {
+      try {
+        outcome = await this.runner.run(admitted, controller);
+      } catch (error) {
+        outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
+      }
     }
     const now = this.now();
     const conversation = this.conversations.get(admitted.conversationId);
@@ -1906,6 +2069,42 @@ export class BotCore implements BotHostApi {
       default:
         break;
     }
+  }
+
+  /**
+   * SPEC-012 FR-6: on start, before anything runs, the owner's words left in
+   * contact notes from before the upgrade are put away: the owner's reminders
+   * there are cancelled (the note's own schedule list would show their
+   * prompts), and owner messages still queued there are dropped.
+   */
+  private settleContactNotes(): void {
+    const inContactNote = (conversationId: string) => Boolean(this.conversations.get(conversationId)?.contactOf);
+    for (const schedule of this.scheduleRecords()) {
+      if (schedule.state !== 'active' || schedule.createdBy === 'agent' || !inContactNote(schedule.conversationId)) continue;
+      this.cancelScheduleRecord(schedule.id);
+      this.log(`schedule ${schedule.id} cancelled: the owner's reminders do not run in a contact note`);
+    }
+    this.dropPendingWork((item) => item.kind === 'owner_message' && inContactNote(item.conversationId),
+      'the owner cannot write in a contact note');
+  }
+
+  /**
+   * SPEC-012 FR-6: the last check before a turn runs. Owner words queued in a
+   * contact note before it became one (an owner message, or a reminder the
+   * owner set, also from the CLI) never reach its session; such a reminder is
+   * cancelled.
+   */
+  private ownerWordsInContactNote(item: WorkItem): string | null {
+    if (!this.conversations.get(item.conversationId)?.contactOf) return null;
+    if (item.kind === 'owner_message') return 'The owner cannot write in a contact note; this message was not sent.';
+    if (item.kind !== 'schedule') return null;
+    const schedule = this.schedules.get(item.source);
+    if (schedule?.createdBy === 'agent') return null;
+    if (schedule && schedule.state === 'active') {
+      this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
+      this.log(`schedule ${schedule.id} cancelled: the owner's reminders do not run in a contact note`);
+    }
+    return 'The owner\'s reminders do not run in a contact note; this one was cancelled.';
   }
 
   private finish(item: WorkItem): void {

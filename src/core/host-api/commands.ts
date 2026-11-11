@@ -2,11 +2,12 @@ import { delimiter, isAbsolute } from 'node:path';
 
 import { MAX_ATTACHMENT_BYTES } from '../../shared/attachments.ts';
 import { isHubLanguageReport, type HubLanguageReport } from '../../shared/language.ts';
+import { asPeerBoards } from '../hub/peers.ts';
 import { isTerminalWorkState } from '../queue/workItems.ts';
 import { isValidBotId } from '../store/paths.ts';
 import { isHubRecordId, MAX_CHAIN_HOPS } from '../tools/hubTools.ts';
 import type {
-  ApprovalDecision, BotDelivery, BotDeliveryState, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus,
+  ApprovalDecision, BotDelivery, BotDeliveryState, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus, BotWorkBoard,
   ConversationRecord, DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
 } from '../types.ts';
 
@@ -33,7 +34,7 @@ export const CORE_COMMANDS = [
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
 export const HOST_ONLY_COMMANDS = [
   'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory',
-  'admitBotMessage', 'botDeliveries', 'setBossCat', 'setHubLanguage', 'quit',
+  'admitBotMessage', 'botDeliveries', 'setBossCat', 'setHubLanguage', 'workStatus', 'setPeerBoards', 'quit',
 ] as const;
 
 export type CoreCommand = (typeof CORE_COMMANDS)[number] | (typeof HOST_ONLY_COMMANDS)[number];
@@ -64,6 +65,10 @@ export interface CoreCommandTarget extends BotHostApi {
   setBossCat(holder: boolean): MaybePromise<void>;
   /** SPEC-008 FR-28: the hub's resolved reply language and the display language in use. */
   setHubLanguage(report: HubLanguageReport): MaybePromise<void>;
+  /** SPEC-012 FR-1: this bot's status board, a pure read without message text. */
+  workStatus(): MaybePromise<BotWorkBoard>;
+  /** SPEC-012 FR-10: the other bots' boards, kept only while this bot holds the Boss Cat role. */
+  setPeerBoards(boards: BotWorkBoard[]): MaybePromise<void>;
 }
 
 const MAX_DELIVERY_TEXT = 64 * 1024;
@@ -238,6 +243,11 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'setBossCat':
       if (typeof args[0] !== 'boolean') throw new Error('holder must be true or false');
       await target.setBossCat(args[0]);
+      return null;
+    case 'workStatus': return target.workStatus();
+    case 'setPeerBoards':
+      // SPEC-012 FR-10: pushed boards are untrusted input, validated and bounded here.
+      await target.setPeerBoards(asPeerBoards(args[0]));
       return null;
     case 'setHubLanguage':
       if (!isHubLanguageReport(args[0])) throw new Error('report must be { reply, display } with supported languages');

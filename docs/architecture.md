@@ -237,6 +237,19 @@ does not establish browser/desktop helper availability or successful invocation.
   into the conversation; a question becomes an `awaiting_owner` work item.
   Listing and cancelling see only the calling conversation's schedules.
 
+### `src/core/hub`
+
+- **Purpose**: what a bot shares with the Boss Cat about its work (SPEC-012).
+- **Responsibilities**:
+  - `status.ts` builds the status board from what the core already holds: states, counts,
+    times and cleaned note titles, never message text. It is a pure read that never binds a
+    session.
+  - `peers.ts` validates the boards the hub pushes to the holder, and builds the peer section
+    of its `assist` heartbeat.
+  - Both are reached through the host-only commands `workStatus` and `setPeerBoards`.
+  - Contact notes (`contactOf` on a conversation) are refused every owner write in
+    `BotCore`, and are filtered out of their sessions' handoff in `conversations/binder.ts`.
+
 ### `src/core/desktopControl`
 
 - **Purpose**: owner-consented desktop control (ADR-005, SPEC-006 phases A and B). Only the

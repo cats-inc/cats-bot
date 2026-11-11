@@ -144,6 +144,14 @@ export interface ConversationRecord {
   lastOwnerMessageAt: string | null;
   lastBotMessageAt: string | null;
   checkpoint: HandoffCheckpoint | null;
+  /**
+   * SPEC-012 FR-5: set on a contact note (聯絡簿), the conversation this bot
+   * keeps for one other bot's messages: that bot's id. The owner can read a
+   * contact note but never write in it. Null on every other conversation.
+   */
+  contactOf: string | null;
+  /** The other bot's name, refreshed from each of its deliveries. */
+  contactName: string | null;
 }
 
 export type TranscriptEntryKind =
@@ -277,6 +285,8 @@ export interface ScheduleRecord {
   createdAt: string;
   lastFiredAt: string | null;
   nextAt: string | null;
+  /** SPEC-012 FR-10: made during a heartbeat, so its turns cannot use the hub tools either. */
+  fromHeartbeat?: boolean;
 }
 
 export type PresenceState = 'awake' | 'sleeping' | 'failed';
@@ -295,6 +305,43 @@ export type PresenceReason =
   /** SPEC-011 FR-16 / FR-18: asleep for the night, and awake again at the day's wake time. */
   | 'rest'
   | 'rhythm';
+
+/**
+ * SPEC-012 FR-2: what a bot's core tells the hub about its work, built without
+ * the model. It carries no message text: note titles (cleaned, at most 80
+ * characters) are its only free text, and the direct message appears as times.
+ */
+export interface BotWorkBoard {
+  id: string;
+  name: string;
+  runtime: RuntimeState;
+  home: { presence: 'awake' | 'asleep'; lastOwnerMessageAt: string | null; lastBotMessageAt: string | null };
+  ownInitiative: {
+    enabled: boolean;
+    mode: EffectiveHeartbeatMode;
+    phase: 'awake_hours' | 'rest_hours';
+    unanswered: number;
+    waitingForOwner: boolean;
+    nextAt: string | null;
+  };
+  queue: { running: { kind: WorkItemKind; conversationId: string; startedAt: string | null } | null; queued: number };
+  /** The latest turn of a conversation, when it failed or was interrupted in the last 7 days. */
+  attention: Array<{ workItemId: string; conversationId: string; state: 'failed' | 'interrupted'; at: string }>;
+  /**
+   * Owner decisions waiting (`ask_owner`, approvals, provider interactions), as a count only.
+   * Contact notes are left out: the Boss Cat's own exchanges are no news to it.
+   */
+  waitingDecisions: number;
+  schedules: { count: number; nextAt: string | null };
+  notes: Array<{
+    id: string;
+    title: string;
+    lastOwnerMessageAt: string | null;
+    lastBotMessageAt: string | null;
+    lastTurn: 'failed' | 'running' | 'awaiting_owner' | null;
+  }>;
+  builtAt: string;
+}
 
 export type HeartbeatKind = 'wake' | 'regular' | 'bedtime';
 export type HeartbeatResult = 'spoke' | 'quiet' | 'busy' | 'failed';

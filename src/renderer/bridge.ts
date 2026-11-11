@@ -151,6 +151,8 @@ export interface BotRow {
   bossCat: boolean;
   /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
   bossCatTools: boolean | null;
+  /** SPEC-012 FR-12: whether the Boss Cat may see this bot's status. */
+  bossCatSees: boolean;
 }
 
 export interface BotListing {
@@ -164,7 +166,7 @@ export interface BotListing {
 }
 
 export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete'
-  | 'makeBossCat' | 'clearBossCat';
+  | 'makeBossCat' | 'clearBossCat' | 'bossCatSees';
 
 export interface SetupInput {
   name: string;

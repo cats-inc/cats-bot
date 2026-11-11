@@ -348,8 +348,10 @@ hot-plug and installed-app acceptance were not performed.
   `tests/integration/channelRun.test.ts`, `coreProcess.test.ts`,
   `tests/shell/hub.test.ts`, `botManagement.test.ts`, `bossCat.test.ts`,
   `bossCatSafety.test.ts`, `tests/core/botMessages.test.ts`,
-  `tests/core/desktopControl.test.ts` (the lease) and
-  `tests/architecture-boundaries.test.ts`.
+  `tests/core/desktopControl.test.ts` (the lease),
+  `tests/architecture-boundaries.test.ts`, and for SPEC-012
+  `tests/core/workBoard.test.ts`, `tests/core/contactNotes.test.ts` and
+  `tests/shell/bossCatStatus.test.ts`.
 - **Scope**: the host channel's protocol rules against a fake core and with real
   cores on the fake runtime, the shell's core host starting, reattaching to and
   stopping `cats-bot run` (a slow Runtime, a stop during start, a lock released
@@ -378,6 +380,23 @@ hot-plug and installed-app acceptance were not performed.
   must leave the bot running with its note open. Starting with `--provider`
   skips the page and its helper callbacks; 0.3.0 shipped with a first-run
   error this path would have shown.
+- **SPEC-012 (Phase 1)**:
+  - the status board and the peer section never carry message text; titles are cleaned and
+    fenced, and the fingerprint ignores times;
+  - pushed boards are validated (ids that could forge marks are dropped), and the board
+    commands are host-only;
+  - legacy sender conversations are upgraded in memory by any host, written only by a running
+    core after a backup, and rebuilt from an allow-listed handoff that leaves out the owner's
+    words and replies or receipts that echo them;
+  - every owner write into a contact note is refused, from the offline CLI too; owner work
+    queued there before the upgrade never runs; provider requests there take only choices;
+    and decisions there run as events;
+  - contact notes stay out of the `assist` review and the waiting-decision count;
+  - `hub_bot_status`, its hourly limit, the per-bot switch and the holder recheck work through
+    real channels, and a board naming another bot is dropped;
+  - boards reach only the holder, whose heartbeat reads them, sees a new decision after an
+    answered one, and cannot call hub tools, nor can its reminders at any depth or a late
+    call.
 
 ### Windows desktop control helper
 

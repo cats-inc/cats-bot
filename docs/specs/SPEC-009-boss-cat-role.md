@@ -47,7 +47,9 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    authorizes every call against the current holder. After a transfer, a call
    from the former holder is refused, even if its session still holds the old
    descriptor.
-4. FR-4: Tools:
+4. FR-4: Tools (SPEC-012 adds `hub_bot_status`, the other bots' status boards without message
+   text, and makes the per-sender conversation a contact note the owner reads but does not
+   write in):
    - `hub_list_bots`: ids, names and states of bots that are not archived. No
      transcripts.
    - `hub_message_bot`: target bot id and text. The target must be running and

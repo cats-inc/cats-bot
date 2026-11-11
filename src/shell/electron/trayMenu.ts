@@ -219,10 +219,14 @@ export function buildBotMenuTemplate(
   if (notes.length > 0) {
     template.push({
       label: 'Conversations',
-      submenu: notes.map((note) => ({
-        label: note.unreadCount ? `${note.title} (${note.unreadCount})` : note.title,
+      submenu: notes.map((note) => {
+        // SPEC-012 FR-5: a contact note is named after the other bot.
+        const name = note.contactOf ? t('Contact with {name}', { name: note.contactName ?? note.contactOf }) : note.title;
+        return {
+        label: note.unreadCount ? `${name} (${note.unreadCount})` : name,
         click: () => actions.onOpenConversation(note.id),
-      })),
+        };
+      }),
     });
   }
   template.push(

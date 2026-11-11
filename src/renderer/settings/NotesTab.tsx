@@ -136,9 +136,12 @@ function NoteRow({
           <button type="button" onClick={() => void api.window.openConversation(record.id)}>
             {t('Open')}
           </button>
-          <button type="button" className="quiet" onClick={() => setRenaming(true)}>
-            {t('Rename')}
-          </button>
+          {!record.contactOf && (
+            // SPEC-012 FR-6: a contact note is named after the other bot and is not renamed.
+            <button type="button" className="quiet" onClick={() => setRenaming(true)}>
+              {t('Rename')}
+            </button>
+          )}
           {record.role !== 'home' && (
             <button
               type="button"
