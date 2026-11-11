@@ -7,8 +7,8 @@
 | **Status** | Approved by the owner on 2026-11-11 with [ADR-022](../decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md)'s proposed defaults and the proposed answers below. Not implemented. Implementation waits for an independent security review and the Runtime prerequisites of [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P0 |
 | **Owner** | Bot core memory |
 | **Reviewer** | Owner; independent security review before implementation (as for SPEC-009 and SPEC-012) |
-| **Depends on** | [SPEC-014](SPEC-014-bot-state-database-and-migration.md); Runtime turn-scoped context ([Runtime SPEC-042](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-042-turn-scoped-context.md)); a Runtime text-only session ([Runtime SPEC-043](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-043-text-only-sessions.md), SPEC-012 FR-13). Both are approved and not implemented |
-| **Updates when implemented** | SPEC-001 FR-1 and FR-5 (an optional consolidation target in the profile and the private Runtime), FR-11 and FR-12 (session instructions, handoff pack); SPEC-011 FR-13 (the assist review may read working summaries) |
+| **Depends on** | [SPEC-014](SPEC-014-bot-state-database-and-migration.md); Runtime turn-scoped context ([Runtime SPEC-042](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-042-turn-scoped-context.md)); a Runtime text-only session ([Runtime SPEC-043](https://github.com/cats-inc/cats-runtime/blob/main/docs/specs/SPEC-043-text-only-sessions.md), SPEC-012 FR-13). Both are approved and not implemented. A separate consolidation target also needs Runtime SPEC-043 R10 (credentials and child processes), which is proposed and awaits the owner |
+| **Updates when implemented** | SPEC-001 FR-1 and FR-5 (an optional consolidation target in the profile and the private Runtime), FR-27 (changing that target restarts the private Runtime), FR-11 and FR-12 (session instructions, handoff pack); SPEC-011 FR-13 (the assist review may read working summaries) |
 
 ## Summary
 
@@ -225,35 +225,54 @@ A bot remembers its owner across sessions, provider changes and restarts.
     - **Separate target.** The owner may name a consolidation target for a bot: a provider,
       an instance and a model in the bot's private Runtime.
       - It must be a target for which Runtime reports the `textOnly` capability. Runtime's
-        API backends (Anthropic, OpenAI, Gemini, and a local model through Ollama) are the
-        expected first ones.
+        API backends (Anthropic, OpenAI, Gemini) and its local backend (a model served by
+        Ollama) are the expected first ones.
       - It is used for consolidation only. Conversations keep running on the bot's one
         execution target, and changing the consolidation target makes no conversation
         attachment stale.
+      - Bot configures the instance so that Runtime admits only text-only sessions on it
+        (Runtime SPEC-043 R10).
     - **Consent.** Naming a provider other than the bot's own sends that provider
       everything a consolidation run reads (FR-15): the owner's and the bot's lines from the
       direct message and notes, the current core memory, and the memory pages recalled for
       them.
-      - The setting names the provider and says so before it is saved.
+      - That covers Telegram messages, which belong to the direct message, and earlier
+        conversations that have not been consolidated yet.
+      - The setting names the provider and says all of this before it is saved.
       - Bot never selects or switches a consolidation target by itself.
-      - A local model keeps the text on the machine only when its endpoint is on the
-        loopback interface. The setting says which case applies.
+    - **Local models.**
+      - The endpoint is a literal address in the generated configuration, never taken from
+        an environment variable.
+      - Text stays on the machine only when that address is on the loopback interface. The
+        setting says which case applies.
+      - Any other address needs the same consent as another provider, and the setting names
+        the host.
     - **Credentials.** A key for the separate target is a billable secret.
-      - It is stored in the bot's `secrets.json` only when the host can encrypt it at rest.
-        Without a cipher the setting refuses the key.
-      - It reaches the private Runtime through an environment variable with a Cats-private
-        name. A provider's standard variable name is never used, because the conversation's
-        CLI could pick it up and change how it signs in or bills.
-      - It never appears in the configuration file, the profile, the journal or logs.
-    - **Runtime prerequisite.** Runtime passes its whole environment to every provider CLI
-      it starts, so a conversation's CLI, which has tools and reads untrusted input, could
-      read the key. A separate target cannot be enabled until Runtime keeps API-backend
-      credentials out of CLI processes (PLAN-014 P0).
+      - **Storage.** It is written to `secrets.json` only through a write that fails when
+        the host has no cipher backed by the operating system's credential store. An entry
+        stored without one is refused when read. A headless host therefore cannot set or
+        use the key.
+      - **Delivery.** It is placed only in the environment that the supervisor builds for
+        the private Runtime process, under a Cats-private name. It is never in the core's
+        own environment, which helpers inherit. A provider's standard variable name is
+        never used, because the conversation's CLI could pick it up and change how it signs
+        in or bills.
+      - **Exposure.** It never appears in the configuration file, the profile, the journal
+        or logs.
+      - **Removal.** Removing the consolidation target deletes its key.
+    - **Runtime prerequisite.** Today a tool-capable process started by Runtime can read
+      Runtime's environment, and with Runtime's own API key it can reach every target. A
+      separate target cannot be enabled until Runtime keeps its own key and backend
+      credentials out of every process it starts, and can restrict an instance to text-only
+      sessions (Runtime SPEC-043 R10; PLAN-014 P0).
+    - **Limits.** A process that runs as the owner's OS user can still read files and other
+      processes, as SPEC-012 states. These rules close the environment and Runtime's
+      loopback API as easy paths; they are not a boundary against that account.
     - **Private Runtime.** The generated provider configuration gains the consolidation
       target beside the conversation provider. Adding, changing or removing it restarts the
       private Runtime under SPEC-001 FR-27's rules: after the running turn, and never in
-      the middle of one. Whether an app-managed Runtime can host a CLI target and an
-      API-backend target together is not yet verified.
+      the middle of one. Runtime's configuration can hold CLI, API and local targets in one
+      file; a private Runtime running both has not been tried end to end.
     - **No fallback.** If the target in use stops qualifying, or its key is missing or
       refused, consolidation is off and the settings say why (FR-14).
     - **Caps**: input plus output tokens per run (60,000 by default) and per day (120,000 by

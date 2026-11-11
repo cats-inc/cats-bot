@@ -53,10 +53,14 @@ security review. Embeddings come only if the evaluation asks for them.
     mechanism.
   - Bot must check the `textOnly` capability and the create readback before it sends
     anything. An older Runtime would return an ordinary session.
-- [ ] Runtime: **API-backend credentials stay out of CLI processes.**
-  - Today Runtime passes its whole environment to every provider CLI it starts, so a
-    conversation's CLI could read a consolidation key.
-  - It blocks P4.6 only. It is not specified in Runtime yet.
+- [ ] Runtime: **credentials stay out of the processes Runtime starts.**
+  - Today a tool-capable process started by Runtime can read Runtime's environment. With
+    Runtime's own API key it can also reach every target through the loopback API.
+  - Runtime must keep its own key and backend credentials out of every child process, and
+    let an instance admit only text-only sessions.
+  - Proposed as Runtime SPEC-043 R10 (cats-runtime#217); it awaits the owner and needs
+    Runtime's next minor line.
+  - It blocks P4.6 only.
 
 ### P1: State database (SPEC-014), depends only on ADR-021
 
@@ -124,15 +128,21 @@ controls all of it.
 - [ ] 4.6 Separate consolidation target (SPEC-015 FR-19), blocked on P0's credential
       prerequisite:
   - an optional profile field, normalized field by field;
-  - verify first that an app-managed private Runtime can host a CLI target and an
-    API-backend target together;
-  - the private Runtime's generated configuration with the second target, and the restart
-    rules when it changes;
-  - the key in `secrets.json`, stored only encrypted, and handed to the private Runtime
-    through a Cats-private environment variable;
-  - settings with the provider named, the consent text, the loopback note for a local
-    model, and the reason when consolidation is off;
-  - acceptance against a Runtime API-backend target, which needs Runtime SPEC-043 R7.
+  - try first, end to end, a private Runtime that runs a CLI target and an API or local
+    target together;
+  - the private Runtime's generated configuration with the second target, marked as
+    admitting only text-only sessions, with a literal endpoint for a local model, and the
+    restart rules when it changes;
+  - the key in `secrets.json`:
+    - a write that fails without a cipher backed by the operating system's credential
+      store, and a read that refuses an unencrypted entry;
+    - placed only in the environment the supervisor builds for the Runtime process, under a
+      Cats-private name;
+    - deleted when the target is removed;
+  - settings with the provider named, the consent text, the loopback or remote note for a
+    local model, and the reason when consolidation is off;
+  - acceptance against a Runtime API-backend target, which needs Runtime SPEC-043 R7 and
+    R10.
 
 **Deliverables**: bots improve their memory overnight within a known cost, and no batch can
 stall them.

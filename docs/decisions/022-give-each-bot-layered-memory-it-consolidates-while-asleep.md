@@ -30,8 +30,10 @@ recorded; the intent is unchanged:
 - Kept on the bot's own provider, consolidation would be unavailable to most bots.
 - The owner therefore chose to let a bot name a separate consolidation target. Without one,
   the bot's own execution target is used.
-- A separate target waits on one more Runtime change: API-backend credentials must not
-  reach the provider CLIs that Runtime starts.
+- A separate target waits on one more Runtime change: Runtime's own key and backend
+  credentials must not reach the processes Runtime starts (Runtime SPEC-043 R10, proposed).
+- The key-handling, consent and local-model rules under decision 6 were added while this
+  was written up. They await the owner's confirmation.
 
 Nothing is implemented. Before any memory injection or consolidation:
 
@@ -147,12 +149,17 @@ It depends on [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md).
        and the bot's lines from the direct message and notes, the core memory, and the
        recalled memory pages. The owner chooses it per bot, in settings that say so. It is
        never chosen automatically.
-     - A key for that provider is stored only encrypted, and reaches the private Runtime
-       through an environment variable with a Cats-private name, never through a
-       configuration file.
-     - Runtime passes its whole environment to every provider CLI it starts. A separate
-       target therefore cannot be enabled until Runtime keeps API-backend credentials out
-       of CLI processes.
+     - A key for that provider is stored only where the operating system's credential store
+       encrypts it. It reaches the private Runtime through an environment variable with a
+       Cats-private name that only that process receives, never through a configuration
+       file.
+     - A tool-capable process started by Runtime can read Runtime's environment today, and
+       with Runtime's own key it can reach every target. A separate target therefore cannot
+       be enabled until Runtime keeps its own key and backend credentials out of every
+       process it starts, and admits only text-only sessions on that target.
+     - A local model keeps text on the machine only on a loopback address. Any other address
+       needs the same consent as another provider.
+     - These rules do not protect against a process that runs as the owner's OS user.
      - If the target in use does not offer text-only sessions, consolidation is off and the
        settings say why. Bot never falls back from one target to another by itself.
    - **Cost**: there is a per-run and a daily token cap, recorded as usage, and Runtime
