@@ -263,11 +263,31 @@ security review. Embeddings come only if the evaluation asks for them.
           default and dynamic imports, every import statement, `journal.jsonl`,
           `botPathsFor(...)` and destructuring), and the cutover's tests also run inside
           Electron.
+      - From the second review of the cutover, each with a test that fails without it:
+        - `cats-bot restore` looks for the version-1 files before it sets a database
+          aside; on a bot 0.6 made, it moved the database and then said nothing was
+          restored, and every later restore said the same.
+        - A migration that finished writes its report when its import found anything,
+          and `core.log` names it (FR-11: reported, never dropped).
+        - Quit or a stop ends a core that is still migrating instead of waiting for it,
+          and a bot that migrates starts beside the others.
+        - The home conversation's work items are never forgotten as a deleted
+          conversation's, and a work item whose conversation was deleted during its
+          turn is not kept in memory.
+        - Recovery and the expiry of approvals go on past an item they cannot handle.
+        - `restore --json` says `restored: false` when nothing changed.
+      - Left as they are, from the same review: the architecture rule still misses a
+        version-1 path reached through a variable not named `paths`, an index by string,
+        a re-export from another store module, a template string, or `join` with a
+        variable; reviews and the tests of each module are what find those. A bot whose
+        `conversations/home.json` was removed by hand imports without its home
+        transcript, which stays in the copy and in `archive/v1/`.
       - For the release notes (1.8): the copies in `migration-backup/` and `archive/v1/`
         keep what the bot held before, deleted conversations' prompts included, until the
         owner removes them; a bot root on a network share is not supported; the hub shows
-        a migration that failed only as a bot that did not start, with the reason in
-        `core.log`.
+        a migrating bot as starting, and a migration that failed only as a bot that did
+        not start, with the reason in `core.log`; Quit during a migration ends it, and the
+        next start does it again from the start.
     - A record that cannot be read: a search still returns the entries of a conversation
       whose own record cannot be read, and a work item whose current row cannot be read
       is missing from the list while its journal lines remain. The import's check has to

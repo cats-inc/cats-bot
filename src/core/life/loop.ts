@@ -374,8 +374,14 @@ export class LifeLoop {
     for (const item of this.deps.awaitingOwner()) {
       const since = Date.parse(item.updatedAt);
       if (Number.isFinite(since) && now.getTime() - since > timeoutMs) {
-        this.deps.expireWorkItem(item, 'no owner decision within the timeout');
-        report.expiredApprovals.push(item.id);
+        try {
+          this.deps.expireWorkItem(item, 'no owner decision within the timeout');
+          report.expiredApprovals.push(item.id);
+        } catch (error) {
+          // One item that cannot be expired, such as one whose conversation cannot be read,
+          // leaves the others to expire.
+          this.deps.log(`work item ${item.id} could not be expired: ${error instanceof Error ? error.message : String(error)}`);
+        }
       }
     }
   }

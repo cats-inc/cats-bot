@@ -508,6 +508,10 @@ export class BotCore implements BotHostApi {
       const { conversations, entries, journalLines } = migration.imported.counts;
       this.log(`version-1 files moved into the state database: ${conversations} conversations, ${entries} entries, ${journalLines} journal lines`);
     }
+    if (migration.summary) {
+      const found = migration.imported?.problems.length ?? 0;
+      this.log(`warn the migration found ${found} thing(s) it did not import as they were; see ${migration.summary}`);
+    }
     for (const item of migration.notArchived) this.log(`warn version-1 ${item} is archived at the next start`);
     const raised = loadProfile(this.paths, this.profile, true);
     if (!raised.ok) throw new Error(`The migrated profile cannot be read: ${raised.reason === 'corrupt' ? raised.error : 'missing'}`);
@@ -914,11 +918,14 @@ export class BotCore implements BotHostApi {
   }
 
   private record(item: WorkItem): WorkItem {
-    this.workItems.set(item.id, item);
     // SPEC-014 FR-7 (chosen 2026-11-12): a work item whose conversation was deleted is not
-    // written again, so that a turn ending after the delete does not bring back its prompt.
+    // written or kept again, so that a turn ending after the delete does not bring back its
+    // prompt. Who waits for it still hears how it ended.
     if (this.conversations.get(item.conversationId)) {
+      this.workItems.set(item.id, item);
       this.journal({ type: 'work', at: this.now().toISOString(), item });
+    } else {
+      this.workItems.delete(item.id);
     }
     this.bus.emit({ type: 'work.updated', workItem: item });
     return item;
@@ -1630,48 +1637,57 @@ export class BotCore implements BotHostApi {
     try {
       for (const item of this.listWorkItems()) {
         if (item.state !== 'interrupted') continue;
-        const own = this.conversations.get(item.conversationId) ? this.conversations.transcript(item.conversationId) : [];
-        const verdict = await reconcileInterrupted(item, client, own);
-        const now = this.now();
-        if (verdict.verdict === 'completed') {
-          recordRecoveredReply(this.conversations, item, verdict.text);
-          this.finish(this.record(transitionWorkItem(item, 'completed', now, {
-            result: { text: verdict.text, completedAt: now.toISOString() },
-            notification: { deliveredAt: now.toISOString(), seenAt: null },
-          })));
-          this.log(`recovery ${item.id}: completed by runtime evidence`);
-        } else if (verdict.verdict === 'awaiting_owner' && this.conversations.get(item.conversationId)?.contactOf) {
-          // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
-          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
-            error: `the turn was interrupted (${verdict.evidence}) and is not run again in a contact note`,
-          })));
-          this.log(`recovery ${item.id}: a turn in a contact note ended interrupted (${verdict.evidence})`);
-        } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
-          // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
-          this.finish(this.record(transitionWorkItem(item, 'failed', now, {
-            error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
-          })));
-          this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
-        } else if (verdict.verdict === 'awaiting_owner') {
-          const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
-            source: 'recovery',
-            error: verdict.evidence,
-            notification: { deliveredAt: now.toISOString(), seenAt: null },
-          }));
-          this.conversations.append(item.conversationId, {
-            kind: 'system',
-            origin: 'event',
-            text: `Approval needed (${waiting.id}): the turn "${waiting.prompt.slice(0, 80)}" was interrupted (${verdict.evidence}). Approve to run it again, deny to drop it.`,
-            workItemId: waiting.id,
-          });
-          this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
-          this.log(`recovery ${item.id}: awaiting the owner (${verdict.evidence})`);
-        } else {
-          this.log(`recovery ${item.id}: no verdict yet (${verdict.reason})`);
+        try {
+          await this.recoverOne(item, client);
+        } catch (error) {
+          // A record that cannot be read stops only its own recovery.
+          this.log(`recovery ${item.id} failed: ${error instanceof Error ? error.message : String(error)}`);
         }
       }
     } finally {
       this.recovering = false;
+    }
+  }
+
+  private async recoverOne(item: WorkItem, client: RuntimeClient): Promise<void> {
+    const own = this.conversations.get(item.conversationId) ? this.conversations.transcript(item.conversationId) : [];
+    const verdict = await reconcileInterrupted(item, client, own);
+    const now = this.now();
+    if (verdict.verdict === 'completed') {
+      recordRecoveredReply(this.conversations, item, verdict.text);
+      this.finish(this.record(transitionWorkItem(item, 'completed', now, {
+        result: { text: verdict.text, completedAt: now.toISOString() },
+        notification: { deliveredAt: now.toISOString(), seenAt: null },
+      })));
+      this.log(`recovery ${item.id}: completed by runtime evidence`);
+    } else if (verdict.verdict === 'awaiting_owner' && this.conversations.get(item.conversationId)?.contactOf) {
+      // SPEC-012 FR-7: nothing in a contact note is rerun as the owner's message.
+      this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+        error: `the turn was interrupted (${verdict.evidence}) and is not run again in a contact note`,
+      })));
+      this.log(`recovery ${item.id}: a turn in a contact note ended interrupted (${verdict.evidence})`);
+    } else if (verdict.verdict === 'awaiting_owner' && item.source === 'bot') {
+      // SPEC-009 FR-7: another bot's message is not the owner's to rerun; it ends, and the hub tells its sender.
+      this.finish(this.record(transitionWorkItem(item, 'failed', now, {
+        error: `the turn was interrupted (${verdict.evidence}) and is not run again`,
+      })));
+      this.log(`recovery ${item.id}: a message from another bot ended interrupted (${verdict.evidence})`);
+    } else if (verdict.verdict === 'awaiting_owner') {
+      const waiting = this.record(transitionWorkItem(item, 'awaiting_owner', now, {
+        source: 'recovery',
+        error: verdict.evidence,
+        notification: { deliveredAt: now.toISOString(), seenAt: null },
+      }));
+      this.conversations.append(item.conversationId, {
+        kind: 'system',
+        origin: 'event',
+        text: `Approval needed (${waiting.id}): the turn "${waiting.prompt.slice(0, 80)}" was interrupted (${verdict.evidence}). Approve to run it again, deny to drop it.`,
+        workItemId: waiting.id,
+      });
+      this.bus.emit({ type: 'work.awaitingOwner', workItem: waiting });
+      this.log(`recovery ${item.id}: awaiting the owner (${verdict.evidence})`);
+    } else {
+      this.log(`recovery ${item.id}: no verdict yet (${verdict.reason})`);
     }
   }
 

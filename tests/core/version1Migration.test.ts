@@ -13,7 +13,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative, sep } from 'node:path';
+import { dirname, join, relative, sep } from 'node:path';
 import { after, test } from 'node:test';
 import { createProfile, loadProfile } from '../../src/core/profile/profile.ts';
 import type { BotProfile } from '../../src/core/types.ts';
@@ -273,7 +273,13 @@ test('a version-1 root is copied aside, imported, its profile raised and its fil
 
   // A second run finds nothing to do.
   const again = migrate(paths);
-  assert.deepEqual(again, { outcome: 'migrated', imported: null, backup: null, notArchived: [] });
+  assert.deepEqual(again, {
+    outcome: 'migrated',
+    imported: null,
+    backup: null,
+    summary: null,
+    notArchived: [],
+  });
   assertMigrated(paths, before, original);
 });
 
@@ -595,6 +601,7 @@ test('an item that cannot be archived is reported, and archived at the next star
     outcome: 'migrated',
     imported: null,
     backup: null,
+    summary: null,
     notArchived: [],
   });
   assertMigrated(paths, before, original);
@@ -788,6 +795,20 @@ test('a restore with nothing to put back changes nothing, and names what it leav
   );
   assert.equal(existsSync(stateDatabaseFile(paths)), true);
   assert.equal(profileOf(paths).schemaVersion, 3);
+  // Nor when the database is one this version cannot open: it stays where it is.
+  writeFileSync(stateDatabaseFile(paths), 'a database of a later version, say');
+  assert.throws(
+    () => restoreVersion1({ paths, profile: RAISE, now }),
+    /Neither the bot root nor archive\/v1/u,
+  );
+  assert.equal(
+    readFileSync(stateDatabaseFile(paths), 'utf8'),
+    'a database of a later version, say',
+  );
+  assert.deepEqual(
+    readdirSync(paths.root).filter((name) => name.includes('set-aside')),
+    [],
+  );
 
   // What was kept beside an archived item is named; an empty directory made again in the
   // root gives way to the item put back.
@@ -834,4 +855,24 @@ test('an unfinished copy holding a read-only file is removed, under a path in an
   assert.equal(migrate(paths).outcome, 'migrated');
   assert.equal(existsSync(unfinished), false);
   assertMigrated(paths, before, original);
+});
+
+test('a migration that finished reports what it did not import as it was', () => {
+  const paths = versionOneBot();
+  // A file no reader of 0.5 reads, and a line that is not JSON.
+  writeFileSync(join(paths.transcripts, 'notes.txt'), 'kept by hand');
+  writeFileSync(paths.journal, `${readFileSync(paths.journal, 'utf8')}{"type":"wo\n`);
+  const result = migrate(paths);
+  assert.equal(result.outcome, 'migrated');
+  assert.ok(result.outcome === 'migrated' && result.summary);
+  const summary = readFileSync(result.summary, 'utf8');
+  assert.match(summary, /^# The bot data migration finished/u);
+  assert.match(summary, /not_read: transcripts\/notes\.txt/u);
+  assert.match(summary, /unreadable_line: journal\.jsonl line \d+/u);
+  assert.equal(dirname(result.summary), result.backup);
+  // A run with nothing to report writes none.
+  const clean = versionOneBot('clean');
+  const plain = migrate(clean);
+  assert.ok(plain.outcome === 'migrated' && plain.summary === null);
+  assert.equal(existsSync(join(plain.backup!, 'report.md')), false);
 });

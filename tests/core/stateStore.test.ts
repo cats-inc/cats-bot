@@ -1009,8 +1009,8 @@ test('a work item that cannot be read never stops its conversation from being de
 test('work items whose conversation is gone are forgotten as a deletion would, the others kept', () => {
   const file = freshFile();
   withStore(file, 'writer', (store) => {
-    store.saveConversation(conversation('home'));
-    store.appendJournal(work(workItem('w-home', 'home', 'running')));
+    store.saveConversation(conversation('note-1'));
+    store.appendJournal(work(workItem('w-note', 'note-1', 'running')));
     // As 0.5 kept them after deleting a note: a work item of a conversation that is gone.
     store.appendJournal(
       work(workItem('w-gone', 'gone-note', 'queued', { sourceRef: 'note:9' } as never)),
@@ -1019,13 +1019,19 @@ test('work items whose conversation is gone are forgotten as a deletion would, t
       work(workItem('w-gone', 'gone-note', 'running', { sourceRef: 'note:9' } as never)),
     );
     store.appendJournal(work(workItem('w-gone-2', 'gone-note', 'awaiting_owner')));
+    // The home conversation's, before its record is made at the first start: it is made on
+    // first use and never deleted.
+    store.appendJournal(work(workItem('w-home', 'home', 'queued')));
     assert.equal(store.forgetWorkWithoutConversation(), 2);
     assert.deepEqual(
-      store.workItems().map((item) => item.id),
-      ['w-home'],
+      store
+        .workItems()
+        .map((item) => item.id)
+        .sort(),
+      ['w-home', 'w-note'],
     );
     assert.deepEqual(store.journal('w-gone'), []);
-    assert.equal(store.journal('w-home').length, 1);
+    assert.equal(store.journal('w-note').length, 1);
     assert.equal(store.isDeletedSource('note:9'), true);
     // Nothing left to forget the next time.
     assert.equal(store.forgetWorkWithoutConversation(), 0);

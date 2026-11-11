@@ -301,16 +301,22 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
 - [x] FR-7: a work item whose conversation no longer exists is not written.
 - [x] FR-7: work items 0.5 kept for conversations deleted before are deleted, as their
   conversation's would have been, each time the core opens the database for writing; until
-  then the recovery at start would ask the owner about them again.
+  then the recovery at start would ask the owner about them again. The home conversation's
+  are kept: it is made on first use and never deleted. A work item whose conversation was
+  deleted while its turn ran is not kept in memory either.
 - [x] FR-11: a new bot's database is made by `cats-bot init`, before its profile. Run in a
   folder that still holds version-1 files, `init` writes the profile at the version before
   and leaves the files for the first start to migrate.
 - [x] FR-11: the hub gives a core whose profile is at a version before the database an hour
-  to start instead of a minute, since it migrates first. A migration that does not finish
-  is written to the bot's `core.log` with the path of its report.
+  to start instead of a minute, since it migrates first, and starts such bots beside the
+  others instead of before them. Quit, or stopping the bot, ends a core that is still
+  migrating; the next start finishes the migration. A migration that does not finish is
+  written to the bot's `core.log` with the path of its report.
+- [x] FR-11: a migration that finished also writes its report beside the copy when the
+  import found anything it did not import as the files held it, and `core.log` names it.
 - [x] FR-11: `cats-bot restore` sets a database it cannot open as its own, a newer one or a
   file that is not one, aside whole, with its log, and says when there is nothing to
-  restore.
+  restore. It looks for the version-1 files to put back before it moves anything.
 
 ## References
 

@@ -20,7 +20,7 @@ import { packagedHelperPath } from '../../core/desktopControl/helper.ts';
 import { HostChannelClient, readChannelOwner, type ChannelHostServices } from '../../core/host-api/channel.ts';
 import { HubControlRefusal, HubControlServer } from '../../core/host-api/hubControl.ts';
 import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
-import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
+import { initializeBot, readBotProfile, stateMigrationPending, suggestBotAvatar } from '../../core/profile/initialize.ts';
 import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
 import { CLI_PROVIDERS, fixedProviders, listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
@@ -780,7 +780,7 @@ async function main(): Promise<void> {
     });
   };
 
-  const startBot = async (botId: string): Promise<BotPresenter> => {
+  const startBot = async (botId: string, signal?: AbortSignal): Promise<BotPresenter> => {
     const root = botRootIn(hubPaths.bots, botId);
     const profile = readBotProfile(root);
     if (!profile) throw new Error(`Cat bot ${botId} has no profile at ${root}.`);
@@ -800,7 +800,7 @@ async function main(): Promise<void> {
         // SPEC-006 BDC-11: Windows packages carry the helper as an extra resource; a checkout uses its own build.
         ...(app.isPackaged ? { helperPath: packagedHelperPath(process.resourcesPath) } : {}),
       // SPEC-009: the channel names the bot that calls the Boss Cat tools; its claims count for nothing.
-      }, { host: hostIdentity, services: { ...services, hub: (call) => bossCat.handle(botId, call) } });
+      }, { host: hostIdentity, services: { ...services, hub: (call) => bossCat.handle(botId, call) }, ...(signal ? { signal } : {}) });
     } catch (error) {
       if (error instanceof CoreHostedElsewhereError) {
         await attachExternal(botId).catch((attachError: unknown) => log(`attach to ${botId}: ${diagnosticError(attachError)}`, 'error'));
@@ -839,7 +839,7 @@ async function main(): Promise<void> {
     let runner = runners.get(id);
     if (!runner) {
       const created: CoreRunner<BotPresenter> = new CoreRunner<BotPresenter>(id, {
-        start: () => startBot(id),
+        start: (signal) => startBot(id, signal),
         stop: async (presenter) => {
           try {
             await presenter.stop();
@@ -1782,10 +1782,16 @@ async function main(): Promise<void> {
     }
   }
   if (quitting) return;
+  // SPEC-014 FR-11: a bot that migrates first starts beside the others, so that its minutes
+  // do not hold them back.
+  const migrating = starting.filter((bot) => stateMigrationPending(botRootIn(hubPaths.bots, bot.id)));
+  const migrations = migrating.map((bot) => runnerFor(bot.id).start());
   for (const bot of starting) {
     if (quitting) break;
+    if (migrating.includes(bot)) continue;
     await runnerFor(bot.id).start();
   }
+  await Promise.all(migrations);
   // Bots another program runs are listed, and attached to only for the hub's identity.
   for (const bot of manager.registry.bots) {
     if (quitting) return;

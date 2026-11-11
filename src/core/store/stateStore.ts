@@ -514,7 +514,10 @@ class Store implements BotStateStore {
 
   forgetWorkWithoutConversation(): number {
     return this.#database.transaction(() => {
+      // The home conversation is made on first use and is never deleted, so its work items
+      // are never a deleted conversation's, even before its record exists.
       const orphans = `select id from work_items where conversation_id is not null
+        and conversation_id <> 'home'
         and conversation_id not in (select id from conversations)`;
       this.#database.run(
         `insert or ignore into deleted_work(id, source_ref, delivery_id) ${DELETED_WORK_SELECT}

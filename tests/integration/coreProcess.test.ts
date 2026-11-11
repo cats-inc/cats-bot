@@ -167,3 +167,24 @@ test('review of #66: a lock held without a channel past the wait is a busy bot, 
   }));
   await assert.rejects(attachOrStartCore(root, launchFor('busy'), { host, lockWaitMs: 1_000 }), CoreBusyError);
 });
+
+test('a start that is stopped before the core publishes its channel ends that core (SPEC-014 FR-11)', { timeout: 60_000 }, async () => {
+  const { CoreStartStoppedError } = await import('../../src/shell/electron/coreHost.ts');
+  const { readInstanceLock } = await import('../../src/core/store/lock.ts');
+  const { root } = initializeBot(home.botsHome, { id: 'stopped-start', name: 'Stopped', provider: 'claude' });
+  const controller = new AbortController();
+  // As Quit while a core migrates: the start is stopped once the core runs.
+  setTimeout(() => controller.abort(), 0);
+  const started = Date.now();
+  await assert.rejects(
+    attachOrStartCore(root, launchFor('stopped-start'), { host, signal: controller.signal }),
+    CoreStartStoppedError,
+  );
+  assert.ok(Date.now() - started < 10_000, `the stop took ${Date.now() - started} ms`);
+  assert.equal(readInstanceLock(botPathsFor(root)), null, 'no core holds the bot');
+  // Stopped before it began, nothing starts.
+  await assert.rejects(
+    attachOrStartCore(root, launchFor('stopped-start'), { host, signal: AbortSignal.abort() }),
+    CoreStartStoppedError,
+  );
+});

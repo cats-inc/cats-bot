@@ -211,6 +211,8 @@ test('a turn that ends after its conversation was deleted does not bring its wor
       state: 'cancelled',
       updatedAt: new Date().toISOString(),
     });
+    // Nor kept in memory until the next start.
+    assert.equal(core.getWorkItem(done.id), undefined);
     const journal = readStateJournal(root);
     assert.equal(journal.workItems.has(done.id), false);
     assert.equal(
@@ -536,4 +538,68 @@ test('a core whose start failed refuses a second start', async () => {
   await assert.rejects(core.start(), /open it again/u);
   assert.equal(readInstanceLock(paths), null);
   await core.stop();
+});
+
+test('a conversation whose record cannot be read holds back neither recovery nor the others', async () => {
+  const { root } = openTestBot({ botsHome: home.botsHome, id: 'unreadable-note' });
+  const paths = botPathsFor(root);
+  const at = new Date(Date.now() - 60_000);
+  const noteRun = {
+    ...createWorkItem(
+      { kind: 'owner_message', source: 'owner', conversationId: 'note-x', prompt: 'in a note' },
+      at,
+    ),
+    state: 'running' as const,
+    attempts: 1,
+  };
+  const homeRun = {
+    ...createWorkItem(
+      { kind: 'owner_message', source: 'owner', conversationId: 'home', prompt: 'at home' },
+      at,
+    ),
+    state: 'running' as const,
+    attempts: 1,
+  };
+  withStateStore(
+    root,
+    (store) => {
+      store.saveConversation({ id: 'note-x', role: 'note', title: 'Note' } as never);
+      store.appendJournal({ type: 'work', at: at.toISOString(), item: noteRun });
+      store.appendJournal({ type: 'work', at: at.toISOString(), item: homeRun });
+    },
+    'writer',
+  );
+  // As a damaged page would leave it: the row is there, its record is not.
+  const { DatabaseSync } = sqliteDriver();
+  const database = new DatabaseSync(stateDatabaseFile(paths));
+  database.exec(`update conversations set json = 'not a record' where id = 'note-x'`);
+  database.close();
+  const core = BotCore.open(coreOptions(root));
+  const asked = waitForEvent(
+    core,
+    (event) => event.type === 'work.awaitingOwner' && event.workItem.id === homeRun.id,
+  );
+  await core.start();
+  try {
+    await asked;
+    assert.equal(core.getWorkItem(homeRun.id)?.state, 'awaiting_owner');
+  } finally {
+    await core.stop();
+  }
+});
+
+test("a migration that finished names its report in the core's log", async () => {
+  const { root, paths } = versionOneBot('old-reported');
+  writeFileSync(join(paths.transcripts, 'notes.txt'), 'kept by hand');
+  const logs: string[] = [];
+  const core = BotCore.open({ ...coreOptions(root), log: (line: string) => logs.push(line) });
+  await core.start();
+  await core.stop();
+  const line = logs.find((text) => text.includes('did not import as they were'));
+  assert.ok(line, logs.join('\n'));
+  assert.match(line, /found 1 thing/u);
+  assert.match(
+    readFileSync(line.slice(line.indexOf('see ') + 4), 'utf8'),
+    /not_read: transcripts\/notes\.txt/u,
+  );
 });

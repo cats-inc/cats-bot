@@ -325,7 +325,7 @@ async function commandRestore(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promi
   }
   const result = restoreVersion1({ paths: botPathsFor(target.root), profile: STATE_DATABASE_PROFILE_RAISE });
   if (parsed.flags.get('json') === true) {
-    process.stdout.write(`${JSON.stringify({ restored: true, ...result }, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ restored: result.changed, ...result }, null, 2)}\n`);
     return 0;
   }
   if (!result.changed) {

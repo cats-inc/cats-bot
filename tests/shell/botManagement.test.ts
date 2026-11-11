@@ -248,6 +248,33 @@ test('a stop is never followed by a restart, and an externally hosted core is on
   assert.match(external.error ?? '', /pid 42/u);
 });
 
+test('a stop while a core starts ends that start at once, a migration included (SPEC-014 FR-11)', async () => {
+  let signalSeen: AbortSignal | null = null;
+  const runner = new CoreRunner<string>('mochi', {
+    // As a core that migrates for minutes: it publishes nothing until its start is stopped.
+    start: (signal) => new Promise<string>((_, reject) => {
+      signalSeen = signal;
+      signal.addEventListener('abort', () => reject(new Error('The start of the cat bot core was stopped')));
+    }),
+    stop: async () => undefined,
+    onLost: () => undefined,
+    isExternal: () => false,
+    changed: () => undefined,
+    log: () => { throw new Error('a stopped start is not a failure to log'); },
+    delaysMs: [5],
+  });
+  const started = runner.start();
+  assert.equal(runner.state, 'starting');
+  const stoppedAt = Date.now();
+  await runner.stop();
+  assert.ok(Date.now() - stoppedAt < 1_000);
+  assert.equal(await started, null);
+  assert.equal(signalSeen!.aborted, true);
+  assert.equal(runner.state, 'stopped');
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(runner.state, 'stopped', 'no restart follows');
+});
+
 test('an archived id is reserved: run and init refuse it, and a derived id is numbered past it (FR-5, FR-27)', async () => {
   const { root, manager } = setUp(['mochi', 'old-catsbot']);
   await manager.archive('old-catsbot');

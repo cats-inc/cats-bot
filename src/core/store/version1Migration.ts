@@ -80,6 +80,11 @@ export type MigrationResult =
       /** The import's report, when this run imported; null when an earlier run did. */
       imported: Version1ImportReport | null;
       backup: string | null;
+      /**
+       * FR-11: the report of what this run's import found and did not import as it was,
+       * beside the copy; null when it found nothing, or when an earlier run imported.
+       */
+      summary: string | null;
       /** Version-1 items that could not be moved yet, with the error's code. */
       notArchived: string[];
     }
@@ -116,6 +121,7 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
   let marker = readMarker(file);
   let imported: Version1ImportReport | null = null;
   let backup: string | null = null;
+  let summary: string | null = null;
 
   if (marker === undefined) {
     checkProfileBeforeImport(paths, options.profile);
@@ -145,6 +151,8 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
       return { outcome: 'not_migrated', backup, ...written };
     }
     imported = report;
+    // FR-11: what the import found is reported, never dropped, also when it finished.
+    if (report.problems.length > 0) summary = writeReport(backup, report, undefined, now()).summary;
     marker = readMarker(file);
   }
 
@@ -160,7 +168,7 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
       notArchived.push(`${basename(item)}: ${errorCode(thrown)}`);
     }
   }
-  return { outcome: 'migrated', imported, backup, notArchived };
+  return { outcome: 'migrated', imported, backup, summary, notArchived };
 }
 
 /**
@@ -220,9 +228,24 @@ export function restoreVersion1(options: RestoreVersion1Options): RestoreResult 
     const file = stateDatabaseFile(paths);
     let setAside: string | null = null;
     let changed = false;
+    // What the restore needs is looked at before anything is moved: version-1 files to put
+    // back, and none of them in both places.
+    const items = version1Items(paths);
+    if (!items.some((item) => existsSync(item) || existsSync(join(archive, basename(item))))) {
+      throw new Error(
+        'Neither the bot root nor archive/v1 holds the version-1 files; nothing was restored',
+      );
+    }
+    for (const item of items) {
+      if (existsSync(join(archive, basename(item))) && existsSync(item) && !isEmptyDirectory(item)) {
+        throw new Error(
+          `${basename(item)} is both in the bot root and in archive/v1; nothing was restored`,
+        );
+      }
+    }
     // A database this version cannot open, a newer one or a file that is not one, cannot be
-    // folded; it is set aside whole, with its log, before anything else, so that the restore
-    // can go on and an older Bot starts on the files.
+    // folded; it is set aside whole, with its log, before the files go back, so that the
+    // restore can go on and an older Bot starts on the files.
     if (existsSync(file) && !isOwnDatabase(file)) {
       setAside = setAsideWhole(file, now());
       changed = true;
@@ -446,13 +469,22 @@ function writeReport(
     import: report ?? null,
   });
 
-  const lines = [
-    '# The bot data migration did not finish',
-    '',
-    `Written ${at.toISOString()}. The bot did not start, and its version-1 files are as they`,
-    'were. This folder holds a copy of them, and `report.json` holds this report in full.',
-    '',
-  ];
+  const lines = report?.finished
+    ? [
+        '# The bot data migration finished',
+        '',
+        `Written ${at.toISOString()}. The bot runs on its database. What is listed below was not`,
+        'imported as the files held it; this folder holds a copy of the version-1 files, and',
+        '`report.json` holds this report in full.',
+        '',
+      ]
+    : [
+        '# The bot data migration did not finish',
+        '',
+        `Written ${at.toISOString()}. The bot did not start, and its version-1 files are as they`,
+        'were. This folder holds a copy of them, and `report.json` holds this report in full.',
+        '',
+      ];
   if (failure !== null) lines.push('## Error', '', failure, '');
   if (report) {
     const blocking = report.problems.filter((found) => found.blocks);
