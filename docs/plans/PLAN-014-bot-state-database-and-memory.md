@@ -147,20 +147,45 @@ security review. Embeddings come only if the evaluation asks for them.
   - startup without journal replay.
   - [x] The store they move to: `src/core/store/stateStore.ts`, with
         `tests/core/stateStore.test.ts`. It keeps and returns every record as the JSON it
-        was given. Nothing in the core uses it yet.
+        was given, and checks nothing on the way out: the caller validates a conversation
+        record or a reply presentation as it validates the file it reads today. Nothing in
+        the core uses it yet.
     - An entry and its index row are written in one transaction, and a caller can put the
-      conversation's own change in the same one.
-    - Deleting a conversation also deletes its work items and their transitions, which
+      conversation's own change in the same one. An entry or a presentation needs its
+      conversation to exist, as `ConversationStore` requires today.
+    - `appendJournal` takes a journal line as `appendJournal` in `journal.ts` does. A work
+      item's or a schedule's line also becomes its current row in the same transaction.
+    - Deleting a conversation also deletes its work items and their journal lines, which
       hold the owner's prompts (SPEC-014 FR-7). Today's journal keeps them. Schedules
       stay, for the caller to cancel as it does now.
-    - The journal's other lines go to `events`. Nothing reads them back.
+    - It also answers what callers today read a whole transcript for: the last `seq`, and
+      the entries after a `seq`.
   - [ ] The cutover: `ConversationStore`, the presentation store and the journal use it.
+    Open for it, each needing the owner:
+    - A turn that ends after its conversation was deleted still records its work item
+      today. With the store that would bring back a row holding the prompt, which
+      nothing deletes again.
+    - Telling a delivery already handled from a new one, and answering the hub about a
+      delivery, both read work items that outlive their conversation. FR-7 deletes them
+      with it.
+    - A cancelled schedule keeps its prompt for good, while a deleted conversation's
+      work items lose theirs.
+    - A bot root on a UNC path (see 1.1).
 - [ ] 1.3 Full-text index with the bigram column, query builder, the LIKE path for single
       characters, and a rebuild command.
   - [x] `src/core/store/searchText.ts` rewrites an entry's text and a person's query, and
         the store's `search` and `rebuildIndex` use it; `tests/core/searchText.test.ts`.
-    - A single CJK character is first looked for in the JSON record in SQL and then
-      tested exactly on the text. Asking SQLite for the text stops at a NUL character.
+    - There is no bigram column and no `LIKE` path any more: one rewritten form of the
+      text is indexed, and a single character is a prefix query on it. SPEC-014 FR-8
+      carries both as proposed.
+    - `meta` holds a number for the way text is rewritten. A writer that finds another
+      number rebuilds the index, so the rewriting can change later without a migration.
+    - The rewriting depends on the Unicode version of the runtime, which `meta` records.
+      Electron 41 has 16 and Node.js 26 has 17, so a character new in 17 is a letter to
+      one and a separator to the other.
+    - A search takes at most 1,000 characters and 32 words, and refuses more.
+    - Not offered: a prefix of a Latin word (`kett` for `kettle`), word forms, Traditional
+      for Simplified, and a Chinese word broken by a line end.
   - [ ] The `cats-bot` command that rebuilds the index.
 - [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
       working.
@@ -170,6 +195,21 @@ security review. Embeddings come only if the evaluation asks for them.
     corrupt lines, an unknown schema, and an older binary refusing the raised profile.
 - [ ] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
+  - Measured once so far, on Windows inside Electron 41 (SQLite 3.51.2), with 1,000,000
+    made-up entries (801 MB) and the store as task 1.3 left it:
+    - Append: 2 ms for an ordinary message. An entry of 2 to 4 MB takes 0.25 to 0.7 s,
+      most of it indexing, on a connection that blocks the core meanwhile. Whether to cap
+      how much of one entry is indexed is open.
+    - Newest 50 entries of a 600,000-entry conversation: 0.7 ms. Its last `seq`: 0.2 ms.
+    - Search for 50 results: 1 to 2 ms for a word or a character found in few entries,
+      and 46 ms for a three-character piece. A two-character word found in 15% of all
+      entries takes 0.3 s, and about 1 s within one conversation. The commonest
+      character takes 1.4 s, and 2.4 to 3 s within one conversation.
+    - So the 100 ms target for a two-character query is met when few entries match and
+      missed when a large share of them do. Ranking reads every match, and a search
+      within one conversation fetches every match's entry to learn its conversation.
+      Two ways to meet it: a token for the conversation in the index, so the index
+      itself narrows to it; and a limit on how many matches are ranked.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 
@@ -274,9 +314,10 @@ stall them.
 
 ## Technical Decisions
 
-- **Index design.** The bigram shadow column was chosen because trigram and unicode61 both
-  miss 2-character Chinese words; the survey's probe covered this. It is re-checked with the
-  P2 evaluation set.
+- **Index design.** Two-character tokens were chosen because trigram and unicode61 both
+  miss 2-character Chinese words; the survey's probe covered this. The text is rewritten
+  into them before it is indexed, with each run's last character as a token of its own
+  (task 1.3). It is re-checked with the P2 evaluation set.
 - **Store before memory.** The store change is independently valuable and independently
   reversible through `cats-bot restore`.
 - **One-turn context needs a Runtime field.** Turn `instructions` are persisted by Runtime,

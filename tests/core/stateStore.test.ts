@@ -4,11 +4,17 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
+import { INDEX_FORM, MAX_QUERY_LENGTH } from '../../src/core/store/searchText.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { StateDatabaseError } from '../../src/core/store/stateDatabase.ts';
-import { openBotStateStore, type BotStateStore } from '../../src/core/store/stateStore.ts';
+import {
+  openBotStateStore,
+  searchSql,
+  type BotStateStore,
+} from '../../src/core/store/stateStore.ts';
 import type {
   ConversationRecord,
+  JournalEntry,
   ScheduleRecord,
   TranscriptEntry,
   WorkItem,
@@ -44,8 +50,29 @@ function withStore<T>(
   }
 }
 
+type RawDatabase = InstanceType<ReturnType<typeof sqliteDriver>['DatabaseSync']>;
+
+/** The file through the driver itself: what the store does not offer, or must not have changed. */
+function raw<T>(file: string, work: (database: RawDatabase) => T): T {
+  const { DatabaseSync } = sqliteDriver();
+  // Node.js 26 keeps the index's own tables from being written unless told otherwise.
+  const database = new DatabaseSync(file, { defensive: false } as never);
+  try {
+    return work(database);
+  } finally {
+    database.close();
+  }
+}
+
+function count(file: string, table: string): number {
+  return raw(file, (database) =>
+    Number(database.prepare(`select count(*) as n from ${table}`).get()?.n),
+  );
+}
+
 const AT = '2026-11-11T08:00:00.000Z';
 const NUL = String.fromCharCode(0);
+const emoji = (codePoint: number): string => String.fromCodePoint(codePoint);
 
 function conversation(id: string, extra: Record<string, unknown> = {}): ConversationRecord {
   return {
@@ -123,21 +150,33 @@ function schedule(
   };
 }
 
-function hits(store: BotStateStore, query: string, conversationId?: string): string[] {
+const work = (item: WorkItem, at = AT): JournalEntry => ({ type: 'work', at, item });
+const scheduled = (record: ScheduleRecord, at = AT): JournalEntry => ({
+  type: 'schedule',
+  at,
+  schedule: record,
+});
+
+/** In ranked order. */
+function ranked(store: BotStateStore, query: string, conversationId?: string): string[] {
   return store
-    .search(query, conversationId === undefined ? {} : { conversationId })
-    .map((hit) => `${hit.conversationId}#${hit.entry.seq}`)
-    .sort();
+    .search(query, { limit: 1000, ...(conversationId === undefined ? {} : { conversationId }) })
+    .map((hit) => `${hit.conversationId}#${hit.entry.seq}`);
 }
 
-function count(file: string, table: string): number {
-  const { DatabaseSync } = sqliteDriver();
-  const database = new DatabaseSync(file);
-  try {
-    return Number(database.prepare(`select count(*) as n from ${table}`).get()?.n);
-  } finally {
-    database.close();
-  }
+function hits(store: BotStateStore, query: string, conversationId?: string): string[] {
+  return ranked(store, query, conversationId).sort();
+}
+
+/** A bot with a home conversation and a note, each with the entries given. */
+function filled(home: string[], note: string[] = []): { file: string; store: BotStateStore } {
+  const file = freshFile();
+  const store = openBotStateStore({ file, mode: 'writer' });
+  store.saveConversation(conversation('home'));
+  store.saveConversation(conversation('note-1'));
+  for (const text of home) store.appendEntry('home', entry(text));
+  for (const text of note) store.appendEntry('note-1', entry(text));
+  return { file, store };
 }
 
 test('a conversation record is stored whole, replaced in place and read back as it was given', () => {
@@ -146,7 +185,7 @@ test('a conversation record is stored whole, replaced in place and read back as 
     assert.deepEqual(store.conversations(), []);
     const home = conversation('home', {
       futureField: { kept: true },
-      title: `emoji ${String.fromCodePoint(0x1f431)} and${NUL}nul`,
+      title: `emoji ${emoji(0x1f431)} and${NUL}nul`,
     });
     store.saveConversation(home);
     store.saveConversation(conversation('note-1'));
@@ -175,6 +214,7 @@ test('an entry gets the next seq of its conversation and comes back exactly', ()
   withStore(file, 'writer', (store) => {
     store.saveConversation(conversation('home'));
     store.saveConversation(conversation('note-1'));
+    assert.equal(store.lastSeq('home'), 0);
     const first = store.appendEntry('home', entry('first'));
     assert.deepEqual(first, { at: AT, kind: 'owner', origin: 'owner', text: 'first', seq: 1 });
     const tool = store.appendEntry(
@@ -190,17 +230,23 @@ test('an entry gets the next seq of its conversation and comes back exactly', ()
     );
     assert.equal(tool.seq, 2);
     assert.equal(store.appendEntry('note-1', entry('elsewhere')).seq, 1);
-    // A field this version does not know stays with the entry.
-    const future = store.appendEntry('home', { ...entry('third'), futureField: [1, 2] } as Omit<
+    // A field this version does not know stays with the entry, and a seq it came with does not.
+    const future = store.appendEntry('home', {
+      ...entry('third'),
+      futureField: [1, 2],
+      seq: 99,
+    } as Omit<TranscriptEntry, 'seq'>);
+    assert.equal(future.seq, 3);
+    // Text that is not text is kept as it is, and not indexed.
+    store.appendEntry('home', { ...entry('x'), text: 42 } as unknown as Omit<
       TranscriptEntry,
       'seq'
     >);
-    assert.equal(future.seq, 3);
 
     const transcript = store.entries('home');
     assert.deepEqual(
       transcript.map((item) => item.seq),
-      [1, 2, 3],
+      [1, 2, 3, 4],
     );
     assert.deepEqual(transcript[1], tool);
     assert.equal(transcript[1]?.text, awkward);
@@ -208,21 +254,30 @@ test('an entry gets the next seq of its conversation and comes back exactly', ()
       (transcript[2] as TranscriptEntry & { futureField?: unknown }).futureField,
       [1, 2],
     );
+    assert.equal((transcript[3] as unknown as { text: unknown }).text, 42);
+    assert.equal(store.lastSeq('home'), 4);
+    assert.deepEqual(
+      store.entriesAfter('home', 2).map((item) => item.seq),
+      [3, 4],
+    );
+    assert.deepEqual(store.entriesAfter('home', 4), []);
+    assert.deepEqual(store.entries('nobody'), []);
+    assert.equal(store.lastSeq('nobody'), 0);
+    // Nothing is kept for a conversation that is not there.
+    assert.throws(() => store.appendEntry('nobody', entry('lost')), /Unknown conversation nobody/u);
     assert.deepEqual(store.entries('nobody'), []);
   });
   // The numbering carries on after a restart.
   withStore(file, 'writer', (store) => {
-    assert.equal(store.appendEntry('home', entry('fourth')).seq, 4);
+    assert.equal(store.appendEntry('home', entry('fifth')).seq, 5);
     assert.equal(store.appendEntry('note-1', entry('again')).seq, 2);
   });
 });
 
 test('a page is the newest entries, or the ones before a seq, in order', () => {
-  withStore(freshFile(), 'writer', (store) => {
-    store.saveConversation(conversation('home'));
-    for (let index = 1; index <= 7; index += 1) store.appendEntry('home', entry(`entry ${index}`));
+  const { store } = filled(Array.from({ length: 7 }, (_, index) => `entry ${index + 1}`));
+  try {
     const seqs = (entries: TranscriptEntry[]): number[] => entries.map((item) => item.seq);
-
     assert.deepEqual(seqs(store.entriesPage('home', { limit: 3 })), [5, 6, 7]);
     assert.deepEqual(seqs(store.entriesPage('home', { limit: 3, beforeSeq: 5 })), [2, 3, 4]);
     assert.deepEqual(seqs(store.entriesPage('home', { limit: 3, beforeSeq: 2 })), [1]);
@@ -231,11 +286,14 @@ test('a page is the newest entries, or the ones before a seq, in order', () => {
     assert.deepEqual(store.entriesPage('nobody', { limit: 3 }), []);
     assert.throws(() => store.entriesPage('home', { limit: 0 }), RangeError);
     assert.throws(() => store.entriesPage('home', { limit: 1.5 }), RangeError);
-  });
+  } finally {
+    store.close();
+  }
 });
 
 test('a reply presentation is one row, replaced at each checkpoint', () => {
-  withStore(freshFile(), 'writer', (store) => {
+  const { store } = filled([]);
+  try {
     const reply = (id: string, seq: number, revision: number, text: string): TranscriptEntry =>
       ({
         seq,
@@ -253,7 +311,7 @@ test('a reply presentation is one row, replaced at each checkpoint', () => {
     store.saveResponse('home', reply('p1', 4, 2, 'first reply, finished'));
     store.saveResponse('note-1', reply('p1', 2, 1, 'another conversation'));
 
-    const stored = store.responses('home');
+    const stored = store.responses('home') as TranscriptEntry[];
     assert.deepEqual(
       stored.map((item) => [item.seq, item.text, item.presentationRevision]),
       [
@@ -267,152 +325,358 @@ test('a reply presentation is one row, replaced at each checkpoint', () => {
       () => store.saveResponse('home', { ...reply('p3', 1, 1, 'x'), presentation: undefined }),
       /needs an id/u,
     );
-  });
+    assert.throws(
+      () => store.saveResponse('nobody', reply('p1', 1, 1, 'x')),
+      /Unknown conversation nobody/u,
+    );
+    assert.deepEqual(store.responses('nobody'), []);
+  } finally {
+    store.close();
+  }
 });
 
-test('a work item has one current row and every transition; schedules and events are kept', () => {
+test('the journal keeps every line in order, and the last state of each work item and schedule', () => {
   const file = freshFile();
+  // Ids as random as real ones, and all made in the same millisecond.
+  const second = workItem('aaa', 'home', 'queued', { sourceRef: 'telegram:1:2' });
+  const first = workItem('zzz', 'home', 'queued');
+  const lines: JournalEntry[] = [
+    { type: 'runtime', at: AT, event: 'started', detail: 'attempt 1' },
+    work(first),
+    work(second),
+    { type: 'presence', at: AT, conversationId: 'home', presence: 'awake', reason: 'startup' },
+    work({ ...first, state: 'running', attempts: 1 }, '2026-11-11T08:00:01.000Z'),
+    scheduled(schedule('s-b', 'home', 'active')),
+    scheduled(schedule('s-a', 'note-1', 'active')),
+    work(
+      { ...first, state: 'completed', result: { text: 'ok', completedAt: AT } },
+      '2026-11-11T08:00:05.000Z',
+    ),
+    scheduled(schedule('s-b', 'home', 'cancelled'), '2026-11-11T08:00:06.000Z'),
+    { type: 'heartbeat', at: AT, kind: 'regular', result: 'quiet' },
+    {
+      type: 'config',
+      at: AT,
+      configRevision: 2,
+      executionTarget: { provider: 'claude', model: null } as never,
+    },
+    { type: 'bossCat', at: AT, tool: 'send', target: 'other', outcome: 'sent' },
+  ];
   withStore(file, 'writer', (store) => {
-    const queued = workItem('w1', 'home', 'queued', { sourceRef: 'telegram:1:2' });
-    const running = {
-      ...queued,
-      state: 'running' as const,
-      attempts: 1,
-      updatedAt: '2026-11-11T08:00:01.000Z',
-    };
-    const done = {
-      ...running,
-      state: 'completed' as const,
-      result: { text: 'ok', completedAt: '2026-11-11T08:00:05.000Z' },
-    };
-    store.saveWorkItem(queued, AT);
-    store.saveWorkItem(running, '2026-11-11T08:00:01.000Z');
-    store.saveWorkItem(done, '2026-11-11T08:00:05.000Z');
-    store.saveWorkItem(
-      workItem('w0', 'home', 'failed', { createdAt: '2026-11-10T00:00:00.000Z', error: 'boom' }),
-      AT,
-    );
+    for (const line of lines) store.appendJournal(line);
 
+    assert.deepEqual(store.journal(), lines);
+    assert.deepEqual(store.journal('zzz'), [lines[1], lines[4], lines[7]]);
+    assert.deepEqual(store.journal('s-b'), [lines[5], lines[8]]);
+    assert.deepEqual(store.journal('nobody'), []);
+    // The order each first appeared in, as today's replay of the journal gives.
     assert.deepEqual(
       store.workItems().map((item) => [item.id, item.state]),
       [
-        ['w0', 'failed'],
-        ['w1', 'completed'],
+        ['zzz', 'completed'],
+        ['aaa', 'queued'],
       ],
     );
-    assert.deepEqual(store.workItems()[1], done);
-    assert.deepEqual(store.workItemHistory('w1'), [queued, running, done]);
-    assert.deepEqual(store.workItemHistory('nobody'), []);
-
-    store.saveSchedule(schedule('s1', 'home', 'active'));
-    store.saveSchedule(schedule('s2', 'note-1', 'active'));
-    store.saveSchedule(schedule('s1', 'home', 'cancelled'));
+    assert.deepEqual(store.workItems()[1], second);
     assert.deepEqual(
       store.schedules().map((item) => [item.id, item.state, item.nextAt]),
       [
-        ['s1', 'cancelled', null],
-        ['s2', 'active', '2026-12-01T00:00:00.000Z'],
+        ['s-b', 'cancelled', null],
+        ['s-a', 'active', '2026-12-01T00:00:00.000Z'],
       ],
     );
-
-    store.appendEvent({
-      type: 'presence',
-      at: AT,
-      conversationId: 'home',
-      presence: 'awake',
-      reason: 'startup',
-    });
-    store.appendEvent({ type: 'runtime', at: AT, event: 'ready' });
-    store.appendEvent({ type: 'heartbeat', at: AT, kind: 'regular', result: 'quiet' });
-    store.appendEvent({ type: 'bossCat', at: AT, tool: 'send', target: 'other', outcome: 'sent' });
+  });
+  withStore(file, 'reader', (store) => {
+    assert.equal(store.journal().length, lines.length);
+    assert.equal(store.workItems().length, 2);
   });
   assert.equal(count(file, 'work_items'), 2);
-  assert.equal(count(file, 'work_events'), 4);
-  assert.equal(count(file, 'events'), 4);
+  assert.equal(count(file, 'schedules'), 2);
 });
 
-test('search finds Chinese words of one, two and three characters, and English ones', () => {
-  withStore(freshFile(), 'writer', (store) => {
-    store.saveConversation(conversation('home'));
-    store.saveConversation(conversation('note-1'));
-    store.appendEntry('home', entry('今天下午去公園散步'));
-    store.appendEntry(
-      'home',
-      entry('Please remember the kettle', { kind: 'bot', origin: 'owner' }),
-    );
-    store.appendEntry('home', entry('用iPhone拍照，再買茶葉'));
-    store.appendEntry(
-      'home',
-      entry(`alpha${NUL}omega 記得關瓦斯`, { kind: 'tool_result', origin: 'system' }),
-    );
-    store.appendEntry('home', entry(''));
-    store.appendEntry('note-1', entry('明天早上要去看牙醫，公園改天再去'));
-    store.appendEntry('note-1', entry('The kettle is in the kitchen'));
-
-    // Two and three characters use the index.
+test('search finds Chinese words of any length, English ones, and words written against each other', () => {
+  const { store } = filled(
+    [
+      '今天下午去公園散步',
+      'Please remember the kettle',
+      '用iPhone拍照，再買茶葉',
+      `alpha${NUL}omega 記得關瓦斯`,
+      '',
+      `這個bug${emoji(0x1f914)}怎麼修 OK${emoji(0x1f642)}`,
+      '訂單編號ＡＢ１２３，２０２６年',
+      '今天買股票',
+    ],
+    ['明天早上要去看牙醫，公園改天再去', 'The kettle is in the kitchen', '謝謝你，你好嗎', '買A股'],
+  );
+  try {
+    // Two and three characters, and one: every place the character occurs.
     assert.deepEqual(hits(store, '公園'), ['home#1', 'note-1#1']);
     assert.deepEqual(hits(store, '去公園'), ['home#1']);
     assert.deepEqual(hits(store, '牙醫'), ['note-1#1']);
     assert.deepEqual(hits(store, '園公'), []);
-    // One character is a substring test on the text.
     assert.deepEqual(hits(store, '園'), ['home#1', 'note-1#1']);
+    assert.deepEqual(hits(store, '步'), ['home#1']);
     assert.deepEqual(hits(store, '醫'), ['note-1#1']);
     assert.deepEqual(hits(store, '瓦'), ['home#4']);
     assert.deepEqual(hits(store, '貓'), []);
-    // English, whatever its case, and a Latin word written against Chinese.
+    // English in any case, and a Latin word written against Chinese or an emoji.
     assert.deepEqual(hits(store, 'KETTLE'), ['home#2', 'note-1#2']);
     assert.deepEqual(hits(store, 'iphone'), ['home#3']);
     assert.deepEqual(hits(store, 'omega'), ['home#4']);
-    // Every word must be there.
+    assert.deepEqual(hits(store, 'bug'), ['home#6']);
+    assert.deepEqual(hits(store, 'ok'), ['home#6']);
+    // Full-width forms are the words they spell.
+    assert.deepEqual(hits(store, 'AB123'), ['home#7']);
+    assert.deepEqual(hits(store, '2026'), ['home#7']);
+    assert.deepEqual(hits(store, '２０２６年'), ['home#7']);
+    // Every word must be there, and a word keeps its order.
     assert.deepEqual(hits(store, 'kettle kitchen'), ['note-1#2']);
     assert.deepEqual(hits(store, '公園 牙醫'), ['note-1#1']);
     assert.deepEqual(hits(store, '園 散步'), ['home#1']);
     assert.deepEqual(hits(store, 'iPhone 茶葉'), ['home#3']);
+    assert.deepEqual(hits(store, 'iPhone拍照'), ['home#3']);
+    assert.deepEqual(hits(store, '拍照iPhone'), []);
     assert.deepEqual(hits(store, 'kettle 園'), []);
-    // Nothing typed is query syntax.
+    // A phrase does not match across punctuation, nor a lone character across other words.
+    assert.deepEqual(hits(store, '謝謝你'), ['note-1#3']);
+    assert.deepEqual(hits(store, '謝你好'), []);
+    assert.deepEqual(hits(store, 'A股'), ['note-1#4']);
+    assert.deepEqual(hits(store, '股'), ['home#8', 'note-1#4']);
+    // Nothing typed is query syntax, and nothing typed is an error.
     assert.deepEqual(hits(store, 'kettle OR nothing'), []);
     assert.deepEqual(hits(store, '"kettle'), ['home#2', 'note-1#2']);
+    assert.deepEqual(hits(store, `alpha${NUL}omega`), ['home#4']);
     assert.deepEqual(hits(store, '，。 !?'), []);
     assert.deepEqual(hits(store, ''), []);
+    assert.throws(() => store.search('貓'.repeat(MAX_QUERY_LENGTH + 1)), RangeError);
 
     // One conversation, a limit, and what a caller filters on.
     assert.deepEqual(hits(store, '公園', 'note-1'), ['note-1#1']);
     assert.deepEqual(hits(store, '園', 'home'), ['home#1']);
+    assert.deepEqual(hits(store, 'kettle', 'nobody'), []);
     assert.equal(store.search('kettle', { limit: 1 }).length, 1);
+    assert.equal(store.search('kettle', { limit: 1, conversationId: 'home' }).length, 1);
     assert.throws(() => store.search('kettle', { limit: 0 }), RangeError);
     const [tool] = store.search('omega');
-    assert.deepEqual([tool?.entry.kind, tool?.entry.origin], ['tool_result', 'system']);
-    // The newest first when the index has no ranking to offer.
-    assert.deepEqual(
-      store.search('園').map((hit) => `${hit.conversationId}#${hit.entry.seq}`),
-      ['note-1#1', 'home#1'],
-    );
-  });
+    assert.deepEqual([tool?.entry.kind, tool?.entry.origin], ['owner', 'owner']);
+  } finally {
+    store.close();
+  }
 });
 
-test('the index can be thrown away and rebuilt from the entries', () => {
-  const file = freshFile();
-  withStore(file, 'writer', (store) => {
-    store.saveConversation(conversation('home'));
-    store.appendEntry('home', entry('今天下午去公園散步'));
-    store.appendEntry('home', entry(`alpha${NUL}omega`));
-    store.appendEntry('home', entry(''));
-  });
-  // As after a damaged index: the rows are there, the index is empty.
-  const { DatabaseSync } = sqliteDriver();
-  const raw = new DatabaseSync(file);
-  raw.exec('delete from entries_fts');
-  raw.close();
+test('the best match comes first, with and without a conversation', () => {
+  const { store } = filled(
+    [
+      'a long note that mentions the kettle once among many other words about the house and the garden',
+      'kettle kettle kettle',
+    ],
+    ['the kettle and the kettle again, in a sentence of middling length'],
+  );
+  try {
+    assert.deepEqual(ranked(store, 'kettle'), ['home#2', 'note-1#1', 'home#1']);
+    assert.deepEqual(ranked(store, 'kettle', 'home'), ['home#2', 'home#1']);
+    // The limit keeps the best ones.
+    assert.deepEqual(
+      store.search('kettle', { limit: 2 }).map((hit) => `${hit.conversationId}#${hit.entry.seq}`),
+      ['home#2', 'note-1#1'],
+    );
+    // Equal matches: the newest first.
+    store.appendEntry('home', entry('same words'));
+    store.appendEntry('home', entry('same words'));
+    assert.deepEqual(ranked(store, 'same words'), ['home#4', 'home#3']);
+    assert.deepEqual(ranked(store, 'same words', 'home'), ['home#4', 'home#3']);
+  } finally {
+    store.close();
+  }
+});
 
-  withStore(file, 'writer', (store) => {
-    assert.deepEqual(hits(store, '公園'), []);
-    assert.equal(store.rebuildIndex(), 2);
-    assert.deepEqual(hits(store, '公園'), ['home#1']);
-    // The words after a NUL character are still found: the rebuild reads the JSON record.
-    assert.deepEqual(hits(store, 'omega'), ['home#2']);
-    assert.equal(store.rebuildIndex(), 2);
-    assert.deepEqual(hits(store, '公園'), ['home#1']);
+test('a search starts at the index, never at the entries of a conversation', () => {
+  // The SQLite in Electron 41 would otherwise walk every entry of the conversation and ask
+  // the index about each: half a minute for a long direct message.
+  const { file, store } = filled(
+    Array.from({ length: 300 }, (_, index) => `entry ${index} about the kettle`),
+  );
+  store.close();
+  const plan = (scoped: boolean): string[] =>
+    raw(file, (database) =>
+      database
+        .prepare(`explain query plan ${searchSql(scoped)}`)
+        .all(...(scoped ? ['"kettle"', 'home', 50] : ['"kettle"', 50]))
+        .map((row) => String(row.detail)),
+    );
+  for (const scoped of [true, false]) {
+    const steps = plan(scoped);
+    assert.ok(
+      steps.some((step) => /entries_fts VIRTUAL TABLE/u.test(step)),
+      steps.join(' | '),
+    );
+    // The entries are only ever fetched one by one, by the row id the index gave.
+    assert.deepEqual(
+      steps.filter((step) => /^(?:SCAN|SEARCH) e\b/u.test(step)),
+      ['SEARCH e USING INTEGER PRIMARY KEY (rowid=?)'],
+      steps.join(' | '),
+    );
+  }
+});
+
+test('every piece of a CJK run is found, and nothing that is in no run', () => {
+  // A small alphabet, so that the same characters meet in many orders.
+  const alphabet = Array.from('貓狗魚鳥花草山水日月');
+  let state = 20261111;
+  const random = (below: number): number => {
+    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
+    return state % below;
+  };
+  const run = (): string =>
+    Array.from({ length: 1 + random(6) }, () => alphabet[random(alphabet.length)]!).join('');
+  const separators = ['，', ' ', 'abc', '。', '\n', ' 12 ', emoji(0x1f642)];
+  const documents = Array.from({ length: 80 }, () => {
+    const runs = Array.from({ length: 1 + random(4) }, run);
+    return {
+      runs,
+      text: runs.map((part) => part + separators[random(separators.length)]!).join(''),
+    };
   });
+  const { store } = filled(documents.map((document) => document.text));
+  try {
+    const pieces = new Map<string, Set<number>>();
+    documents.forEach((document, index) => {
+      for (const part of document.runs) {
+        for (let start = 0; start < part.length; start += 1) {
+          for (let length = 1; length <= 4 && start + length <= part.length; length += 1) {
+            const piece = part.slice(start, start + length);
+            pieces.set(piece, (pieces.get(piece) ?? new Set()).add(index + 1));
+          }
+        }
+      }
+    });
+    assert.ok(pieces.size > 300, `${pieces.size} pieces`);
+    for (const [piece, where] of pieces) {
+      assert.deepEqual(
+        store
+          .search(piece, { limit: 1000 })
+          .map((hit) => hit.entry.seq)
+          .sort((a, b) => a - b),
+        [...where].sort((a, b) => a - b),
+        piece,
+      );
+    }
+    let absent = 0;
+    for (let attempt = 0; attempt < 400; attempt += 1) {
+      const piece = Array.from(
+        { length: 2 + random(3) },
+        () => alphabet[random(alphabet.length)]!,
+      ).join('');
+      if (pieces.has(piece)) continue;
+      absent += 1;
+      assert.deepEqual(store.search(piece), [], piece);
+    }
+    assert.ok(absent > 100, `${absent} absent pieces`);
+  } finally {
+    store.close();
+  }
+});
+
+test('a failed search inside a transaction is the caller to handle, and the transaction goes on', () => {
+  const { store } = filled(['remember the kettle']);
+  try {
+    store.transaction(() => {
+      store.appendEntry('home', entry('before'));
+      assert.throws(() => store.search('貓'.repeat(MAX_QUERY_LENGTH + 1)), RangeError);
+      assert.deepEqual(hits(store, 'kettle'), ['home#1']);
+      store.appendEntry('home', entry('after'));
+    });
+    assert.equal(store.entries('home').length, 3);
+  } finally {
+    store.close();
+  }
+});
+
+test('the index is rebuilt from the entries, even when it is damaged', () => {
+  const texts = ['今天下午去公園散步', `alpha${NUL}omega`, '', 'remember the kettle'];
+  const { file, store } = filled(texts);
+  store.close();
+  assert.equal(count(file, 'entries_fts_docsize'), 3);
+
+  // Emptied: the rows are there and the index is not.
+  raw(file, (database) =>
+    database.exec(`insert into entries_fts(entries_fts) values('delete-all')`),
+  );
+  withStore(file, 'writer', (opened) => {
+    assert.deepEqual(hits(opened, '公園'), []);
+    assert.equal(opened.rebuildIndex(), 3);
+    assert.deepEqual(hits(opened, '公園'), ['home#1']);
+    // The words after a NUL character are found: the rebuild reads the JSON record.
+    assert.deepEqual(hits(opened, 'omega'), ['home#2']);
+    assert.equal(opened.rebuildIndex(), 3);
+    assert.deepEqual(hits(opened, 'kettle'), ['home#4']);
+  });
+
+  // Damaged for real: the index has lost its blocks. Searching it and adding to it both
+  // fail, and so would emptying it row by row, which has to read it. The rebuild does not.
+  raw(file, (database) => {
+    assert.ok(Number(database.prepare('delete from entries_fts_data').run().changes) > 0);
+  });
+  withStore(file, 'writer', (opened) => {
+    assert.throws(() => opened.search('kettle'), /corruption/u);
+    assert.throws(() => opened.appendEntry('home', entry('cannot be indexed')), /corruption/u);
+    // The entry that could not be indexed was not kept either.
+    assert.equal(opened.entries('home').length, 4);
+
+    assert.equal(opened.rebuildIndex(), 3);
+    assert.deepEqual(hits(opened, '公園'), ['home#1']);
+    assert.deepEqual(hits(opened, 'kettle'), ['home#4']);
+    opened.appendEntry('home', entry('and the index takes new entries'));
+    assert.deepEqual(hits(opened, 'takes'), ['home#5']);
+  });
+  assert.equal(
+    raw(file, (database) => {
+      database.exec(`insert into entries_fts(entries_fts) values('integrity-check')`);
+      return 'ok';
+    }),
+    'ok',
+  );
+});
+
+test('an index made the way another version searched is rebuilt when a writer opens', () => {
+  const { file, store } = filled(['今天下午去公園散步', 'remember the kettle']);
+  store.close();
+  // As an older version would have left it: another form number, and tokens this version
+  // does not look for.
+  raw(file, (database) => {
+    database.exec(`insert into entries_fts(entries_fts) values('delete-all')`);
+    database
+      .prepare('insert into entries_fts(rowid, terms) values (?, ?)')
+      .run(1, 'something else entirely');
+    database.prepare(`update meta set value = '0' where key = 'index_form'`).run();
+  });
+  // A reader leaves it alone.
+  withStore(file, 'reader', (reading) => {
+    assert.deepEqual(hits(reading, '公園'), []);
+  });
+  assert.equal(
+    raw(
+      file,
+      (database) =>
+        database.prepare(`select value from meta where key = 'index_form'`).get()?.value,
+    ),
+    '0',
+  );
+
+  withStore(file, 'writer', (opened) => {
+    assert.deepEqual(hits(opened, '公園'), ['home#1']);
+    assert.deepEqual(hits(opened, 'kettle'), ['home#2']);
+    assert.deepEqual(hits(opened, 'something'), []);
+  });
+  assert.equal(
+    raw(
+      file,
+      (database) =>
+        database.prepare(`select value from meta where key = 'index_form'`).get()?.value,
+    ),
+    String(INDEX_FORM),
+  );
+  assert.equal(count(file, 'entries_fts_docsize'), 2);
 });
 
 test('deleting a conversation removes its entries, index rows, presentations and work items', () => {
@@ -420,8 +684,14 @@ test('deleting a conversation removes its entries, index rows, presentations and
   withStore(file, 'writer', (store) => {
     for (const id of ['home', 'note-1']) {
       store.saveConversation(conversation(id));
-      store.appendEntry(id, entry('去公園散步'));
-      store.appendEntry(id, entry('remember the kettle'));
+      // In one transaction, so that the index rows share a segment, as they do once the
+      // index has merged: deleting those is what the adapter's big integers are for.
+      store.transaction(() => {
+        store.appendEntry(id, entry('去公園散步'));
+        store.appendEntry(id, entry('remember the kettle'));
+        store.appendEntry(id, entry(''));
+        store.appendEntry(id, entry('one more about the kettle'));
+      });
       store.saveResponse(id, {
         ...entry('reply', { kind: 'bot' }),
         seq: 2,
@@ -429,9 +699,16 @@ test('deleting a conversation removes its entries, index rows, presentations and
         presentation: { version: 1, id: 'p1', phase: 'sealed', blocks: [] },
         presentationRevision: 1,
       } as unknown as TranscriptEntry);
-      store.saveWorkItem(workItem(`w-${id}`, id, 'queued'), AT);
-      store.saveWorkItem(workItem(`w-${id}`, id, 'completed'), AT);
-      store.saveSchedule(schedule(`s-${id}`, id, 'cancelled'));
+      store.appendJournal(work(workItem(`w-${id}`, id, 'queued')));
+      store.appendJournal(work(workItem(`w-${id}`, id, 'completed')));
+      store.appendJournal(scheduled(schedule(`s-${id}`, id, 'cancelled')));
+      store.appendJournal({
+        type: 'presence',
+        at: AT,
+        conversationId: id,
+        presence: 'awake',
+        reason: 'startup',
+      });
     }
 
     store.deleteConversation('note-1');
@@ -446,28 +723,33 @@ test('deleting a conversation removes its entries, index rows, presentations and
       store.workItems().map((item) => item.id),
       ['w-home'],
     );
-    assert.deepEqual(store.workItemHistory('w-note-1'), []);
+    assert.deepEqual(store.journal('w-note-1'), []);
     assert.deepEqual(hits(store, '公園'), ['home#1']);
     assert.deepEqual(hits(store, '園'), ['home#1']);
-    assert.deepEqual(hits(store, 'kettle'), ['home#2']);
+    assert.deepEqual(hits(store, 'kettle'), ['home#2', 'home#4']);
     // Schedules are the caller's to cancel, and stay as its record of that.
     assert.equal(store.schedules().length, 2);
+    assert.equal(store.journal('s-note-1').length, 1);
     // The other conversation is whole.
-    assert.equal(store.entries('home').length, 2);
+    assert.equal(store.entries('home').length, 4);
     assert.equal(store.responses('home').length, 1);
-    assert.equal(store.workItemHistory('w-home').length, 2);
+    assert.equal(store.journal('w-home').length, 2);
     // A new conversation under the old id starts from nothing.
     store.saveConversation(conversation('note-1'));
     assert.equal(store.appendEntry('note-1', entry('fresh')).seq, 1);
     store.deleteConversation('nobody');
   });
-  assert.equal(count(file, 'entries'), 3);
-  assert.equal(count(file, 'work_events'), 2);
+  // Counted in the tables themselves: a search joins the entries, and would hide an index
+  // row left behind.
+  assert.equal(count(file, 'entries'), 5);
+  assert.equal(count(file, 'entries_fts_docsize'), 4);
+  assert.equal(count(file, 'journal'), 6);
+  assert.equal(count(file, 'work_items'), 1);
 });
 
 test('an entry and its conversation change together or not at all', () => {
-  withStore(freshFile(), 'writer', (store) => {
-    store.saveConversation(conversation('home'));
+  const { store } = filled([]);
+  try {
     assert.throws(
       () =>
         store.transaction(() => {
@@ -479,7 +761,9 @@ test('an entry and its conversation change together or not at all', () => {
     );
     assert.deepEqual(store.entries('home'), []);
     assert.deepEqual(hits(store, '公園'), []);
-    assert.equal((store.conversations() as ConversationRecord[])[0]?.lastOwnerMessageAt, null);
+    const home = (): ConversationRecord | undefined =>
+      (store.conversations() as ConversationRecord[]).find((record) => record.id === 'home');
+    assert.equal(home()?.lastOwnerMessageAt, null);
 
     store.transaction(() => {
       store.appendEntry('home', entry('去公園散步'));
@@ -487,44 +771,44 @@ test('an entry and its conversation change together or not at all', () => {
     });
     assert.equal(store.entries('home').length, 1);
     assert.deepEqual(hits(store, '公園'), ['home#1']);
-    assert.equal((store.conversations() as ConversationRecord[])[0]?.lastOwnerMessageAt, AT);
-  });
+    assert.equal(home()?.lastOwnerMessageAt, AT);
+  } finally {
+    store.close();
+  }
 });
 
 test('a reader reads and searches beside the writer, and changes nothing', () => {
-  const file = freshFile();
-  const writing = openBotStateStore({ file, mode: 'writer' });
+  const { file, store: writing } = filled(['今天下午去公園散步']);
   let reading: BotStateStore | undefined;
-  const readOnly = (work: () => unknown): void => {
+  const readOnly = (change: () => unknown): void => {
     assert.throws(
-      work,
+      change,
       (error: unknown) => error instanceof StateDatabaseError && error.code === 'read_only',
     );
   };
   try {
-    writing.saveConversation(conversation('home'));
-    writing.appendEntry('home', entry('今天下午去公園散步'));
-    writing.saveWorkItem(workItem('w1', 'home', 'queued'), AT);
-    writing.saveSchedule(schedule('s1', 'home', 'active'));
+    writing.appendJournal(work(workItem('w1', 'home', 'queued')));
+    writing.appendJournal(scheduled(schedule('s1', 'home', 'active')));
 
     reading = openBotStateStore({ file, mode: 'reader' });
     assert.equal(reading.mode, 'reader');
-    assert.equal(reading.conversations().length, 1);
+    assert.equal(reading.conversations().length, 2);
     assert.equal(reading.entries('home').length, 1);
     assert.equal(reading.entriesPage('home', { limit: 5 }).length, 1);
+    assert.equal(reading.lastSeq('home'), 1);
     assert.equal(reading.workItems().length, 1);
     assert.equal(reading.schedules().length, 1);
+    assert.equal(reading.journal().length, 2);
     assert.deepEqual(hits(reading, '公園'), ['home#1']);
-    assert.deepEqual(hits(reading, '園'), ['home#1']);
+    assert.deepEqual(hits(reading, '園', 'home'), ['home#1']);
 
-    readOnly(() => reading!.saveConversation(conversation('note-1')));
+    readOnly(() => reading!.saveConversation(conversation('note-2')));
     readOnly(() => reading!.appendEntry('home', entry('no')));
     readOnly(() =>
       reading!.saveResponse('home', { presentation: { id: 'p1' } } as unknown as TranscriptEntry),
     );
-    readOnly(() => reading!.saveWorkItem(workItem('w2', 'home', 'queued'), AT));
-    readOnly(() => reading!.saveSchedule(schedule('s2', 'home', 'active')));
-    readOnly(() => reading!.appendEvent({ type: 'runtime', at: AT, event: 'ready' }));
+    readOnly(() => reading!.appendJournal(work(workItem('w2', 'home', 'queued'))));
+    readOnly(() => reading!.appendJournal({ type: 'runtime', at: AT, event: 'ready' }));
     readOnly(() => reading!.deleteConversation('home'));
     readOnly(() => reading!.rebuildIndex());
     readOnly(() => reading!.transaction(() => undefined));

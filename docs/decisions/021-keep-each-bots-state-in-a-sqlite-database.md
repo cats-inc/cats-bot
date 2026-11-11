@@ -68,6 +68,9 @@ The following is proposed.
 4. **A full-text index** is part of the store. Han, Kana and Hangul runs are indexed as
    overlapping bigrams beside the normal text, because trigram and unicode61 miss
    2-character Chinese words. SPEC-014 defines it.
+   - Proposed clarification, 2026-11-11, waiting for the owner (SPEC-014 Open Questions):
+     one rewritten form of the text is indexed, not the normal text with a second form
+     beside it, and a single character is found through the index as well.
 5. **Engine.** `node:sqlite` sits behind a small adapter module, because the API is still
    experimental in Node 24. `better-sqlite3` is the fallback if acceptance fails, at the
    cost of an Electron-ABI native build.
