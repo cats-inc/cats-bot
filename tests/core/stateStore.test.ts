@@ -508,6 +508,32 @@ test('a record that cannot be read is left out and reported once, and the rest i
   });
 });
 
+test('a page filled from further back holds no more entries than were asked for', () => {
+  const { file, store } = filled(['one', 'two', 'three', 'four', 'five', 'six']);
+  store.close();
+  raw(file, (database) => {
+    database.exec(
+      `update entries set json = 'not json' where conversation_id = 'home' and seq = 6`,
+    );
+  });
+  const warnings: string[] = [];
+  const opened = openBotStateStore({
+    file,
+    mode: 'writer',
+    warn: (message) => warnings.push(message),
+  });
+  try {
+    // Two asked for: the first two rows hold one entry, the next four hold three.
+    assert.deepEqual(
+      opened.entriesPage('home', { limit: 2 }).map((item) => item.text),
+      ['four', 'five'],
+    );
+    assert.deepEqual(warnings, ['entry 6 of conversation home cannot be read and was left out']);
+  } finally {
+    opened.close();
+  }
+});
+
 test('search finds Chinese words of any length, English ones, and words written against each other', () => {
   const { store } = filled(
     [

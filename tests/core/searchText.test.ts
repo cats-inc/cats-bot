@@ -172,6 +172,8 @@ test('CJK punctuation, and any punctuation next to a CJK run, parts two words as
   assert.equal(buildSearchQuery('LINE、Telegram'), '"line" AND "telegram"');
   assert.equal(buildSearchQuery('LINE，Telegram；Signal'), '"line" AND "telegram" AND "signal"');
   assert.equal(buildSearchQuery('LINE・Telegram'), '"line" AND "telegram"');
+  // The small forms of CJK punctuation, as a small comma.
+  assert.equal(buildSearchQuery(`LINE${character(0xfe50)}Telegram`), '"line" AND "telegram"');
   assert.equal(buildSearchQuery('LINE,Telegram'), '"line telegram"');
   // Full-width letters and digits are not punctuation.
   assert.equal(buildSearchQuery('ＡＢ１２３'), '"ab123"');
