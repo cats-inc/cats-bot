@@ -91,11 +91,12 @@ for (const id of ['home', 'note']) {
   });
 }
 
-for (const condition of ['live', 'closing', 'used', 'count_unknown', 'origin_unknown', 'discovered', 'backend_unknown', 'api', 'saved_native', 'observed_native', 'attempted', 'attempt_unknown', 'source_path', 'provider_path', 'current_run', 'last_run']) {
-  test(`an absent native ID does not authorize replacement when ${condition}`, async t => {
+for (const replacementPending of [false, true]) for (const condition of ['live', 'closing', 'used', 'count_unknown', 'origin_unknown', 'discovered', 'backend_unknown', 'api', 'saved_native', 'observed_native', 'attempted', 'attempt_unknown', 'source_path', 'provider_path', 'current_run', 'last_run']) {
+  test(`an absent native ID does not authorize replacement when ${condition}, fenced=${replacementPending}`, async t => {
     const f = fixture(t);
     if (condition === 'attempted' || condition === 'attempt_unknown') f.setAttempted(condition === 'attempted' ? true : undefined);
-    f.store.setAttachment('home', { providerSessionId: condition === 'saved_native' ? 'native-home' : null });
+    f.store.setAttachment('home', { providerSessionId: condition === 'saved_native' ? 'native-home' : null,
+      replacementPending: replacementPending || undefined });
     f.client.getSession = async id => ({ id, status: condition === 'live' ? 'ready' : condition === 'closing' ? 'closing' : 'closed',
       providerName: 'codex', providerBackend: condition === 'api' ? 'api' : condition === 'backend_unknown' ? undefined : 'cli',
       origin: condition === 'discovered' ? 'discovered' : condition === 'origin_unknown' ? undefined : 'runtime',
@@ -106,9 +107,70 @@ for (const condition of ['live', 'closing', 'used', 'count_unknown', 'origin_unk
       ...(condition === 'last_run' ? { inspection: { lastRun: { status: 'failed' } } } : {}),
       ...(condition === 'observed_native' ? { providerSessionId: 'native-home' } : {}) });
     f.client.resumeSession = async () => { throw new RuntimeHttpError(400, 'No provider session ID to resume', null); };
-    assert.equal((await f.makeBinder().bind('home')).ok, condition === 'live');
+    assert.equal((await f.makeBinder().bind('home', { forTurn: true })).ok, condition === 'live');
     assert.equal(f.calls.create.length, 0);
     assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+  });
+}
+
+test('a pending turn recovers an unused replacement after reload while ticks remain fenced', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+  f.store.append('home', { kind: 'owner', origin: 'owner', text: 'Preserve my conversation' });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
+  const binder = f.makeBinder(reloaded);
+  for (let tick = 0; tick < 3; tick++) assert.equal((await binder.bind('home')).ok, false);
+  assert.equal(f.calls.create.length, 0);
+
+  Object.assign(f.client, {
+    streamMessage: async () => ({ completed: true, errorText: null }),
+  });
+  const runner = new TurnRunner({ client: () => f.client as unknown as RuntimeClient,
+    binder, conversations: reloaded, now: f.now, emit: () => {}, persistRun: () => {}, log: () => {} });
+  const item = createWorkItem({ kind: 'owner_message', source: 'fixture', conversationId: 'home', prompt: 'Continue' }, f.now());
+  assert.equal((await runner.run(item, new AbortController())).kind, 'completed');
+  assert.equal(f.calls.create.length, 1);
+  assert.match((f.calls.create[0] as { instructions: string }).instructions, /Preserve my conversation/u);
+  assert.deepEqual(f.calls.retired, ['runtime-home']);
+  assert.equal(reloaded.home().attachment.sessionId, 'new-1');
+  assert.equal(reloaded.home().attachment.replacementPending, undefined);
+});
+
+test('a turn joining a reconcile bind shares its unstarted replacement instead of staying blocked', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const tick = f.binder.bind('home');
+  const turn = f.binder.bind('home', { forTurn: true });
+  assert.equal(turn, tick);
+  assert.deepEqual(await turn, { ok: true, sessionId: 'new-1', how: 'created' });
+  assert.equal(f.calls.create.length, 1);
+  assert.equal(f.store.home().attachment.replacementPending, true);
+});
+
+test('an ambiguous create while recovering an unused replacement stays fenced for later turns', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  let attempts = 0;
+  f.client.createSession = async () => { attempts++; throw new Error('request timed out'); };
+  assert.equal((await f.binder.bind('home', { forTurn: true })).ok, false);
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
+  assert.equal((await f.makeBinder(reloaded).bind('home', { forTurn: true })).ok, false);
+  assert.equal(attempts, 1);
+});
+
+for (const evidence of ['terminal', 'missing'] as const) {
+  test(`a pending turn cannot bypass the replacement fence for ${evidence} evidence`, async t => {
+    const f = fixture(t);
+    f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+    f.client.getSession = async id => {
+      if (evidence === 'missing') throw new RuntimeHttpError(404, 'Session not found', null);
+      return { id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0, providerSessionUnavailable: true };
+    };
+    assert.equal((await f.binder.bind('home', { forTurn: true })).ok, false);
+    assert.equal(f.calls.create.length, 0);
   });
 }
 

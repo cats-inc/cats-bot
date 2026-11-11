@@ -116,7 +116,7 @@ export interface SessionAttachment {
   lastError?: string;
   /** Confirmed loss of this attachment, never inferred from a process exit. */
   unavailableReason?: 'provider_session_unavailable' | 'runtime_session_missing' | 'repeated_provider_failure';
-  /** One automatic replacement is allowed until it completes a turn. */
+  /** Fence replacements until a turn completes; an unused closed worker may be replaced for a pending turn. */
   replacementPending?: boolean;
 }
 
