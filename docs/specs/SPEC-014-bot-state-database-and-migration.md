@@ -138,6 +138,12 @@ verified migration moves existing bots over without losing or rewriting their hi
 10. FR-10: `BotHostApi` keeps `conversationTranscript` with its 4 MB budget, and adds a paged
     read: newest N, or N before a `seq`. The note loads the newest page and pages back on
     scroll. Existing callers keep working.
+    - Built as `conversationTranscriptPage(conversationId, { limit?, beforeSeq? })`, which
+      returns `{ entries, olderBeforeSeq }`: the page as the note shows it, reply
+      presentations projected, and the `beforeSeq` of the page before it, or null at the
+      start. Only the note of that conversation may send it, as `conversationTranscript`.
+      A page never parts a presentation from the entries it covers, so the pages read back
+      to the start are the whole conversation as `conversationTranscript` shows it.
 
 #### Migration
 
@@ -317,6 +323,17 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
 - [x] FR-11: `cats-bot restore` sets a database it cannot open as its own, a newer one or a
   file that is not one, aside whole, with its log, and says when there is nothing to
   restore. It looks for the version-1 files to put back before it moves anything.
+- [x] FR-10: a page holds 100 entries unless the note asks for another number, and at most
+  500. One larger than 1 MB is read again with half as many entries, down to one entry,
+  which is returned whatever its size, as `conversationTranscript` keeps its newest entry.
+- [x] FR-10: a page reaches back to the start of any reply presentation that covers its first
+  entry. A presentation that never bound its final entry is left out when a bot entry of
+  its work item comes after it, as the whole transcript's projection leaves it out; for a
+  page that is not the newest, the store is asked for such an entry after the page.
+- [x] FR-10: the note reads the newest page when it opens, the one before it when the owner
+  scrolls within 120 pixels of the top or when its pages do not fill it, and after each
+  turn the newest pages back to the newest entry it holds, at most 20 of them. When those
+  do not reach it, the note keeps only what they cover and pages back from there.
 
 Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruction:
 

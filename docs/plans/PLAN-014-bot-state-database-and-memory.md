@@ -412,8 +412,25 @@ security review. Embeddings come only if the evaluation asks for them.
       for Simplified, and a Chinese word broken by a line end.
   - [x] The `cats-bot` command that rebuilds the index: `cats-bot reindex`, while the bot
         is stopped; `tests/core/migrationAtStart.test.ts`.
-- [ ] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
+- [x] 1.4 `BotHostApi` paged transcript read and note paging. `conversationTranscript` keeps
       working.
+  - `conversationTranscriptPage(conversationId, { limit?, beforeSeq? })` returns
+    `{ entries, olderBeforeSeq }`, from `BotCore` through the host commands
+    (`src/core/host-api/commands.ts`), the note-only IPC list (`src/shell/electron/ipc.ts`)
+    and the bridge (`src/renderer/bridge.ts`). `ConversationStore.presentationPage` makes a
+    page; the store's `workItemsWithBotEntryFrom` answers what a page needs to know of a
+    presentation after it. `tests/core/transcriptPaging.test.ts` reads pages of every size
+    back to the start of a conversation with every shape of reply and checks they are the
+    whole conversation as `conversationTranscript` shows it.
+  - The note (`src/renderer/note/NoteApp.tsx`) reads pages through `readNewestPages` and
+    merges them with `mergeTranscriptEntries` (`src/renderer/note/transcript.ts`);
+    `tests/renderer/transcriptPaging.test.ts` pages back while a reply streams.
+  - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's
+    Open Questions: 100 entries a page, at most 500, 1 MB a page; a page reaches back to
+    the start of a presentation that covers its first entry; the note pages back within
+    120 pixels of the top or while its pages do not fill it, and reads at most 20 newest
+    pages after a turn.
+  - The note no longer reads `conversationTranscript`; the command stays for other hosts.
 - [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
       report and `cats-bot restore`.
   - [x] The import, its check and the marker: `src/core/store/version1Import.ts`, with

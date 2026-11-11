@@ -9,6 +9,7 @@ import type {
   ConversationRole,
   SessionAttachment,
   TranscriptEntry,
+  TranscriptPage,
 } from '../types.ts';
 
 /**
@@ -16,6 +17,13 @@ import type {
  * their reply presentations in the bot's state database. Every mutation goes through
  * `update`, so the stored record is always the rendering of the one in memory.
  */
+
+/** SPEC-014 FR-10: entries in a page of the note when the reader names no number. */
+export const TRANSCRIPT_PAGE_DEFAULT = 100;
+/** SPEC-014 FR-10: the most entries a page holds. */
+export const TRANSCRIPT_PAGE_MAX = 500;
+/** SPEC-014 FR-10: a page above this size is read again with fewer entries. */
+export const TRANSCRIPT_PAGE_BUDGET_BYTES = 1024 * 1024;
 
 export const ATTACHMENT_STATES: readonly AttachmentState[] = [
   'none',
@@ -108,6 +116,11 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
 /** PLAN-009 D29's sender conversations, `bot-<sender id>`, named "Messages from <name>". */
 const SENDER_CONVERSATION = /^bot-(.+)$/u;
 const SENDER_TITLE = /^Messages from (.+)$/u;
+
+/** The highest `seq` a reply presentation covers: its own, its entries' and its final one's. */
+function coveredUpTo(response: TranscriptEntry): number {
+  return Math.max(response.seq, response.presentationTerminalSeq ?? 0, ...(response.presentationSeqs ?? []));
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -294,16 +307,46 @@ export class ConversationStore {
   }
 
   /**
-   * SPEC-014 FR-10: a page of the transcript as the note shows it. The presentations it
-   * projects are those of the page's own entries, and of replies still running.
+   * SPEC-014 FR-10: a page of the transcript as the note shows it, with the `beforeSeq` of
+   * the page before it. A page never parts a reply presentation from the entries it covers:
+   * it reaches back to the start of any presentation that covers its first entry, so each
+   * page projects as the whole transcript would.
    */
-  presentationPage(id: string, page: EntriesPage, runningWorkId?: string): TranscriptEntry[] {
-    const entries = this.transcriptPage(id, page);
-    if (entries.length === 0) return [];
-    const first = entries[0]!.seq;
-    const last = page.beforeSeq === undefined ? Number.POSITIVE_INFINITY : page.beforeSeq;
-    const responses = this.presentations(id).filter((response) => response.seq >= first && response.seq < last);
-    return projectPresentationTranscript(entries, responses, runningWorkId);
+  presentationPage(id: string, page: EntriesPage, runningWorkId?: string): TranscriptPage {
+    this.require(id);
+    const store = this.store();
+    const entries = store.entriesPage(id, page);
+    if (entries.length === 0) return { entries: [], olderBeforeSeq: null };
+    const upper = page.beforeSeq ?? Number.POSITIVE_INFINITY;
+    const responses = this.presentations(id).filter((response) => response.seq < upper);
+    let floor = entries[0]!.seq;
+    for (;;) {
+      const reach = Math.min(
+        ...responses.filter((response) => response.seq < floor && coveredUpTo(response) >= floor)
+          .map((response) => response.seq),
+      );
+      if (!Number.isFinite(reach)) break;
+      // Seqs are distinct whole numbers, so no more entries than this lie between.
+      const before = store.entriesPage(id, { beforeSeq: floor, limit: floor - reach })
+        .filter((entry) => entry.seq >= reach);
+      entries.unshift(...before);
+      floor = reach;
+    }
+    const own = responses.filter((response) => response.seq >= floor);
+    // A presentation that never bound its final entry is left out when a bot entry of its
+    // work item comes after it, as the whole transcript's projection leaves it out. Those
+    // after this page are asked of the store.
+    const unbound = Number.isFinite(upper) ? own.filter((response) => !response.workItemId ? false
+      : !entries.some((entry) => entry.kind === 'bot' && entry.workItemId === response.workItemId
+        && entry.seq >= response.seq)) : [];
+    const finishedLater = store.workItemsWithBotEntryFrom(id, upper,
+      [...new Set(unbound.map((response) => response.workItemId!))]);
+    const shown = own.filter((response) => !unbound.includes(response) || !finishedLater.has(response.workItemId!));
+    const older = store.entriesPage(id, { beforeSeq: floor, limit: 1 }).length > 0;
+    return {
+      entries: projectPresentationTranscript(entries, shown, runningWorkId),
+      olderBeforeSeq: older ? floor : null,
+    };
   }
 
   /** The reply presentations as the shared contract reads them; one it cannot is reported. */

@@ -185,6 +185,21 @@ export interface TranscriptEntry {
   presentationTerminalSeq?: number;
 }
 
+/** SPEC-014 FR-10: which page of a conversation to read. */
+export interface TranscriptPageRequest {
+  /** How many entries at most; 100 when not given, and never more than 500. */
+  limit?: number;
+  /** Only entries before this `seq`; without it, the newest ones. */
+  beforeSeq?: number;
+}
+
+/** SPEC-014 FR-10: one page of a conversation as the note shows it. */
+export interface TranscriptPage {
+  entries: TranscriptEntry[];
+  /** The `beforeSeq` of the page before this one, or null when nothing is older. */
+  olderBeforeSeq: number | null;
+}
+
 export type WorkItemKind = 'owner_message' | 'heartbeat' | 'schedule' | 'event';
 
 /** SPEC-001 FR-15 / ADR-001 §6: the seven states of a work item. */

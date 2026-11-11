@@ -84,6 +84,15 @@ export interface BotStateStore {
   entriesPage(conversationId: string, page: EntriesPage): TranscriptEntry[];
   /** The entries after a `seq`, in `seq` order. */
   entriesAfter(conversationId: string, seq: number): TranscriptEntry[];
+  /**
+   * FR-10: which of the named work items have a bot entry at `fromSeq` or after. A page of
+   * the note asks this of a reply presentation that never bound its final entry.
+   */
+  workItemsWithBotEntryFrom(
+    conversationId: string,
+    fromSeq: number,
+    workItemIds: readonly string[],
+  ): Set<string>;
   /** The highest `seq` of a conversation, or 0. */
   lastSeq(conversationId: string): number;
   /**
@@ -385,6 +394,26 @@ class Store implements BotStateStore {
         seq,
       ),
     );
+  }
+
+  workItemsWithBotEntryFrom(
+    conversationId: string,
+    fromSeq: number,
+    workItemIds: readonly string[],
+  ): Set<string> {
+    const found = new Set<string>();
+    if (workItemIds.length === 0) return found;
+    const workItemId = `case when json_valid(json) then json_extract(json, '$.workItemId') end`;
+    const rows = this.#database.all(
+      `select distinct ${workItemId} as work_item_id from entries
+       where conversation_id = ? and seq >= ? and kind = 'bot'
+       and ${workItemId} in (${workItemIds.map(() => '?').join(', ')})`,
+      conversationId,
+      fromSeq,
+      ...workItemIds,
+    );
+    for (const row of rows) if (typeof row.work_item_id === 'string') found.add(row.work_item_id);
+    return found;
   }
 
   lastSeq(conversationId: string): number {
