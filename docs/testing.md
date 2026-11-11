@@ -102,11 +102,54 @@ FR-2).
 The architecture boundary test keeps the driver and the adapter out of every module
 outside `src/core/store/`.
 
+### Bot state store and search text
+
+- **Location**: `tests/core/stateStore.test.ts`, `tests/core/searchText.test.ts`
+- **Scope**: `src/core/store/stateStore.ts` and `searchText.ts` (SPEC-014 FR-3 and FR-5 to
+  FR-10). Nothing in the core uses the store yet.
+  - a conversation record stored whole, replaced in place, and read back as given,
+    including a field this version does not know;
+  - an entry getting the next `seq` of its conversation and coming back exactly,
+    whatever its text holds; nothing kept for a conversation that is not there; the last
+    `seq` and the entries after one;
+  - the newest entries, or the ones before a `seq`, in order;
+  - one row per reply presentation, replaced at each checkpoint;
+  - the journal keeping every line in order, with the last state of each work item and
+    schedule in the order each first appeared, and a line that names neither kept as a
+    line;
+  - a record that cannot be read left out and reported once, the rest read, and a page
+    or a search filled from further on instead of coming back short;
+  - search: Chinese words of one, two and three characters, English in any case, a Latin
+    word written against Chinese, an emoji or a trade mark sign, full-width forms, Hangul
+    letters typed on their own, every word required, a phrase not matching across
+    punctuation, punctuation parting two CJK words, one conversation, a limit, and input
+    with a NUL character or too many words;
+  - the best match first, with and without a conversation;
+  - the query plan of both shapes of a search starting at the index, which the SQLite in
+    Electron does not choose by itself for one conversation;
+  - every piece of one to four characters of randomly made CJK runs found, and no piece
+    that is in none, with doubled characters and most of the possible pairs among them;
+  - a failed search inside a transaction leaving the transaction to go on;
+  - the index rebuilt from the JSON records: emptied, really damaged, and made the way
+    another version searched, which a reader refuses to search;
+  - deleting a conversation removing its entries, index rows, presentations and work
+    items, counted in the tables themselves, and leaving every other conversation whole;
+  - an entry and its conversation changing together or not at all;
+  - a reader reading and searching beside the writer, and every change refused.
+- `searchText.test.ts` covers the rewriting itself: Chinese, Japanese with its long-vowel
+  mark, Korean syllables and letters, Bopomofo, a character outside the Basic
+  Multilingual Plane, emoji and punctuation as separators, symbols and circled or
+  Roman numbers standing apart, raised and lowered digits staying with their word,
+  full-width, half-width and decomposed forms, characters never shown, the dot inside a
+  Chinese name and the one between the items of a Japanese list, CJK punctuation
+  between two words, marks that join nothing, repeated words, and query input that
+  looks like query syntax.
+
 ### Store tests inside Electron
 
-`npm test` runs both files above under Node.js. The core runs inside Electron, whose
-Node.js and SQLite are different builds, so CI runs them once more there on every
-platform:
+`npm test` runs the store's test files above under Node.js. The core runs inside
+Electron, whose Node.js and SQLite are different builds, so CI runs them once more there
+on every platform:
 
 ```bash
 npm run test:electron

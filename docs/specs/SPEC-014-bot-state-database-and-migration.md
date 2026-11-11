@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter and schema exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the driver, adapter, schema, store and search exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -96,15 +96,30 @@ verified migration moves existing bots over without losing or rewriting their hi
 #### Search
 
 8. FR-8 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
-   (`contentless_delete`), keyed by the entry's row id. Before it is indexed, each Han, Kana and Hangul run is
-   rewritten as overlapping 2-character tokens and set apart from the text around it. The
-   rest is indexed as written, with `unicode61`.
+   (`contentless_delete`), keyed by the entry's row id. Before it is indexed the text is
+   rewritten:
+   - characters that are never shown are dropped, and so is the dot Chinese writes
+     between the parts of a name inside a CJK run; a byte-order mark is a space;
+   - a symbol, or a number that is neither a plain digit nor raised or lowered, stands
+     apart from the words beside it;
+   - compatibility forms are folded together (NFKC), except the Hangul letters people
+     type on their own, and letters are lower-cased;
+   - whatever is then not a letter, a number or a mark is a space, and a mark with no
+     letter to sit on is dropped;
+   - each Han, Kana, Hangul and Bopomofo run becomes its overlapping 2-character tokens,
+     followed by its last character.
 
-   Queries are rewritten the same way and rank with BM25. A single CJK character is
-   looked for as a substring of the text instead. Results carry kind and origin, so
-   callers can drop tool output and other bots' messages (SPEC-015 trust levels).
-9. FR-9 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The index is maintained in the same transaction as the entry.
-   Rebuilding it from the entries' JSON records is a supported maintenance command.
+   A query is rewritten the same way and ranks with BM25. Every word typed must be
+   present, each as one phrase; CJK punctuation, and any punctuation next to a CJK run,
+   parts two words as a space does. A single CJK character is found through the index too: it is the first character
+   of a token or the last character of its run. A query of more than 200 characters or
+   12 different words is refused. Results carry kind and origin, so callers can drop tool
+   output and other bots' messages (SPEC-015 trust levels).
+9. FR-9 *(amended 2026-11-11 and accepted by the owner; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
+   it from the entries' JSON records is a supported maintenance command. It does not read
+   the index, so it repairs a damaged one. A writer runs it by itself when the way text
+   is rewritten has changed since the index was made, and a reader that finds such an
+   index refuses to search it.
 
 #### Reads
 
@@ -224,13 +239,22 @@ Changes of design:
     have been dropped; and lines split over several tables could only be put back in
     order by their time, to the millisecond.
 - [x] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
-  external-content one, and one indexed form of the text in place of two. Accepted.
+  external-content one; one rewritten form of the text in place of the text as written
+  beside a second form; and single characters found through the index, in place of
+  `LIKE`. Accepted.
   - Why contentless: the indexed form of the text is produced in JavaScript and kept
     nowhere else. An external-content index needs a column that holds what it indexes,
     which would store every entry's text a second time, rewritten.
-  - Why one form: `unicode61` reads a CJK run and a Latin word written against it as one
-    token, so indexed as written `用iPhone拍照` cannot be found by `iPhone`. The rewritten
-    form finds everything the as-written form does, and that word as well.
+  - Why one rewritten form: `unicode61` splits on the punctuation of an old Unicode
+    version only. It reads a CJK run and a Latin word written against it as one token, so
+    `用iPhone拍照` could not be found by `iPhone`; an emoji written against a word became
+    part of the word; and full-width or decomposed forms were different words. In every
+    case tried, the rewritten form found what the as-written form found, and these as
+    well.
+  - Why no `LIKE`: it reads every entry. An independent review measured four minutes for
+    one character in one conversation of 49,600 entries. With the last character of each
+    run as a token, a single character is a prefix query on the index, and a phrase can
+    no longer match across the punctuation between two runs.
 
 Changes of wording that follow from the code, with no other decision in them:
 
