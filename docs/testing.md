@@ -110,27 +110,32 @@ outside `src/core/store/`.
   - the newest entries, or the ones before a `seq`, in order;
   - one row per reply presentation, replaced at each checkpoint;
   - the journal keeping every line in order, with the last state of each work item and
-    schedule in the order each first appeared;
+    schedule in the order each first appeared, and a line that names neither kept as a
+    line;
+  - a record that cannot be read left out and reported, and the rest read;
   - search: Chinese words of one, two and three characters, English in any case, a Latin
-    word written against Chinese or an emoji, full-width forms, every word required, a
-    phrase not matching across punctuation, one conversation, a limit, and input with a
-    NUL character or too many words;
+    word written against Chinese, an emoji or a trade mark sign, full-width forms, Hangul
+    letters typed on their own, every word required, a phrase not matching across
+    punctuation, punctuation parting two CJK words, one conversation, a limit, and input
+    with a NUL character or too many words;
   - the best match first, with and without a conversation;
   - the query plan of both shapes of a search starting at the index, which the SQLite in
     Electron does not choose by itself for one conversation;
   - every piece of one to four characters of randomly made CJK runs found, and no piece
-    that is in none;
+    that is in none, with doubled characters and most of the possible pairs among them;
   - a failed search inside a transaction leaving the transaction to go on;
   - the index rebuilt from the JSON records: emptied, really damaged, and made the way
-    another version searched;
+    another version searched, which a reader refuses to search;
   - deleting a conversation removing its entries, index rows, presentations and work
     items, counted in the tables themselves, and leaving every other conversation whole;
   - an entry and its conversation changing together or not at all;
   - a reader reading and searching beside the writer, and every change refused.
 - `searchText.test.ts` covers the rewriting itself: Chinese, Japanese with its long-vowel
-  mark, Korean, Bopomofo, a character outside the Basic Multilingual Plane, emoji and
-  punctuation as separators, full-width, half-width and decomposed forms, characters
-  never shown, and query input that looks like query syntax.
+  mark, Korean syllables and letters, Bopomofo, a character outside the Basic
+  Multilingual Plane, emoji and punctuation as separators, symbols and circled or
+  superscript numbers standing apart, full-width, half-width and decomposed forms,
+  characters never shown, the dot inside a name, marks that join nothing, repeated
+  words, and query input that looks like query syntax.
 
 ### Store tests inside Electron
 

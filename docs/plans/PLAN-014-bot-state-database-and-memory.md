@@ -171,11 +171,16 @@ security review. Embeddings come only if the evaluation asks for them.
     - Telling a delivery already handled from a new one, and answering the hub about a
       delivery, both read work items that outlive their conversation. FR-7 deletes them
       with it.
-    - A cancelled schedule keeps its prompt for good, while a deleted conversation's
-      work items lose theirs.
+    - A cancelled schedule keeps its prompt for good, in its current row and in each of
+      its journal lines, while a deleted conversation's work items lose theirs.
+    - Startup reads every work item: 2.2 to 2.7 s for 287,000 of them. Today it replays
+      the whole journal. The store has no way to ask for the unfinished ones alone.
+    - Deleting a conversation is one transaction and takes seconds when it is large (see
+      1.7); today it removes three files.
     - A bot root on a UNC path (see 1.1).
-- [ ] 1.3 Full-text index with the bigram column, query builder, the LIKE path for single
-      characters, and a rebuild command.
+- [ ] 1.3 Full-text index, query builder and a rebuild command. First planned with a
+      bigram column and a LIKE path for single characters; the notes below say what
+      replaced them.
   - [x] `src/core/store/searchText.ts` rewrites an entry's text and a person's query, and
         the store's `search` and `rebuildIndex` use it; `tests/core/searchText.test.ts`.
     - There is no bigram column and no `LIKE` path any more: one rewritten form of the
@@ -186,7 +191,17 @@ security review. Embeddings come only if the evaluation asks for them.
     - The rewriting depends on the Unicode version of the runtime, which `meta` records.
       Electron 41 has 16 and Node.js 26 has 17, so a character new in 17 is a letter to
       one and a separator to the other.
-    - A search takes at most 1,000 characters and 32 words, and refuses more.
+    - A symbol, a punctuation mark and a number that is not a plain digit stand apart
+      from the words beside them, so `iPhone™` holds `iphone` and `E=mc²` holds `mc`.
+      The dot inside a name (`馬克·吐溫`) is dropped, so the name is found with it and
+      without it. Hangul letters typed on their own (`ㅋㅋㅋㅠㅠ`) are kept as they are.
+    - A search takes at most 200 characters and 12 different words, and refuses more.
+      That bounds the text, not the time: a word found in a large share of the entries
+      takes seconds, on the core's own connection (see 1.7).
+    - A reader that finds an index made the way another version searches refuses to
+      search it, instead of returning part of the answer.
+    - A record whose JSON cannot be read is left out of what a read returns and of the
+      index, and reported through the store's `warn`, as an unreadable line is today.
     - Not offered: a prefix of a Latin word (`kett` for `kettle`), word forms, Traditional
       for Simplified, and a Chinese word broken by a line end.
   - [ ] The `cats-bot` command that rebuilds the index.
@@ -194,25 +209,40 @@ security review. Embeddings come only if the evaluation asks for them.
       working.
 - [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
       report and `cats-bot restore`.
+  - The store gives an entry the next `seq`, whatever it came with. The import needs its
+    own way in that keeps the `seq` of each version-1 entry, and a rule for a repeat.
+  - `appendJournal` keeps a line whatever it holds, and makes a current row only of a
+    work item or a schedule with a text id, as today's replay does.
   - Fixtures: a copied version-1 data root, crash at each step including after the marker,
     corrupt lines, an unknown schema, and an older binary refusing the raised profile.
 - [ ] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
-  - Measured once so far, on Windows inside Electron 41 (SQLite 3.51.2), with 1,000,000
-    made-up entries (801 MB) and the store as task 1.3 left it:
-    - Append: 2 ms for an ordinary message. An entry of 2 to 4 MB takes 0.25 to 0.7 s,
-      most of it indexing, on a connection that blocks the core meanwhile. Whether to cap
-      how much of one entry is indexed is open.
-    - Newest 50 entries of a 600,000-entry conversation: 0.7 ms. Its last `seq`: 0.2 ms.
-    - Search for 50 results: 1 to 2 ms for a word or a character found in few entries,
-      and 46 ms for a three-character piece. A two-character word found in 15% of all
-      entries takes 0.3 s, and about 1 s within one conversation. The commonest
-      character takes 1.4 s, and 2.4 to 3 s within one conversation.
-    - So the 100 ms target for a two-character query is met when few entries match and
-      missed when a large share of them do. Ranking reads every match, and a search
-      within one conversation fetches every match's entry to learn its conversation.
-      Two ways to meet it: a token for the conversation in the index, so the index
-      itself narrows to it; and a limit on how many matches are ranked.
+  - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
+    with 1,000,010 made-up entries, 286,894 work items and 861,732 journal lines
+    (1,376 MB). Medians of three to five runs, except where one run is said. The search
+    numbers are from before the last change to how text is rewritten.
+    - Within the targets: append 0.3 ms, 0.8 ms at the 95th percentile; newest 50 entries
+      of a 600,000-entry conversation 0.2 ms; a word or a character found in few
+      entries 0.2 to 2 ms, in one conversation or in all.
+    - Missed when a large share of the entries match: a two-character word found in 15%
+      of them takes 0.34 s, and 0.9 to 1.3 s within one conversation, whatever its size.
+      The commonest character takes 1.7 s, and 2.5 to 3.4 s within one conversation.
+      Ranking reads every match, and a search within one conversation fetches every
+      match's entry to learn its conversation.
+    - Several common words together take longer still: eight of them 1.5 s. The limits
+      on a query bound its text, not this.
+    - One entry of 2 MB takes 0.4 to 1 s to store and index, one of 4 MB 1 to 2 s, on a
+      connection that blocks the core meanwhile.
+    - Rebuilding the index: 97 s for 935,000 entries, as one transaction with a 206 MB
+      write-ahead log (one run). A writer that finds the index made another way does
+      this when it opens.
+    - Deleting a conversation of 17,600 entries: 7.3 s. One of 49,600 entries with a
+      work item each: 19.6 s (one run each).
+    - Reading every work item: 2.2 to 2.7 s. Reading the whole journal: 9.2 s.
+  - Ways to meet the search target: a token for the conversation in the index, so the
+    index itself narrows to it; a limit on how many matches are ranked; and searching on
+    a reader connection off the core's thread. Open as well: whether to cap how much of
+    one entry is indexed.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 
@@ -318,9 +348,9 @@ stall them.
 ## Technical Decisions
 
 - **Index design.** Two-character tokens were chosen because trigram and unicode61 both
-  miss 2-character Chinese words; the survey's probe covered this. The text is rewritten
-  into them before it is indexed, with each run's last character as a token of its own
-  (task 1.3). It is re-checked with the P2 evaluation set.
+  miss 2-character Chinese words; the survey's probe covered this. How the text is
+  rewritten into them is proposed in SPEC-014 FR-8 and waits for the owner (task 1.3). It
+  is re-checked with the P2 evaluation set.
 - **Store before memory.** The store change is independently valuable and independently
   reversible through `cats-bot restore`.
 - **One-turn context needs a Runtime field.** Turn `instructions` are persisted by Runtime,

@@ -98,21 +98,26 @@ verified migration moves existing bots over without losing or rewriting their hi
 8. FR-8 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: Every entry's text is indexed in a contentless FTS5 table
    (`contentless_delete`), keyed by the entry's row id. Before it is indexed the text is
    rewritten:
-   - compatibility forms are folded together (NFKC), letters are lower-cased, and
-     characters that are never shown are dropped;
-   - whatever is not a letter, a number or a mark becomes a space;
+   - characters that are never shown are dropped, and so is the dot between the parts of
+     a name inside a CJK run;
+   - a symbol, a punctuation mark or a number that is not a plain digit stands apart
+     from the words beside it;
+   - compatibility forms are folded together (NFKC) and letters are lower-cased;
+   - whatever is then not a letter, a number or a mark is a space;
    - each Han, Kana, Hangul and Bopomofo run becomes its overlapping 2-character tokens,
      followed by its last character.
 
    A query is rewritten the same way and ranks with BM25. Every word typed must be
-   present, each as one phrase. A single CJK character is found through the index too: it
-   is the first character of a token or the last character of its run. Results carry kind
-   and origin, so callers can drop tool output and other bots' messages (SPEC-015 trust
-   levels).
+   present, each as one phrase; punctuation next to a CJK run parts two words as a space
+   does. A single CJK character is found through the index too: it is the first character
+   of a token or the last character of its run. A query of more than 200 characters or
+   12 different words is refused. Results carry kind and origin, so callers can drop tool
+   output and other bots' messages (SPEC-015 trust levels).
 9. FR-9 *(amended text, proposed 2026-11-11 and not yet accepted; see Open Questions)*: The index is maintained in the same transaction as the entry. Rebuilding
    it from the entries' JSON records is a supported maintenance command. It does not read
-   the index, so it repairs a damaged one, and a writer runs it by itself when the way
-   text is rewritten has changed since the index was made.
+   the index, so it repairs a damaged one. A writer runs it by itself when the way text
+   is rewritten has changed since the index was made, and a reader that finds such an
+   index refuses to search it.
 
 #### Reads
 
@@ -241,8 +246,9 @@ Changes of design:
   - Why one rewritten form: `unicode61` splits on the punctuation of an old Unicode
     version only. It reads a CJK run and a Latin word written against it as one token, so
     `用iPhone拍照` could not be found by `iPhone`; an emoji written against a word became
-    part of the word; and full-width or decomposed forms were different words. The
-    rewritten form finds everything the as-written form did, and these as well.
+    part of the word; and full-width or decomposed forms were different words. In every
+    case tried, the rewritten form found what the as-written form found, and these as
+    well.
   - Why no `LIKE`: it reads every entry. An independent review measured four minutes for
     one character in one conversation of 49,600 entries. With the last character of each
     run as a token, a single character is a prefix query on the index, and a phrase can

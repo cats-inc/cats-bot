@@ -10,6 +10,7 @@ import {
   openStateDatabase,
   type StateDatabase,
   type StateDatabaseMode,
+  type StateRow,
   type Synchronous,
 } from './stateDatabase.ts';
 
@@ -21,7 +22,9 @@ import {
  * this version does not know survives. The columns beside it only find and order records.
  *
  * Nothing is checked on the way out: a conversation record or a reply presentation is what
- * was stored, and the caller validates it as it validated the file it used to read.
+ * was stored, and the caller validates it as it validated the file it used to read. A record
+ * that cannot be read at all is left out and reported through `warn`, as an unreadable line
+ * of a file is today.
  */
 
 export interface EntriesPage {
@@ -81,8 +84,8 @@ export interface BotStateStore {
   saveResponse(conversationId: string, entry: TranscriptEntry): void;
 
   /**
-   * FR-7: one journal line. A work item's or a schedule's line also becomes that item's
-   * current state, in the same transaction.
+   * FR-7: one journal line, kept whatever it holds. A line that gives a work item or a
+   * schedule with an id also becomes that item's current state, in the same transaction.
    */
   appendJournal(entry: JournalEntry): void;
   /** The journal in the order it was written; with `ref`, the lines about one work item or schedule. */
@@ -92,7 +95,10 @@ export interface BotStateStore {
   /** The current state of every schedule, in the order each first appeared. */
   schedules(): ScheduleRecord[];
 
-  /** FR-8: entries holding every word of `query`, best match first. */
+  /**
+   * FR-8: entries holding every word of `query`, best match first. It runs on the store's
+   * own connection, and a word found in a large share of the entries takes seconds there.
+   */
   search(query: string, options?: SearchOptions): SearchHit[];
   /**
    * FR-9: empties the index and builds it again from the entries. It does not read the
@@ -106,17 +112,19 @@ export interface OpenBotStateStoreOptions {
   mode: StateDatabaseMode;
   busyTimeoutMs?: number;
   now?: () => Date;
+  /** Receives problems that are not fatal, such as a record that cannot be read. */
+  warn?: (message: string) => void;
 }
 
 /**
  * Opens a bot's store. A writer also makes sure the index was built the way this version
- * searches it, and rebuilds one that was not.
+ * searches it, and rebuilds one that was not: about a hundred seconds for a million entries.
  */
 export function openBotStateStore(options: OpenBotStateStoreOptions): BotStateStore {
   const database = openStateDatabase(options);
   try {
-    const store = new Store(database);
-    if (database.mode === 'writer') store.matchIndexForm();
+    const store = new Store(database, options.warn ?? (() => {}));
+    store.matchIndexForm();
     return store;
   } catch (error) {
     database.close();
@@ -127,16 +135,16 @@ export function openBotStateStore(options: OpenBotStateStoreOptions): BotStateSt
 const DEFAULT_SEARCH_LIMIT = 50;
 const REBUILD_BATCH = 500;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
 function text(value: unknown): string | null {
   return typeof value === 'string' ? value : null;
 }
 
 function integer(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
-}
-
-function parse<T>(json: unknown): T {
-  return JSON.parse(String(json)) as T;
 }
 
 function positive(value: number, name: string): number {
@@ -153,12 +161,12 @@ function positive(value: number, name: string): number {
  */
 export function searchSql(scoped: boolean): string {
   return scoped
-    ? `select e.conversation_id as conversation_id, e.json as json
+    ? `select e.conversation_id as conversation_id, e.seq as seq, e.json as json
        from entries_fts cross join entries e on e.id = entries_fts.rowid
        where entries_fts match ? and e.conversation_id = ?
        order by entries_fts.rank, e.id desc limit ?`
     : // Ranked and cut down inside the index, before any record is fetched.
-      `select e.conversation_id as conversation_id, e.json as json
+      `select e.conversation_id as conversation_id, e.seq as seq, e.json as json
        from (select rowid, rank from entries_fts where entries_fts match ? order by rank, rowid desc limit ?) hit
        cross join entries e on e.id = hit.rowid
        order by hit.rank, e.id desc`;
@@ -166,9 +174,13 @@ export function searchSql(scoped: boolean): string {
 
 class Store implements BotStateStore {
   readonly #database: StateDatabase;
+  readonly #warn: (message: string) => void;
+  /** Whether the index was made the way this version searches it. */
+  #indexMatches = false;
 
-  constructor(database: StateDatabase) {
+  constructor(database: StateDatabase, warn: (message: string) => void) {
     this.#database = database;
+    this.#warn = warn;
   }
 
   get mode(): StateDatabaseMode {
@@ -187,20 +199,49 @@ class Store implements BotStateStore {
     this.#database.close();
   }
 
-  /** The index is searched with this version's rewriting, so it must have been built with it. */
+  /**
+   * The index is searched with this version's rewriting, so it must have been built with
+   * it. A writer rebuilds one that was not; a reader can only refuse to search it.
+   */
   matchIndexForm(): void {
     const form = String(INDEX_FORM);
-    if (this.#database.meta('index_form') === form) return;
+    const matches = (): boolean => this.#database.meta('index_form') === form;
+    this.#indexMatches = matches();
+    if (this.#indexMatches || this.#database.mode !== 'writer') return;
     this.#database.transaction(() => {
+      // Looked at again now that nobody else can be writing: another writer may just have done it.
+      if (matches()) return;
       if (this.#database.get('select 1 as found from entries limit 1')) this.rebuildIndex();
       this.#database.setMeta('index_form', form);
     });
+    this.#indexMatches = true;
+  }
+
+  /** The records of some rows, without the ones whose JSON cannot be read. */
+  #records<T>(rows: StateRow[], what: (row: StateRow) => string): T[] {
+    const records: T[] = [];
+    for (const row of rows) {
+      try {
+        records.push(JSON.parse(String(row.json)) as T);
+      } catch {
+        this.#warn(`${what(row)} cannot be read and was left out`);
+      }
+    }
+    return records;
+  }
+
+  #entryRecords(conversationId: string, rows: StateRow[]): TranscriptEntry[] {
+    return this.#records(
+      rows,
+      (row) => `entry ${String(row.seq)} of conversation ${conversationId}`,
+    );
   }
 
   conversations(): unknown[] {
-    return this.#database
-      .all('select json from conversations')
-      .map((row) => parse<unknown>(row.json));
+    return this.#records(
+      this.#database.all('select id, json from conversations'),
+      (row) => `conversation ${String(row.id)}`,
+    );
   }
 
   saveConversation(record: ConversationRecord): void {
@@ -229,9 +270,13 @@ class Store implements BotStateStore {
   }
 
   entries(conversationId: string): TranscriptEntry[] {
-    return this.#database
-      .all('select json from entries where conversation_id = ? order by seq', conversationId)
-      .map((row) => parse<TranscriptEntry>(row.json));
+    return this.#entryRecords(
+      conversationId,
+      this.#database.all(
+        'select seq, json from entries where conversation_id = ? order by seq',
+        conversationId,
+      ),
+    );
   }
 
   entriesPage(conversationId: string, page: EntriesPage): TranscriptEntry[] {
@@ -239,27 +284,28 @@ class Store implements BotStateStore {
     const rows =
       page.beforeSeq === undefined
         ? this.#database.all(
-            'select json from entries where conversation_id = ? order by seq desc limit ?',
+            'select seq, json from entries where conversation_id = ? order by seq desc limit ?',
             conversationId,
             count,
           )
         : this.#database.all(
-            'select json from entries where conversation_id = ? and seq < ? order by seq desc limit ?',
+            'select seq, json from entries where conversation_id = ? and seq < ? order by seq desc limit ?',
             conversationId,
             page.beforeSeq,
             count,
           );
-    return rows.reverse().map((row) => parse<TranscriptEntry>(row.json));
+    return this.#entryRecords(conversationId, rows.reverse());
   }
 
   entriesAfter(conversationId: string, seq: number): TranscriptEntry[] {
-    return this.#database
-      .all(
-        'select json from entries where conversation_id = ? and seq > ? order by seq',
+    return this.#entryRecords(
+      conversationId,
+      this.#database.all(
+        'select seq, json from entries where conversation_id = ? and seq > ? order by seq',
         conversationId,
         seq,
-      )
-      .map((row) => parse<TranscriptEntry>(row.json));
+      ),
+    );
   }
 
   lastSeq(conversationId: string): number {
@@ -303,12 +349,13 @@ class Store implements BotStateStore {
   }
 
   responses(conversationId: string): unknown[] {
-    return this.#database
-      .all(
-        'select json from responses where conversation_id = ? order by seq, presentation_id',
+    return this.#records(
+      this.#database.all(
+        'select presentation_id, json from responses where conversation_id = ? order by seq, presentation_id',
         conversationId,
-      )
-      .map((row) => parse<unknown>(row.json));
+      ),
+      (row) => `presentation ${String(row.presentation_id)} of conversation ${conversationId}`,
+    );
   }
 
   saveResponse(conversationId: string, entry: TranscriptEntry): void {
@@ -335,11 +382,14 @@ class Store implements BotStateStore {
   }
 
   appendJournal(entry: JournalEntry): void {
-    const json = JSON.stringify(entry);
+    // What `rebuildJournalState` reads today, and nothing more: a line that names no work
+    // item or schedule by a text id is kept as a line and becomes nobody's current state.
+    const line: Record<string, unknown> = isRecord(entry) ? entry : {};
+    const item = line.type === 'work' && isRecord(line.item) ? line.item : null;
+    const schedule = line.type === 'schedule' && isRecord(line.schedule) ? line.schedule : null;
     this.#database.transaction(() => {
       let ref: string | null = null;
-      if (entry.type === 'work') {
-        const item = entry.item;
+      if (item && typeof item.id === 'string') {
         ref = item.id;
         // A row keeps its place when it is replaced, so items stay in the order they first appeared.
         this.#database.run(
@@ -352,8 +402,7 @@ class Store implements BotStateStore {
           text(item.updatedAt),
           JSON.stringify(item),
         );
-      } else if (entry.type === 'schedule') {
-        const schedule = entry.schedule;
+      } else if (schedule && typeof schedule.id === 'string') {
         ref = schedule.id;
         this.#database.run(
           `insert into schedules(id, conversation_id, json) values (?, ?, ?)
@@ -365,10 +414,10 @@ class Store implements BotStateStore {
       }
       this.#database.run(
         'insert into journal(at, type, ref, json) values (?, ?, ?, ?)',
-        text(entry.at),
-        text(entry.type),
+        text(line.at),
+        text(line.type),
         ref,
-        json,
+        JSON.stringify(entry),
       );
     });
   }
@@ -376,35 +425,45 @@ class Store implements BotStateStore {
   journal(ref?: string): JournalEntry[] {
     const rows =
       ref === undefined
-        ? this.#database.all('select json from journal order by id')
-        : this.#database.all('select json from journal where ref = ? order by id', ref);
-    return rows.map((row) => parse<JournalEntry>(row.json));
+        ? this.#database.all('select id, json from journal order by id')
+        : this.#database.all('select id, json from journal where ref = ? order by id', ref);
+    return this.#records(rows, (row) => `journal line ${String(row.id)}`);
   }
 
   workItems(): WorkItem[] {
-    return this.#database
-      .all('select json from work_items order by rowid')
-      .map((row) => parse<WorkItem>(row.json));
+    return this.#records(
+      this.#database.all('select id, json from work_items order by rowid'),
+      (row) => `work item ${String(row.id)}`,
+    );
   }
 
   schedules(): ScheduleRecord[] {
-    return this.#database
-      .all('select json from schedules order by rowid')
-      .map((row) => parse<ScheduleRecord>(row.json));
+    return this.#records(
+      this.#database.all('select id, json from schedules order by rowid'),
+      (row) => `schedule ${String(row.id)}`,
+    );
   }
 
   search(query: string, options: SearchOptions = {}): SearchHit[] {
     const match = buildSearchQuery(query);
     if (!match) return [];
     const count = positive(options.limit ?? DEFAULT_SEARCH_LIMIT, 'limit');
+    if (!this.#indexMatches) {
+      throw new Error(
+        'The search index of this bot was made by another version of Cats Bot. The bot rebuilds it when it starts with this version.',
+      );
+    }
     const rows =
       options.conversationId === undefined
         ? this.#database.all(searchSql(false), match, count)
         : this.#database.all(searchSql(true), match, options.conversationId, count);
-    return rows.map((row) => ({
-      conversationId: String(row.conversation_id),
-      entry: parse<TranscriptEntry>(row.json),
-    }));
+    const hits: SearchHit[] = [];
+    for (const row of rows) {
+      const conversationId = String(row.conversation_id);
+      for (const entry of this.#entryRecords(conversationId, [row]))
+        hits.push({ conversationId, entry });
+    }
+    return hits;
   }
 
   rebuildIndex(): number {
@@ -414,14 +473,15 @@ class Store implements BotStateStore {
       let after = 0;
       for (;;) {
         const rows = this.#database.all(
-          'select id, json from entries where id > ? order by id limit ?',
+          'select id, conversation_id, seq, json from entries where id > ? order by id limit ?',
           after,
           REBUILD_BATCH,
         );
         if (rows.length === 0) break;
         for (const row of rows) {
           after = Number(row.id);
-          this.#index(after, parse<{ text?: unknown }>(row.json).text);
+          const [entry] = this.#entryRecords(String(row.conversation_id), [row]);
+          if (entry) this.#index(after, entry.text);
         }
       }
       return Number(this.#database.get('select count(*) as n from entries_fts_docsize')?.n);

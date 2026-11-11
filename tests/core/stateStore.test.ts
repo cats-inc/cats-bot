@@ -394,6 +394,85 @@ test('the journal keeps every line in order, and the last state of each work ite
   assert.equal(count(file, 'schedules'), 2);
 });
 
+test('a journal line that names no work item or schedule is kept and becomes nobody', () => {
+  // What a version-1 journal can hold and today's replay passes over.
+  const odd = [
+    { type: 'work', at: AT },
+    { type: 'work', at: AT, item: { state: 'queued' } },
+    { type: 'work', at: AT, item: { id: 7, state: 'queued' } },
+    { type: 'work', at: AT, item: 'not an item' },
+    { type: 'schedule', at: AT },
+    { type: 'schedule', at: AT, schedule: { id: 9 } },
+    { type: 'something new', at: AT, payload: [1, 2] },
+    { at: 42 },
+    null,
+    'a line of text',
+  ] as unknown as JournalEntry[];
+  const file = freshFile();
+  withStore(file, 'writer', (store) => {
+    for (const line of odd) store.appendJournal(line);
+    assert.deepEqual(store.journal(), odd);
+    assert.deepEqual(store.workItems(), []);
+    assert.deepEqual(store.schedules(), []);
+  });
+  assert.equal(count(file, 'journal'), odd.length);
+});
+
+test('a record that cannot be read is left out and reported, and the rest is read', () => {
+  const { file, store } = filled(['first about the kettle', 'second', 'third about the kettle']);
+  store.appendJournal(work(workItem('w1', 'home', 'queued')));
+  store.appendJournal(work(workItem('w2', 'home', 'queued')));
+  store.close();
+  // As a damaged page would leave them: text that is no longer JSON.
+  raw(file, (database) => {
+    database.exec(
+      `update entries set json = '{"seq":2,"text":"sec' where conversation_id = 'home' and seq = 2`,
+    );
+    database.exec(`update conversations set json = 'null and void' where id = 'note-1'`);
+    database.exec(`update work_items set json = '' where id = 'w1'`);
+    database.exec(`update meta set value = '0' where key = 'index_form'`);
+  });
+  const warnings: string[] = [];
+  const opened = openBotStateStore({
+    file,
+    mode: 'writer',
+    warn: (message) => warnings.push(message),
+  });
+  try {
+    // The writer opened, and rebuilt the index without the entry it could not read.
+    assert.deepEqual(warnings, ['entry 2 of conversation home cannot be read and was left out']);
+    assert.deepEqual(hits(opened, 'kettle'), ['home#1', 'home#3']);
+    warnings.length = 0;
+
+    assert.deepEqual(
+      opened.entries('home').map((item) => item.seq),
+      [1, 3],
+    );
+    assert.deepEqual(
+      opened.entriesPage('home', { limit: 2 }).map((item) => item.seq),
+      [3],
+    );
+    assert.deepEqual(
+      (opened.conversations() as ConversationRecord[]).map((record) => record.id),
+      ['home'],
+    );
+    assert.deepEqual(
+      opened.workItems().map((item) => item.id),
+      ['w2'],
+    );
+    assert.deepEqual(warnings, [
+      'entry 2 of conversation home cannot be read and was left out',
+      'entry 2 of conversation home cannot be read and was left out',
+      'conversation note-1 cannot be read and was left out',
+      'work item w1 cannot be read and was left out',
+    ]);
+    // The numbering does not reuse the place of the entry that cannot be read.
+    assert.equal(opened.appendEntry('home', entry('fourth')).seq, 4);
+  } finally {
+    opened.close();
+  }
+});
+
 test('search finds Chinese words of any length, English ones, and words written against each other', () => {
   const { store } = filled(
     [
@@ -406,7 +485,15 @@ test('search finds Chinese words of any length, English ones, and words written 
       '訂單編號ＡＢ１２３，２０２６年',
       '今天買股票',
     ],
-    ['明天早上要去看牙醫，公園改天再去', 'The kettle is in the kitchen', '謝謝你，你好嗎', '買A股'],
+    [
+      '明天早上要去看牙醫，公園改天再去',
+      'The kettle is in the kitchen',
+      '謝謝你，你好嗎',
+      '買A股',
+      'ㅋㅋㅋㅠㅠ 아니',
+      `iPhone™ 今天好開心 (￣▽￣)`,
+      `first line${String.fromCharCode(0xfeff)}second line`,
+    ],
   );
   try {
     // Two and three characters, and one: every place the character occurs.
@@ -421,7 +508,6 @@ test('search finds Chinese words of any length, English ones, and words written 
     assert.deepEqual(hits(store, '貓'), []);
     // English in any case, and a Latin word written against Chinese or an emoji.
     assert.deepEqual(hits(store, 'KETTLE'), ['home#2', 'note-1#2']);
-    assert.deepEqual(hits(store, 'iphone'), ['home#3']);
     assert.deepEqual(hits(store, 'omega'), ['home#4']);
     assert.deepEqual(hits(store, 'bug'), ['home#6']);
     assert.deepEqual(hits(store, 'ok'), ['home#6']);
@@ -449,6 +535,17 @@ test('search finds Chinese words of any length, English ones, and words written 
     assert.deepEqual(hits(store, '，。 !?'), []);
     assert.deepEqual(hits(store, ''), []);
     assert.throws(() => store.search('貓'.repeat(MAX_QUERY_LENGTH + 1)), RangeError);
+
+    // Punctuation next to a CJK word parts two words, as a space does.
+    assert.deepEqual(hits(store, '公園、牙醫'), ['note-1#1']);
+    assert.deepEqual(hits(store, '牙醫，公園'), ['note-1#1']);
+    // Hangul letters typed on their own, a word before a trade mark sign, words on either
+    // side of a byte-order mark, and a word typed with a face after it.
+    assert.deepEqual(hits(store, 'ㅋㅋㅋ'), ['note-1#5']);
+    assert.deepEqual(hits(store, 'ㅠㅠ'), ['note-1#5']);
+    assert.deepEqual(hits(store, 'iphone'), ['home#3', 'note-1#6']);
+    assert.deepEqual(hits(store, 'second'), ['note-1#7']);
+    assert.deepEqual(hits(store, '開心 (￣▽￣)'), ['note-1#6']);
 
     // One conversation, a limit, and what a caller filters on.
     assert.deepEqual(hits(store, '公園', 'note-1'), ['note-1#1']);
@@ -524,8 +621,10 @@ test('every piece of a CJK run is found, and nothing that is in no run', () => {
   const alphabet = Array.from('貓狗魚鳥花草山水日月');
   let state = 20261111;
   const random = (below: number): number => {
-    state = (Math.imul(state, 1103515245) + 12345) >>> 0;
-    return state % below;
+    state ^= state << 13;
+    state ^= state >>> 17;
+    state ^= state << 5;
+    return (state >>> 0) % below;
   };
   const run = (): string =>
     Array.from({ length: 1 + random(6) }, () => alphabet[random(alphabet.length)]!).join('');
@@ -551,6 +650,13 @@ test('every piece of a CJK run is found, and nothing that is in no run', () => {
       }
     });
     assert.ok(pieces.size > 300, `${pieces.size} pieces`);
+    // The same character twice in a row, and more than half of the hundred possible pairs.
+    const pairs = [...pieces.keys()].filter((piece) => piece.length === 2);
+    assert.ok(
+      pairs.some((pair) => pair[0] === pair[1]),
+      'no doubled character',
+    );
+    assert.ok(pairs.length > 60, `${pairs.length} pairs`);
     for (const [piece, where] of pieces) {
       assert.deepEqual(
         store
@@ -650,9 +756,10 @@ test('an index made the way another version searched is rebuilt when a writer op
       .run(1, 'something else entirely');
     database.prepare(`update meta set value = '0' where key = 'index_form'`).run();
   });
-  // A reader leaves it alone.
+  // A reader leaves it alone, and does not pretend to have searched it.
   withStore(file, 'reader', (reading) => {
-    assert.deepEqual(hits(reading, '公園'), []);
+    assert.throws(() => reading.search('公園'), /made by another version/u);
+    assert.equal(reading.entries('home').length, 2);
   });
   assert.equal(
     raw(
