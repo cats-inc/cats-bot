@@ -27,6 +27,8 @@ export interface SessionBinderDependencies {
   sessionCreated?(sessionId: string, servers: RuntimeMcpServer[]): void;
   /** A queued or running work item: its prompt reaches the session as a message, not in the handoff pack. */
   isPendingWorkItem?(workItemId: string): boolean;
+  /** Durable journal evidence, recorded before a prompt is sent; absent means unknown. */
+  hasAttemptedSessionTurn?(sessionId: string): boolean;
   /** Closes a replaced session once no turn runs in it (FR-27); without it the old worker is left alone. */
   retireSession?(sessionId: string): void;
   log(line: string): void;
@@ -158,6 +160,18 @@ export class SessionBinder {
           state: observed.status === 'initializing' ? 'initializing' : 'ready',
         });
         return { ok: true, sessionId: id, how: 'kept' };
+      }
+      // A warm CLI worker can stop before its first turn creates a native
+      // session. messageCount counts completed messages, so also require the
+      // absence of durable attempted-turn evidence. Auth/policy/bootstrap
+      // failures must retain their mapping even before native ID adoption.
+      if (observed.status === 'closed' && observed.origin === 'runtime'
+        && observed.providerBackend === 'cli' && observed.messageCount === 0
+        && !observed.providerSessionId && !attachment.providerSessionId
+        && !observed.sourcePath && !observed.providerSourcePath
+        && !observed.inspection?.currentRun && !observed.inspection?.lastRun
+        && this.deps.hasAttemptedSessionTurn?.(id) === false) {
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable');
       }
       const controls = await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy);
       const servers = this.deps.mcpServers?.(conversation.id, id);

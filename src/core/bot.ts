@@ -325,6 +325,7 @@ export class BotCore implements BotHostApi {
       now: this.now,
       mcpServers: (conversationId, sessionId) => this.sessionMcpServers(conversationId, sessionId, true),
       sessionCreated: (sessionId, servers) => this.rememberSessionTools(sessionId, servers),
+      hasAttemptedSessionTurn: sessionId => [...this.workItems.values()].some(item => item.run?.sessionId === sessionId),
       isPendingWorkItem: (workItemId) => {
         const state = this.workItems.get(workItemId)?.state;
         return state === 'queued' || state === 'running';

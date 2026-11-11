@@ -43,6 +43,10 @@ createInterface({ input: process.stdin }).on('line', async line => {
     case 'initialize': reply(frame.id, { userAgent: 'fixture' }); break;
     case 'config/read': reply(frame.id, { config: {}, layers: [] }); break;
     case 'thread/start': case 'thread/resume':
+      if (process.env.CATS_BOT_FIXTURE_CODEX_BOOTSTRAP_ERROR) {
+        send({ id: frame.id, error: { code: -32600, message: process.env.CATS_BOT_FIXTURE_CODEX_BOOTSTRAP_ERROR } });
+        break;
+      }
       cwd = frame.params.cwd ?? cwd;
       sandbox = frame.params.sandbox ?? sandbox;
       approval = frame.params.approvalPolicy ?? approval;

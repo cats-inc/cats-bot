@@ -101,6 +101,14 @@ CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
 
 ### Integration tests
 
+- `tests/integration/unstartedSession.test.ts` uses the pinned real Runtime and
+  the scripted Codex app-server fixture in a disposable home. It stops a warm
+  zero-turn worker, restarts over the saved registry, checks one handoff with the
+  prior conversation intact, and completes the first replacement turn. A failed
+  initial authentication/bootstrap remains attached after restart. Companion
+  continuity tests cover unknown evidence, recorded attempts, history paths,
+  current/last runs, home/note isolation, concurrency and the persisted fence.
+
 - `tests/integration/antigravityTimeout.test.ts` starts the real packed Runtime
   with a legacy agy stream-json fixture in a disposable home. It emits init,
   stays silent for 31 seconds, then completes; the previous Runtime fails this
@@ -532,6 +540,30 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   development run proves the helper and the note. Grant the microphone and speech recognition, dictate
   English and Chinese, cancel with Escape, start in a second note while the first listens (the first
   stops), and close a listening note. On Windows check the online-speech warning badge.
+  - With no available audio input, run
+    `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --package-path native/macos-stt`.
+    The native regression calls the production capture path and asserts exactly `mic_unavailable`,
+    then `end`, without requesting permission, starting recognition or recording. It skips when an input
+    device is available. The 2026-11-11 Mac mini reproduction had 0 Hz / 0 hardware input channels,
+    while the output scope reported a default 44100 Hz / 2 channels. Both installed Bot and Desktop
+    helpers crashed installing a tap despite granted permissions. This regression covers missing
+    hardware, not successful dictation or signed-package microphone acceptance.
+    Local validation on 2026-11-11 passed the native regression (1 test, not skipped), the focused
+    dictation/host/source/packaging suites (19 tests), and the arm64/x86_64 release helper build.
+    Independent review found no issues. Installed applications were not replaced.
+  - With the USB microphone connected later that day, installed Bot emitted `ready` (`zh-TW`,
+    `on-device`) and `end` for a spoken session, with no partial/final events or draft text.
+    Speech defaults to its [main callback queue](https://developer.apple.com/documentation/speech/sfspeechrecognizer/queue),
+    which the CLI blocked waiting for completion. The callback-progress regression failed before
+    the serial background queue fix and passed afterward. The queue remains suspended during tap
+    startup so a fast error cannot tear down an uninstalled tap. Both helpers passed the callback
+    test and skipped missing-input coverage while the microphone was connected. That test now
+    queries CoreAudio's default input before creating an input node, avoiding a permission request
+    on connected hardware. Queue progress is verified; live transcription after the fix remains
+    unverified, and installed apps still carry the previous helper.
+    Both updated release helpers rebuilt with arm64/x86_64 slices; the native-helper source contract
+    tests passed (2 per repository).
+    Independent review found no blocking issues in the callback/lifecycle change.
 - Note layers (ADR-016) on macOS: read each note's level from WindowServer
   (`CGWindowListCopyWindowInfo`, `kCGWindowLayer`; no Screen Recording needed).
   - Expect `CGWindowLevelForKey(kCGDesktopIconWindowLevelKey) + 1` on the

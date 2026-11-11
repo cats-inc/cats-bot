@@ -91,7 +91,12 @@ for the current-versus-pending boundary.
     again stops; Escape, the composer becoming busy, closing the note and another note starting dictation
     cancel. Helper errors (permission, no microphone, language, unavailable, stopped) are a line in the
     note. A denied microphone and a denied Speech Recognition are separate lines, each with "Open System
-    Settings" for its macOS pane (ADR-020). Linux has no helper yet and shows no button.
+    Settings" for its macOS pane (ADR-020). Before creating a recognition task or tap on macOS, validate
+    the hardware input format's sample rate and channel count. Missing or disabled input emits
+    `mic_unavailable` and `end`, without a tap; the output scope's default format is not proof of a
+    microphone. The macOS helper delivers recognition callbacks on a serial background queue while
+    its main thread waits; callbacks remain suspended during tap startup and resume after `ready`
+    or startup-failure cleanup. Linux has no helper yet and shows no button.
 
 ## Acceptance
 

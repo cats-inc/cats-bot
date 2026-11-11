@@ -26,6 +26,11 @@ export interface RuntimeSessionView {
   status: RuntimeSessionStatus;
   providerName?: string;
   providerSessionId?: string;
+  providerBackend?: string;
+  messageCount?: number;
+  sourcePath?: string;
+  providerSourcePath?: string;
+  inspection?: { currentRun?: unknown; lastRun?: unknown };
   origin?: 'runtime' | 'discovered';
   model?: string;
   cwd?: string;

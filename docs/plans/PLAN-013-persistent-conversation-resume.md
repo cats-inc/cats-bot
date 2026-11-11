@@ -175,6 +175,31 @@ continuity tests passed with this updated lifecycle expectation.
 
 ## Progress Log
 
+### Unstarted worker follow-up (2026-11-11)
+
+Installed Windows Bot 0.5.8 exposed a saved home attachment whose Runtime worker
+had stopped before its first turn: closed, no native ID, zero completed messages
+and no history path or attempted Bot run. Resume returned `No provider session ID
+to resume` on every later tick. The binder now uses that complete evidence to
+apply the existing single replacement, transcript handoff and visible notice.
+The old worker is retired and the fence remains until a successful turn.
+
+Independent review caught that Runtime messageCount counts completed messages,
+not attempts. The final condition also excludes Runtime history paths, current
+and last runs, and any Bot run journaled before send. Unknown journal evidence
+does not permit replacement. Failed authentication/policy/bootstrap therefore
+keeps its binding across restart. No data-format change or migration is required.
+
+Validation of the tightened condition passed: 46 focused continuity/loss and
+real-Runtime integration tests, plus Bot typecheck. The new real-Runtime Codex
+fixture test reproduces prior conversation → warm session → stop before first
+turn → restart → handoff → successful continuation. A second test covers failed
+initial bootstrap across restart. Independent re-review found no remaining
+issues after the evidence check was tightened. An earlier 55-test selection
+also passed life-loop and handoff coverage before that tightening; these counts
+overlap and are not a full-suite claim. This follow-up changes source only; it does
+not change the frozen 0.5.8 release, vendor pins or installed profiles.
+
 | Date | Update |
 | --- | --- |
 | 2026-11-11 | Updated main and created worktree. Confirmed existing persisted mapping and restart bypass; implementation and acceptance remain pending. |

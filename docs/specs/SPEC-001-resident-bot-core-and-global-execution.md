@@ -145,7 +145,14 @@ freeze of the storage format.
     Temporary or ambiguous resume failure keeps both IDs and marks `failed`; the next bind still inspects
     the saved record. Typed `provider_session_unavailable`, the known native missing-history messages,
     authoritative `404 Session not found`, or FR-18's established repeated-failure detector permit automatic
-    replacement. The visible notice is added only after creation succeeds; the transcript handoff omits
+    replacement. A closed Runtime-origin CLI record with no native ID in either the
+    attachment or Runtime may also be replaced when it has zero completed messages,
+    no Runtime/provider history path, no current/last Runtime run, and the Bot's
+    durable journal confirms no attempted turn for that session. Zero completed
+    messages alone does not establish that no authentication/policy/bootstrap
+    failure occurred. Unknown evidence preserves the mapping. This recovers a
+    warm worker stopped before its first turn without replay or repeated creates.
+    The visible notice is added only after creation succeeds; the transcript handoff omits
     errors and rebuild notices. Optional
     `unavailableReason` and `replacementPending` fields persist the reason and one-attempt fence until a
     successful turn; even an ambiguous replacement-request failure cannot create again on each tick.
