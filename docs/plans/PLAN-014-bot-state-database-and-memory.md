@@ -40,6 +40,24 @@ security review. Embeddings come only if the evaluation asks for them.
       finds nothing that blocks it and CI passes on the three platforms. The cutover
       pull request waits for the owner's go, because it carries decisions of its own
       (2026-11-11).
+- [x] Owner, 2026-11-12: "all as recommended; take it to the end", with P1 finished
+      before the next stop so that the owner can bump 0.6. Read as:
+      - every default this plan proposed before that message stands as the owner's
+        choice: the import's stopping rules and reports (1.5), and the migration's
+        defaults (profile checked first, a raised profile with no finished database
+        stopping the start, a failed raise stopping it and a failed archive move not,
+        a copy used again, a restore setting the database aside after folding its log);
+      - the go for the cutover, which merges like the slices before it, after an
+        independent review with nothing blocking and CI on the three platforms;
+      - the defaults chosen after that message, under it, are listed under the cutover
+        as they are made, each marked "chosen 2026-11-12", so that the owner can read
+        them before bumping;
+      - the bump, the release notes' exact pins and the publication stay the owner's.
+- [ ] Done before the owner bumps 0.6 (2026-11-12): tasks 1.4 to 1.7 and the cutover
+      merged; SPEC-014's acceptance list checked; SPEC-001 FR-2, FR-3, FR-12 and FR-14,
+      ADR-001 section 6 and `docs/architecture.md` updated as SPEC-014 says; a draft of
+      1.8's release and migration notes ready for the bump; `main` green on the three
+      platforms with no open pull request or worktree of this plan.
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
