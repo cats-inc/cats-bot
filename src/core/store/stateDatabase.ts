@@ -84,10 +84,17 @@ export interface StateDatabase {
   readonly file: string;
   readonly mode: StateDatabaseMode;
   readonly isOpen: boolean;
-  /** The first row of a query, or undefined. A reader accepts only `select` and `with`. */
+  /**
+   * The first row of a query, or undefined. `get` and `all` take a `select` or a `with`
+   * that changes nothing; a writer also reads `pragma application_id`, `journal_mode` and
+   * `synchronous` by name.
+   */
   get(sql: string, ...parameters: SqliteInput[]): StateRow | undefined;
   all(sql: string, ...parameters: SqliteInput[]): StateRow[];
-  /** A statement that changes rows; returns how many it changed. Refused on a reader. */
+  /**
+   * An insert, an update or a delete, and nothing else; returns how many rows it changed.
+   * Refused on a reader.
+   */
   run(sql: string, ...parameters: SqliteInput[]): number;
   /** An insert of exactly one row into an ordinary table; returns its row id. Refused on a reader. */
   insert(sql: string, ...parameters: SqliteInput[]): number;
@@ -115,11 +122,26 @@ const DEFAULT_BUSY_TIMEOUT_MS = 5000;
 /** Statements are compiled once and kept. Past this many, the cache starts again. */
 const STATEMENT_CACHE_LIMIT = 256;
 const QUERY = /^\s*(?:select|with)\b/iu;
+const WITH = /^\s*with\b/iu;
 /** `pragma name` and nothing after it. */
-const SETTING_READ = /^\s*pragma\s+\w+\s*$/iu;
-/** A statement that changes rows, as `with ... insert into` would bring into a query. */
-const CHANGE_WORD =
-  /\b(?:insert|replace)\s+(?:or\s+\w+\s+)?into\b|\bupdate\s+(?:or\s+\w+\s+)?\w+\s+set\b|\bdelete\s+from\b/iu;
+const SETTING_READ = /^\s*pragma\s+(\w+)\s*$/iu;
+/**
+ * The settings `get` and `all` read by name. Other pragmas act when they are named:
+ * `optimize` writes statistics and `wal_checkpoint` moves the log into the file.
+ */
+const READABLE_SETTINGS = new Set(['application_id', 'journal_mode', 'synchronous']);
+/**
+ * What makes a statement a change of rows wherever it stands, as in `with ... delete`.
+ * SQLite reserves the first three words, so that outside a string or a quoted name they
+ * are never a table, a column or a function; `replace` is also a function.
+ */
+const ROW_WORD = /\b(?:insert|update|delete)\b|\breplace\s+into\b/iu;
+const ROW_CHANGE = /^\s*(?:insert|replace|update|delete)\b/iu;
+/** A pragma called as a table inside a query. `pragma_optimize` writes statistics there too. */
+const PRAGMA_FUNCTION = /\bpragma_\w+/iu;
+/** Where a word is not a keyword: strings, quoted names and comments. */
+const QUOTED =
+  /'(?:[^']|'')*'|"(?:[^"]|"")*"|`(?:[^`]|``)*`|\[[^\]]*\]|--[^\n]*|\/\*[\s\S]*?\*\//gu;
 const INSERT = /^\s*insert\b/iu;
 /** A conflict clause that leaves the rows a failed statement had already changed. */
 const KEEPS_HALF = /\bor\s+fail\b/iu;
@@ -477,7 +499,7 @@ class Connection implements StateDatabase {
     }
     // On a writer, `get` and `all` read as well: a change made through them would not be
     // counted as one, nor refused inside a snapshot. A setting may be read, not set.
-    if ((!QUERY.test(sql) && !SETTING_READ.test(sql)) || CHANGE_WORD.test(sql)) {
+    if (!reads(sql)) {
       throw new TypeError(`get() and all() read; change rows with run() or insert(): ${sql}`);
     }
     assertOneStatement(sql);
@@ -496,6 +518,12 @@ class Connection implements StateDatabase {
     this.#assertNotReading();
     const connection = this.#open();
     assertOneStatement(sql);
+    // SQLite counts the rows of an insert, an update or a delete, and keeps that count
+    // through every other statement. After a pragma or a `create`, the count would be an
+    // earlier statement's, and what the statement did would not be counted as a change.
+    if (!changesRows(sql)) {
+      throw new TypeError(`run() and insert() change rows, and nothing else: ${sql}`);
+    }
     // A statement that fails is undone by SQLite unless it says otherwise; `or fail` would
     // keep part of it, and nothing here would know.
     if (KEEPS_HALF.test(sql)) {
@@ -589,6 +617,23 @@ class Connection implements StateDatabase {
     }
     return result;
   }
+}
+
+/** Whether the pattern is found in the statement itself, not in a string, a name or a comment. */
+function holds(pattern: RegExp, sql: string): boolean {
+  return pattern.test(sql) && pattern.test(sql.replace(QUOTED, ' '));
+}
+
+/** What `get` and `all` take: a query that changes nothing, or the name of a setting. */
+function reads(sql: string): boolean {
+  if (QUERY.test(sql)) return !holds(ROW_WORD, sql) && !holds(PRAGMA_FUNCTION, sql);
+  const setting = SETTING_READ.exec(sql)?.[1];
+  return setting !== undefined && READABLE_SETTINGS.has(setting.toLowerCase());
+}
+
+/** What `run` and `insert` take: an insert, an update or a delete, with or without `with`. */
+function changesRows(sql: string): boolean {
+  return ROW_CHANGE.test(sql) || (WITH.test(sql) && holds(ROW_WORD, sql));
 }
 
 /** The driver compiles only the first statement of a text and says nothing about the rest. */
