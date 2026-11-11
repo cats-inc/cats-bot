@@ -12,6 +12,7 @@ import {
   type StateDatabaseMode,
   type StateRow,
   type Synchronous,
+  type TransactionOptions,
 } from './stateDatabase.ts';
 
 /**
@@ -26,6 +27,9 @@ import {
  * that cannot be read at all is left out and reported through `warn`, as an unreadable line
  * of a file is today.
  */
+
+/** The `meta` key the version-1 import writes when it has finished (FR-11). */
+const IMPORT_MARKER = 'version1_import';
 
 export interface EntriesPage {
   /** How many entries at most. */
@@ -48,8 +52,8 @@ export interface SearchHit {
 
 export interface BotStateStore {
   readonly mode: StateDatabaseMode;
-  /** All of `work` or none of it; see `StateDatabase.transaction`. */
-  transaction<T>(work: () => Synchronous<T>): T;
+  /** All of `work` or none of it, and synced to the disk when `durable`; see `StateDatabase.transaction`. */
+  transaction<T>(work: () => Synchronous<T>, options?: TransactionOptions): T;
   /** Several reads against one snapshot. */
   snapshot<T>(work: () => Synchronous<T>): T;
   close(): void;
@@ -77,6 +81,19 @@ export interface BotStateStore {
    * conversation must exist.
    */
   appendEntry(conversationId: string, entry: Omit<TranscriptEntry, 'seq'>): TranscriptEntry;
+
+  /**
+   * FR-11, for the version-1 import: entries stored as they are given, each keeping its
+   * `seq`, and indexed in the same transaction. Each `seq` must be greater than the one
+   * before it and than any the conversation already holds. The conversation must exist.
+   */
+  importEntries(conversationId: string, entries: readonly TranscriptEntry[]): void;
+  /** Whether the store holds no record of any kind. */
+  isEmpty(): boolean;
+  /** FR-11: what the version-1 import recorded when it finished, or undefined. */
+  importMarker(): string | undefined;
+  /** FR-11: written in the same transaction as the import's last batch. */
+  setImportMarker(value: string): void;
 
   /** FR-6: one row per reply presentation, as stored. */
   responses(conversationId: string): unknown[];
@@ -189,8 +206,8 @@ class Store implements BotStateStore {
     return this.#database.mode;
   }
 
-  transaction<T>(work: () => Synchronous<T>): T {
-    return this.#database.transaction(work);
+  transaction<T>(work: () => Synchronous<T>, options?: TransactionOptions): T {
+    return this.#database.transaction(work, options);
   }
 
   snapshot<T>(work: () => Synchronous<T>): T {
@@ -354,7 +371,13 @@ class Store implements BotStateStore {
   appendEntry(conversationId: string, entry: Omit<TranscriptEntry, 'seq'>): TranscriptEntry {
     return this.#database.transaction(() => {
       this.#requireConversation(conversationId);
-      const full: TranscriptEntry = { ...entry, seq: this.lastSeq(conversationId) + 1 };
+      const seq = this.lastSeq(conversationId) + 1;
+      // An imported entry may carry the largest `seq` a number holds; one more could not be
+      // read back.
+      if (!Number.isSafeInteger(seq)) {
+        throw new RangeError(`Conversation ${conversationId} holds no more entries`);
+      }
+      const full: TranscriptEntry = { ...entry, seq };
       const id = this.#database.insert(
         'insert into entries(conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?)',
         conversationId,
@@ -367,6 +390,49 @@ class Store implements BotStateStore {
       this.#index(id, full.text);
       return full;
     });
+  }
+
+  importEntries(conversationId: string, entries: readonly TranscriptEntry[]): void {
+    this.#database.transaction(() => {
+      this.#requireConversation(conversationId);
+      let last = this.lastSeq(conversationId);
+      for (const entry of entries) {
+        const seq: unknown = entry.seq;
+        if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq <= last) {
+          throw new RangeError(
+            `Entry ${String(seq)} of conversation ${conversationId} does not come after entry ${last}`,
+          );
+        }
+        const id = this.#database.insert(
+          'insert into entries(conversation_id, seq, kind, origin, at, json) values (?, ?, ?, ?, ?, ?)',
+          conversationId,
+          seq,
+          text(entry.kind),
+          text(entry.origin),
+          text(entry.at),
+          JSON.stringify(entry),
+        );
+        this.#index(id, entry.text);
+        last = seq;
+      }
+    });
+  }
+
+  isEmpty(): boolean {
+    const row = this.#database.get(
+      `select not (exists (select 1 from conversations) or exists (select 1 from entries)
+        or exists (select 1 from responses) or exists (select 1 from journal)
+        or exists (select 1 from work_items) or exists (select 1 from schedules)) as empty`,
+    );
+    return row?.empty === 1;
+  }
+
+  importMarker(): string | undefined {
+    return this.#database.meta(IMPORT_MARKER);
+  }
+
+  setImportMarker(value: string): void {
+    this.#database.setMeta(IMPORT_MARKER, value);
   }
 
   /** As `ConversationStore` requires one today: nothing is kept for a conversation that is not there. */

@@ -6,9 +6,13 @@ import type { BotPaths } from './paths.ts';
 import { writeFileAtomic } from './atomicFile.ts';
 
 interface PresentationFile { version: 1; conversationId: string; responses: TranscriptEntry[] }
+/** Where the sidecars are kept, one `<conversation id>.json` each with its `.bak`. */
+export function presentationsDirectory(paths: BotPaths): string {
+  return join(paths.root, 'presentations');
+}
 function fileFor(paths: BotPaths, id: string): string {
   if (!/^[\w-]+$/u.test(id)) throw new Error('Invalid presentation conversation id');
-  return join(paths.root, 'presentations', `${id}.json`);
+  return join(presentationsDirectory(paths), `${id}.json`);
 }
 function parse(text: string, id: string): PresentationFile {
   const data = JSON.parse(text) as PresentationFile;
@@ -33,6 +37,15 @@ function parse(text: string, id: string): PresentationFile {
     entry.presentation = presentation;
   }
   return data;
+}
+
+/**
+ * SPEC-014 FR-11: a sidecar's responses as they are written, once they pass the checks
+ * `readPresentations` makes. Throws as `readPresentations` does, an unsupported version too.
+ */
+export function presentationResponsesAsWritten(text: string, id: string): unknown[] {
+  parse(text, id);
+  return (JSON.parse(text) as PresentationFile).responses;
 }
 
 /** Additive sidecar: old transcripts and old application rollback remain readable. */

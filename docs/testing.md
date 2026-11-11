@@ -145,6 +145,36 @@ outside `src/core/store/`.
   between two words, marks that join nothing, repeated words, and query input that
   looks like query syntax.
 
+### Version-1 import
+
+- **Location**: `tests/core/version1Import.test.ts`
+- **Scope**: `src/core/store/version1Import.ts` and the store's import calls (SPEC-014
+  FR-11). Nothing calls the import yet.
+  - a data root written by today's own writers imported whole: every `seq` kept, each
+    record equal to what today's readers read, field order included, a NUL character
+    and a lone surrogate, the entries searchable, and the marker written;
+  - an empty data root, a conversation file named otherwise than its id, and a
+    transcript in batches of any size;
+  - what a crash leaves (a cut line, a line written onto it, a delete half done) and
+    files no reader of today reads, reported by file and line and the rest imported;
+  - a sidecar replaced by its backup, a directory in its place included, or left out
+    when neither can be read; a backup of a later version beside a sidecar reported;
+  - each problem that stops the import, listed with every other problem, with no
+    journal line and no marker written: an entry out of order, a line that is no entry
+    and what today numbers after it, a file that cannot be read, a conversation file
+    that is no record or is one of two, and a sidecar whose version is not 1;
+  - a database that does not match the files, the files changing while the check runs,
+    a record the store cannot read, a number JSON cannot keep, and a failure on the way
+    to the marker, each leaving no marker and no journal;
+  - a conversation called `__proto__` counted, a record holding an array of 300,000
+    values checked, and a file named in another case taken as the conversation's own
+    exactly when its path reaches that file;
+  - the journal and the marker written in one durable transaction after the rest, and
+    a database that already holds records refused.
+- `stateStore.test.ts` covers `importEntries`: each `seq` kept in order and after what
+  the conversation holds, a batch all or nothing, the entries indexed, and nothing
+  appended after the largest `seq` a number holds.
+
 ### Store tests inside Electron
 
 `npm test` runs the store's test files above under Node.js. The core runs inside
