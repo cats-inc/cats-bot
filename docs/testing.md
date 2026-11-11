@@ -193,12 +193,15 @@ under `tests/core/` that loads the driver, the adapter or a store module built o
 ### Integration tests
 
 - `tests/integration/unstartedSession.test.ts` uses the pinned real Runtime and
-  the scripted Codex app-server fixture in a disposable home. It stops a warm
-  zero-turn worker, restarts over the saved registry, checks one handoff with the
-  prior conversation intact, and completes the first replacement turn. A failed
+  scripted Codex/Claude fixtures in disposable homes. It stops a warm zero-turn
+  worker, restarts over the saved registry, and stops its unused replacement
+  before restarting again. Repeated background ticks retain the fenced mapping;
+  the next owner turn creates a working session with the prior conversation's
+  handoff, without replaying any prompt. A failed
   initial authentication/bootstrap remains attached after restart. Companion
   continuity tests cover unknown evidence, recorded attempts, history paths,
-  current/last runs, home/note isolation, concurrency and the persisted fence.
+  current/last runs, home/note isolation, reconcile/turn coalescing, ambiguous
+  replacement requests and the persisted fence.
 
 - `tests/integration/antigravityTimeout.test.ts` starts the real packed Runtime
   with a legacy agy stream-json fixture in a disposable home. It emits init,

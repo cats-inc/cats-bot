@@ -156,6 +156,10 @@ freeze of the storage format.
     errors and rebuild notices. Optional
     `unavailableReason` and `replacementPending` fields persist the reason and one-attempt fence until a
     successful turn; even an ambiguous replacement-request failure cannot create again on each tick.
+    A replacement stopped before any attempted turn may use the complete unstarted-worker evidence above
+    to create again only when a work item is about to send a prompt. Reconcile alone remains fenced, so
+    repeated shutdowns of unused warm workers cannot lock out the next turn or create workers on each tick.
+    Terminal loss, missing records, unknown evidence and attempted bootstrap/send failures retain the fence.
     An explicit reset/retarget can establish a fresh binding. Old version-1 records load without rewriting;
     absent optional fields mean no recorded terminal evidence or replacement attempt. Ordinary updates use
     the existing atomic writer; no mandatory migration is introduced. A conversation has only one binding at

@@ -1,18 +1,21 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { BotCore, type BotCoreOptions } from '../../src/core/bot.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { makeTempHome, openTestBot, sendAndWait } from '../support/harness.ts';
 
-function optionsFor(botsHome: string): Partial<BotCoreOptions> {
+function optionsFor(botsHome: string, provider = 'codex'): Partial<BotCoreOptions> {
+  const projectsDir = join(botsHome, 'claude-projects');
+  mkdirSync(projectsDir, { recursive: true });
   return {
     tools: false, log: () => {},
     life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
     runtime: {
       runtimeEntry: resolveRuntimeEntry(), providerCommand: process.execPath,
-      providerLaunchArgs: [resolve('tests/support/fixture-cli/codex-fixture.mjs')], readyTimeoutMs: 60_000,
+      providerLaunchArgs: [resolve(`tests/support/fixture-cli/${provider}-fixture.mjs`)], readyTimeoutMs: 60_000,
+      ...(provider === 'claude' ? { instanceExtras: { projects_dir: projectsDir } } : {}),
       env: { ...process.env, HOME: botsHome, USERPROFILE: botsHome,
         CODEX_HOME: join(botsHome, 'codex'), APPDATA: join(botsHome, 'roaming'),
         LOCALAPPDATA: join(botsHome, 'local'), XDG_CONFIG_HOME: join(botsHome, '.config'),
@@ -21,10 +24,10 @@ function optionsFor(botsHome: string): Partial<BotCoreOptions> {
   };
 }
 
-test('a warm Codex session stopped before its first turn rebuilds after a real Runtime restart', { timeout: 120_000 }, async () => {
+for (const provider of ['codex', 'claude']) test(`an unused ${provider} replacement survives a second real Runtime restart when a turn arrives`, { timeout: 120_000 }, async () => {
   const home = makeTempHome('cats-bot-unstarted-');
-  const options = optionsFor(home.botsHome);
-  const { core, root } = openTestBot({ botsHome: home.botsHome, profile: { provider: 'codex' }, core: options });
+  const options = optionsFor(home.botsHome, provider);
+  const { core, root } = openTestBot({ botsHome: home.botsHome, profile: { provider }, core: options });
   let reopened: BotCore | undefined;
   try {
     await core.updateProfile({ heartbeat: { enabled: false } });
@@ -57,12 +60,27 @@ test('a warm Codex session stopped before its first turn rebuilds after a real R
     await reopened.tick();
     assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, replacement.sessionId);
 
+    // The replacement was only warmed by reconcile. A second host shutdown
+    // must not permanently lock the conversation before its first real turn.
+    await reopened.stop();
+    reopened = BotCore.open({ root, ...options });
+    await reopened.start();
+    assert.equal(reopened.runtimeState(), 'ready');
+    for (let tick = 0; tick < 3; tick++) {
+      await reopened.tick();
+      assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, replacement.sessionId,
+        'background ticks must not create another unused replacement');
+    }
+    assert.equal(reopened.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 1);
+
     const next = await sendAndWait(reopened, 'home', 'Continue after restart', 60_000);
     assert.equal(next.state, 'completed', next.error);
     const continued = (await reopened.listConversations())[0]!.attachment;
-    assert.equal(continued.sessionId, replacement.sessionId);
+    assert.notEqual(continued.sessionId, replacement.sessionId);
     assert.ok(continued.providerSessionId);
     assert.equal(continued.replacementPending, undefined);
+    assert.equal(reopened.listWorkItems().filter(item => item.run).length, 2,
+      'only the two requested prompts ran across all restarts');
   } finally {
     await reopened?.stop();
     await core.stop();

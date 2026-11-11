@@ -16,6 +16,11 @@ export type BindResult =
   | { ok: true; sessionId: string; how: 'kept' | 'resumed' | 'created' }
   | { ok: false; reason: string; kind: 'resume_failed' | 'create_failed'; noCapacity: boolean };
 
+interface BindIntent {
+  /** A work item will send a prompt immediately after binding. */
+  forTurn: boolean;
+}
+
 export interface SessionBinderDependencies {
   client(): RuntimeClient | null;
   profile(): BotProfile;
@@ -83,7 +88,7 @@ function inContactHandoff(entry: TranscriptEntry): boolean {
 
 export class SessionBinder {
   private readonly deps: SessionBinderDependencies;
-  private readonly inFlight = new Map<string, Promise<BindResult>>();
+  private readonly inFlight = new Map<string, { intent: BindIntent; result: Promise<BindResult> }>();
 
   constructor(deps: SessionBinderDependencies) {
     this.deps = deps;
@@ -95,17 +100,21 @@ export class SessionBinder {
    * bind of the same conversation runs joins it, so the tick and a turn never
    * create two sessions and overwrite each other's attachment.
    */
-  bind(conversationId: string): Promise<BindResult> {
+  bind(conversationId: string, options: { forTurn?: boolean } = {}): Promise<BindResult> {
     const pending = this.inFlight.get(conversationId);
-    if (pending) return pending;
-    const run = this.bindNow(conversationId).finally(() => {
+    if (pending) {
+      pending.intent.forTurn ||= options.forTurn === true;
+      return pending.result;
+    }
+    const intent: BindIntent = { forTurn: options.forTurn === true };
+    const run = this.bindNow(conversationId, intent).finally(() => {
       this.inFlight.delete(conversationId);
     });
-    this.inFlight.set(conversationId, run);
+    this.inFlight.set(conversationId, { intent, result: run });
     return run;
   }
 
-  private async bindNow(conversationId: string): Promise<BindResult> {
+  private async bindNow(conversationId: string, intent: BindIntent): Promise<BindResult> {
     const client = this.deps.client();
     if (!client) return { ok: false, reason: 'runtime unavailable', kind: 'create_failed', noCapacity: false };
     const conversation = this.deps.conversations.require(conversationId);
@@ -133,12 +142,12 @@ export class SessionBinder {
         text: staleNotice(attachment, profile),
       });
     } else if (attachment.sessionId && current && ['sleeping', 'closed', 'failed'].includes(attachment.state)) {
-      return this.resumeSaved(client, conversation, profile);
+      return this.resumeSaved(client, conversation, profile, intent);
     }
     return this.create(client, this.deps.conversations.require(conversation.id), profile);
   }
 
-  private async resumeSaved(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile): Promise<BindResult> {
+  private async resumeSaved(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile, intent: BindIntent): Promise<BindResult> {
     const { attachment } = conversation;
     const id = attachment.sessionId!;
     const unchanged = () => this.deps.conversations.get(conversation.id)?.attachment.sessionId === id
@@ -171,7 +180,11 @@ export class SessionBinder {
         && !observed.sourcePath && !observed.providerSourcePath
         && !observed.inspection?.currentRun && !observed.inspection?.lastRun
         && this.deps.hasAttemptedSessionTurn?.(id) === false) {
-        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable');
+        // An unused replacement may itself have been stopped by shutdown or
+        // sleep. Only a pending turn can replace it again; reconcile must not
+        // create a fresh idle worker on every tick. The complete evidence above
+        // excludes failed sends/bootstrap and unknown or lost session records.
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable', intent.forTurn);
       }
       const controls = await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy);
       const servers = this.deps.mcpServers?.(conversation.id, id);
@@ -206,8 +219,8 @@ export class SessionBinder {
   }
 
   private replaceUnavailable(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile,
-    reason: NonNullable<SessionAttachment['unavailableReason']>): Promise<BindResult> {
-    if (conversation.attachment.replacementPending) {
+    reason: NonNullable<SessionAttachment['unavailableReason']>, unstartedTurn = false): Promise<BindResult> {
+    if (conversation.attachment.replacementPending && !unstartedTurn) {
       return Promise.resolve({ ok: false, kind: 'resume_failed', noCapacity: false,
         reason: 'Automatic session replacement stopped because the previous replacement has not completed a turn.' });
     }
