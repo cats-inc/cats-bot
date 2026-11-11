@@ -67,6 +67,14 @@ last step, not the first.
 
 ### Integration tests
 
+- `tests/integration/unstartedSession.test.ts` uses the pinned real Runtime and
+  the scripted Codex app-server fixture in a disposable home. It stops a warm
+  zero-turn worker, restarts over the saved registry, checks one handoff with the
+  prior conversation intact, and completes the first replacement turn. A failed
+  initial authentication/bootstrap remains attached after restart. Companion
+  continuity tests cover unknown evidence, recorded attempts, history paths,
+  current/last runs, home/note isolation, concurrency and the persisted fence.
+
 - `tests/integration/antigravityTimeout.test.ts` starts the real packed Runtime
   with a legacy agy stream-json fixture in a disposable home. It emits init,
   stays silent for 31 seconds, then completes; the previous Runtime fails this
