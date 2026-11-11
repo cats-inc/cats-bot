@@ -10,7 +10,6 @@ import {
   rmSync,
   statSync,
 } from 'node:fs';
-import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
@@ -22,8 +21,8 @@ import { sqliteDriver, type SqliteDatabase } from '../../src/core/store/sqliteDr
  * PLAN-014 task 1.1, SPEC-014 FR-2: what the bot state database needs from the SQLite built
  * into the runtime. The storage adapter relies on every behaviour pinned here, so this file
  * runs on each supported platform under plain Node.js and, in CI, a second time inside the
- * Electron the app ships (the core runs there with `ELECTRON_RUN_AS_NODE`):
- *   CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+ * Electron the app ships, where the core runs with `ELECTRON_RUN_AS_NODE`:
+ *   npm run test:electron
  */
 
 // A bot root can sit under a home directory with spaces and non-ASCII characters.
@@ -207,7 +206,7 @@ test('the built-in SQLite has the features the schema uses', () => {
   const database = new DatabaseSync(':memory:');
   try {
     const version = String(database.prepare('select sqlite_version() as version').get()?.version);
-    // One line for the Electron run below to check, and for anyone reading a CI log.
+    // One line for anyone reading a CI log, from each runtime the file runs under.
     console.log(
       `sqlite-driver runtime ${JSON.stringify({ node: process.versions.node, electron: process.versions.electron ?? null, sqlite: version, ...observed() })}`,
     );
@@ -555,44 +554,5 @@ test(
       writer.close();
     }
     assert.deepEqual(files(directory), ['bot.db']);
-  },
-);
-
-const insideElectron = process.versions.electron !== undefined;
-const electronRequested = process.env.CATS_TEST_SQLITE_ELECTRON === '1';
-
-test(
-  'the same checks pass inside the Electron the app ships',
-  { skip: insideElectron || !electronRequested, timeout: 180_000 },
-  async (context) => {
-    const require = createRequire(import.meta.url);
-    const electron = require('electron') as string;
-    const shipped = (require('electron/package.json') as { version: string }).version;
-    const env: NodeJS.ProcessEnv = { ...process.env, ELECTRON_RUN_AS_NODE: '1' };
-    delete env.CATS_TEST_SQLITE_ELECTRON;
-    // Set by `node --test` for its own children; with it the run below would report in the
-    // runner's binary format instead of TAP.
-    delete env.NODE_TEST_CONTEXT;
-    const child = spawn(electron, ['--test-reporter=tap', fileURLToPath(import.meta.url)], {
-      env,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    const { code, signal, stdout, stderr } = await finished(child);
-    const output = `${stdout}\n${stderr}`;
-    assert.deepEqual([code, signal], [0, null], output);
-    const runtime = /sqlite-driver runtime (\{.*\})/u.exec(stdout);
-    assert.ok(runtime, output);
-    context.diagnostic(`inside Electron: ${runtime[1]!}`);
-    assert.equal(
-      (JSON.parse(runtime[1]!) as { electron: string | null }).electron,
-      shipped,
-      output,
-    );
-    assert.match(stdout, /^# tests 12$/mu, output);
-    assert.match(stdout, /^# fail 0$/mu, output);
-    assert.match(stdout, /^# cancelled 0$/mu, output);
-    // Everything above ran there. This test skips itself inside Electron, and the test of a
-    // runtime without SQLite may skip itself too.
-    assert.match(stdout, /^# skipped [12]$/mu, output);
   },
 );

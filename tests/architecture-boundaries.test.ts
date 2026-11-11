@@ -112,6 +112,24 @@ test('only the driver module reaches node:sqlite (SPEC-014 FR-2)', () => {
   assert.deepEqual(offenders, []);
 });
 
+test('only the store reaches the state database adapter (SPEC-014 FR-2)', () => {
+  // The adapter runs whatever statement it is given, so a module outside the store never gets
+  // one: the rest of the bot uses what the store modules build on it.
+  const storeRoot = join(srcRoot, 'core', 'store');
+  const adapter = join(storeRoot, 'stateDatabase.ts');
+  assert.ok(existsSync(adapter));
+  const offenders: string[] = [];
+  for (const file of listTypeScriptFiles(srcRoot)) {
+    if (!relative(storeRoot, file).startsWith('..')) continue;
+    for (const specifier of importSpecifiers(file)) {
+      if (isRelative(specifier) && resolve(dirname(file), specifier) === adapter) {
+        offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
+      }
+    }
+  }
+  assert.deepEqual(offenders, []);
+});
+
 test('the shell never holds the runtime client directly', () => {
   const offenders: string[] = [];
   const runtimeClientDir = join(srcRoot, 'core', 'runtime');

@@ -69,10 +69,19 @@ security review. Embeddings come only if the evaluation asks for them.
   - [x] Driver module and acceptance test: `src/core/store/sqliteDriver.ts` and
         `tests/core/sqliteDriver.test.ts`. CI runs the test under Node.js 24 and again
         inside Electron on the three platforms. Nothing uses the driver yet.
-  - [ ] Adapter, schema and `meta`.
-  - What the acceptance run found, and the defaults it proposes for the adapter. They are
-    proposals until the owner accepts them with the schema change, which also brings the
-    SPEC-014 amendments.
+  - [x] Adapter, schema and `meta`: `src/core/store/stateDatabase.ts` and
+        `stateSchema.ts`, with `tests/core/stateDatabase.test.ts`. `npm run test:electron`
+        runs the store's tests inside Electron, and CI does so on the three platforms.
+        Nothing uses the adapter yet.
+    - Schema version 1 is provisional until a release ships it. No database exists
+      outside tests, so a change needs no upgrade step yet.
+    - Only the key columns and the JSON record are required. The derived index columns
+      may be empty, so that a version-1 record lacking a field still imports unchanged.
+    - Open for the importer (1.5): a version-1 transcript with a repeated `seq`. The
+      schema keeps `(conversation, seq)` unique; one local data root had no repeat, gap
+      or unreadable line, which is not proof that none exists elsewhere.
+  - What the acceptance run found, and the defaults it proposes for the adapter. The ones
+    that change SPEC-014 are in its Open Questions and wait for the owner.
     - **Hosts that only read.** Today `BotCore.open` reads the files in its own process,
       without the lock (the CLI's `status`, `conversations` and `schedule list`). Proposed:
       such a host opens the database with `mode=rw` and `query_only`, reads, and closes.
@@ -101,9 +110,10 @@ security review. Embeddings come only if the evaluation asks for them.
     - **Windows handles.** An open connection blocks renaming or removing the bot root.
       Every host closes its connection before a root is moved, and a host that only reads
       holds one no longer than a read takes.
-    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects;
-      the URI for such a path has to be built by hand. SQLite does not support WAL on a
-      network file system, so a bot root on a share is a separate question for the adapter.
+    - **UNC roots.** `pathToFileURL` gives a `file:` URL with a host, which SQLite rejects,
+      so the adapter builds the URI for such a path by hand. SQLite does not support WAL
+      on a network file system, so whether a bot root may live on a real share is a
+      question for the cutover; a share of the local machine works.
     - The test prints what each runtime does with a raw NUL and a read-only open in its
       `sqlite-driver runtime` line, in the CI log of every platform.
 - [ ] 1.2 Move writers and readers:

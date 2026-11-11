@@ -65,13 +65,42 @@ runtime does with a raw NUL in a TEXT value and which files a read-only open lea
 The architecture boundary test keeps `node:sqlite` out of every other module (SPEC-014
 FR-2).
 
-`npm test` runs the file under Node.js. The core runs inside Electron, whose Node.js and
-SQLite are different builds, so CI runs the file once more on every platform, and its
-last test then repeats the others inside the Electron dependency:
+### State database adapter
+
+- **Location**: `tests/core/stateDatabase.test.ts`
+- **Scope**: `src/core/store/stateDatabase.ts` and `stateSchema.ts` (SPEC-014 FR-1 to FR-4):
+  - a writer creating the schema on a new file and recording what wrote it;
+  - each table keeping a JSON record with index columns that may be empty, and an entry's
+    row id never being reused;
+  - a database from a newer version, and a file that is not a bot state database, refused
+    and left as they were;
+  - a reader that never creates a file, sees the writer's commits, reads one snapshot, and
+    accepts only queries;
+  - transactions that are all or nothing, including a nested failure the outer code
+    catches and work that returns a promise;
+  - closing twice, a closed database saying so, and Windows refusing a rename while a
+    connection is open;
+  - the URI for an existing database, including UNC roots, and on Windows a read through
+    a share of the local drive.
+
+The architecture boundary test keeps the adapter out of every module outside
+`src/core/store/`.
+
+### Store tests inside Electron
+
+`npm test` runs both files above under Node.js. The core runs inside Electron, whose
+Node.js and SQLite are different builds, so CI runs them once more there on every
+platform:
 
 ```bash
-CATS_TEST_SQLITE_ELECTRON=1 node --test tests/core/sqliteDriver.test.ts
+npm run test:electron
 ```
+
+`scripts/test-in-electron.mjs` starts the Electron dependency in its Node.js mode with the
+test runner. It fails when Electron is not installed, when a test fails or is cancelled,
+and when a file defined no test, which the runner would otherwise count as a pass.
+`tests/shell/testInElectron.test.ts` covers how it reads the report and that CI runs it
+on every platform. A new store test file is added to the `test:electron` script.
 
 ### Core tests on the fake runtime
 
@@ -615,8 +644,8 @@ and the renderer (`tsconfig.renderer.json`).
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
 pull request and every push to `main` that changes a path outside root `docs/`.
-After `npm test` it repeats the [SQLite driver acceptance](#sqlite-driver-acceptance)
-inside Electron on each platform.
+After `npm test` it runs the [store tests inside Electron](#store-tests-inside-electron)
+on each platform.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
 range. Renames count both old and new paths. An unknown base, empty diff or failed

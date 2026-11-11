@@ -50,6 +50,9 @@ The following is proposed.
    - Mode: WAL, `synchronous=NORMAL`, a busy timeout.
    - The core holding the instance lock is the only writer. Hosts and the `cats-bot` CLI
      keep reaching data through `BotHostApi`, not the file.
+   - Proposed clarification, 2026-11-11, waiting for the owner (SPEC-014 Open Questions): a
+     core opened without the lock, as the CLI's read commands open one, reads the database
+     through a reader connection that accepts only queries and never creates the file.
 2. **Moved into the database**: conversation records and attachments, transcript entries,
    reply presentations, work items, their transitions, and schedules.
    - Small separately owned files stay files: `profile.json` (only its schema version is

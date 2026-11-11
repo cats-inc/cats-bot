@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Not implemented ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1, FR-3, FR-8 and FR-9 proposed the same day wait for the owner (Open Questions). In progress: the driver, adapter and schema exist and nothing uses them yet ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -39,25 +39,41 @@ verified migration moves existing bots over without losing or rewriting their hi
 #### Database
 
 1. FR-1: The database is `<bot root>/bot.db`, opened in WAL mode with `synchronous=NORMAL`
-   and a busy timeout. Only the core holding the instance lock opens it for writing. Other
-   processes reach data through `BotHostApi`. The restore command (FR-12) runs only while
-   the bot is stopped.
-2. FR-2: All access goes through one adapter module that wraps `node:sqlite`. No other module
-   imports the driver, so `better-sqlite3` can replace it if acceptance fails. The adapter
-   records the driver and SQLite versions in `meta`.
-3. FR-3: Tables (conceptual; exact columns are a PLAN-014 decision):
+   and a busy timeout.
+   - Only the core holding the instance lock opens it for writing, and only it changes rows.
+     A host that takes the lock for one write while the bot is stopped (the CLI's
+     `schedule add` and `schedule cancel`) is that writer for as long as it holds the lock.
+   - Other processes reach data through `BotHostApi`. A core opened without the lock, which
+     is how the CLI's `status`, `conversations` and `schedule list` read today, reads
+     through a **reader connection**: it never creates the file, accepts only queries, and
+     is closed as soon as the read is done.
+   - A reader changes no row. SQLite may finish a pending checkpoint when a reader is the
+     last connection to close.
+   - Every host closes its connection before a bot root is renamed or removed; Windows
+     refuses both while one is open.
+   - The restore command (FR-12) runs only while the bot is stopped.
+2. FR-2: All access goes through one adapter module, built on a driver module that is the
+   only one to name `node:sqlite`, so `better-sqlite3` can replace it if acceptance fails.
+   No module outside the store reaches the adapter. The adapter records the Node.js,
+   Electron and SQLite versions of the last writer in `meta`.
+3. FR-3: Tables (conceptual; exact columns are a PLAN-014 decision). Each table keeps its
+   record as JSON text; the other columns are derived from it for lookups and may be empty.
    - `meta`: schema version, migration record, driver versions;
    - `conversations`: the conversation record and its attachment (today's
      `conversations/<id>.json`);
    - `entries`: transcript entries keyed by (conversation id, seq), with kind, origin, time,
-     text and the existing optional fields;
+     text and the existing optional fields. An entry's row id is never reused;
    - `responses`: one row per reply presentation, keyed by presentation id, with revision
      and phase;
    - `work_items`: the current state of each work item, and `work_events`: its transitions;
    - `schedules`: the current state of each schedule;
+   - `events`: what the journal recorded besides work items and schedules (presence,
+     runtime, heartbeat, configuration and Boss Cat tool calls). Appended; the core does
+     not read it back;
    - `entries_fts`: the full-text index of FR-8.
 4. FR-4: Every table carries the schema version through `meta`. An unknown newer version
-   stops the core with a clear error and changes nothing.
+   stops the core with a clear error and changes no row or table. A file that is not a bot
+   state database is refused the same way.
 
 #### Writes
 
@@ -75,7 +91,8 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 #### Search
 
-8. FR-8: Every entry's text is indexed twice in an external-content FTS5 table:
+8. FR-8: Every entry's text is indexed twice in a contentless FTS5 table
+   (`contentless_delete`), keyed by the entry's row id:
    - as written, with `unicode61`;
    - with each Han, Kana and Hangul run rewritten as overlapping 2-character tokens.
 
@@ -83,7 +100,7 @@ verified migration moves existing bots over without losing or rewriting their hi
    single CJK characters uses `LIKE`. Results carry kind and origin, so callers can drop
    tool output and other bots' messages (SPEC-015 trust levels).
 9. FR-9: The index is maintained in the same transaction as the entry. Rebuilding it from
-   `entries` is a supported maintenance command.
+   the entries' JSON records is a supported maintenance command.
 
 #### Reads
 
@@ -166,8 +183,8 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Dependencies
 
-- `node:sqlite` in Electron 41 (Node 24.14, experimental), FTS5 and the trigram tokenizer
-  (SQLite 3.51.2).
+- `node:sqlite` in Electron 41 (Node 24.14, experimental), and FTS5 with
+  `contentless_delete`, which needs SQLite 3.43 or later (Electron 41 has 3.51.2).
 - [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md),
   [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1.
 
@@ -179,6 +196,24 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Engine: `node:sqlite` behind an adapter; `better-sqlite3` only if acceptance fails.
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
+
+Proposed on 2026-11-11 after the driver acceptance of PLAN-014 task 1.1. The text above
+already carries them; they wait for the owner:
+
+- [ ] FR-1: a core opened without the lock reads through a reader connection. Proposed: yes.
+  - Why: such a core reads the files directly today, and the driver's own read-only open
+    leaves `-shm` and `-wal` files beside a stopped bot on all three platforms.
+  - The other option routes those reads through the running core's channel. It still
+    needs the reader connection while the bot is stopped.
+  - ADR-021 decision 1 gets the same clarification.
+- [ ] FR-3: JSON text as the record in every table, and an `events` table for the journal's
+  other lines. Proposed: yes.
+  - Why: the Node.js 24.14 driver in Electron 41 returns a TEXT value only up to its first
+    NUL character, which JSON escapes; and the journal's other lines had no home.
+- [ ] FR-8 and FR-9: a contentless index rebuilt from the JSON records, in place of an
+  external-content one. Proposed: yes.
+  - Why: an external-content index would read the text back from a column, which is the
+    raw TEXT the driver can cut short.
 
 ## References
 

@@ -14,6 +14,9 @@ import type * as NodeSqlite from 'node:sqlite';
 export type SqliteDriver = typeof NodeSqlite;
 export type SqliteDatabase = NodeSqlite.DatabaseSync;
 export type SqliteStatement = NodeSqlite.StatementSync;
+/** What a statement accepts as a parameter and returns in a column. */
+export type SqliteInput = NodeSqlite.SQLInputValue;
+export type SqliteOutput = NodeSqlite.SQLOutputValue;
 
 let driver: SqliteDriver | undefined;
 
