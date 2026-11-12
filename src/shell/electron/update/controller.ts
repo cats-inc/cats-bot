@@ -10,6 +10,28 @@ export interface BotUpdater {
 }
 export class InstallHandoffTimeout extends Error {}
 
+/** Native HTTP errors contain URLs, headers and misleading token advice. */
+function updateErrorMessage(error: unknown): string {
+  const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
+  const message = error instanceof Error ? error.message : String(error);
+  const native = `${code} ${message}`;
+  if (/ERR_UPDATER_(?:NO_PUBLISHED_VERSIONS|CHANNEL_FILE_NOT_FOUND|INVALID_RELEASE_FEED|INVALID_UPDATE_INFO|NO_FILES_PROVIDED|NO_CHECKSUM)/u.test(code)) {
+    return 'Update information is unavailable. Please try again later.';
+  }
+  if (/ETIMEDOUT|ESOCKETTIMEDOUT|net::ERR_(?:CONNECTION_)?TIMED_OUT/iu.test(native)) return 'The update request timed out. Please try again.';
+  if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ENETUNREACH|net::ERR_(?:INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|CONNECTION_REFUSED|CONNECTION_RESET|NETWORK_CHANGED|ADDRESS_UNREACHABLE)/iu.test(native)) {
+    return 'Could not reach the update service. Check your connection and try again.';
+  }
+  if (/CHECKSUM|SHA512|SHA256/iu.test(code)) return 'The downloaded update failed its integrity check. Please download it again.';
+  if (/SIGNATURE|INVALID_PUBLISHER/iu.test(code)) return 'The downloaded update failed its signature check.';
+  if (/^HTTP_ERROR_/u.test(code)) return 'The update service rejected the request. Please try again later.';
+  if (/^ERR_UPDATER_/u.test(code) || /net::ERR_|HttpError|Headers:|authentication token/iu.test(message)) {
+    return 'The update could not be completed. Please try again.';
+  }
+  // Host-owned install/recovery refusals carry actionable guidance.
+  return message.slice(0, 500);
+}
+
 export interface UpdateHooks {
   acquireInstall: (version: string) => InstallationLease;
   drain: () => Promise<void>;
@@ -35,7 +57,7 @@ export class BotUpdateController {
   private async operation(work: () => Promise<void>): Promise<BotUpdateState> {
     if (this.active) return this.active.then(() => this.snapshot());
     this.active = Promise.resolve().then(work).catch((error: unknown) => {
-      this.set({ phase: 'error', error: (error instanceof Error ? error.message : String(error)).slice(0, 500), percent: null });
+      this.set({ phase: 'error', error: updateErrorMessage(error), percent: null });
     }).finally(() => { this.active = null; });
     await this.active;
     return this.snapshot();

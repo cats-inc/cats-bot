@@ -19,11 +19,19 @@ Governing decision: [ADR-004](../decisions/004-publish-standard-previews-with-ho
    SHA256SUMS; verify every update file's referenced asset size and SHA-512.
 3. Package a validated release descriptor; missing/malformed/mismatched identity
    never enables self-update. Public updates use only cats-inc/cats-bot.
+   Preview discovery accepts only plain `vX.Y.Z` candidates, ordered by version,
+   with matching per-platform updater metadata, safe versioned asset names,
+   positive sizes and SHA-512 checksums, including the platform's update format.
+   Bare milestone tags and missing/invalid metadata are skipped. A 403, network
+   error or service failure remains an error; no valid candidate is not a
+   successful up-to-date result. Downloads/signatures remain native-updater owned.
 4. Cats Bot Settings > General and the hub tray expose Check for Updates. The
    floating Cat menu contains only that Cat’s operations (SPEC-008 FR-16). Show
    current version, Standard Preview identity and checking/current/available/
    downloading/downloaded/installing/error states. Settings survives reload by
-   reading host state. Errors remain retryable and never imply success.
+   reading host state. Errors remain retryable and never imply success. Native
+   provider failures use bounded English/Traditional Chinese summaries instead
+   of raw HTTP headers, URLs or token advice; host recovery guidance is retained.
 5. Downloads and restart/install require explicit actions. Serialize operations,
    reject stale/invalid actions, disallow downgrades and bound failures. No
    background checks, automatic download or install on ordinary quit.

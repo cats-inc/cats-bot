@@ -20,6 +20,7 @@ import {
   type UpdateDialog,
 } from '../../src/shell/electron/update/dialog.ts';
 import { showDesktopUpdateMessageBox } from '../../src/shell/electron/update/presenter.ts';
+import { VersionedGithubProvider } from '../../src/shell/electron/update/versionedGithubProvider.ts';
 
 const release: BotRelease = {
   schemaVersion: 1, repository: 'cats-inc/cats-bot', version: '0.2.0', tag: 'v0.2.0', channel: 'preview',
@@ -400,12 +401,48 @@ test('update IPC only accepts the owned Settings main frame and explicit actions
 
 test('updater disables automatic install/download and configures the plain-version preview feed', () => {
   const [owner, repo] = UPDATE_REPOSITORY.split('/');
-  const raw = { allowDowngrade: true, setFeedURL(value: unknown) { assert.deepEqual(value, { provider: 'github', owner, repo }); } };
+  const raw = { allowDowngrade: true, setFeedURL(value: unknown) { assert.deepEqual(value, { provider: 'custom', owner, repo, updateProvider: VersionedGithubProvider }); } };
   configureUpdater(raw as AppUpdater);
   assert.equal(raw.allowDowngrade, false);
   assert.equal((raw as unknown as AppUpdater).autoDownload, false);
   assert.equal((raw as unknown as AppUpdater).autoInstallOnAppQuit, false);
   assert.equal((raw as unknown as AppUpdater).channel, null);
+});
+
+test('native update failures show localized summaries without raw headers or token advice', async () => {
+  for (const [code, expected] of [
+    ['ERR_UPDATER_CHANNEL_FILE_NOT_FOUND', 'Update information is unavailable. Please try again later.'],
+    ['ERR_UPDATER_NO_PUBLISHED_VERSIONS', 'Update information is unavailable. Please try again later.'],
+    ['HTTP_ERROR_403', 'The update service rejected the request. Please try again later.'],
+    ['ETIMEDOUT', 'The update request timed out. Please try again.'],
+    ['ENOTFOUND', 'Could not reach the update service. Check your connection and try again.'],
+    ['ERR_UPDATER_CHECKSUM_MISMATCH', 'The downloaded update failed its integrity check. Please download it again.'],
+    ['ERR_UPDATER_INVALID_SIGNATURE', 'The downloaded update failed its signature check.'],
+    ['ERR_UPDATER_UNKNOWN', 'The update could not be completed. Please try again.'],
+  ]) {
+    const { controller } = fixture({ check: async () => { throw Object.assign(new Error('Headers: secret\nPlease check your authentication token'), { code }); } });
+    const result = await controller.check();
+    assert.equal(result.phase, 'error');
+    assert.equal(result.error, expected);
+    const dialog = updateDialog(result, 'zh-TW');
+    assert.notEqual(dialog.message, expected);
+    assert.doesNotMatch(dialog.message, /secret|Headers|token/u);
+  }
+});
+
+test('message-only Electron network errors also use localized update summaries', async () => {
+  for (const [message, expected] of [
+    ['net::ERR_INTERNET_DISCONNECTED', 'Could not reach the update service. Check your connection and try again.'],
+    ['net::ERR_NAME_NOT_RESOLVED', 'Could not reach the update service. Check your connection and try again.'],
+    ['net::ERR_CONNECTION_TIMED_OUT', 'The update request timed out. Please try again.'],
+    ['net::ERR_CERT_AUTHORITY_INVALID', 'The update could not be completed. Please try again.'],
+  ]) {
+    const { controller } = fixture({ check: async () => { throw new Error(message); } });
+    const result = await controller.check();
+    assert.equal(result.error, expected);
+    assert.notEqual(updateDialog(result, 'zh-TW').message, expected);
+    assert.doesNotMatch(updateDialog(result, 'zh-TW').message, /net::ERR_/u);
+  }
 });
 
 test('timed-out native download remains fenced until settled and cannot become a newer download', async () => {

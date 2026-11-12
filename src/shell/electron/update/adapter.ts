@@ -5,6 +5,7 @@ import { unlink } from 'node:fs/promises';
 import { basename, dirname, isAbsolute } from 'node:path';
 import type { AppUpdater } from 'electron-updater';
 import { InstallHandoffTimeout, type BotUpdater } from './controller.ts';
+import { VersionedGithubProvider } from './versionedGithubProvider.ts';
 
 /** Adapted from cats-platform desktop/host/updaterAdapter.ts at f09c2901 (MIT). */
 export function configureUpdater(updater: AppUpdater): void {
@@ -13,7 +14,7 @@ export function configureUpdater(updater: AppUpdater): void {
   updater.autoRunAppAfterInstall = true;
   updater.allowPrerelease = true;
   updater.channel = null as unknown as string;
-  updater.setFeedURL({ provider: 'github', owner: 'cats-inc', repo: 'cats-bot' });
+  updater.setFeedURL({ provider: 'custom', owner: 'cats-inc', repo: 'cats-bot', updateProvider: VersionedGithubProvider });
   updater.allowDowngrade = false;
 }
 
