@@ -6,6 +6,7 @@ import type {
   WorkItem,
 } from '../types.ts';
 import { buildSearchQuery, INDEX_FORM, indexText } from './searchText.ts';
+import { BOT_ENTRY_WORK_ITEM, responseCovers } from './stateSchema.ts';
 export { StateDatabaseError, type StateDatabaseErrorCode } from './stateDatabase.ts';
 import {
   openStateDatabase,
@@ -84,6 +85,21 @@ export interface BotStateStore {
   entriesPage(conversationId: string, page: EntriesPage): TranscriptEntry[];
   /** The entries after a `seq`, in `seq` order. */
   entriesAfter(conversationId: string, seq: number): TranscriptEntry[];
+  /**
+   * FR-10: up to `limit` entries before `beforeSeq`, or the newest, in `seq` order, with
+   * `firstSeq`: the `seq` column of the oldest row they were read from, which a record that
+   * lost its own `seq` still has, or null when there were none.
+   */
+  entriesWindow(
+    conversationId: string,
+    page: EntriesPage,
+  ): { entries: TranscriptEntry[]; firstSeq: number | null };
+  /** FR-10: the entries from `fromSeq` to before `beforeSeq`, in `seq` order. */
+  entriesBetween(conversationId: string, fromSeq: number, beforeSeq: number): TranscriptEntry[];
+  /** FR-10: whether the conversation holds a row before `seq`, readable or not. */
+  hasEntryBefore(conversationId: string, seq: number): boolean;
+  /** FR-10: whether a bot entry of the work item is at `fromSeq` or after, by index. */
+  hasBotEntryOf(conversationId: string, workItemId: string, fromSeq: number): boolean;
   /** The highest `seq` of a conversation, or 0. */
   lastSeq(conversationId: string): number;
   /**
@@ -107,6 +123,16 @@ export interface BotStateStore {
 
   /** FR-6: one row per reply presentation, as stored. */
   responses(conversationId: string): unknown[];
+  /**
+   * FR-10: the reply presentations from `fromSeq` to before `beforeSeq` (to the end without
+   * it), as stored, in the order `responses` gives them.
+   */
+  responsesBetween(conversationId: string, fromSeq: number, beforeSeq?: number): unknown[];
+  /**
+   * FR-10: the lowest `seq` of a presentation before `seq` that covers `seq`, or null. Read
+   * from the index alone: no presentation is read.
+   */
+  presentationReach(conversationId: string, seq: number): number | null;
   /** The conversation must exist. */
   saveResponse(conversationId: string, entry: TranscriptEntry): void;
 
@@ -387,6 +413,75 @@ class Store implements BotStateStore {
     );
   }
 
+  entriesWindow(
+    conversationId: string,
+    page: EntriesPage,
+  ): { entries: TranscriptEntry[]; firstSeq: number | null } {
+    const count = positive(page.limit, 'limit');
+    // As `entriesPage` reads them, keeping each record's row.
+    for (let want = count; ; want *= 2) {
+      const rows =
+        page.beforeSeq === undefined
+          ? this.#database.all(
+              'select seq, json from entries where conversation_id = ? order by seq desc limit ?',
+              conversationId,
+              want,
+            )
+          : this.#database.all(
+              'select seq, json from entries where conversation_id = ? and seq < ? order by seq desc limit ?',
+              conversationId,
+              page.beforeSeq,
+              want,
+            );
+      const kept: Array<{ seq: number; entry: TranscriptEntry }> = [];
+      for (const row of rows) {
+        const [entry] = this.#entryRecords(conversationId, [row]);
+        if (entry) kept.push({ seq: Number(row.seq), entry });
+        if (kept.length === count) break;
+      }
+      if (kept.length >= count || rows.length < want) {
+        kept.reverse();
+        return { entries: kept.map((item) => item.entry), firstSeq: kept[0]?.seq ?? null };
+      }
+    }
+  }
+
+  entriesBetween(conversationId: string, fromSeq: number, beforeSeq: number): TranscriptEntry[] {
+    return this.#entryRecords(
+      conversationId,
+      this.#database.all(
+        'select seq, json from entries where conversation_id = ? and seq >= ? and seq < ? order by seq',
+        conversationId,
+        fromSeq,
+        beforeSeq,
+      ),
+    );
+  }
+
+  hasEntryBefore(conversationId: string, seq: number): boolean {
+    return (
+      this.#database.get(
+        'select 1 as found from entries where conversation_id = ? and seq < ? limit 1',
+        conversationId,
+        seq,
+      ) !== undefined
+    );
+  }
+
+  hasBotEntryOf(conversationId: string, workItemId: string, fromSeq: number): boolean {
+    // The expression and the condition are the index's own, so that SQLite reads by it.
+    return (
+      this.#database.get(
+        `select 1 as found from entries
+         where conversation_id = ? and kind = 'bot' and ${BOT_ENTRY_WORK_ITEM} = ? and seq >= ?
+         limit 1`,
+        conversationId,
+        workItemId,
+        fromSeq,
+      ) !== undefined
+    );
+  }
+
   lastSeq(conversationId: string): number {
     const last = this.#database.get(
       'select max(seq) as seq from entries where conversation_id = ?',
@@ -489,6 +584,42 @@ class Store implements BotStateStore {
     );
   }
 
+  responsesBetween(conversationId: string, fromSeq: number, beforeSeq?: number): unknown[] {
+    return this.#records(
+      beforeSeq === undefined
+        ? this.#database.all(
+            'select presentation_id, json from responses where conversation_id = ? and seq >= ? order by seq, presentation_id',
+            conversationId,
+            fromSeq,
+          )
+        : this.#database.all(
+            'select presentation_id, json from responses where conversation_id = ? and seq >= ? and seq < ? order by seq, presentation_id',
+            conversationId,
+            fromSeq,
+            beforeSeq,
+          ),
+      (row) => `presentation ${String(row.presentation_id)} of conversation ${conversationId}`,
+    );
+  }
+
+  presentationReach(conversationId: string, seq: number): number | null {
+    // The longest any presentation covers bounds how far back one can start and still reach
+    // `seq`; both reads are of an index only.
+    const span = this.#database.get(
+      'select max(covers - seq) as span from responses where conversation_id = ?',
+      conversationId,
+    )?.span;
+    if (typeof span !== 'number' || span < 1) return null;
+    const reach = this.#database.get(
+      'select min(seq) as reach from responses where conversation_id = ? and seq >= ? and seq < ? and covers >= ?',
+      conversationId,
+      seq - span,
+      seq,
+      seq,
+    )?.reach;
+    return typeof reach === 'number' ? reach : null;
+  }
+
   saveResponse(conversationId: string, entry: TranscriptEntry): void {
     const presentation = entry.presentation as { id?: unknown; phase?: unknown } | undefined;
     if (typeof presentation?.id !== 'string' || presentation.id === '') {
@@ -498,15 +629,17 @@ class Store implements BotStateStore {
     this.#database.transaction(() => {
       this.#requireConversation(conversationId);
       this.#database.run(
-        `insert into responses(conversation_id, presentation_id, seq, revision, phase, json)
-         values (?, ?, ?, ?, ?, ?)
+        `insert into responses(conversation_id, presentation_id, seq, revision, phase, covers, json)
+         values (?, ?, ?, ?, ?, ?, ?)
          on conflict(conversation_id, presentation_id) do update set seq = excluded.seq,
-           revision = excluded.revision, phase = excluded.phase, json = excluded.json`,
+           revision = excluded.revision, phase = excluded.phase, covers = excluded.covers,
+           json = excluded.json`,
         conversationId,
         id,
         integer(entry.seq),
         integer(entry.presentationRevision),
         text(presentation.phase),
+        responseCovers(entry),
         JSON.stringify(entry),
       );
     });

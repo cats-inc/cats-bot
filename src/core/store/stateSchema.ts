@@ -1,8 +1,11 @@
 /**
  * SPEC-014 FR-3: the tables of a bot's state database.
  *
- * Version 1 is provisional until a release ships it: no database exists outside tests, so a
- * change here needs no upgrade step yet.
+ * No release has shipped a version yet. Version 1 was made by builds of `main` from the
+ * cutover (PLAN-014) on; version 2 adds `responses.covers` and the indexes a page of the note
+ * reads by (FR-10). A writer brings a version-1 database to version 2 when it opens it, in
+ * one transaction (`STATE_SCHEMA_UPGRADES`), and a build that knows only version 1 refuses a
+ * database of version 2.
  *
  * Every table keeps its record as JSON text. The other columns are derived from it to find
  * and order records, and may be null when a record lacks the field: the driver the app ships
@@ -11,10 +14,25 @@
  * accepted requirement uses it.
  */
 
-export const STATE_SCHEMA_VERSION = 1;
+export const STATE_SCHEMA_VERSION = 2;
 
 /** "CBOT": marks a SQLite file as a Cats Bot state database. */
 export const STATE_APPLICATION_ID = 0x43424f54;
+
+/**
+ * FR-10: a page reads a conversation's presentations by `seq`, and finds those that reach
+ * into it by the longest any of them covers (`covers - seq`) and then by `seq`.
+ */
+const RESPONSES_INDEXES = `create index responses_by_seq on responses(conversation_id, seq, covers);
+create index responses_by_span on responses(conversation_id, (covers - seq));`;
+
+/**
+ * FR-10: whether a work item has a bot entry from a `seq` on, for a presentation that never
+ * bound its final entry. The work item is read as `BOT_ENTRY_WORK_ITEM` reads it, which a
+ * record that is not JSON leaves null instead of failing the write.
+ */
+export const BOT_ENTRY_WORK_ITEM = `(case when json_valid(json) then json_extract(json, '$.workItemId') end)`;
+const ENTRIES_INDEXES = `create index entries_bot_by_work_item on entries(conversation_id, ${BOT_ENTRY_WORK_ITEM}, seq) where kind = 'bot';`;
 
 export const STATE_SCHEMA_SQL = `
 create table meta(
@@ -40,16 +58,20 @@ create table entries(
   unique(conversation_id, seq)
 ) strict;
 
--- One row per reply presentation, replaced at each checkpoint (FR-6).
+-- One row per reply presentation, replaced at each checkpoint (FR-6). covers is the highest
+-- seq it covers (responseCovers), so that a page of the note finds the presentations that
+-- reach into it without reading them (FR-10).
 create table responses(
   conversation_id text not null,
   presentation_id text not null,
   seq integer,
   revision integer,
   phase text,
+  covers integer,
   json text not null,
   primary key(conversation_id, presentation_id)
 ) strict;
+${RESPONSES_INDEXES}
 
 -- The current state of each work item and schedule (FR-7). A row keeps the place it was
 -- first given, which is the order the journal first named it in.
@@ -94,4 +116,40 @@ create index journal_by_ref on journal(ref) where ref is not null;
 -- FR-8: each entry's text as the store rewrites it for searching. Contentless: the index
 -- stores no copy of the text and is rebuilt from the entries' JSON.
 create virtual table entries_fts using fts5(terms, content='', contentless_delete=1);
+${ENTRIES_INDEXES}
 `;
+
+/**
+ * Version 1 to 2 (FR-10): the column and the indexes. The writer fills `covers` from each
+ * presentation's JSON in the same transaction.
+ */
+export const STATE_SCHEMA_UPGRADES: Readonly<Record<number, string>> = {
+  1: `alter table responses add column covers integer;
+${RESPONSES_INDEXES}
+${ENTRIES_INDEXES}`,
+};
+
+/**
+ * FR-10: the highest `seq` a reply presentation covers: its own, those of the entries it
+ * stands for, and its final entry's. Null when it has no `seq` of its own. What is not a
+ * whole number is passed over, as the projection never matches it.
+ */
+export function responseCovers(response: unknown): number | null {
+  if (typeof response !== 'object' || response === null) return null;
+  const { seq, presentationSeqs, presentationTerminalSeq } = response as Record<string, unknown>;
+  if (!Number.isSafeInteger(seq)) return null;
+  let covers = seq as number;
+  if (
+    Number.isSafeInteger(presentationTerminalSeq) &&
+    (presentationTerminalSeq as number) > covers
+  ) {
+    covers = presentationTerminalSeq as number;
+  }
+  // A loop: a long turn covers more seqs than a spread passes as arguments.
+  if (Array.isArray(presentationSeqs)) {
+    for (const covered of presentationSeqs) {
+      if (Number.isSafeInteger(covered) && (covered as number) > covers) covers = covered as number;
+    }
+  }
+  return covers;
+}

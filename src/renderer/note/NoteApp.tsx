@@ -23,10 +23,14 @@ import {
   retryableOwnerEntry,
   entryMeta,
   entryText,
+  entriesWithinNewest,
   errorText,
   liveInteractions,
   localEntry,
   mergeTranscriptEntries,
+  NOTE_PAGE_SIZE,
+  newestStoredSeq,
+  readNewestPages,
   upsertWorkItem,
   mergeWorkItems,
   noteRoleSuffix,
@@ -240,6 +244,14 @@ export function NoteApp() {
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  // SPEC-014 FR-10: the `beforeSeq` of the next older page; undefined before the first read,
+  // null once the note holds the start of the conversation.
+  const olderBefore = useRef<number | null | undefined>(undefined);
+  const loadingOlder = useRef(false);
+  // Where the owner was reading when an older page came in, kept in place after it is shown.
+  const scrollAnchor = useRef<{ height: number; top: number } | null>(null);
   // ADR-020: a line about a missing macOS permission offers its System Settings pane.
   const settingsPanes = useRef(new Map<number, SystemSettingsPane>());
   const noteError = useCallback((text: string, pane?: SystemSettingsPane | null) => {
@@ -316,16 +328,44 @@ export function NoteApp() {
   }, [requested, locale]);
 
   // A transcript read keeps the reply being streamed; it is not in the transcript until the turn ends.
+  // SPEC-014 FR-10: it reads the newest pages, back to what the note already holds.
   const reload = useCallback(async () => {
     const id = conversation.current;
     try {
-      const [transcript, work] = await Promise.all([api.invoke('conversationTranscript', id), api.invoke('listWorkItems', id)]);
-      for (const entry of transcript) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
-      setEntries(current => mergeTranscriptEntries(current, visibleEntries(transcript)));
+      const read = (beforeSeq?: number) => api.invoke('conversationTranscriptPage', id,
+        beforeSeq === undefined ? { limit: NOTE_PAGE_SIZE } : { limit: NOTE_PAGE_SIZE, beforeSeq });
+      // Before the first read, and while the note holds no entry of the transcript, one page.
+      const held = olderBefore.current === undefined ? null : newestStoredSeq(entriesRef.current);
+      const [pages, work] = await Promise.all([readNewestPages(read, held), api.invoke('listWorkItems', id)]);
+      for (const entry of pages.entries) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
+      setEntries(current => mergeTranscriptEntries(
+        pages.joined ? current : entriesWithinNewest(current, pages.olderBeforeSeq), visibleEntries(pages.entries)));
+      if (held === null || !pages.joined) olderBefore.current = pages.olderBeforeSeq;
       setWorkItems(current => mergeWorkItems(current, work.filter((item) => item.conversationId === id)));
       setHistoryError('');
     } catch (error) {
       setHistoryError(errorText(error));
+    }
+  }, []);
+
+  // SPEC-014 FR-10: the page before the oldest one shown, when the owner scrolls up to it.
+  const loadOlder = useCallback(async () => {
+    const beforeSeq = olderBefore.current;
+    if (typeof beforeSeq !== 'number' || loadingOlder.current) return;
+    loadingOlder.current = true;
+    try {
+      const page = await api.invoke('conversationTranscriptPage', conversation.current, { limit: NOTE_PAGE_SIZE, beforeSeq });
+      // A reading of the newest pages that could not join replaced what the note held.
+      if (olderBefore.current !== beforeSeq) return;
+      for (const entry of page.entries) if (entry.presentation && entry.workItemId) structuredWork.current.add(entry.workItemId);
+      const element = transcriptRef.current;
+      if (element) scrollAnchor.current = { height: element.scrollHeight, top: element.scrollTop };
+      setEntries(current => mergeTranscriptEntries(current, visibleEntries(page.entries)));
+      olderBefore.current = page.olderBeforeSeq;
+    } catch (error) {
+      setHistoryError(errorText(error));
+    } finally {
+      loadingOlder.current = false;
     }
   }, []);
 
@@ -423,10 +463,23 @@ export function NoteApp() {
   const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
 
   useLayoutEffect(() => {
+    const anchor = scrollAnchor.current;
+    const element = transcriptRef.current;
+    if (!anchor || !element) return;
+    scrollAnchor.current = null;
+    if (!followTranscript.current) element.scrollTop = anchor.top + (element.scrollHeight - anchor.height);
+  }, [items]);
+  useLayoutEffect(() => {
     if (activeRequestIds) return;
     const element = transcriptRef.current;
     if (element && followTranscript.current) element.scrollTop = element.scrollHeight;
   }, [items, pending, activeRequestIds]);
+  // A note whose pages do not fill it reads the one before, as a scroll to the top would. A
+  // window not laid out yet, hidden in the background, has no height and reads nothing more.
+  useEffect(() => {
+    const element = transcriptRef.current;
+    if (element && element.clientHeight > 0 && element.scrollHeight <= element.clientHeight) void loadOlder();
+  }, [items, loadOlder]);
   useLayoutEffect(() => {
     if (activeRequestIds) interactionAnchor.current?.scrollIntoView({ block: 'start' });
   }, [activeRequestIds]);
@@ -543,7 +596,12 @@ export function NoteApp() {
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
-        onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
+        onScroll={() => {
+          const element = transcriptRef.current;
+          if (!element) return;
+          followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40;
+          if (element.scrollTop < 120) void loadOlder();
+        }}>
         <button type="button" className="conversation-details-toggle" aria-pressed={showDetails}
           onClick={() => setShowDetails(value => !value)}>{showDetails ? t('Hide details') : t('Show input and result')}</button>
         {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}

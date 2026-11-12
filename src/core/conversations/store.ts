@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 
 import { isValidBotId } from '../store/paths.ts';
 import { checkedResponse, projectPresentationTranscript } from '../store/presentation.ts';
+import { responseCovers } from '../store/stateSchema.ts';
 import type { BotStateStore, EntriesPage } from '../store/stateStore.ts';
 import type {
   AttachmentState,
@@ -9,6 +10,7 @@ import type {
   ConversationRole,
   SessionAttachment,
   TranscriptEntry,
+  TranscriptPage,
 } from '../types.ts';
 
 /**
@@ -16,6 +18,13 @@ import type {
  * their reply presentations in the bot's state database. Every mutation goes through
  * `update`, so the stored record is always the rendering of the one in memory.
  */
+
+/** SPEC-014 FR-10: entries in a page of the note when the reader names no number. */
+export const TRANSCRIPT_PAGE_DEFAULT = 100;
+/** SPEC-014 FR-10: the most entries a page holds. */
+export const TRANSCRIPT_PAGE_MAX = 500;
+/** SPEC-014 FR-10: a page above this size is read again with fewer entries. */
+export const TRANSCRIPT_PAGE_BUDGET_BYTES = 1024 * 1024;
 
 export const ATTACHMENT_STATES: readonly AttachmentState[] = [
   'none',
@@ -108,6 +117,40 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
 /** PLAN-009 D29's sender conversations, `bot-<sender id>`, named "Messages from <name>". */
 const SENDER_CONVERSATION = /^bot-(.+)$/u;
 const SENDER_TITLE = /^Messages from (.+)$/u;
+
+/**
+ * SPEC-014 FR-10: the newest part of a page within `budget` bytes, and the `seq` it was cut
+ * at, or null when all of it fits. A cut keeps every entry of a `seq` and never falls inside
+ * a shown presentation's span, so that the page before it projects as the whole transcript
+ * would. When even the newest part that can be cut off is larger, it is the page, so that a
+ * page holds an entry whatever its size.
+ */
+export function newestWithinBudget(
+  projected: readonly TranscriptEntry[],
+  budget: number,
+): { entries: TranscriptEntry[]; cut: number | null } {
+  const sizes = projected.map((entry) => Buffer.byteLength(JSON.stringify(entry)) + 1);
+  if (sizes.reduce((sum, size) => sum + size, 1) <= budget) return { entries: [...projected], cut: null };
+  const spans = projected
+    .filter((entry) => entry.presentation)
+    .map((entry) => [entry.seq, responseCovers(entry) ?? entry.seq] as const);
+  let used = 1;
+  let best: number | null = null;
+  for (let index = projected.length - 1; index > 0; index -= 1) {
+    used += sizes[index]!;
+    const seq = projected[index]!.seq;
+    if (projected[index - 1]!.seq === seq) continue;
+    if (spans.some(([from, to]) => from < seq && seq <= to)) continue;
+    if (used > budget) {
+      best ??= index;
+      break;
+    }
+    best = index;
+  }
+  return best === null
+    ? { entries: [...projected], cut: null }
+    : { entries: projected.slice(best), cut: projected[best]!.seq };
+}
 
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -294,22 +337,57 @@ export class ConversationStore {
   }
 
   /**
-   * SPEC-014 FR-10: a page of the transcript as the note shows it. The presentations it
-   * projects are those of the page's own entries, and of replies still running.
+   * SPEC-014 FR-10: a page of the transcript as the note shows it, with the `beforeSeq` of
+   * the page before it, within `budgetBytes`. A page never parts a reply presentation from
+   * the entries it covers: it reaches back to the start of any presentation that covers its
+   * first entry, so each page projects as the whole transcript would. It reads its own
+   * entries and presentations, and the rest of the conversation only through indexes.
    */
-  presentationPage(id: string, page: EntriesPage, runningWorkId?: string): TranscriptEntry[] {
-    const entries = this.transcriptPage(id, page);
-    if (entries.length === 0) return [];
-    const first = entries[0]!.seq;
-    const last = page.beforeSeq === undefined ? Number.POSITIVE_INFINITY : page.beforeSeq;
-    const responses = this.presentations(id).filter((response) => response.seq >= first && response.seq < last);
-    return projectPresentationTranscript(entries, responses, runningWorkId);
+  presentationPage(
+    id: string,
+    page: EntriesPage,
+    runningWorkId?: string,
+    budgetBytes = Number.POSITIVE_INFINITY,
+  ): TranscriptPage {
+    this.require(id);
+    const store = this.store();
+    const window = store.entriesWindow(id, page);
+    if (window.firstSeq === null) return { entries: [], olderBeforeSeq: null };
+    let entries = window.entries;
+    let floor = window.firstSeq;
+    for (let reach = store.presentationReach(id, floor); reach !== null; reach = store.presentationReach(id, floor)) {
+      entries = [...store.entriesBetween(id, reach, floor), ...entries];
+      floor = reach;
+    }
+    const own = this.checkedResponses(id, store.responsesBetween(id, floor, page.beforeSeq));
+    // A presentation that never bound its final entry is left out when a bot entry of its
+    // work item comes after it, as the whole transcript's projection leaves it out. One
+    // after this page is asked of the store, by index.
+    const upper = page.beforeSeq;
+    const finishedLater = new Map<string, boolean>();
+    const shown = upper === undefined ? own : own.filter((response) => {
+      const workItemId = response.workItemId!;
+      if (entries.some((entry) => entry.kind === 'bot' && entry.workItemId === workItemId && entry.seq >= response.seq)) {
+        return true;
+      }
+      if (!finishedLater.has(workItemId)) finishedLater.set(workItemId, store.hasBotEntryOf(id, workItemId, upper));
+      return !finishedLater.get(workItemId);
+    });
+    const { entries: kept, cut } = newestWithinBudget(
+      projectPresentationTranscript(entries, shown, runningWorkId),
+      budgetBytes,
+    );
+    return { entries: kept, olderBeforeSeq: cut ?? (store.hasEntryBefore(id, floor) ? floor : null) };
   }
 
   /** The reply presentations as the shared contract reads them; one it cannot is reported. */
   private presentations(id: string): TranscriptEntry[] {
+    return this.checkedResponses(id, this.store().responses(id));
+  }
+
+  private checkedResponses(id: string, raws: readonly unknown[]): TranscriptEntry[] {
     const checked: TranscriptEntry[] = [];
-    for (const raw of this.store().responses(id)) {
+    for (const raw of raws) {
       const response = checkedResponse(raw);
       if (response) checked.push(response);
       else this.warn(`conversation ${id}: a reply presentation cannot be read and was left out`);

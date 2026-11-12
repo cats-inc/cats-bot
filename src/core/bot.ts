@@ -2,7 +2,12 @@ import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { readAttachmentImage, storeAttachment, type StoredAttachment } from './conversations/attachmentStore.ts';
-import { ConversationStore } from './conversations/store.ts';
+import {
+  ConversationStore,
+  TRANSCRIPT_PAGE_BUDGET_BYTES,
+  TRANSCRIPT_PAGE_DEFAULT,
+  TRANSCRIPT_PAGE_MAX,
+} from './conversations/store.ts';
 import {
   catsDesktopExecutables,
   createDesktopControlHelperClient,
@@ -86,6 +91,8 @@ import type {
   RuntimeState,
   ScheduleRecord,
   TelegramSettingsStatus,
+  TranscriptPage,
+  TranscriptPageRequest,
   WorkItem,
   BotInteractionResponse,
   BotInteractionSnapshot,
@@ -1562,6 +1569,21 @@ export class BotCore implements BotHostApi {
     const id = this.resolveConversationId(conversationId);
     const running = [...this.workItems.values()].find(item => item.conversationId === id && item.state === 'running');
     return this.conversations.presentationTranscript(id, running?.id);
+  }
+
+  /**
+   * SPEC-014 FR-10: one page of the conversation as the note shows it, the newest or the one
+   * before `beforeSeq`, which is to be an `olderBeforeSeq` a page returned: another value
+   * may cut a reply presentation from entries it covers. A page larger than its budget keeps
+   * its newest part within it, down to one entry, which is returned whatever its size, as
+   * `conversationTranscript` keeps its newest entry.
+   */
+  conversationTranscriptPage(conversationId: string, request: TranscriptPageRequest = {}): TranscriptPage {
+    const id = this.resolveConversationId(conversationId);
+    const running = [...this.workItems.values()].find(item => item.conversationId === id && item.state === 'running');
+    const limit = Math.min(Math.max(Math.trunc(request.limit ?? TRANSCRIPT_PAGE_DEFAULT), 1), TRANSCRIPT_PAGE_MAX);
+    return this.conversations.presentationPage(id, { limit, beforeSeq: request.beforeSeq }, running?.id,
+      TRANSCRIPT_PAGE_BUDGET_BYTES);
   }
 
   /** The runtime's own transcript of the conversation's session (SPEC-001 A1, FR-28 evidence). */
