@@ -229,7 +229,7 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 - [x] Migration of a copy of a real version-1 data root, with byte-for-byte equal exports
   before and after: `tests/core/conversationExport.test.ts`, and a copy of one local bot
-  root on 2026-11-12 (PLAN-014 1.6).
+  root with `main` 5e49ab3 on 2026-11-12, also after a restore (PLAN-014 1.6).
 - [x] Crash injection at each migration step, with the version-1 files intact and the next start
   succeeding: `tests/core/version1Migration.test.ts` and `tests/core/migrationAtStart.test.ts`.
 - [x] Corrupt-line handling, and an unknown schema version stopping the core:
@@ -243,7 +243,10 @@ verified migration moves existing bots over without losing or rewriting their hi
 - [x] WAL behaviour with a reader while a reply streams: `tests/core/stateStore.test.ts`.
 - [x] `quick_check` failure and snapshot restore: `tests/core/stateMaintenance.test.ts`.
 - [x] The performance targets on the three platforms: PLAN-014 1.7, measured on `main` on
-  2026-11-12; all three are met, under Node.js and inside Electron.
+  2026-11-12. All three are met on GitHub's runners on the three platforms, under Node.js
+  and inside Electron. On the reference Windows machine the two-character query target is
+  missed for the commonest words in a 600,000-entry conversation (132 and 169 ms); the
+  owner decides whether that holds 0.6 back.
 
 ## Dependencies
 

@@ -616,6 +616,8 @@ security review. Embeddings come only if the evaluation asks for them.
     before this work.
   - Checked on a copy of one local bot root (one conversation, 77 lines): its export
     before the migration and after it are equal byte for byte. The copy was removed.
+    Checked again with `main` 5e49ab3, after #170, #171 and #173: equal after the
+    migration, and again after `cats-bot restore` put the version-1 files back.
   - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's
     Open Questions: the check runs once the core has started, in a child process; a snapshot
     only after this run's check passed, written under an unfinished name first; the
@@ -637,6 +639,15 @@ security review. Embeddings come only if the evaluation asks for them.
       words together 24.0 to 51.3 ms.
     - Outside SPEC-014's targets, which name no single-character query: the commonest
       single character takes 103.8 to 258.8 ms (115.6 to 144.7 ms inside Electron).
+    - On this machine, the reference Windows machine SPEC-014 names, inside Electron 41 at
+      `main` 5e49ab3, one run with other work at about 30% of the processor: append at the
+      95th percentile 1.93 ms and the newest 50 entries 0.65 ms, within; two-character
+      queries within 100 ms in 13 of 15 cases (6.2 to 97.7 ms), but the commonest word in
+      the 600,000-entry conversation took 131.9 ms and two common words together there
+      169 ms (114.5 ms in the 21,000-entry one). The commonest single character took about
+      0.41 s. So the two-character target holds on GitHub's runners on the three platforms
+      and is missed on this machine for the commonest words in the largest conversation:
+      the owner decides whether that holds 0.6 back; nothing uses search before P2.
     - The numbers below are earlier ones: from before the search change (#171), or from a
       machine loaded by reviews running beside the measurement, two to three times slower.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
@@ -766,8 +777,8 @@ security review. Embeddings come only if the evaluation asks for them.
     >   moved to `archive/v1/`. A migration stopped at any point, a power cut or Quit
     >   included, is done again by the next start.
     > - A large bot takes minutes: in reviews on a busy machine, a million entries took
-    >   about 4.5 minutes and up to 1.2 GB of memory, and 100,000 small conversations about
-    >   13 minutes. A transcript or journal over about 512 MB cannot be read, by 0.5 or by
+    >   about 4.5 minutes and up to 1.2 GB of memory; 100,000 small conversations took about
+    >   13 minutes before entries were numbered by time, which made the import slower. A transcript or journal over about 512 MB cannot be read, by 0.5 or by
     >   the migration. The hub shows the bot as starting meanwhile, gives it up to an hour,
     >   and starts the other bots beside it; Quit ends the migration.
     > - When the import finds something it cannot keep as it was (an entry out of order,
