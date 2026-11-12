@@ -131,7 +131,7 @@ does not establish browser/desktop helper availability or successful invocation.
   driver, the adapter and the store with its full-text search, which hold
   conversations, transcripts, reply presentations and the journal; the
   one-time migration of the version-1 files and its restore; the check at
-  start and the daily snapshot, both in a worker thread on a connection of
+  start and the daily snapshot, both in a child process on a connection of
   their own (`stateMaintenance.ts`), and the export of a conversation from
   either the database or the version-1 files; atomic writes
   (temp file plus rename) for the files beside it; the single-instance lock

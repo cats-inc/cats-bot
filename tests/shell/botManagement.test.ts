@@ -301,7 +301,59 @@ test('a start right after a stop follows the stopped start, and is no failure', 
   assert.equal(await again, 'core 2');
   assert.equal(runner.state, 'running');
   assert.equal(states.includes('failed'), false, states.join(' '));
+  // Never shown as stopped once the start that follows has begun.
+  assert.equal(states.slice(states.lastIndexOf('starting')).includes('stopped'), false, states.join(' '));
   await runner.stop();
+});
+
+test('a core that cannot run until the owner acts is not started again (SPEC-014 FR-13)', async () => {
+  const lostListeners: Array<() => void> = [];
+  let starts = 0;
+  let refusing = false;
+  let gaveUp = 0;
+  let asked: Date | null = null;
+  const runner = new CoreRunner<string>('mochi', {
+    start: async () => {
+      starts += 1;
+      if (starts === 3) throw new Error("The bot's state database cannot be read");
+      return `core ${starts}`;
+    },
+    stop: async () => undefined,
+    onLost: (_handle, listener) => { lostListeners.push(listener); },
+    isExternal: () => false,
+    refusal: (since) => {
+      asked = since;
+      return refusing ? "The bot's state database failed its check. state-check-x.txt" : null;
+    },
+    changed: () => undefined,
+    gaveUp: () => { gaveUp += 1; },
+    log: () => undefined,
+    delaysMs: [5],
+  });
+  const startedAt = Date.now();
+  await runner.start();
+  // Lost without a report: restarted as before.
+  lostListeners.shift()!();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(runner.state, 'running');
+  assert.equal(starts, 2);
+  assert.ok(asked!.getTime() >= startedAt);
+  // Lost with a report written since it started: left failed with it, and not restarted.
+  refusing = true;
+  lostListeners.shift()!();
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(runner.state, 'failed');
+  assert.match(runner.error ?? '', /state-check-x\.txt/u);
+  assert.equal(starts, 2);
+  assert.equal(gaveUp, 1);
+  assert.match(runner.startAgainRefusal() ?? '', /only the owner/u);
+  // A start that fails on it is left the same way.
+  assert.equal(await runner.start(), null);
+  assert.equal(starts, 3);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  assert.equal(starts, 3);
+  assert.equal(runner.state, 'failed');
+  assert.equal(gaveUp, 2);
 });
 
 test('an archived id is reserved: run and init refuse it, and a derived id is numbered past it (FR-5, FR-27)', async () => {

@@ -23,6 +23,7 @@ import {
   type ConversationContent,
 } from '../core/store/conversationExport.ts';
 import { openBotStateStore, StateDatabaseError } from '../core/store/stateStore.ts';
+import { isDamagedDatabaseError, writeCheckReport } from '../core/store/stateMaintenance.ts';
 import { STATE_DATABASE_PROFILE_RAISE } from '../core/profile/profile.ts';
 
 /**
@@ -261,14 +262,27 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   const runtimeEntry = flagString(parsed.flags, 'runtime-entry');
   const helperPath = flagString(parsed.flags, 'desktop-control-helper');
   const hostCipher = flagString(parsed.flags, 'host-cipher');
-  const core = BotCore.open({
-    root: target.root,
-    runtime: { ...runtimeOverrides(env), ...(runtimeEntry ? { runtimeEntry } : {}) },
-    ...(helperPath ? { desktopControl: { helperPath } } : {}),
-    channel: { manager: flagString(parsed.flags, 'manager') ?? null },
-    ...(hostCipher ? { hostCipher } : {}),
-    log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
-  });
+  let core: BotCore;
+  try {
+    core = BotCore.open({
+      root: target.root,
+      runtime: { ...runtimeOverrides(env), ...(runtimeEntry ? { runtimeEntry } : {}) },
+      ...(helperPath ? { desktopControl: { helperPath } } : {}),
+      channel: { manager: flagString(parsed.flags, 'manager') ?? null },
+      ...(hostCipher ? { hostCipher } : {}),
+      log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
+    });
+  } catch (error) {
+    // SPEC-014 FR-13: the host that starts the core reports a database SQLite cannot read.
+    const cause = (error as Error | null)?.cause;
+    if (isDamagedDatabaseError(cause)) {
+      const paths = botPathsFor(target.root);
+      const report = writeCheckReport(paths, [cause instanceof Error ? cause.message : String(cause)], new Date());
+      createFileLogger(paths.logs)(`error the bot's state database cannot be read; see ${report}`);
+      throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
+    }
+    throw error;
+  }
   core.subscribe((event) => printEvent(event, json));
   // A rejection nothing handled would end this process; the core logs it and keeps running.
   const coreLog = createFileLogger(core.paths.logs);
@@ -291,6 +305,12 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     // A host may also stop the core over the host channel.
     void core.whenStopped().then(resolve);
   });
+  // SPEC-014 FR-13: a core that stopped on a damaged database did not end as asked.
+  if (core.stoppedForDamage) {
+    const { report } = core.stoppedForDamage;
+    process.stderr.write(`The bot's state database failed its check${report ? `; see ${report}` : ''}\n`);
+    return 1;
+  }
   return 0;
 }
 

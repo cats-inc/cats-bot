@@ -19,6 +19,7 @@ import { stateDatabaseFile, type BotPaths } from './paths.ts';
 import { presentationsDirectory } from './presentation.ts';
 import { removeTree } from './removeTree.ts';
 import { StateDatabaseError } from './stateDatabase.ts';
+import { newestSnapshot } from './stateMaintenance.ts';
 import { openBotStateStore } from './stateStore.ts';
 import {
   importVersion1,
@@ -343,6 +344,7 @@ function backupOf(paths: BotPaths, marker: string | undefined): string | null {
 function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise): void {
   const profile = parseRecord(readText(paths.profile));
   if (profile?.schemaVersion === raise.to) {
+    const newest = newestSnapshot(paths);
     const asides = readdirSync(paths.root).filter(
       (name) =>
         name.startsWith('bot.db.set-aside-') && !name.endsWith('-wal') && !name.endsWith('-shm'),
@@ -351,7 +353,8 @@ function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise): void {
       `${paths.profile} says this bot was migrated, but bot.db holds no finished import; nothing ` +
         'was imported again. If a restore was stopped, run `cats-bot restore` again to finish it' +
         (asides.length > 0 ? ` (the database it set aside: ${asides.join(', ')})` : '') +
-        '; otherwise put the database back.',
+        '; otherwise put the database back' +
+        (newest ? `, or copy the newest snapshot (${newest.file}) there as bot.db.` : '.'),
     );
   }
   if (profile === null || profile.schemaVersion !== raise.from) {
