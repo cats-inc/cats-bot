@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. In progress: the core keeps every bot's records in its database since the cutover, with its check, snapshots and export; paging is still to come ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. Implemented on `main` for 0.6 ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1), not released yet; the acceptance list says where each item is shown ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -227,18 +227,23 @@ verified migration moves existing bots over without losing or rewriting their hi
 
 ## Acceptance
 
-- Migration of a copy of a real version-1 data root, with byte-for-byte equal exports
-  before and after.
-- Crash injection at each migration step, with the version-1 files intact and the next start
-  succeeding.
-- Corrupt-line handling, and an unknown schema version stopping the core.
-- Deletion removing rows and index rows.
-- Paging in the note.
-- Chinese 1-, 2- and 3-character queries and an English query against a fixture
-  conversation.
-- WAL behaviour with a reader while a reply streams.
-- `quick_check` failure and snapshot restore.
-- The performance targets on the three platforms.
+- [x] Migration of a copy of a real version-1 data root, with byte-for-byte equal exports
+  before and after: `tests/core/conversationExport.test.ts`, and a copy of one local bot
+  root on 2026-11-12 (PLAN-014 1.6).
+- [x] Crash injection at each migration step, with the version-1 files intact and the next start
+  succeeding: `tests/core/version1Migration.test.ts` and `tests/core/migrationAtStart.test.ts`.
+- [x] Corrupt-line handling, and an unknown schema version stopping the core:
+  `tests/core/version1Import.test.ts`, `tests/core/stateStore.test.ts`,
+  `tests/core/stateDatabase.test.ts` and `tests/core/stateCutover.test.ts`.
+- [x] Deletion removing rows and index rows: `tests/core/stateStore.test.ts`.
+- [x] Paging in the note: `tests/core/transcriptPaging.test.ts` and
+  `tests/renderer/transcriptPaging.test.ts`.
+- [x] Chinese 1-, 2- and 3-character queries and an English query against a fixture
+  conversation: `tests/core/stateStore.test.ts` and `tests/core/searchText.test.ts`.
+- [x] WAL behaviour with a reader while a reply streams: `tests/core/stateStore.test.ts`.
+- [x] `quick_check` failure and snapshot restore: `tests/core/stateMaintenance.test.ts`.
+- [x] The performance targets on the three platforms: PLAN-014 1.7, measured on `main` on
+  2026-11-12; all three are met, under Node.js and inside Electron.
 
 ## Dependencies
 

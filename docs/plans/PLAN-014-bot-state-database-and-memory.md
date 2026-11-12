@@ -53,11 +53,15 @@ security review. Embeddings come only if the evaluation asks for them.
         as they are made, each marked "chosen 2026-11-12", so that the owner can read
         them before bumping;
       - the bump, the release notes' exact pins and the publication stay the owner's.
-- [ ] Done before the owner bumps 0.6 (2026-11-12): tasks 1.4 to 1.7 and the cutover
+- [x] Done before the owner bumps 0.6 (2026-11-12): tasks 1.4 to 1.7 and the cutover
       merged; SPEC-014's acceptance list checked; SPEC-001 FR-2, FR-3, FR-12 and FR-14,
       ADR-001 section 6 and `docs/architecture.md` updated as SPEC-014 says; a draft of
       1.8's release and migration notes ready for the bump; `main` green on the three
       platforms with no open pull request or worktree of this plan.
+  - Done 2026-11-12: #169 (the cutover), #170 (1.4), #171 (1.7), #172 (1.6) and #173 (its
+    review's follow-up) merged, each after an independent review with no blocker left and
+    CI on the three platforms; `main` 1dc4733 green; 1.8's draft is under 1.8. What each
+    review left is listed under its task as known.
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.
@@ -192,7 +196,7 @@ security review. Embeddings come only if the evaluation asks for them.
       mode. Version-1 files work there today.
     - The test prints what each runtime does with a raw NUL and a read-only open in its
       `sqlite-driver runtime` line, in the CI log of every platform.
-- [ ] 1.2 Move writers and readers:
+- [x] 1.2 Move writers and readers (the cutover, #169):
   - conversations and attachments;
   - transcript entries (append-only `seq`);
   - presentations (row upsert, existing 100 ms throttle);
@@ -373,7 +377,7 @@ security review. Embeddings come only if the evaluation asks for them.
         the root nor `archive/v1/` holds the version-1 files, and names what it leaves in
         the archive. It reads only `archive/v1/`; putting files back from a copy in
         `migration-backup/` is for `cats-bot restore` at the cutover.
-- [ ] 1.3 Full-text index, query builder and a rebuild command. First planned with a
+- [x] 1.3 Full-text index, query builder and a rebuild command (#165, #171, #172). First planned with a
       bigram column and a LIKE path for single characters; the notes below say what
       replaced them.
   - [x] `src/core/store/searchText.ts` rewrites an entry's text and a person's query, and
@@ -467,7 +471,7 @@ security review. Embeddings come only if the evaluation asks for them.
     entry; the note pages back within 120 pixels of the top or while its pages do not fill
     it, and reads at most 20 newest pages after a turn; schema version 2.
   - The note no longer reads `conversationTranscript`; the command stays for other hosts.
-- [ ] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
+- [x] 1.5 Migration (backup, import, verify, marker, profile schema raise, archive), failure
       report and `cats-bot restore`.
   - [x] The import, its check and the marker: `src/core/store/version1Import.ts`, with
         `tests/core/version1Import.test.ts`. Nothing calls it yet.
@@ -605,7 +609,9 @@ security review. Embeddings come only if the evaluation asks for them.
     day made the next snapshot remove every good one (now ones named after a time to come
     go only once three others are kept), and the report of a missing database after a
     stopped restore still advised an older snapshot. Known: a clock set back after a start hides that start's report from the
-    hub, which then starts the core again a bounded number of times; Start pressed while
+    hub, which then starts the core again a bounded number of times; the hub calls a
+    missing database one that failed its check, though its report says what happened;
+    Start pressed while
     a running core stops leaves the bot shown as stopped with the new core running, as
     before this work.
   - Checked on a copy of one local bot root (one conversation, 77 lines): its export
@@ -618,7 +624,21 @@ security review. Embeddings come only if the evaluation asks for them.
     `backups/` until they are replaced, three days later; the check and the daily
     snapshot read the whole database in the background (16 to 17 s and 9 s for 330 MB);
     a damaged database leaves the bot stopped in the hub with the report's path.
-- [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
+- [x] 1.7 Performance targets of SPEC-014 on the three platforms.
+  - Measured on `main` 5d27bf2 by the manual `store-performance` workflow (run
+    43133239743, 2026-11-12), one run on each GitHub runner, with 1,000,000 made-up
+    entries, under Node.js 24.22.2 (SQLite 3.53.4) and inside Electron 41.2.0 (Node.js
+    24.14.0, SQLite 3.51.2). SPEC-014's three targets are met on every platform, in both:
+    - append at the 95th percentile 0.27 to 0.86 ms (target 5 ms);
+    - the newest 50 entries 0.09 to 0.29 ms (target 20 ms);
+    - two-character Chinese queries 1.7 to 51.3 ms (target 100 ms), over all entries, in
+      a conversation of 21,000 and in one of 600,000 entries: a rare word 1.7 to 26.2 ms,
+      one in some entries 4.5 to 23.2 ms, the commonest 12.2 to 34.2 ms, and two common
+      words together 24.0 to 51.3 ms.
+    - Outside SPEC-014's targets, which name no single-character query: the commonest
+      single character takes 103.8 to 258.8 ms (115.6 to 144.7 ms inside Electron).
+    - The numbers below are earlier ones: from before the search change (#171), or from a
+      machine loaded by reviews running beside the measurement, two to three times slower.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
     with 1,000,010 made-up entries, 286,894 work items and 861,732 journal lines
     (1,376 MB). Medians of three to five runs, except where one run is said. Every
@@ -723,6 +743,63 @@ security review. Embeddings come only if the evaluation asks for them.
       50,000; a transcript changed during the import is caught by its count only.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
+  - Draft for the bump PR's `docs/releases/v0.6.0.md`, written 2026-11-12. The owner
+    fills in the title, the exact inputs (Runtime selection, shared UI, tool pins) and the
+    validation from the bump itself, and edits anything below; nothing here was published.
+
+    > **Each bot's data moves into one database.** The first start of 0.6 moves a bot's
+    > conversations, transcripts, reply presentations and journal into `bot.db`, a SQLite
+    > database in the bot's folder, with a full-text index of every entry (SPEC-014,
+    > ADR-021). The note opens on the newest page of a conversation and loads older pages
+    > as it scrolls, a few milliseconds each on long conversations. Once a day, while it is
+    > idle, the bot keeps a snapshot of its database in `backups/` (the three newest), and
+    > after each start it checks the database in the background; a damaged one stops the
+    > bot, which the hub then leaves stopped, with a report naming the newest snapshot.
+    > `cats-bot export <conversation>` writes a conversation as JSON lines, and
+    > `cats-bot reindex` rebuilds the search index.
+    >
+    > **Migration (persisted data; this is why 0.6 is a new minor version).**
+    > - It runs once, at a bot's first start or first change on 0.6, under the bot's lock.
+    >   It copies the version-1 files to `migration-backup/<time>/` with a manifest,
+    >   imports them, checks the database against the files, and marks it finished in one
+    >   durable transaction. Only then is the profile raised to schema 3 and the files
+    >   moved to `archive/v1/`. A migration stopped at any point, a power cut or Quit
+    >   included, is done again by the next start.
+    > - A large bot takes minutes: in reviews on a busy machine, a million entries took
+    >   about 4.5 minutes and up to 1.2 GB of memory, and 100,000 small conversations about
+    >   13 minutes. A transcript or journal over about 512 MB cannot be read, by 0.5 or by
+    >   the migration. The hub shows the bot as starting meanwhile, gives it up to an hour,
+    >   and starts the other bots beside it; Quit ends the migration.
+    > - When the import finds something it cannot keep as it was (an entry out of order,
+    >   two files of one conversation), the bot does not start; `core.log` names the report
+    >   in `migration-backup/<time>/report.md`, and the files stay as they were. What it
+    >   only reports (a broken line 0.5 skipped too, a file no reader read) is in the same
+    >   report, and the bot starts.
+    > - To go back to 0.5: quit the bot and run `cats-bot restore` with 0.6's CLI. It puts
+    >   the version-1 files back, sets the database aside as `bot.db.set-aside-<time>` and
+    >   lowers the profile, so 0.5.9 starts the bot as it was before the migration. What
+    >   was written on 0.6 stays in the database set aside. 0.5.9 refuses a migrated bot
+    >   ("Unsupported profile schema") instead of starting it empty.
+    >
+    > **Worth knowing.**
+    > - `migration-backup/` and `archive/v1/` keep what the bot held before the migration,
+    >   prompts of conversations deleted since included, until you remove them; remove
+    >   them once 0.6 has run well. The snapshots in `backups/` keep a deleted
+    >   conversation for three more days.
+    > - Deleting a conversation now also deletes its work items and their journal lines,
+    >   which held its prompts; a delivery of a deleted conversation is answered as
+    >   cancelled.
+    > - Keep `CATS_BOT_HOME` on a local disk: SQLite's write-ahead log does not work on a
+    >   network share. Nothing refuses one.
+    > - The check after each start and the daily snapshot read the whole database in a
+    >   process of their own (about 16 s and 9 s for 330 MB); a stop ends them at once.
+    > - Search is not yet used by any feature; it is there for the memory work that
+    >   follows. Over a million entries, on the three platforms, a two-character Chinese
+    >   query took 2 to 51 ms and one common character 0.1 to 0.26 s (PLAN-014 1.7).
+    > - A host without the lock (`cats-bot status`, `conversations`) shows nothing of a bot
+    >   not migrated yet, until its first start or change.
+    > - Builds of `main` from before this release wrote an earlier database schema; 0.6
+    >   upgrades such a database when it opens it, and those builds refuse it afterwards.
 
 **Deliverables**: every bot runs on `bot.db`; the version-1 files are archived; older
 binaries stop instead of starting blank; search is available to the core.
