@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `3232270e81831d64d35ccd678cc6d54f2c88b2e1`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-3232270e.tgz`; 1,836,422 bytes.
-SHA-256: `d14b74da87e3b8272443f1d53adc22686af6b896fc4b667dce5fb3e17e7c5192`.
+Source `77d3e861aff5a8871e138e3be5ed28ce96c2ab09`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-77d3e861.tgz`; 1,845,079 bytes.
+SHA-256: `e7d26ea82887ad85af8e8c5c74883553fb5a3ee41ca73b7507a32b75d96b1448`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -20,6 +20,12 @@ Internal jobs can request ephemeral history; persistent Bot conversations retain
 their native identity and receive a bounded name through Runtime. The Bot restart
 repair resumes its saved Runtime record with fresh host descriptors. Neither the
 pin refresh nor this lifecycle change deletes existing native conversations.
+
+The 0.5.10 selection also carries Runtime #219's preview-plugin installation and
+restart recovery, #220's native Codex developer items for turn instructions, and
+#221's reference-based media jobs. #222 loads optional FFmpeg/FFprobe only when
+needed, so a missing media binary does not prevent Runtime startup. These Runtime
+capabilities do not add a Bot media UI, a provider or a new Bot storage format.
 
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed
@@ -54,7 +60,7 @@ lockfile together. It does not change the description in this file, so update th
 hand. A Runtime without the advertised policy/interaction capability is unavailable
 for the new mode, never silently used with different permissions.
 
-No package version, profile/journal format or data migration changes in this
-slice. Existing profiles retain `providerPolicy: null` until the owner enables
+Runtime remains version 0.6.2; Bot 0.5.10 adds no profile/journal format change or
+mandatory data migration. Existing profiles retain `providerPolicy: null` until the owner enables
 native tools. Existing Codex/Claude catalogs, interactions, policy and inventory
 are retained. Desktop control keeps its separate permission and platform gates.

@@ -26,8 +26,8 @@ and [PLAN-004 P6](plans/PLAN-004-provider-interactions-and-tool-visibility.md#p6
 [Production host diagnostics](decisions/013-keep-bounded-production-host-diagnostics.md)
 records the host/core log retention, detached stderr maintenance and no-dump policy.
 
-The [0.5.9 Standard Preview release notes](releases/v0.5.9.md) describe session
-recovery, Boss Cat coordination, exact inputs, compatibility and signing policy.
+The [0.5.10 Standard Preview release notes](releases/v0.5.10.md) describe update
+discovery, localized failures, exact inputs, compatibility and signing policy.
 
 [Runtime catalog validation](research/2026-11-01-runtime-catalog-consumer-validation.md)
 records the five-provider selector contract and refreshed Runtime candidate checks.
