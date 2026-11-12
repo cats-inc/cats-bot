@@ -70,7 +70,7 @@ export interface BotEnvironment {
 }
 
 export interface BotProfile {
-  schemaVersion: 3;
+  schemaVersion: 2;
   id: string;
   name: string;
   /** SPEC-008 FR-29: the look of this bot's Cat; absent or unknown reads as the default Cat. */
@@ -183,25 +183,6 @@ export interface TranscriptEntry {
   presentationRevision?: number;
   presentationSeqs?: number[];
   presentationTerminalSeq?: number;
-}
-
-/** SPEC-014 FR-10: which page of a conversation to read. */
-export interface TranscriptPageRequest {
-  /** How many entries at most; 100 when not given, and never more than 500. */
-  limit?: number;
-  /**
-   * Only entries before this `seq`; without it, the newest ones. It is to be an
-   * `olderBeforeSeq` a page returned: another value may cut a reply presentation from the
-   * entries it covers, and the page then shows them as they were written.
-   */
-  beforeSeq?: number;
-}
-
-/** SPEC-014 FR-10: one page of a conversation as the note shows it. */
-export interface TranscriptPage {
-  entries: TranscriptEntry[];
-  /** The `beforeSeq` of the page before this one, or null when nothing is older. */
-  olderBeforeSeq: number | null;
 }
 
 export type WorkItemKind = 'owner_message' | 'heartbeat' | 'schedule' | 'event';

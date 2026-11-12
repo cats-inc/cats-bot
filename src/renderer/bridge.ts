@@ -10,8 +10,6 @@ import type {
   ScheduleRecord,
   TelegramSettingsStatus,
   TranscriptEntry,
-  TranscriptPage,
-  TranscriptPageRequest,
   WorkItem,
   BotInteractionSnapshot,
   BotInteractionResponse,
@@ -46,8 +44,6 @@ export interface HostCommands {
   deleteConversation: { args: [conversationId: string]; result: null };
   transcript: { args: [conversationId: string]; result: TranscriptEntry[] };
   conversationTranscript: { args: [conversationId: string]; result: TranscriptEntry[] };
-  /** SPEC-014 FR-10: one page of the note, the newest or the one before a `seq`. */
-  conversationTranscriptPage: { args: [conversationId: string, request?: TranscriptPageRequest]; result: TranscriptPage };
   sendOwnerMessage: { args: [conversationId: string, text: string]; result: WorkItem };
   retryOwnerMessage: { args: [conversationId: string, workItemId: string]; result: WorkItem };
   addOwnerAttachment: { args: [conversationId: string, name: string, data: string]; result: { name: string; relativePath: string } };
@@ -84,7 +80,6 @@ export const BRIDGE_COMMANDS = [
   'deleteConversation',
   'transcript',
   'conversationTranscript',
-  'conversationTranscriptPage',
   'sendOwnerMessage',
   'retryOwnerMessage',
   'addOwnerAttachment',

@@ -18,7 +18,7 @@ export class ResponsePresentation {
     this.store = store;
     this.conversationId = item.conversationId;
     this.response = {
-      seq: store.lastSeq(item.conversationId) + 1,
+      seq: (store.transcript(item.conversationId).at(-1)?.seq ?? 0) + 1,
       at: at.toISOString(), kind: 'bot', text: '', origin, workItemId: item.id,
       presentation: { version: 1, id: `${item.id}:${randomUUID()}`, phase: 'streaming', blocks: [] },
       presentationRevision: 0, presentationSeqs: [],

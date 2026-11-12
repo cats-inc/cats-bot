@@ -141,21 +141,9 @@ jobs:
         if: env.SKIP == ''
         run: npm test
 
-      # PLAN-014 task 1.1: the bot core runs inside Electron, whose Node.js and SQLite are not
-      # the ones above, so the store's tests run there as well on every platform.
-      - name: Test the store inside the shipped Electron
-        if: env.SKIP == ''
-        run: npm run test:electron
-
       - name: Build
         if: env.SKIP == ''
         run: npm run build
-
-      # SPEC-014 FR-13: the tests run the maintenance script from source; a package runs the
-      # compiled one, in a process of its own, inside Electron.
-      - name: Check and snapshot a database with the built core inside Electron
-        if: env.SKIP == ''
-        run: node scripts/testing/check-built-maintenance.mjs
 
       - name: Test real Electron relaunch
         if: env.SKIP == '' && matrix.os == 'ubuntu-latest'

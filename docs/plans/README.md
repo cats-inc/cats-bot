@@ -70,7 +70,7 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 | [PLAN-010](./PLAN-010-boss-cat-derived-ids-and-hub-settings.md) | Boss Cat, Derived Ids and Hub Settings | In progress | [SPEC-008](../specs/SPEC-008-hub-and-bots.md), [SPEC-009](../specs/SPEC-009-boss-cat-role.md) |
 | [PLAN-011](./PLAN-011-setup-wizard.md) | Setup Wizard | Implemented; clean-machine acceptance pending | [SPEC-010](../specs/SPEC-010-setup-wizard.md) |
 | [PLAN-012](./PLAN-012-agent-clis-in-cats-bot-settings.md) | Agent CLIs in Cats Bot Settings | Implemented; clean-machine acceptance pending | [SPEC-013](../specs/SPEC-013-agent-clis-in-cats-bot-settings.md) |
-| [PLAN-014](./PLAN-014-bot-state-database-and-memory.md) | Bot State Database and Memory | P1 in progress: the store, its search and the version-1 import are built and not wired in | [SPEC-014](../specs/SPEC-014-bot-state-database-and-migration.md), [SPEC-015](../specs/SPEC-015-bot-memory-layers-recall-and-consolidation.md) |
+| [PLAN-014](./PLAN-014-bot-state-database-and-memory.md) | Bot State Database and Memory | P1 withdrawn 2026-11-12 (tag `state-db-p1`); P2 onward wait on Cats Desktop's pilot | [SPEC-014](../specs/SPEC-014-bot-state-database-and-migration.md), [SPEC-015](../specs/SPEC-015-bot-memory-layers-recall-and-consolidation.md) |
 
 <!-- Add new plans above this line -->
 
