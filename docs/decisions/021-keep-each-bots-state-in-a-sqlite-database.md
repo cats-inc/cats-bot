@@ -5,6 +5,26 @@
 
 ## Status
 
+**Withdrawn from Cats Bot by the owner on 2026-11-12, before any release.** P1 was finished
+on `main` (#161 to #173) and reverted the same day. Cats Bot is a light product in which
+every conversation is one-to-one, and state kept in files a person can open and read has a
+value of its own there. Cats Desktop, with group and parallel chats and every conversation
+in one JSON file, tries a state database first ([cats-platform ADR-152](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/152-pilot-a-state-database-in-cats-desktop-before-cats-bot.md)); whether Bot needs one is decided
+after that has been tested. Bot keeps its version-1 files.
+
+- The implementation, its tests and its measurements are kept at the tag [`state-db-p1`](https://github.com/cats-inc/cats-bot/tree/state-db-p1) (`main` at
+  a8c1193). Every path, task and pull request this record and SPEC-014 name refers to that
+  tag.
+- No release wrote a bot database. A bot root a `main` build of those days migrated (a
+  `bot.db`, `archive/v1/`, a profile at schema 3) is refused by Bot after the revert; the
+  tag's `cats-bot restore` puts its files back. None existed on the owner's machine.
+- Bot reconsiders when Desktop's pilot has been released and tested, and Bot itself shows a
+  need its files cannot meet: conversations long enough that starting or reading them is
+  slow, memory recall (ADR-022) that needs more than a scan of the files, or a deletion or
+  journal problem the files cannot solve.
+
+The record as it stood when withdrawn follows.
+
 Accepted, 2026-11-11. The owner chose the proposed decision. The work is
 [PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1 and is in progress: the store
 is being built beside the files, and nothing in the core uses it yet.

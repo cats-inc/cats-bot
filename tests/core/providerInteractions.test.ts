@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { BotInteractions } from '../../src/core/host-api/providerInteractions.ts';
@@ -9,7 +9,6 @@ import type { BotInteraction, BotInteractionResponse } from '../../src/core/type
 import type { WorkItem } from '../../src/core/types.ts';
 import type { RuntimeClient } from '../../src/core/runtime/client.ts';
 import { fetchFakeState, makeTempHome, openTestBot, waitForEvent } from '../support/harness.ts';
-import { withStateStore } from '../support/stateData.ts';
 
 function answer(i: BotInteraction): BotInteractionResponse {
   return { workerGeneration: i.workerGeneration, executionId: i.executionId, workItemId: i.workItemId,
@@ -49,11 +48,7 @@ test('headless CLI answers outside the occupied gate, keeps notes isolated and p
     await done;
     assert.equal(core.getWorkItem(item.id)?.state, 'completed');
     assert.equal((await fetchFakeState(core)).calls.filter(c => c.op === 'provider_response').length, 1);
-    // SPEC-014: the journal is in the bot's database.
-    const journal = JSON.stringify(withStateStore(root, (store) => store.journal()));
-    assert.ok(!journal.includes('private-test-answer'));
-    assert.ok(!journal.includes('Fixture question'));
-    for (const file of ['provider-interactions.json', 'provider-interactions.json.bak']) {
+    for (const file of ['journal.jsonl', 'provider-interactions.json', 'provider-interactions.json.bak']) {
       const bytes = readFileSync(join(root, file), 'utf8');
       assert.ok(!bytes.includes('private-test-answer'));
       assert.ok(!bytes.includes('Fixture question'));
@@ -147,9 +142,8 @@ test('startup failure releases the new control endpoint and instance lock', asyn
   const home = makeTempHome('cats-control-start-failure-');
   const { core, root } = openTestBot({ botsHome: home.botsHome });
   try {
-    // A directory where the bot's database goes makes the start fail.
-    renameSync(join(root, 'bot.db'), join(root, 'bot.db-backup'));
-    mkdirSync(join(root, 'bot.db'));
+    renameSync(join(root, 'conversations'), join(root, 'conversations-backup'));
+    writeFileSync(join(root, 'conversations'), 'blocked directory');
     await assert.rejects(core.start());
     assert.equal(existsSync(join(root, 'host-control.json')), false);
     assert.equal(existsSync(join(root, 'instance.lock.json')), false);

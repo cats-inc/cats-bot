@@ -5,8 +5,9 @@ adds independent saved positions for setup and settings windows, and Hub Setting
 an optional Runtime purge. See the [setup guide](setup-guide.md#window-placement-and-data-reset)
 for retained Runtime storage and interrupted-reset recovery. Unpublished.
 
-Accepted, not implemented: [ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md)
-moves each bot's state to one SQLite database, and
+Withdrawn from Bot before release on 2026-11-12 (kept at the tag `state-db-p1`):
+[ADR-021](decisions/021-keep-each-bots-state-in-a-sqlite-database.md) moved each bot's state
+to one SQLite database; Cats Desktop tries one first. Accepted, waiting on that:
 [ADR-022](decisions/022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) adds
 layered memory consolidated while the bot sleeps
 ([SPEC-014](specs/SPEC-014-bot-state-database-and-migration.md),

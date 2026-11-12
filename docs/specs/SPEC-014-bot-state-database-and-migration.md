@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. Implemented on `main` for 0.6 ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1), not released yet; the acceptance list says where each item is shown ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
+| **Status** | Withdrawn from Cats Bot on 2026-11-12, before release ([ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md)); kept at the tag [`state-db-p1`](https://github.com/cats-inc/cats-bot/tree/state-db-p1), to which the paths below refer. As it stood: Approved by the owner on 2026-11-11 with [ADR-021](../decisions/021-keep-each-bots-state-in-a-sqlite-database.md) and the proposed answers to its open questions. Amendments to FR-1 to FR-4, FR-7 to FR-9, FR-11 and the dependencies, from what building P1 found, were accepted by the owner the same day: each amended requirement is marked, and Open Questions lists them all. Implemented on `main` for 0.6 ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1), not released yet; the acceptance list says where each item is shown ([PLAN-014](../plans/PLAN-014-bot-state-database-and-memory.md) P1) |
 | **Owner** | Bot core store |
 | **Reviewer** | Owner; independent review of the migration before release |
 | **Updates when implemented** | SPEC-001 FR-2 (data layout), FR-3 (write mechanics), FR-12 (transcript storage), FR-14 (deletion); ADR-001 §6 mechanics |
@@ -207,8 +207,9 @@ verified migration moves existing bots over without losing or rewriting their hi
 14. FR-14 *(amended 2026-11-12; see Open Questions)*: `cats-bot export <conversation>` writes the conversation as JSONL entries plus
     presentations, for portability and inspection.
 15. FR-15: No automatic deletion of evidence. Retention beyond conversation deletion is a
-    later decision. Cold storage, when it comes, is compressed JSONL in the
-    `cats-bot export` format (owner, 2026-11-12).
+    later decision. Cold storage, when it comes, is compressed JSONL (owner, 2026-11-12):
+    with the version-1 files, a conversation's own files compressed; with a database, the
+    `cats-bot export` format of the tag `state-db-p1`.
 
 ### Non-Functional Requirements
 
@@ -264,10 +265,10 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Engine: `node:sqlite` behind an adapter; `better-sqlite3` only if acceptance fails.
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
-  - Owner, 2026-11-12: when conversations are archived, cold storage is compressed JSONL in
-    the `cats-bot export` format, exported and then removed from `bot.db`, for archives
-    that recall no longer searches. Archives that must stay searchable are a decision
-    for then.
+  - Owner, 2026-11-12: when conversations are archived, cold storage is compressed JSONL,
+    for archives that recall no longer searches: a conversation's own version-1 files
+    compressed, or, with a database, the `cats-bot export` format, exported and then
+    removed from it. Archives that must stay searchable are a decision for then.
 
 Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found, and accepted
 by the owner the same day. The text above carries every one of them, marked at its

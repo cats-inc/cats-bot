@@ -25,7 +25,7 @@ function snapshot(revision = 1): TranscriptEntry {
 
 test('tool result closes a text boundary and reuses Desktop grouping without duplicating the tool', () => {
   const saved: TranscriptEntry[] = [];
-  const store = { transcript: () => [], lastSeq: () => 0, savePresentation: (_id: string, entry: TranscriptEntry) => saved.push(entry) } as unknown as ConversationStore;
+  const store = { transcript: () => [], savePresentation: (_id: string, entry: TranscriptEntry) => saved.push(entry) } as unknown as ConversationStore;
   const recorder = new ResponsePresentation(store, { id: 'work', conversationId: 'conversation' } as WorkItem, 'owner', new Date());
   const entry = (kind: 'tool_use' | 'tool_result', seq: number): TranscriptEntry => ({ seq, kind, at: '', origin: 'owner', text: kind, toolId: 'same', toolName: 'Read' });
   recorder.entry(entry('tool_use', 1));

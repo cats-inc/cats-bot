@@ -11,24 +11,14 @@ import { diagnosticError } from '../../../shared/diagnosticLog.ts';
 export type CoreState = 'stopped' | 'starting' | 'running' | 'failed' | 'external';
 
 export interface CoreRunnerOptions<T> {
-  /**
-   * Starts the core or reattaches to it, and presents it. `signal` is aborted when the runner
-   * is stopped meanwhile: the start ends its core, which may be migrating for minutes
-   * (SPEC-014 FR-11), instead of making the stop wait for it.
-   */
-  start(signal: AbortSignal): Promise<T>;
+  /** Starts the core or reattaches to it, and presents it. */
+  start(): Promise<T>;
   /** Stops the core through its channel and closes what presented it. */
   stop(handle: T): Promise<void>;
   /** Calls `listener` once if the core ends while running. */
   onLost(handle: T, listener: () => void): void;
   /** Whether a start failed because another program hosts the core. */
   isExternal(error: unknown): boolean;
-  /**
-   * Why the core cannot run until the owner acts, found once a start failed or the core
-   * stopped, or null. SPEC-014 FR-13: its database failed its check. The runner then does
-   * not start it again by itself.
-   */
-  refusal?(since: Date): string | null;
   changed(): void;
   /** Called once when the runner stops restarting a core that keeps failing. */
   gaveUp?(): void;
@@ -53,9 +43,6 @@ export class CoreRunner<T> {
   private restarts: number[] = [];
   private timer: NodeJS.Timeout | null = null;
   private launching: Promise<T | null> | null = null;
-  private launchAbort: AbortController | null = null;
-  /** When the core now starting or running was started. */
-  private launchedAt = new Date(0);
   private gaveUp = false;
 
   constructor(id: string, options: CoreRunnerOptions<T>) {
@@ -111,10 +98,7 @@ export class CoreRunner<T> {
     this.wanted = false;
     this.gaveUp = false;
     this.clearTimer();
-    this.launchAbort?.abort();
     await this.launching?.catch(() => null);
-    // A start asked for meanwhile follows the stopped one, and is left to run.
-    if (this.wanted) return;
     const handle = this.handleValue;
     this.handleValue = null;
     if (handle) await this.options.stop(handle);
@@ -128,20 +112,11 @@ export class CoreRunner<T> {
   }
 
   private launch(): Promise<T | null> {
-    if (this.launching) {
-      // A start that was stopped a moment ago is still ending its core; this one follows it.
-      if (this.launchAbort?.signal.aborted) {
-        return this.launching.then((handle) => handle ?? (this.wanted ? this.launch() : null));
-      }
-      return this.launching;
-    }
+    if (this.launching) return this.launching;
     this.set('starting', null);
-    const abort = new AbortController();
-    this.launchAbort = abort;
-    this.launchedAt = new Date(this.options.now?.() ?? Date.now());
     const task = (async () => {
       try {
-        const handle = await this.options.start(abort.signal);
+        const handle = await this.options.start();
         if (!this.wanted) {
           await this.options.stop(handle);
           this.set('stopped', null);
@@ -152,18 +127,12 @@ export class CoreRunner<T> {
         this.set('running', null);
         return handle;
       } catch (error) {
-        if (abort.signal.aborted) {
-          // Stopped, not failed; a start asked for since follows this one.
-          if (!this.wanted) this.set('stopped', null);
-          return null;
-        }
         const message = error instanceof Error ? error.message : String(error);
         if (this.options.isExternal(error)) {
           this.set('external', message);
           return null;
         }
         this.options.log(`bot ${this.id} did not start: ${diagnosticError(error)}`, 'error');
-        if (this.refused()) return null;
         this.set('failed', message);
         this.scheduleRestart();
         return null;
@@ -172,7 +141,6 @@ export class CoreRunner<T> {
     this.launching = task;
     void task.finally(() => {
       if (this.launching === task) this.launching = null;
-      if (this.launchAbort === abort) this.launchAbort = null;
     });
     return task;
   }
@@ -185,20 +153,8 @@ export class CoreRunner<T> {
       return;
     }
     this.options.log(`bot ${this.id}: the core stopped unexpectedly`, 'error');
-    if (this.refused()) return;
     this.set('failed', 'The cat bot core stopped unexpectedly.');
     this.scheduleRestart();
-  }
-
-  /** A core that cannot run until the owner acts is left failed with why, and not restarted. */
-  private refused(): boolean {
-    const reason = this.options.refusal?.(this.launchedAt) ?? null;
-    if (!reason) return false;
-    this.options.log(`bot ${this.id} is not started again: ${reason}`, 'error');
-    this.gaveUp = true;
-    this.set('failed', reason);
-    this.options.gaveUp?.();
-    return true;
   }
 
   private scheduleRestart(): void {

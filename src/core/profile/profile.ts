@@ -49,15 +49,7 @@ export const TELEGRAM_DEFAULTS: TelegramPolicy = { enabled: false, ownerChatId: 
 /** SPEC-006 BDC-02: desktop control is off until the owner turns it on. */
 export const DESKTOP_CONTROL_DEFAULTS: DesktopControlPolicy = { enabled: false };
 
-/**
- * 3 since the state database (SPEC-014 FR-11): an older Bot refuses a migrated bot's profile
- * instead of starting on files no longer read. A profile is written at 3 only on a root
- * whose database holds the migration's marker.
- */
-export const PROFILE_SCHEMA_VERSION = 3 as const;
-
-/** SPEC-014 FR-11 and FR-12: the version the migration raises from, and the one it raises to. */
-export const STATE_DATABASE_PROFILE_RAISE = { from: 2, to: PROFILE_SCHEMA_VERSION } as const;
+export const PROFILE_SCHEMA_VERSION = 2 as const;
 
 export interface CreateProfileInput {
   id?: string;
@@ -279,8 +271,8 @@ export function loadProfile(
     const raw = read.value;
     if (
       !isRecord(raw) ||
-      ![1, 2, 3].includes(raw.schemaVersion as number) ||
-      (raw.schemaVersion !== 1 && !Object.hasOwn(raw, 'providerPolicy'))
+      ![1, 2].includes(raw.schemaVersion as number) ||
+      (raw.schemaVersion === 2 && !Object.hasOwn(raw, 'providerPolicy'))
     ) {
       throw new Error('Unsupported profile schema; restore a compatible backup or use a newer Bot.');
     }
@@ -303,8 +295,7 @@ export function loadProfile(
       if (existsSync(backup)) {
         if (!readFileSync(backup).equals(readFileSync(paths.profile))) throw new Error('Profile upgrade backup differs; manual recovery required.');
       } else copyFileSync(paths.profile, backup, constants.COPYFILE_EXCL);
-      // Written at 2: the state database's migration raises it after it has moved the files.
-      writeJsonAtomic(paths.profile, { ...profile, schemaVersion: 2 });
+      writeJsonAtomic(paths.profile, profile);
     }
     return { ok: true, profile };
   } catch (error) {

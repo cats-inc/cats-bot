@@ -6,6 +6,10 @@
 
 ## Status
 
+2026-11-12: [ADR-021](021-keep-each-bots-state-in-a-sqlite-database.md)'s state database was
+withdrawn from Cats Bot before release. Where this design keeps its evidence, and its
+PLAN-014 P2 onward, wait on Cats Desktop's pilot of a state database ([cats-platform ADR-152](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/152-pilot-a-state-database-in-cats-desktop-before-cats-bot.md)).
+
 Accepted, 2026-11-11. The owner chose every proposed default (see Decisions Taken).
 
 The independent review of the same day corrected four mechanisms before acceptance was

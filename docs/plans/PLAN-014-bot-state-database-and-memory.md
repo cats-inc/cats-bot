@@ -4,7 +4,7 @@
 
 | Field | Value |
 |-------|-------|
-| **Status** | Approved, 2026-11-11, with ADR-021 and ADR-022. P1 started 2026-11-11 with the driver acceptance of task 1.1; nothing is wired into the core yet. P2 onward wait for the security review and the Runtime prerequisites in P0 |
+| **Status** | P1 finished on `main` and withdrawn from Cats Bot on 2026-11-12, before release (ADR-021); kept at the tag [`state-db-p1`](https://github.com/cats-inc/cats-bot/tree/state-db-p1). P2 onward wait on Cats Desktop's pilot of a state database ([cats-platform ADR-152](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/152-pilot-a-state-database-in-cats-desktop-before-cats-bot.md)). As it stood: Approved, 2026-11-11, with ADR-021 and ADR-022. P1 started 2026-11-11 with the driver acceptance of task 1.1; nothing is wired into the core yet. P2 onward wait for the security review and the Runtime prerequisites in P0 |
 | **Owner** | Bot core store and memory |
 | **Assigned To** | Unassigned |
 | **Reviewer** | Owner; independent review per phase; independent security review before P2 |
@@ -62,6 +62,22 @@ security review. Embeddings come only if the evaluation asks for them.
     review's follow-up) merged, each after an independent review with no blocker left and
     CI on the three platforms; `main` 1dc4733 green; 1.8's draft is under 1.8. What each
     review left is listed under its task as known.
+- [x] Owner, 2026-11-12, after P1 was done: withdraw it from Cats Bot before any release.
+      Bot is light and one-to-one, and its readable files have a value of their own; Cats
+      Desktop tries a state database first ([cats-platform ADR-152](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/152-pilot-a-state-database-in-cats-desktop-before-cats-bot.md)), and Bot decides after that has been
+      tested. `main` was reverted to the 0.5.9 base with #164 and #167 kept; P1 stays at the
+      tag [`state-db-p1`](https://github.com/cats-inc/cats-bot/tree/state-db-p1). The next Bot version number is the owner's to choose again, since no
+      persisted-data change remains.
+  - Recorded, not built (the owner did not choose them): three fixes the version-1 files
+    could have, which P1 made unneeded: compact the journal to its current state, so that
+    a start does not read it from its beginning; remove a deleted conversation's prompts
+    from the journal; read a page from the end of a transcript instead of the whole file.
+  - Also recorded, not built: fixes that came with P1 and went with the revert, though they
+    do not depend on the database: each interrupted work item recovered on its own, so one
+    that fails holds back no other; a core whose start failed refuses a second start; the
+    hub ending a core that is still starting when the bot is stopped or the hub quits, and
+    starting it again cleanly when Start follows Stop; a turn that ends after its
+    conversation was deleted keeping no work item in memory.
 - [ ] Independent security review of SPEC-015, before P2.
 - [ ] Measure what session instructions cost per turn on each provider Bot supports. Every
       adapter composes them into every turn. The result sets SPEC-015 FR-5's final budget.

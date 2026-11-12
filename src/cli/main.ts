@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { existsSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot, StateDatabaseUnavailableError } from '../core/bot.ts';
+import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
 import { readProviderOverrides } from '../core/hostEnv.ts';
 import { callHostControl, HostControlRejectedError } from '../core/host-api/control.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
@@ -13,18 +13,8 @@ import { callHubControl } from '../core/host-api/hubControl.ts';
 import { createFileLogger } from '../core/log.ts';
 import { boundStderrLog } from '../shared/stderrLog.ts';
 import { diagnosticError } from '../shared/diagnosticLog.ts';
-import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome, stateDatabaseFile } from '../core/store/paths.ts';
+import { botPathsFor, deriveBotId, hubPathsFor, isValidBotId, resolveBotRoot, resolveBotsHome, resolveCatsBotHome } from '../core/store/paths.ts';
 import type { BotHostEvent, HandoffMessage, MissedPolicy, PermissionMode, WorkItem } from '../core/types.ts';
-import { restoreVersion1 } from '../core/store/version1Migration.ts';
-import {
-  conversationFromDatabase,
-  conversationFromVersion1,
-  exportLines,
-  type ConversationContent,
-} from '../core/store/conversationExport.ts';
-import { openBotStateStore, StateDatabaseError } from '../core/store/stateStore.ts';
-import { writeCheckReport } from '../core/store/stateMaintenance.ts';
-import { STATE_DATABASE_PROFILE_RAISE } from '../core/profile/profile.ts';
 
 /**
  * `cats-bot`: the headless entry point. `run` keeps the core in the
@@ -101,13 +91,6 @@ Commands:
   open [conversation|home]               ask the running hub to show a conversation window
   hub status [--json]                    the running hub's bots, through its control endpoint
   hub boss-cat <id> | --clear            make a bot the Boss Cat, or clear the role (through the hub)
-  restore [--json]                       put the bot's version-1 files back for an older Cats Bot, while
-                                         the bot is stopped; its database is set aside, not removed
-  export <conversation|home> [--output <file>]
-                                         write a conversation as JSON lines: its record, its entries
-                                         and its reply presentations; read from the version-1 files
-                                         when the bot was not migrated yet
-  reindex                                rebuild the search index from the entries, while the bot is stopped
 
 Every command except init, run and hub takes --id <id>. Bots live under CATS_BOT_HOME/bots
 (default ~/.catsbot/bots); CATS_BOT_ID or --id selects one when more than one exists.
@@ -262,30 +245,14 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   const runtimeEntry = flagString(parsed.flags, 'runtime-entry');
   const helperPath = flagString(parsed.flags, 'desktop-control-helper');
   const hostCipher = flagString(parsed.flags, 'host-cipher');
-  let core: BotCore;
-  try {
-    core = BotCore.open({
-      root: target.root,
-      runtime: { ...runtimeOverrides(env), ...(runtimeEntry ? { runtimeEntry } : {}) },
-      ...(helperPath ? { desktopControl: { helperPath } } : {}),
-      channel: { manager: flagString(parsed.flags, 'manager') ?? null },
-      ...(hostCipher ? { hostCipher } : {}),
-      log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
-    });
-  } catch (error) {
-    // SPEC-014 FR-13: the host that starts the core reports a database it cannot use, so that
-    // the hub leaves the bot stopped with the report instead of starting it again.
-    if (error instanceof StateDatabaseUnavailableError) {
-      const paths = botPathsFor(target.root);
-      const report = writeCheckReport(paths, [error.message], new Date(), {
-        heading: 'its state database cannot be used.',
-        snapshotAdvice: !error.restoreStopped,
-      });
-      createFileLogger(paths.logs)(`error the bot's state database cannot be read; see ${report}`);
-      throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
-    }
-    throw error;
-  }
+  const core = BotCore.open({
+    root: target.root,
+    runtime: { ...runtimeOverrides(env), ...(runtimeEntry ? { runtimeEntry } : {}) },
+    ...(helperPath ? { desktopControl: { helperPath } } : {}),
+    channel: { manager: flagString(parsed.flags, 'manager') ?? null },
+    ...(hostCipher ? { hostCipher } : {}),
+    log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
+  });
   core.subscribe((event) => printEvent(event, json));
   // A rejection nothing handled would end this process; the core logs it and keeps running.
   const coreLog = createFileLogger(core.paths.logs);
@@ -308,12 +275,6 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     // A host may also stop the core over the host channel.
     void core.whenStopped().then(resolve);
   });
-  // SPEC-014 FR-13: a core that stopped on a damaged database did not end as asked.
-  if (core.stoppedForDamage) {
-    const { report } = core.stoppedForDamage;
-    process.stderr.write(`The bot's state database failed its check${report ? `; see ${report}` : ''}\n`);
-    return 1;
-  }
   return 0;
 }
 
@@ -346,93 +307,6 @@ async function commandSay(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
   } finally {
     await core.stop();
   }
-}
-
-/**
- * SPEC-014 FR-12: the version-1 files back from `archive/v1/`, the database set aside and the
- * profile lowered, so that an older Cats Bot starts on the root again. What was written after
- * the migration stays in the set-aside database, which an older Bot does not read.
- */
-async function commandRestore(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const target = resolveTarget(parsed, env);
-  if (target.running) {
-    throw new Error(`The bot is running (pid ${target.running.pid}); quit it before restoring its version-1 files`);
-  }
-  const result = restoreVersion1({ paths: botPathsFor(target.root), profile: STATE_DATABASE_PROFILE_RAISE });
-  if (parsed.flags.get('json') === true) {
-    process.stdout.write(`${JSON.stringify({ restored: result.changed, ...result }, null, 2)}\n`);
-    return 0;
-  }
-  if (!result.changed) {
-    process.stdout.write('Nothing to restore: this bot was not migrated, and an older Cats Bot reads it as it is.\n');
-    return 0;
-  }
-  process.stdout.write('The version-1 files are back; an older Cats Bot can start this bot again.\n');
-  if (result.setAside) {
-    process.stdout.write(`The database was set aside as ${result.setAside}. What was written after the migration is there, not in the version-1 files.\n`);
-  }
-  for (const name of result.leftInArchive) process.stdout.write(`Still in archive/v1: ${name}\n`);
-  return 0;
-}
-
-/**
- * SPEC-014 FR-14: a conversation as JSON lines, from the database once the bot was
- * migrated, or from its version-1 files before. It only reads, while the bot runs too.
- */
-async function commandExport(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const [conversation] = parsed.positional;
-  if (!conversation) {
-    process.stderr.write('export needs a conversation id (or home)\n');
-    return 2;
-  }
-  const target = resolveTarget(parsed, env);
-  const paths = botPathsFor(target.root);
-  const warnings: string[] = [];
-  let content: ConversationContent | null = null;
-  let store;
-  try {
-    store = openBotStateStore({ file: stateDatabaseFile(paths), mode: 'reader', warn: (message) => warnings.push(message) });
-  } catch (error) {
-    if (!(error instanceof StateDatabaseError && error.code === 'missing')) throw error;
-  }
-  let migrated = false;
-  try {
-    migrated = store?.importMarker() !== undefined;
-    if (migrated) content = conversationFromDatabase(store!, conversation);
-  } finally {
-    store?.close();
-  }
-  if (!migrated) {
-    // Not migrated yet: the version-1 files, read as the migration will import them.
-    const read = conversationFromVersion1(paths, conversation);
-    if (read) {
-      content = read.content;
-      warnings.push(...read.problems);
-    }
-  }
-  if (!content) {
-    process.stderr.write(`No conversation ${conversation}\n`);
-    return 1;
-  }
-  const text = exportLines(content).join('');
-  const output = flagString(parsed.flags, 'output');
-  if (output) writeFileSync(output, text);
-  else process.stdout.write(text);
-  for (const warning of warnings) process.stderr.write(`warning: ${warning}\n`);
-  return 0;
-}
-
-/** PLAN-014 task 1.3: the search index rebuilt from the entries, while the bot is stopped. */
-async function commandReindex(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
-  const target = resolveTarget(parsed, env);
-  if (target.running) {
-    throw new Error(`The bot is running (pid ${target.running.pid}); quit it before rebuilding its search index`);
-  }
-  const core = BotCore.open({ root: target.root, log: (line) => process.stderr.write(`${line}\n`), tools: false });
-  const started = Date.now();
-  const indexed = core.rebuildSearchIndex();
-  process.stdout.write(`The search index holds ${indexed} entries again (${((Date.now() - started) / 1000).toFixed(1)} s).\n`);
-  return 0;
 }
 
 async function commandStatus(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
@@ -836,12 +710,6 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandTelegram(parsed, env);
       case 'hub':
         return await commandHub(parsed, env);
-      case 'restore':
-        return await commandRestore(parsed, env);
-      case 'export':
-        return await commandExport(parsed, env);
-      case 'reindex':
-        return await commandReindex(parsed, env);
       case undefined:
       case 'help':
       case '--help':
