@@ -54,6 +54,20 @@ createInterface({ input: process.stdin }).on('line', async line => {
         sandbox: sandbox === 'workspace-write' ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false }
           : sandbox === 'read-only' ? { type: 'readOnly', access: { type: 'fullAccess' } } : { type: 'dangerFullAccess' } });
       break;
+    case 'thread/inject_items': {
+      // Runtime waits for acknowledgement before starting a turn, including
+      // the empty overlay which clears a previous cold-resume turn's context.
+      const items = frame.params?.items;
+      if (frame.params?.threadId !== threadId || !Array.isArray(items) || items.length !== 1
+        || items[0]?.type !== 'message' || items[0]?.role !== 'developer'
+        || !Array.isArray(items[0]?.content) || items[0].content.length !== 1
+        || items[0].content[0]?.type !== 'input_text' || typeof items[0].content[0]?.text !== 'string') {
+        send({ id: frame.id, error: { code: -32602, message: 'Invalid fixture developer instruction item' } });
+        break;
+      }
+      reply(frame.id, {});
+      break;
+    }
     case 'turn/start': {
       turnId = randomUUID(); reply(frame.id, { turn: { id: turnId } });
       const text = frame.params.input?.map(i => i.text ?? '').join('') ?? '';
