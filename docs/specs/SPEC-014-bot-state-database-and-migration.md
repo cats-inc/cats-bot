@@ -207,7 +207,8 @@ verified migration moves existing bots over without losing or rewriting their hi
 14. FR-14 *(amended 2026-11-12; see Open Questions)*: `cats-bot export <conversation>` writes the conversation as JSONL entries plus
     presentations, for portability and inspection.
 15. FR-15: No automatic deletion of evidence. Retention beyond conversation deletion is a
-    later decision.
+    later decision. Cold storage, when it comes, is compressed JSONL in the
+    `cats-bot export` format (owner, 2026-11-12).
 
 ### Non-Functional Requirements
 
@@ -263,6 +264,10 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Engine: `node:sqlite` behind an adapter; `better-sqlite3` only if acceptance fails.
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
+  - Owner, 2026-11-12: when conversations are archived, cold storage is compressed JSONL in
+    the `cats-bot export` format, exported and then removed from `bot.db`, for archives
+    that recall no longer searches. Archives that must stay searchable are a decision
+    for then.
 
 Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found, and accepted
 by the owner the same day. The text above carries every one of them, marked at its
