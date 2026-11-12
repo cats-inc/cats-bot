@@ -375,19 +375,31 @@ to the end"), while building the cutover; the owner reads them before bumping 0.
 Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruction:
 
 - [x] FR-13: the check and the snapshot read the database on a read-only connection of
-  their own, in a worker thread, so the core goes on answering. Measured inside Electron 41
+  their own, in a child process, so the core goes on answering and a stop ends them at
+  once (nothing interrupts a SQLite call in a worker thread). Measured inside Electron 41
   on a 330 MB database of a million entries, the check took 16 to 17 s and the snapshot
   9 s; on a larger bot the check would not fit in the hub's minute to start. So the
   check runs once the core has started, and a check that fails stops the core with its
   report, as the requirement says, a little later than the start itself.
+- [x] FR-13: a snapshot that finds damage stops the core as a failed check does. A check
+  that could not run is tried again at the next look, a quarter of an hour later; a
+  snapshot that failed otherwise, six hours later. Nothing else in the upkeep ends the
+  core: a `backups/` it cannot write is a warning.
+- [x] FR-13: only the host that starts the core (`cats-bot run`, which the hub starts)
+  writes the report; others name the newest snapshot in their error. The hub does not
+  start again a core that stopped on a damaged database, and shows the report's path;
+  `cats-bot run` then exits with 1. A bot moved to its database whose `bot.db` is missing
+  or empty is an error naming the newest snapshot, not an empty bot, or saying to run
+  `cats-bot restore` again when a stopped restore set the database aside. A snapshot or a
+  report named after a time more than a day ahead, as a clock set forward leaves it, is
+  never taken for the newest; the next snapshot removes such a snapshot.
 - [x] FR-13: a snapshot is taken only after this run's check passed, so a damaged
   database never pushes a good snapshot out. It is written as `bot-<time>.db.partial`
   and renamed when whole; the three newest whole ones are kept.
 - [x] FR-13: the report is `state-check-<time>.txt` in the bot's folder. It lists what
   SQLite found, names the newest snapshot and says how to put it in place: quit the bot,
   move `bot.db`, `bot.db-wal` and `bot.db-shm` aside, copy the snapshot as `bot.db`. No
-  command does this. A database SQLite cannot open at all is reported the same way, by
-  any host that opens the bot.
+  command does this. A database SQLite cannot open at all is reported the same way.
 - [x] FR-14: an export is one JSON object per line: the conversation's record (`type`
   `conversation`), its entries in `seq` order (`entry`), then its reply presentations by
   `seq` and id (`presentation`), each record as it was stored. A bot not migrated yet is

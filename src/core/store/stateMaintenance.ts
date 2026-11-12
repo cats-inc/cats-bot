@@ -1,19 +1,25 @@
+import { fork } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { Worker } from 'node:worker_threads';
+import { fileURLToPath } from 'node:url';
 import type { BotPaths } from './paths.ts';
 import { stateDatabaseFile } from './paths.ts';
+import { checkReportFile, CLOCK_SLACK_MS, parseTimeStamp, timeStamp } from './checkReport.ts';
+
+export { checkReportSince } from './checkReport.ts';
 
 export { isDamagedDatabaseError } from './stateDatabase.ts';
 
 /**
  * SPEC-014 FR-13: the state database's check at start and its daily snapshot.
  *
- * Both read the database on a read-only connection of their own, in a worker thread, so
- * that the core goes on answering meanwhile: with a million entries the check takes
- * about a minute and the snapshot most of one, and SQLite's calls block the thread that
- * makes them. A snapshot is written under a name that says it is unfinished and renamed
- * when it is whole, so an interrupted one is never taken for the newest.
+ * Both read the database on a read-only connection of their own, in a child process, so
+ * that the core goes on answering meanwhile and can end them at once: SQLite's calls block
+ * the thread that makes them, and nothing interrupts one in a worker thread. Measured inside
+ * Electron 41 on a 330 MB database of a million made-up entries, the check took 16 to 17 s
+ * and the snapshot 9 s; both grow with the file. A snapshot is written under a name that
+ * says it is unfinished and renamed when it is whole, so an interrupted one is never taken
+ * for the newest.
  */
 
 /** How many snapshots are kept; older ones are removed once a newer one is whole. */
@@ -42,31 +48,51 @@ export function snapshots(paths: BotPaths): Snapshot[] {
   for (const name of readdirSync(directory)) {
     const stamp = SNAPSHOT_NAME.exec(name)?.[1];
     if (!stamp) continue;
-    const takenAt = parseStamp(stamp);
+    const takenAt = parseTimeStamp(stamp);
     if (takenAt) found.push({ file: join(directory, name), takenAt });
   }
   return found.sort((a, b) => b.takenAt.getTime() - a.takenAt.getTime());
 }
 
-export function newestSnapshot(paths: BotPaths): Snapshot | null {
-  return snapshots(paths)[0] ?? null;
+/**
+ * The newest whole snapshot taken by now. One named after a time to come, as a clock set
+ * forward leaves it, is the oldest in fact: it is never the newest, and the next snapshot
+ * removes it.
+ */
+export function newestSnapshot(paths: BotPaths, now: Date): Snapshot | null {
+  // When every snapshot is named after a time to come, the clock was set back: they are
+  // what there is.
+  return current(paths, now)[0] ?? snapshots(paths)[0] ?? null;
 }
 
 /** Whether a day has passed since the newest snapshot, or there is none. */
 export function snapshotDue(paths: BotPaths, now: Date): boolean {
-  const newest = newestSnapshot(paths);
+  const newest = current(paths, now)[0];
   return !newest || now.getTime() - newest.takenAt.getTime() >= SNAPSHOT_INTERVAL_MS;
 }
 
-/** A task running in its worker; `cancel` ends it and settles once the worker is gone. */
+function current(paths: BotPaths, now: Date): Snapshot[] {
+  const latest = now.getTime() + CLOCK_SLACK_MS;
+  return snapshots(paths).filter((snapshot) => snapshot.takenAt.getTime() <= latest);
+}
+
+/** A task running in its own process; `cancel` ends it and settles once the process is gone. */
 export interface MaintenanceTask<T> {
   readonly result: Promise<T>;
   cancel(): Promise<void>;
 }
 
+/**
+ * A task that failed because the database is damaged carries `damaged: true`; the core
+ * treats it as a check that failed.
+ */
+export interface MaintenanceError extends Error {
+  damaged?: boolean;
+}
+
 /** What `pragma quick_check` finds wrong with the bot's database, or nothing. */
 export function checkStateDatabase(paths: BotPaths): MaintenanceTask<string[]> {
-  return runInWorker<string[]>({ task: 'check', file: stateDatabaseFile(paths) });
+  return runInChild<string[]>({ task: 'check', file: stateDatabaseFile(paths) });
 }
 
 /**
@@ -76,11 +102,11 @@ export function checkStateDatabase(paths: BotPaths): MaintenanceTask<string[]> {
 export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapshot> {
   const directory = backupsDirectory(paths);
   mkdirSync(directory, { recursive: true });
-  const file = join(directory, `bot-${stamp(now)}.db`);
+  const file = join(directory, `bot-${timeStamp(now)}.db`);
   const unfinished = `${file}${UNFINISHED}`;
   // Left by a snapshot that was stopped; `vacuum into` writes only to a new file.
-  rmSync(unfinished, { force: true });
-  const task = runInWorker<null>({
+  removeUnfinished(unfinished);
+  const task = runInChild<null>({
     task: 'snapshot',
     file: stateDatabaseFile(paths),
     target: unfinished,
@@ -88,11 +114,11 @@ export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapsh
   const result = task.result.then(
     () => {
       renameSync(unfinished, file);
-      prune(paths);
+      prune(paths, now);
       return { file, takenAt: now };
     },
     (error: unknown) => {
-      rmSync(unfinished, { force: true });
+      removeUnfinished(unfinished);
       throw error;
     },
   );
@@ -103,21 +129,47 @@ export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapsh
  * SPEC-014 FR-13: a report of a check that failed, beside the database, with the newest
  * snapshot and how to put it in place. Returns its path.
  */
-export function writeCheckReport(paths: BotPaths, problems: readonly string[], now: Date): string {
-  const file = join(paths.root, `state-check-${stamp(now)}.txt`);
-  const newest = newestSnapshot(paths);
+export interface CheckReportOptions {
+  /** The first line's account; by default, a check that failed. */
+  heading?: string;
+  /**
+   * Whether to say how to put the newest snapshot in place: not when a stopped restore set
+   * the database aside, which holds more than any snapshot.
+   */
+  snapshotAdvice?: boolean;
+}
+
+export function writeCheckReport(
+  paths: BotPaths,
+  problems: readonly string[],
+  now: Date,
+  options: CheckReportOptions = {},
+): string {
+  const file = checkReportFile(paths, now);
+  const advice = options.snapshotAdvice ?? true;
+  const newest = advice ? newestSnapshot(paths, now) : null;
   const listed = problems.slice(0, 100);
   const lines = [
-    `Cats Bot stopped at ${now.toISOString()}: its state database failed its check.`,
+    `Cats Bot stopped at ${now.toISOString()}: ${options.heading ?? 'its state database failed its check.'}`,
     `Database: ${stateDatabaseFile(paths)}`,
     '',
-    'What SQLite found:',
-    ...listed.map((problem) => `  ${problem}`),
+    'What was found:',
+    ...listed.map((problem) => `  ${problem.replace(/\n/gu, '\n  ')}`),
     ...(problems.length > listed.length ? [`  and ${problems.length - listed.length} more`] : []),
     '',
-    newest
-      ? `The newest snapshot: ${newest.file} (taken ${newest.takenAt.toISOString()}).`
-      : 'There is no snapshot yet.',
+    ...(!advice
+      ? []
+      : newest
+        ? [`The newest snapshot: ${newest.file} (taken ${newest.takenAt.toISOString()}).`]
+        : [
+            'There is no snapshot yet. While the file can still be read, `cats-bot export` writes each',
+          ]),
+    ...(!advice || newest
+      ? []
+      : [
+          'conversation out; the copy of the files from before the database, if the bot had them,',
+          'is in migration-backup/.',
+        ]),
     ...(newest
       ? [
           'To go back to it: quit the bot; move bot.db, bot.db-wal and bot.db-shm out of the',
@@ -131,61 +183,99 @@ export function writeCheckReport(paths: BotPaths, problems: readonly string[], n
   return file;
 }
 
-function prune(paths: BotPaths): void {
-  for (const old of snapshots(paths).slice(SNAPSHOTS_KEPT)) rmSync(old.file, { force: true });
+/** An unfinished snapshot, with the journal SQLite keeps beside it while it writes. */
+function removeUnfinished(file: string): void {
+  for (const suffix of ['', '-journal', '-wal', '-shm'])
+    rmSync(`${file}${suffix}`, { force: true });
+}
+
+function prune(paths: BotPaths, now: Date): void {
+  // The newest three named after a time that has been are kept. Ones named after a time to
+  // come go only once there are three such: after a clock set back, they are the good ones.
+  const all = snapshots(paths);
+  const ok = current(paths, now).map((snapshot) => snapshot.file);
+  const kept = new Set(ok.slice(0, SNAPSHOTS_KEPT));
+  if (ok.length < SNAPSHOTS_KEPT) {
+    for (const snapshot of all) if (!ok.includes(snapshot.file)) kept.add(snapshot.file);
+  }
+  for (const old of all) if (!kept.has(old.file)) rmSync(old.file, { force: true });
   const directory = backupsDirectory(paths);
   for (const name of readdirSync(directory)) {
-    if (name.endsWith(UNFINISHED)) rmSync(join(directory, name), { force: true });
+    if (name.includes(UNFINISHED)) rmSync(join(directory, name), { force: true });
   }
 }
 
-interface WorkerRequest {
+interface MaintenanceRequest {
   task: 'check' | 'snapshot';
   file: string;
   target?: string;
 }
 
-type WorkerReply = { ok: true; value: unknown } | { ok: false; message: string; code?: unknown };
+type MaintenanceReply =
+  { ok: true; value: unknown } | { ok: false; message: string; damaged: boolean };
 
-function runInWorker<T>(request: WorkerRequest): MaintenanceTask<T> {
-  // In a build the worker is the compiled `.js` beside this module; in the tests, the source.
+/** At most this much of the child's error output is kept for a task that ended without a reply. */
+const STDERR_KEPT = 4096;
+
+function runInChild<T>(request: MaintenanceRequest): MaintenanceTask<T> {
+  // In a build the script is the compiled `.js` beside this module; in the tests, the source.
   const extension = import.meta.url.endsWith('.ts') ? 'ts' : 'js';
-  const worker = new Worker(new URL(`./stateMaintenanceWorker.${extension}`, import.meta.url), {
-    workerData: request,
+  const script = fileURLToPath(new URL(`./stateMaintenanceProcess.${extension}`, import.meta.url));
+  // As the supervisor starts the Runtime: the same executable, as Node.js inside Electron.
+  const child = fork(script, [JSON.stringify(request)], {
+    execArgv: [],
+    env: { ...process.env, ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
+    stdio: ['ignore', 'ignore', 'pipe', 'ipc'],
+    windowsHide: true,
   });
-  let settled = false;
-  const exited = new Promise<void>((resolve) => worker.once('exit', () => resolve()));
+  let stderr = '';
+  child.stderr?.setEncoding('utf8');
+  child.stderr?.on('data', (chunk: string) => {
+    if (stderr.length < STDERR_KEPT) stderr += chunk.slice(0, STDERR_KEPT - stderr.length);
+  });
+  // A child that could not be started emits `error` and never `exit`.
+  const exited = new Promise<void>((resolve) => {
+    if (child.exitCode !== null || child.signalCode !== null) resolve();
+    else {
+      child.once('exit', () => resolve());
+      child.once('error', () => resolve());
+    }
+  });
+  let cancelled = false;
   const result = new Promise<T>((resolve, reject) => {
-    worker.once('message', (reply: WorkerReply) => {
-      settled = true;
-      if (reply.ok) resolve(reply.value as T);
-      else reject(Object.assign(new Error(reply.message), { code: reply.code }));
+    let reply: MaintenanceReply | null = null;
+    child.once('message', (message: MaintenanceReply) => {
+      reply = message;
     });
-    worker.once('error', (error) => {
-      settled = true;
-      reject(error);
-    });
-    worker.once('exit', (code) => {
-      if (!settled) reject(new Error(`The state database's ${request.task} ended (exit ${code})`));
+    child.once('error', (error) => reject(error));
+    child.once('exit', (code, signal) => {
+      if (reply?.ok) {
+        resolve(reply.value as T);
+      } else if (reply) {
+        reject(
+          Object.assign(new Error(reply.message), { damaged: reply.damaged }) as MaintenanceError,
+        );
+      } else {
+        const why = cancelled ? 'was stopped' : `ended (${signal ?? `exit ${code}`})`;
+        reject(
+          new Error(
+            `The state database's ${request.task} ${why}${stderr ? `: ${stderr.trim()}` : ''}`,
+          ),
+        );
+      }
     });
   });
   return {
     result,
     cancel: async () => {
-      await worker.terminate();
+      cancelled = true;
+      // A process ends at once, a SQLite call in the middle of its work included.
+      try {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+      } catch {
+        // A child that never started cannot be signalled; it has ended already.
+      }
       await exited;
     },
   };
-}
-
-function stamp(at: Date): string {
-  return at.toISOString().replace(/[-:.]/gu, '');
-}
-
-function parseStamp(text: string): Date | null {
-  const match = /^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(\d{3})Z$/u.exec(text);
-  if (!match) return null;
-  const [, year, month, day, hour, minute, second, millisecond] = match;
-  const at = new Date(`${year}-${month}-${day}T${hour}:${minute}:${second}.${millisecond}Z`);
-  return Number.isNaN(at.getTime()) ? null : at;
 }

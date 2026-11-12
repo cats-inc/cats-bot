@@ -224,8 +224,14 @@ node scripts/testing/measure-store-performance.mjs [--entries 1000000] [--json]
     after the migration;
   - a start stopped before each step of the migration, finished by the next start;
   - `cats-bot reindex` while the bot is stopped, and refused while it runs.
-- The worker runs from the TypeScript source under the tests and from the built `.js` in a
-  package; both run inside Electron in CI with the store's other tests.
+- The tests start the maintenance script from its TypeScript source, also inside Electron
+  with the store's other tests. A package starts the compiled one: after `npm run build`, CI
+  runs `scripts/testing/check-built-maintenance.mjs`, which checks and snapshots a database
+  with `dist/`'s modules inside Electron, on every platform.
+- The upkeep never ends the core but for damage: a `backups/` it cannot write and a check
+  that could not run are warnings, retried later; a snapshot that finds damage stops the
+  core as a failed check does. Only the host that starts the core writes the report, and
+  the hub does not start again a core that stopped on one (`tests/shell/botManagement.test.ts`).
 
 ### Version-1 migration
 

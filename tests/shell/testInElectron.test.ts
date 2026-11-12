@@ -177,3 +177,16 @@ test('CI and the package script run the store tests inside Electron on every pla
   assert.match(step, /^ {8}run: npm run test:electron$/mu);
   assert.doesNotMatch(step, /matrix\.os/u);
 });
+
+test('CI runs the built maintenance script inside Electron after the build, on every platform', () => {
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yaml', import.meta.url), 'utf8');
+  const build = workflow.indexOf('- name: Build\n');
+  const step =
+    /- name: Check and snapshot a database with the built core inside Electron\n(?<body>(?: {8}.*\n)+)/u.exec(
+      workflow,
+    );
+  assert.ok(build > 0 && step && step.index > build, 'after the build');
+  assert.match(step.groups!.body!, /^ {8}if: env\.SKIP == ''$/mu);
+  assert.match(step.groups!.body!, /^ {8}run: node scripts\/testing\/check-built-maintenance\.mjs$/mu);
+  assert.doesNotMatch(step.groups!.body!, /matrix\.os/u);
+});

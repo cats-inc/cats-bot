@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
@@ -26,7 +27,7 @@ import { LifeLoop, type LifeState, type LifeTickReport } from './life/loop.ts';
 import { reconcileInterrupted, recordRecoveredReply } from './life/recovery.ts';
 import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleInput } from './life/schedules.ts';
 import { createFileLogger, type Logger } from './log.ts';
-import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
+import { BotNotInitializedError, readBotProfile, stateMigrationPending } from './profile/initialize.ts';
 import {
   listProviders,
   readLocalModelCatalog,
@@ -64,9 +65,11 @@ import { migrateVersion1, type MigrationStep } from './store/version1Migration.t
 import {
   checkStateDatabase,
   isDamagedDatabaseError,
+  newestSnapshot,
   snapshotDue,
   takeSnapshot,
   writeCheckReport,
+  type MaintenanceError,
   type MaintenanceTask,
 } from './store/stateMaintenance.ts';
 import { createBotToolHandlers } from './tools/botTools.ts';
@@ -178,13 +181,39 @@ export interface BotCoreOptions {
    * SPEC-014 FR-13: the database check after start and the daily snapshot. Tests turn the
    * check off, or look for a due snapshot more often; production keeps the defaults.
    */
-  stateMaintenance?: { check?: boolean; snapshotCheckMs?: number };
+  stateMaintenance?: {
+    check?: boolean;
+    snapshotCheckMs?: number;
+    /** Tests stand in for the check or the snapshot. */
+    tasks?: { check?: typeof checkStateDatabase; snapshot?: typeof takeSnapshot };
+  };
   /** PLAN-014 task 1.5: tests stop the version-1 migration of a start before one of its steps. */
   migrationStep?: (step: MigrationStep) => void;
 }
 
 /** SPEC-014 FR-13: how often a running core looks whether a snapshot is due. */
 const SNAPSHOT_CHECK_MS = 15 * 60_000;
+/** A snapshot that failed for another reason than damage is tried again this much later. */
+const SNAPSHOT_RETRY_MS = 6 * 3_600_000;
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * SPEC-014 FR-13: the bot's state database cannot be used: damaged, not one SQLite opens, or
+ * gone although the bot was moved to it. The host that starts the core reports it.
+ */
+export class StateDatabaseUnavailableError extends Error {
+  /** Set when a stopped restore set the database aside: running it again comes first. */
+  readonly restoreStopped: boolean;
+
+  constructor(message: string, options?: ErrorOptions & { restoreStopped?: boolean }) {
+    super(message, options);
+    this.name = 'StateDatabaseUnavailableError';
+    this.restoreStopped = options?.restoreStopped ?? false;
+  }
+}
 
 export type { BotStatus } from './types.ts';
 export { BotNotInitializedError, initializeBot, readBotProfile, type InitializeBotInput } from './profile/initialize.ts';
@@ -282,11 +311,15 @@ export class BotCore implements BotHostApi {
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
   private releaseLock: (() => void) | null = null;
-  /** SPEC-014 FR-13: the check or the snapshot running in its worker; `stop` ends it. */
+  /** SPEC-014 FR-13: the check or the snapshot running in its own process; `stop` ends it. */
   private maintenance: MaintenanceTask<unknown> | null = null;
   private snapshotTimer: NodeJS.Timeout | null = null;
   /** A snapshot is taken only once this run's check passed, so a damaged database never replaces the good ones. */
   private stateChecked = false;
+  /** When a snapshot that failed may be tried again. */
+  private snapshotRetryAt = 0;
+  /** Set when the core stopped because its database is damaged: the report, or null when none could be written. */
+  private damage: { report: string | null } | null = null;
   /** The tail of the profile changes in progress (`changeProfile`). */
   private profileChanges: Promise<unknown> = Promise.resolve();
   private handoffTimer: NodeJS.Timeout | null = null;
@@ -338,13 +371,15 @@ export class BotCore implements BotHostApi {
     try {
       this.readSnapshot();
     } catch (error) {
-      // SPEC-014 FR-13: a database SQLite cannot read is reported with the newest snapshot,
-      // in every host, the one about to start the core included.
+      // SPEC-014 FR-13: a database SQLite cannot read is named with the newest snapshot in
+      // every host; the host that starts the core writes the report (`cats-bot run`).
       if (isDamagedDatabaseError(error)) {
-        const message = error instanceof Error ? error.message : String(error);
-        const report = writeCheckReport(this.paths, [message], this.now());
-        this.log(`error the bot's state database cannot be read; see ${report}`);
-        throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
+        const newest = newestSnapshot(this.paths, this.now());
+        throw new StateDatabaseUnavailableError(
+          `The bot's state database cannot be read: ${errorText(error)}` +
+            (newest ? `. The newest snapshot is ${newest.file}` : ''),
+          { cause: error },
+        );
       }
       throw error;
     }
@@ -518,8 +553,27 @@ export class BotCore implements BotHostApi {
         warn: (message) => this.log(`warn ${message}`),
       });
     } catch (error) {
-      // A bot not migrated yet has no database; one this version cannot read is an error.
-      if (error instanceof StateDatabaseError && error.code === 'missing') return;
+      // A bot not migrated yet has no database; one this version cannot read is an error,
+      // and so is none at all once the profile says the bot was moved to it.
+      if (error instanceof StateDatabaseError && error.code === 'missing') {
+        // The profile as written: a loaded one always reads as the current version.
+        if (stateMigrationPending(this.paths.root)) return;
+        const newest = newestSnapshot(this.paths, this.now());
+        // A restore stopped after it set the database aside: running it again finishes it,
+        // and the database it set aside holds everything, where a snapshot holds less.
+        const asides = readdirSync(this.paths.root).filter(
+          (name) => name.startsWith('bot.db.set-aside-') && !name.endsWith('-wal') && !name.endsWith('-shm'),
+        );
+        throw new StateDatabaseUnavailableError(
+          `${stateDatabaseFile(this.paths)} is missing or empty, although this bot was moved to it. ` +
+            (asides.length > 0
+              ? `If a restore was stopped, run \`cats-bot restore\` again to finish it (the database it set aside: ${asides.join(', ')}); otherwise put the database back.`
+              : newest
+                ? `Put it back, or copy the newest snapshot (${newest.file}) there as bot.db.`
+                : 'Put it back.'),
+          { cause: error, restoreStopped: asides.length > 0 },
+        );
+      }
       throw error;
     }
     this.stateStore = reader;
@@ -1488,45 +1542,83 @@ export class BotCore implements BotHostApi {
     return this.withWriteLock(() => this.data().rebuildIndex());
   }
 
+  /**
+   * SPEC-014 FR-13: set when the core stopped because its database failed its check, with
+   * the report, or null when the report could not be written.
+   */
+  get stoppedForDamage(): { report: string | null } | null {
+    return this.damage;
+  }
+
   /** SPEC-014 FR-13: the check, then a snapshot whenever one is due while the bot is idle. */
   private startStateMaintenance(): void {
     const options = this.options.stateMaintenance ?? {};
     if (options.check === false || this.stopped) return;
-    const check = checkStateDatabase(this.paths);
+    this.snapshotTimer = setInterval(() => this.maintainState(), options.snapshotCheckMs ?? SNAPSHOT_CHECK_MS);
+    this.snapshotTimer.unref?.();
+    this.maintainState();
+  }
+
+  /** The check until one passes, then a snapshot when one is due; nothing here ends the core but damage. */
+  private maintainState(): void {
+    if (this.stopped || this.maintenance) return;
+    try {
+      if (this.stateChecked) this.snapshotWhenIdle();
+      else this.checkState();
+    } catch (error) {
+      // Such as `backups/` being a file: the bot goes on, says so, and tries again later.
+      if (this.stateChecked) this.snapshotRetryAt = this.now().getTime() + SNAPSHOT_RETRY_MS;
+      this.log(`warn the state database's upkeep failed: ${errorText(error)}`);
+    }
+  }
+
+  private checkState(): void {
+    const check = (this.options.stateMaintenance?.tasks?.check ?? checkStateDatabase)(this.paths);
     this.maintenance = check;
-    const done = (): void => {
-      if (this.maintenance === check) this.maintenance = null;
-    };
     check.result.then(
       (problems) => {
-        done();
+        if (this.maintenance === check) this.maintenance = null;
         if (this.stopped) return;
         if (problems.length > 0) {
           this.stopForDamage(problems);
           return;
         }
         this.stateChecked = true;
-        this.snapshotTimer = setInterval(() => this.snapshotWhenIdle(), options.snapshotCheckMs ?? SNAPSHOT_CHECK_MS);
-        this.snapshotTimer.unref?.();
-        this.snapshotWhenIdle();
+        this.maintainState();
       },
       (error: unknown) => {
-        done();
-        if (!this.stopped) this.log(`warn the state database could not be checked: ${error instanceof Error ? error.message : String(error)}`);
+        if (this.maintenance === check) this.maintenance = null;
+        if (this.stopped) return;
+        if ((error as MaintenanceError).damaged) {
+          this.stopForDamage([errorText(error)]);
+          return;
+        }
+        // Tried again at the next look, so that a check that could not run is not lost.
+        this.log(`warn the state database could not be checked, and is checked again later: ${errorText(error)}`);
       },
     );
   }
 
   private stopForDamage(problems: string[]): void {
-    const report = writeCheckReport(this.paths, problems, this.now());
-    this.log(`error the bot's state database failed its check, so the bot stops; see ${report}`);
+    let report: string | null = null;
+    try {
+      report = writeCheckReport(this.paths, problems, this.now());
+    } catch (error) {
+      this.log(`error the report of the state database's check could not be written: ${errorText(error)}`);
+    }
+    this.damage = { report };
+    this.log(
+      `error the bot's state database failed its check, so the bot stops; ` +
+        (report ? `see ${report}` : `SQLite found: ${problems.slice(0, 5).join('; ')}`),
+    );
     void this.stop();
   }
 
   private snapshotWhenIdle(): void {
-    if (this.stopped || !this.stateChecked || this.maintenance || this.running || this.queue.size > 0) return;
-    if (!snapshotDue(this.paths, this.now())) return;
-    const task = takeSnapshot(this.paths, this.now());
+    if (this.running || this.queue.size > 0) return;
+    const now = this.now();
+    if (now.getTime() < this.snapshotRetryAt || !snapshotDue(this.paths, now)) return;
+    const task = (this.options.stateMaintenance?.tasks?.snapshot ?? takeSnapshot)(this.paths, now);
     this.maintenance = task;
     task.result.then(
       (snapshot) => {
@@ -1535,7 +1627,14 @@ export class BotCore implements BotHostApi {
       },
       (error: unknown) => {
         if (this.maintenance === task) this.maintenance = null;
-        if (!this.stopped) this.log(`warn the state database snapshot failed: ${error instanceof Error ? error.message : String(error)}`);
+        if (this.stopped) return;
+        // A snapshot reads the whole file: one that finds damage is a check that failed.
+        if ((error as MaintenanceError).damaged) {
+          this.stopForDamage([errorText(error)]);
+          return;
+        }
+        this.snapshotRetryAt = this.now().getTime() + SNAPSHOT_RETRY_MS;
+        this.log(`warn the state database snapshot failed, and is tried again in 6 hours: ${errorText(error)}`);
       },
     );
   }

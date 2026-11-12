@@ -567,24 +567,57 @@ security review. Embeddings come only if the evaluation asks for them.
         raised profile was checked by hand with the 0.5.9 release's CLI (see the cutover
         above); its rule is pinned in `tests/core/version1Migration.test.ts`.
 - [x] 1.6 Daily `VACUUM INTO` snapshot, startup `quick_check`, and `cats-bot export`:
-      `src/core/store/stateMaintenance.ts` with its worker, `conversationExport.ts`, and the
+      `src/core/store/stateMaintenance.ts` with its child process, `conversationExport.ts`, and the
       `export` and `reindex` commands; `tests/core/stateMaintenance.test.ts` and
       `tests/core/conversationExport.test.ts`.
   - Measured inside Electron 41 on Windows, on a 330 MB database of a million made-up
     entries: `quick_check` 15.5 to 17.4 s, `VACUUM INTO` 9.1 s (one run each). Both run
-    in a worker thread on a read-only connection of their own, so the core goes on
-    answering; a read-only connection checks and copies while the writer holds a
-    transaction, and the copy has what was committed.
+    on a read-only connection of their own, so the core goes on answering; a read-only
+    connection checks and copies while the writer holds a transaction, and the copy has
+    what was committed.
+  - From the review of #172, which found nothing that blocks, fixed in the follow-up:
+    - The check and the snapshot ran in a worker thread, which `terminate()` cannot stop
+      inside a SQLite call: a stop waited 6 to 10 s on that database, and a Quit on a
+      bot of more than about 600 MB would have been ended by force. They run in a child
+      process now, which a stop ends in 0.1 to 2.7 s on an idle machine (6 s once under
+      load), leaving no unfinished file; a core killed outright leaves its unfinished
+      snapshot until the next one removes it.
+    - A `backups/` that was a file ended the core from the timer; the report of a damaged
+      database that could not be written left the core running. Neither does now.
+    - The hub started a core on a damaged database again, four times or, for a large
+      bot, forever; it now leaves it failed with the report's path, and `cats-bot run`
+      exits with 1.
+    - A snapshot that found damage, or a check that could not run, was only a warning.
+    - Each read-only command wrote a report; a migrated bot whose `bot.db` was missing
+      or empty showed as empty; a snapshot named after a time to come stopped snapshots.
+    - A start right after a stop showed the bot as stopped while it started.
+    - CI built the compiled maintenance script but never ran it; it runs it now.
+  - Known, from the same review: a start of the core for `cats-bot say` or `tick` also
+    begins the check, and its stop ends it; a check of a large bot after each start
+    reads the whole file.
+  - From the review of the follow-up (#173), which found nothing that blocks, fixed in it:
+    a snapshot named after a time to come made a snapshot due at every look and stayed
+    the newest; a report named after a time to come kept a healthy bot from restarting;
+    after a stopped restore, every host advised copying an older snapshot instead of
+    running the restore again; a child that could not be started left a stop waiting; a
+    migrated bot without its `bot.db` was started again by the hub, as it wrote no
+    report. Its confirmation found two more, fixed as well: a clock set back more than a
+    day made the next snapshot remove every good one (now ones named after a time to come
+    go only once three others are kept), and the report of a missing database after a
+    stopped restore still advised an older snapshot. Known: a clock set back after a start hides that start's report from the
+    hub, which then starts the core again a bounded number of times; Start pressed while
+    a running core stops leaves the bot shown as stopped with the new core running, as
+    before this work.
   - Checked on a copy of one local bot root (one conversation, 77 lines): its export
     before the migration and after it are equal byte for byte. The copy was removed.
   - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's
-    Open Questions: the check runs once the core has started, in a worker; a snapshot
+    Open Questions: the check runs once the core has started, in a child process; a snapshot
     only after this run's check passed, written under an unfinished name first; the
     report's name and what it says; the export's lines; `cats-bot reindex`.
   - For the release notes (1.8): a deleted conversation stays in the snapshots in
     `backups/` until they are replaced, three days later; the check and the daily
-    snapshot read the whole database, about a minute each for a large bot, in the
-    background.
+    snapshot read the whole database in the background (16 to 17 s and 9 s for 330 MB);
+    a damaged database leaves the bot stopped in the hub with the report's path.
 - [ ] 1.7 Performance targets of SPEC-014 on the three platforms.
   - Measured by the independent review on Windows inside Electron 41 (SQLite 3.51.2),
     with 1,000,010 made-up entries, 286,894 work items and 861,732 journal lines

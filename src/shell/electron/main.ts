@@ -26,6 +26,7 @@ import { CLI_PROVIDERS, fixedProviders, listProviders, readPackagedModelCatalog 
 import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
+import { checkReportSince } from '../../core/store/checkReport.ts';
 import {
   HUB_REPLY_LANGUAGE_DEFAULT,
   isHubReplyLanguage,
@@ -859,6 +860,11 @@ async function main(): Promise<void> {
           });
         },
         isExternal: (error) => error instanceof CoreHostedElsewhereError,
+        // SPEC-014 FR-13: a core that stopped on a damaged database is not started again.
+        refusal: (since) => {
+          const report = checkReportSince(botPathsFor(botRootIn(hubPaths.bots, id)), since);
+          return report ? `${t("The bot's state database failed its check.")} ${report}` : null;
+        },
         changed: () => {
           botsChanged();
         },

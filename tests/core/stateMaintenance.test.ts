@@ -14,12 +14,14 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { main } from '../../src/cli/main.ts';
 import { BotCore } from '../../src/core/bot.ts';
 import { botPathsFor, stateDatabaseFile, type BotPaths } from '../../src/core/store/paths.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { checkDatabaseFile, snapshotDatabaseFile } from '../../src/core/store/stateDatabase.ts';
 import {
   backupsDirectory,
+  checkReportSince,
   checkStateDatabase,
   isDamagedDatabaseError,
   newestSnapshot,
@@ -231,7 +233,10 @@ test('the report names the problems, the newest snapshot and how to put it back'
   assert.match(text, /taken 2026-11-11T08:00:00\.000Z/u);
   assert.match(text, /and 50 more/u);
   assert.match(text, /copy the snapshot there as bot\.db/u);
-  assert.equal(newestSnapshot(paths)?.takenAt.toISOString(), '2026-11-11T08:00:00.000Z');
+  assert.equal(
+    newestSnapshot(paths, new Date(AT))?.takenAt.toISOString(),
+    '2026-11-11T08:00:00.000Z',
+  );
 });
 
 test('a running core checks its database, then takes a snapshot while it is idle, once a day', async () => {
@@ -294,7 +299,7 @@ test('a damaged database stops the core with a report, and the newest snapshot s
   damage(stateDatabaseFile(paths));
   const damaged = open();
   await damaged.start();
-  await within(damaged.whenStopped(), 20_000, 'the core stopping itself');
+  await within(damaged.whenStopped(), 60_000, 'the core stopping itself');
   const reports = readdirSync(root).filter((name) => name.startsWith('state-check-'));
   assert.equal(reports.length, 1);
   const report = readFileSync(join(root, reports[0]!), 'utf8');
@@ -321,21 +326,229 @@ test('a damaged database stops the core with a report, and the newest snapshot s
   }
 });
 
-test('a database SQLite cannot open stops every host with a report', () => {
-  const logs: string[] = [];
+test('only the host that starts the core writes the report of a database SQLite cannot open', async () => {
   const { root } = openTestBot({ botsHome: home.botsHome, id: 'unreadable' });
   const paths = botPathsFor(root);
   writeFileSync(stateDatabaseFile(paths), 'this is not a database file at all; '.repeat(200));
-  // Any host that opens the bot hears it, the one about to start its core too.
+  const reports = (): string[] =>
+    readdirSync(root).filter((name) => name.startsWith('state-check-'));
+  // A host that only reads, as `cats-bot status` does, hears it and writes nothing.
   assert.throws(
-    () => BotCore.open({ root, log: (line) => logs.push(line) }),
+    () => BotCore.open({ root, log: () => {} }),
     (error: unknown) =>
       error instanceof Error &&
-      /cannot be read; see .*state-check-/u.test(error.message) &&
+      /cannot be read: /u.test(error.message) &&
       isDamagedDatabaseError(error.cause),
   );
-  const reports = readdirSync(root).filter((name) => name.startsWith('state-check-'));
-  assert.equal(reports.length, 1);
-  assert.match(readFileSync(join(root, reports[0]!), 'utf8'), /There is no snapshot yet/u);
-  assert.ok(logs.some((line) => line.includes('cannot be read')));
+  assert.deepEqual(reports(), []);
+  // `cats-bot run`, which the hub starts, writes the report, says where, and fails.
+  const env = { ...process.env, CATS_BOT_HOME: home.root };
+  const errors: string[] = [];
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string) => {
+    errors.push(String(chunk));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    assert.equal(await main(['run', '--id', 'unreadable', '--json'], env), 1);
+  } finally {
+    process.stderr.write = write;
+  }
+  assert.equal(reports().length, 1);
+  assert.match(errors.join(''), /cannot be read; see .*state-check-/u);
+  const report = readFileSync(join(root, reports()[0]!), 'utf8');
+  assert.match(report, /There is no snapshot yet/u);
+  assert.match(report, /cats-bot export/u);
+  // What the hub asks of a core that did not start: the report written since it began.
+  assert.equal(checkReportSince(paths, new Date(Date.now() - 60_000)), join(root, reports()[0]!));
+  assert.equal(checkReportSince(paths, new Date(Date.now() + 60_000)), null);
+});
+
+test('a migrated bot whose database is gone is an error that names the newest snapshot', async () => {
+  const { root } = openTestBot({ botsHome: home.botsHome, id: 'gone' });
+  const paths = botPathsFor(root);
+  mkdirSync(backupsDirectory(paths), { recursive: true });
+  copyFileSync(
+    stateDatabaseFile(paths),
+    join(backupsDirectory(paths), 'bot-20261111T080000000Z.db'),
+  );
+  for (const contents of [null, '']) {
+    rmSync(stateDatabaseFile(paths), { force: true });
+    if (contents !== null) writeFileSync(stateDatabaseFile(paths), contents);
+    assert.throws(
+      () => BotCore.open({ root, log: () => {} }),
+      /missing or empty, although this bot was moved to it. Put it back, or copy the newest snapshot \(.*bot-20261111T080000000Z\.db\)/u,
+    );
+  }
+  // The host that starts the core reports it, so that the hub does not start it again.
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    assert.equal(
+      await main(['run', '--id', 'gone', '--json'], { ...process.env, CATS_BOT_HOME: home.root }),
+      1,
+    );
+  } finally {
+    process.stderr.write = write;
+  }
+  const report = checkReportSince(paths, new Date(Date.now() - 60_000));
+  assert.ok(report);
+  assert.match(readFileSync(report, 'utf8'), /missing or empty/u);
+});
+
+test("the core's upkeep never ends it but for damage: a folder it cannot write, a check that could not run", async () => {
+  const logs: string[] = [];
+  let checks = 0;
+  const { core, root } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'upkeep',
+    core: {
+      log: (line: string) => logs.push(line),
+      stateMaintenance: {
+        snapshotCheckMs: 30,
+        tasks: {
+          // The first check cannot run, as when its script is missing; the next one passes.
+          check: (paths) => {
+            checks += 1;
+            return checks === 1
+              ? {
+                  result: Promise.reject(new Error('the check could not run')),
+                  cancel: async () => {},
+                }
+              : checkStateDatabase(paths);
+          },
+        },
+      },
+    },
+  });
+  const paths = botPathsFor(root);
+  // Not a folder: the snapshot cannot be written there.
+  writeFileSync(backupsDirectory(paths), 'a file where the folder goes');
+  await core.start();
+  try {
+    await until(() => checks >= 2, 'a second check');
+    await until(() => logs.some((line) => line.includes('upkeep failed')), 'the upkeep warning');
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(core.stoppedForDamage, null);
+    assert.equal(core.status().id, 'upkeep');
+    assert.ok(
+      logs.some((line) => line.includes('could not be checked, and is checked again later')),
+    );
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a snapshot that finds damage stops the core as a failed check does; one that fails otherwise waits', async () => {
+  let now = Date.parse('2026-11-12T08:00:00.000Z');
+  let snapshotError: Error & { damaged?: boolean } = new Error('the disk is full');
+  let snapshots = 0;
+  const { core, root } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'snapshot-damage',
+    core: {
+      now: () => new Date(now),
+      stateMaintenance: {
+        snapshotCheckMs: 30,
+        tasks: {
+          snapshot: () => {
+            snapshots += 1;
+            return { result: Promise.reject(snapshotError), cancel: async () => {} };
+          },
+        },
+      },
+    },
+  });
+  await core.start();
+  try {
+    await until(() => snapshots === 1, 'the first snapshot');
+    // Failed for another reason: not tried again for six hours.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(snapshots, 1);
+    now += 6 * 3_600_000 + 1;
+    snapshotError = Object.assign(new Error('database disk image is malformed'), { damaged: true });
+    await until(() => snapshots === 2, 'the snapshot after six hours');
+    await within(core.whenStopped(), 60_000, 'the core stopping itself');
+    assert.ok(core.stoppedForDamage?.report);
+    assert.match(
+      readFileSync(core.stoppedForDamage!.report!, 'utf8'),
+      /database disk image is malformed/u,
+    );
+  } finally {
+    await core.stop();
+  }
+  assert.equal(readdirSync(root).filter((name) => name.startsWith('state-check-')).length, 1);
+});
+
+test('a snapshot or a report named after a time to come is never the newest while another is, and no good snapshot is lost', async () => {
+  const day = 24 * 3_600_000;
+  const start = Date.parse(AT);
+  const paths = filledRoot('future snapshot', 1);
+  mkdirSync(backupsDirectory(paths), { recursive: true });
+  const future = join(backupsDirectory(paths), 'bot-20271112T080000000Z.db');
+  writeFileSync(future, '');
+  // Alone, it is what there is, and a snapshot is due.
+  assert.equal(newestSnapshot(paths, new Date(start))?.file, future);
+  assert.equal(snapshotDue(paths, new Date(start)), true);
+  const taken = await takeSnapshot(paths, new Date(start)).result;
+  assert.equal(newestSnapshot(paths, new Date(start))?.file, taken.file);
+  // Not due again a minute later, as it was every time while the other counted as newest.
+  assert.equal(snapshotDue(paths, new Date(start + 60_000)), false);
+  // It goes once three snapshots are named after a time that has been.
+  await takeSnapshot(paths, new Date(start + day)).result;
+  assert.equal(existsSync(future), true);
+  await takeSnapshot(paths, new Date(start + 2 * day)).result;
+  assert.equal(existsSync(future), false);
+  assert.equal(snapshots(paths).length, SNAPSHOTS_KEPT);
+  // A clock set back a fortnight: the three are kept beside the new one.
+  await takeSnapshot(paths, new Date(start - 14 * day)).result;
+  assert.equal(snapshots(paths).length, SNAPSHOTS_KEPT + 1);
+  // A report a clock set forward wrote is not one of this start's.
+  writeFileSync(join(paths.root, 'state-check-20271112T080000000Z.txt'), '');
+  assert.equal(checkReportSince(paths, new Date(start), new Date(start)), null);
+  // A report lists each line of a problem that has several.
+  const text = readFileSync(
+    writeCheckReport(paths, ['*** in database main ***\nPage 9: never used'], new Date(AT)),
+    'utf8',
+  );
+  assert.match(text, /\n {2}\*\*\* in database main \*\*\*\n {2}Page 9: never used\n/u);
+});
+
+test('a migrated bot whose database a stopped restore set aside says to run the restore again', async () => {
+  const { root } = openTestBot({ botsHome: home.botsHome, id: 'restore-stopped' });
+  const paths = botPathsFor(root);
+  mkdirSync(backupsDirectory(paths), { recursive: true });
+  copyFileSync(
+    stateDatabaseFile(paths),
+    join(backupsDirectory(paths), 'bot-20261111T080000000Z.db'),
+  );
+  // As `cats-bot restore` leaves it when stopped after setting the database aside.
+  renameSync(stateDatabaseFile(paths), join(root, 'bot.db.set-aside-20261112T080000000Z'));
+  assert.throws(
+    () => BotCore.open({ root, log: () => {} }),
+    (error: unknown) =>
+      error instanceof Error &&
+      /run `cats-bot restore` again to finish it \(the database it set aside: bot\.db\.set-aside-20261112T080000000Z\)/u.test(
+        error.message,
+      ) &&
+      !error.message.includes('copy the newest snapshot'),
+  );
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    assert.equal(
+      await main(['run', '--id', 'restore-stopped', '--json'], {
+        ...process.env,
+        CATS_BOT_HOME: home.root,
+      }),
+      1,
+    );
+  } finally {
+    process.stderr.write = write;
+  }
+  const report = readFileSync(checkReportSince(paths, new Date(Date.now() - 60_000))!, 'utf8');
+  assert.match(report, /cannot be used/u);
+  assert.match(report, /run `cats-bot restore` again/u);
+  assert.equal(report.includes('copy the snapshot there'), false);
+  assert.equal(report.includes('The newest snapshot'), false);
 });

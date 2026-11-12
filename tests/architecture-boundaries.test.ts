@@ -210,7 +210,7 @@ test('the shell reaches the core only through the channel client and core types 
   // from anywhere in the core.
   const allowed = [
     'host-api/channel.ts', 'host-api/commands.ts', 'host-api/remote.ts', 'host-api/hubControl.ts', 'types.ts',
-    'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'store/removeTree.ts', 'profile/initialize.ts', 'hostEnv.ts',
+    'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'store/removeTree.ts', 'store/checkReport.ts', 'profile/initialize.ts', 'hostEnv.ts',
     'providers/catalog.ts', 'providers/selection.ts', 'desktopControl/helper.ts', 'tools/hubTools.ts',
     'hub/peers.ts', 'hub/status.ts',
   ].map((file) => join(coreRoot, ...file.split('/')));
