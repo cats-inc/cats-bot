@@ -58,7 +58,7 @@ export function updateDialog(state: BotUpdateState, locale: Locale): UpdateDialo
       break;
     case 'error':
       result.title = t('Update failed');
-      result.message = state.error ?? result.title;
+      result.message = t(state.error ?? result.title);
       break;
     case 'idle':
       result.message = t('Checking for updates…');

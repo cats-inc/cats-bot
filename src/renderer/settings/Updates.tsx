@@ -46,7 +46,7 @@ export function Updates() {
               <progress max={100} value={state.percent ?? 0} aria-label={t('Download progress')} />
             )}
             {state?.reason && <small className="hint">{t(state.reason)}</small>}
-            {(error || state?.error) && <small className="hint warn" role="alert">{error ?? state?.error}</small>}
+            {(error || state?.error) && <small className="hint warn" role="alert">{t(error ?? state?.error ?? '')}</small>}
           </div>
           {state && (
             <div className="set-row-control">

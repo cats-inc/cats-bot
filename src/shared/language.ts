@@ -325,6 +325,13 @@ export const zhTW: Record<string, string> = {
   'Installing update…': '正在安裝更新…',
   'Updates are unavailable': '無法更新',
   'Update failed': '更新失敗',
+  'Update information is unavailable. Please try again later.': '目前無法取得更新資訊，請稍後再試。',
+  'The update request timed out. Please try again.': '更新要求逾時，請再試一次。',
+  'Could not reach the update service. Check your connection and try again.': '無法連線到更新服務，請檢查網路後再試。',
+  'The downloaded update failed its integrity check. Please download it again.': '下載的更新未通過完整性檢查，請重新下載。',
+  'The downloaded update failed its signature check.': '下載的更新未通過簽章檢查。',
+  'The update service rejected the request. Please try again later.': '更新服務拒絕了要求，請稍後再試。',
+  'The update could not be completed. Please try again.': '無法完成更新，請再試一次。',
   'The update is downloaded and ready to install.': '更新已下載完成，可以安裝了。',
   'Cats Bot will download the update, stop this cat bot and install it. The current task will be interrupted. Quit other Cats Bot instances first.':
     'Cats Bot 會下載更新、停止這隻機器貓並進行安裝。目前的工作會中斷。請先結束其他 Cats Bot 執行個體。',
