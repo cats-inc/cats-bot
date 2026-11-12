@@ -810,10 +810,13 @@ test('imported entries are numbered by time across conversations, so a search re
   }
   // A time that cannot be read takes the one before it.
   appendTranscript(paths, 'home', entry(5, 'kettle h5', { at: 'not a time' }));
+  // So does one a clock set forward wrote: the entries after it keep their place.
+  appendTranscript(paths, 'home', entry(6, 'kettle h6', { at: '2099-01-01T00:00:00.000Z' }));
+  appendTranscript(paths, 'home', entry(7, 'kettle h7', { at: at(5) }));
   const report = imported(paths);
   assert.equal(report.finished, true);
   withStore(paths, (store) => {
-    const newest = store.search('kettle', { limit: 13 });
+    const newest = store.search('kettle', { limit: 15 });
     // Texts of one shape rank equal, and equal ranks come newest first, by row id.
     assert.deepEqual(
       newest.map((hit) => hit.entry.text),
@@ -826,6 +829,8 @@ test('imported entries are numbered by time across conversations, so a search re
         'kettle n3',
         'kettle n2',
         'kettle n1',
+        'kettle h7',
+        'kettle h6',
         'kettle h5',
         'kettle h4',
         'kettle h3',

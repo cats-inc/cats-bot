@@ -22,11 +22,13 @@ import { createHash } from 'node:crypto';
  */
 
 /**
- * To be raised, once a release has shipped an index, whenever `indexText` would give another
- * result for the same text. The store rebuilds an index that was made with a different number.
- * 2: each entry's terms end with its conversation's term (PLAN-014 task 1.7).
+ * To be raised whenever `indexText` would give another result for the same text, or an entry's
+ * terms change otherwise, as with the conversation's term. The store rebuilds an index that was
+ * made with a different number.
+ * 2: each entry's terms end with its conversation's term (PLAN-014 task 1.7), first `zc` and hex.
+ * 3: that term is U+E000 and hex, which no text or query can hold.
  */
-export const INDEX_FORM = 2;
+export const INDEX_FORM = 3;
 
 /**
  * The character a conversation term begins with: one of private use, which SQLite's tokenizer

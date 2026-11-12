@@ -193,7 +193,7 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
       });
     }
     // FR-8: row ids in time order across conversations, as the core would have given them.
-    const order = problems.blocked ? null : rowIdsByTime(paths, source);
+    const order = problems.blocked ? null : rowIdsByTime(paths, source, now().getTime());
     for (const [index, id] of [...source.conversations.keys()].entries()) {
       const transcript = readTranscriptSource(paths, id, problems);
       const presentation = readPresentationSource(paths, id, source, problems);
@@ -273,23 +273,29 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
  * It reads each transcript as the import does and keeps only each entry's time, eight bytes
  * apiece. An entry whose time cannot be read, or that is earlier than the one before it in
  * its conversation, takes that one's time; the first takes the conversation's `createdAt`, or
- * 0. Entries of the same time keep the order the import reads them in. `offsets[i]` is where conversation `i`'s entries start in `rowIds`.
+ * 0. A time more than a day after the import, as a clock set forward leaves it, counts as one
+ * that cannot be read, so that it does not put the rest of its conversation after every other.
+ * Entries of the same time keep the order the import reads them in. `offsets[i]` is where
+ * conversation `i`'s entries start in `rowIds`.
  */
 function rowIdsByTime(
   paths: BotPaths,
   source: Sources,
+  now: number,
 ): { offsets: number[]; rowIds: Float64Array } {
+  const latest = now + 24 * 3_600_000;
+  const readable = (at: number): boolean => Number.isFinite(at) && at <= latest;
   const times: number[] = [];
   const offsets = [0];
   // The problems are the import's to report, when it reads the transcripts itself.
   const unreported = new Problems();
   for (const [id, { value }] of source.conversations) {
     let previous = Date.parse(String(value.createdAt));
-    if (!Number.isFinite(previous)) previous = 0;
+    if (!readable(previous)) previous = 0;
     for (const entry of readTranscriptSource(paths, id, unreported)) {
       // Never before the entry before it: a clock set back does not reorder a conversation.
       const at = Date.parse(String((entry as { at?: unknown }).at));
-      if (Number.isFinite(at) && at > previous) previous = at;
+      if (readable(at) && at > previous) previous = at;
       times.push(previous);
     }
     offsets.push(times.length);

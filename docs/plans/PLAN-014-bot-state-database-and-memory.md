@@ -673,6 +673,21 @@ security review. Embeddings come only if the evaluation asks for them.
         has to give the start the time the migration gets.
       - Searching on a reader off the core's thread, and a cap on how much of one entry is
         indexed.
+  - From the second review of #171, which found nothing that blocks:
+    - Fixed: the index form is 3, since the conversation's term changed after form 2 was
+      made on the branch; a time more than a day after the import, as a clock set forward
+      leaves it, counts as one that cannot be read, so that it does not put the rest of its
+      conversation after every other.
+    - Measured by the review (Node.js 26, one or two runs, shared machine): importing a
+      million entries took 144 s before the time-ordered row ids and 273 s after, with
+      974 and 1,242 MiB at most; deleting a conversation of a 300,000-entry migrated
+      database 1.13 s before and 1.82 s after. The conversation's term makes an append
+      about half again as long at the median (0.63–0.69 ms to 0.95–1.0 ms) and 3.0–4.2 ms
+      at the 95th percentile, within 5 ms; the 7.3–13.6 ms in the PR's measurement came
+      from a loaded machine, where the same code measured 8.6 ms once.
+    - Left as they are: the measurement samples 200 appends, where 5 to 12 pass 5 ms on
+      a busy machine; how large the write-ahead log grows during the import's batches of
+      50,000; a transcript changed during the import is caught by its count only.
 - [ ] 1.8 Release and migration notes for the next minor version, prepared in the bump PR.
       No bump is part of this plan.
 
