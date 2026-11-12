@@ -73,8 +73,8 @@ security review. Embeddings come only if the evaluation asks for them.
     a start does not read it from its beginning; remove a deleted conversation's prompts
     from the journal; read a page from the end of a transcript instead of the whole file.
   - Also recorded, not built: fixes that came with P1 and went with the revert, though they
-    do not depend on the database: each interrupted work item recovered on its own, so one
-    that fails holds back no other; a core whose start failed refuses a second start; the
+    do not depend on the database: each interrupted work item recovered on its own, and
+    each approval expired on its own, so one that fails holds back no other; a core whose start failed refuses a second start; the
     hub ending a core that is still starting when the bot is stopped or the hub quits, and
     starting it again cleanly when Start follows Stop; a turn that ends after its
     conversation was deleted keeping no work item in memory.

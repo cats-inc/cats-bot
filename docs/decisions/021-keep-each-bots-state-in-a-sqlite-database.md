@@ -6,22 +6,32 @@
 ## Status
 
 **Withdrawn from Cats Bot by the owner on 2026-11-12, before any release.** P1 was finished
-on `main` (#161 to #173) and reverted the same day. Cats Bot is a light product in which
+on `main` (#161, #163, #165, #166 and #168 to #173) and reverted by #174. Cats Bot is a light product in which
 every conversation is one-to-one, and state kept in files a person can open and read has a
 value of its own there. Cats Desktop, with group and parallel chats and every conversation
 in one JSON file, tries a state database first ([cats-platform ADR-152](https://github.com/cats-inc/cats-platform/blob/main/docs/decisions/152-pilot-a-state-database-in-cats-desktop-before-cats-bot.md)); whether Bot needs one is decided
 after that has been tested. Bot keeps its version-1 files.
 
 - The implementation, its tests and its measurements are kept at the tag [`state-db-p1`](https://github.com/cats-inc/cats-bot/tree/state-db-p1) (`main` at
-  a8c1193). Every path, task and pull request this record and SPEC-014 name refers to that
-  tag.
-- No release wrote a bot database. A bot root a `main` build of those days migrated (a
-  `bot.db`, `archive/v1/`, a profile at schema 3) is refused by Bot after the revert; the
-  tag's `cats-bot restore` puts its files back. None existed on the owner's machine.
-- Bot reconsiders when Desktop's pilot has been released and tested, and Bot itself shows a
-  need its files cannot meet: conversations long enough that starting or reading them is
-  slow, memory recall (ADR-022) that needs more than a scan of the files, or a deletion or
-  journal problem the files cannot solve.
+  a8c1193). Every path, task and pull request this record, SPEC-014 and PLAN-014 name
+  refers to that tag.
+- No release wrote a bot database: 0.5.9 was published before #161 merged. A bot root a
+  `main` build of 2026-11-11 and 2026-11-12 touched has a profile at schema 3, which Bot
+  refuses after the revert with "Unsupported profile schema; restore a compatible backup or
+  use a newer Bot". Neither half of that message helps here, and the owner's only bot root
+  was never migrated. To bring such a root back, build the tag and use its CLI:
+  - A root that was migrated (`bot.db`, `archive/v1/`): its `cats-bot restore` puts the
+    version-1 files back and sets the database aside. What was written after the migration,
+    schedules included, stays only in the database set aside; its `cats-bot export` writes
+    each conversation out of it.
+  - A bot such a build created has no version-1 files, and its `cats-bot restore` says so.
+    Export each conversation with the tag's `cats-bot export`, then create the bot again.
+  - Do not copy `profile.json.v2.bak` back over the profile: Bot then opens the bot as an
+    empty one beside `archive/v1/`, and the tag's restore refuses the root afterwards.
+- The owner's condition: Bot decides once Desktop has the database and it has been tested.
+  Signs that would argue for it then, proposed here and not the owner's words: conversations
+  long enough that starting or reading them is slow, memory recall (ADR-022) that needs
+  more than a scan of the files, or a deletion or journal problem the files cannot solve.
 
 The record as it stood when withdrawn follows.
 

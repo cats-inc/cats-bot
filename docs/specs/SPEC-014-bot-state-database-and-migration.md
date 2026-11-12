@@ -207,9 +207,9 @@ verified migration moves existing bots over without losing or rewriting their hi
 14. FR-14 *(amended 2026-11-12; see Open Questions)*: `cats-bot export <conversation>` writes the conversation as JSONL entries plus
     presentations, for portability and inspection.
 15. FR-15: No automatic deletion of evidence. Retention beyond conversation deletion is a
-    later decision. Cold storage, when it comes, is compressed JSONL (owner, 2026-11-12):
-    with the version-1 files, a conversation's own files compressed; with a database, the
-    `cats-bot export` format of the tag `state-db-p1`.
+    later decision. Cold storage, when it comes, is compressed JSONL in the
+    `cats-bot export` format (owner, 2026-11-12). After the withdrawal the same day, Bot
+    keeps its version-1 files, so that format is the tag `state-db-p1`'s.
 
 ### Non-Functional Requirements
 
@@ -265,10 +265,14 @@ All were answered on 2026-11-11 with the proposed options:
 - [x] Engine: `node:sqlite` behind an adapter; `better-sqlite3` only if acceptance fails.
 - [x] Completed work-item transitions are pruned to their last row after 30 days (FR-7).
 - [x] No archiving of old conversations until a size problem is observed (FR-15).
-  - Owner, 2026-11-12: when conversations are archived, cold storage is compressed JSONL,
-    for archives that recall no longer searches: a conversation's own version-1 files
-    compressed, or, with a database, the `cats-bot export` format, exported and then
-    removed from it. Archives that must stay searchable are a decision for then.
+  - Owner, 2026-11-12: when conversations are archived, cold storage is compressed JSONL in
+    the `cats-bot export` format, exported and then removed from `bot.db`, for archives
+    that recall no longer searches. Archives that must stay searchable are a decision
+    for then.
+  - After the withdrawal, 2026-11-12: Bot keeps its version-1 files. Cold storage stays
+    compressed JSONL; how a conversation's files (its JSON record, its transcript, its
+    presentations and its lines in the shared journal) map to that is decided when
+    archiving comes.
 
 Proposed on 2026-11-11, from what building PLAN-014 task 1.1 to 1.3 found, and accepted
 by the owner the same day. The text above carries every one of them, marked at its
