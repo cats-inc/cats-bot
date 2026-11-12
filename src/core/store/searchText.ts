@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * SPEC-014 FR-8: the text side of the full-text index.
  *
@@ -20,10 +22,30 @@
  */
 
 /**
- * To be raised, once a release has shipped an index, whenever `indexText` would give another
- * result for the same text. The store rebuilds an index that was made with a different number.
+ * To be raised whenever `indexText` would give another result for the same text, or an entry's
+ * terms change otherwise, as with the conversation's term. The store rebuilds an index that was
+ * made with a different number.
+ * 2: each entry's terms end with its conversation's term (PLAN-014 task 1.7), first `zc` and hex.
+ * 3: that term is U+E000 and hex, which no text or query can hold.
  */
-export const INDEX_FORM = 1;
+export const INDEX_FORM = 3;
+
+/**
+ * The character a conversation term begins with: one of private use, which SQLite's tokenizer
+ * keeps inside a token and `indexText` turns into a space, so that no entry's text and no
+ * query can hold a token that begins with it (checked with SQLite 3.51 and 3.54).
+ */
+const CONVERSATION_MARK = String.fromCodePoint(0xe000);
+
+/**
+ * PLAN-014 task 1.7: the term an entry's conversation adds to its terms, so that the index
+ * itself narrows a search to one conversation. Nobody can type it or write it into an entry,
+ * so it neither finds a conversation's entries by itself nor makes another conversation's
+ * entries look like this one's.
+ */
+export function conversationTerm(conversationId: string): string {
+  return `${CONVERSATION_MARK}${createHash('sha256').update(conversationId).digest('hex').slice(0, 24)}`;
+}
 
 /** A query longer than this is refused: nobody searches for a page of text. */
 export const MAX_QUERY_LENGTH = 200;

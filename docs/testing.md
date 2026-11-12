@@ -102,6 +102,21 @@ FR-2).
 The architecture boundary test keeps the driver and the adapter out of every module
 outside `src/core/store/`.
 
+### Store performance
+
+- **Location**: `scripts/testing/measure-store-performance.mjs`, with
+  `tests/shell/storePerformance.test.ts` and the manual `.github/workflows/store-performance.yaml`.
+- **Scope**: SPEC-014's performance targets (PLAN-014 task 1.7) on made-up data: append, the
+  newest 50 entries, and searches over all entries, in a conversation of 60% of them and in
+  one of 2%: two-character Chinese words found in few, some and most entries, one character,
+  and two common words together. The test runs it on 2,000 entries; the workflow on a
+  million, on Windows, macOS and Linux, under Node.js and inside Electron. It reports and
+  does not gate.
+
+```bash
+node scripts/testing/measure-store-performance.mjs [--entries 1000000] [--json]
+```
+
 ### Bot state store and search text
 
 - **Location**: `tests/core/stateStore.test.ts`, `tests/core/searchText.test.ts`
@@ -125,8 +140,10 @@ outside `src/core/store/`.
     punctuation, punctuation parting two CJK words, one conversation, a limit, and input
     with a NUL character or too many words;
   - the best match first, with and without a conversation;
-  - the query plan of both shapes of a search starting at the index, which the SQLite in
-    Electron does not choose by itself for one conversation;
+  - a search reading the newest matches backwards in the index without a sort of its
+    own, and each record by its row id;
+  - a search ranking only the newest matches, so that an older better one is not found
+    across all conversations, and is within one that holds fewer;
   - every piece of one to four characters of randomly made CJK runs found, and no piece
     that is in none, with doubled characters and most of the possible pairs among them;
   - a failed search inside a transaction leaving the transaction to go on;

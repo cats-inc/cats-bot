@@ -133,7 +133,13 @@ export interface ImportVersion1Options {
 }
 
 const LINES_LISTED = 20;
-const DEFAULT_BATCH_SIZE = 2000;
+/**
+ * Entries per transaction. The import gives row ids in time order across conversations, so
+ * one conversation's entries land all over the table: fewer, larger transactions with a larger
+ * page cache write each page fewer times (PLAN-014 task 1.7).
+ */
+const DEFAULT_BATCH_SIZE = 50_000;
+const IMPORT_CACHE_KIB = 256 * 1024;
 
 class VerificationFailed extends Error {}
 
@@ -164,6 +170,7 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
     file: options.file,
     mode: 'writer',
     now,
+    cacheSizeKiB: IMPORT_CACHE_KIB,
     warn: (message) => warnings.push(message),
   });
   try {
@@ -185,12 +192,23 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
         }
       });
     }
-    for (const id of source.conversations.keys()) {
+    // FR-8: row ids in time order across conversations, as the core would have given them.
+    const order = problems.blocked ? null : rowIdsByTime(paths, source, now().getTime());
+    for (const [index, id] of [...source.conversations.keys()].entries()) {
       const transcript = readTranscriptSource(paths, id, problems);
       const presentation = readPresentationSource(paths, id, source, problems);
       if (!problems.blocked) {
+        const offset = order!.offsets[index]!;
+        if (order!.offsets[index + 1]! - offset !== transcript.length) {
+          throw new Error(`The transcript of ${id} changed while it was imported`);
+        }
         for (let start = 0; start < transcript.length; start += batchSize) {
-          store.importEntries(id, transcript.slice(start, start + batchSize));
+          const end = Math.min(start + batchSize, transcript.length);
+          store.importEntries(
+            id,
+            transcript.slice(start, end),
+            order!.rowIds.subarray(offset + start, offset + end),
+          );
         }
         store.transaction(() => {
           for (const response of presentation) store.saveResponse(id, response as TranscriptEntry);
@@ -245,6 +263,51 @@ export function importVersion1(options: ImportVersion1Options): Version1ImportRe
   } finally {
     store.close();
   }
+}
+
+/**
+ * FR-3 and FR-8: the row id of every entry the import keeps, in the order of the entries' times
+ * across all conversations, so that the newest entries hold the highest row ids, as they would
+ * had the bot written them on this version: a search reads the newest matches by row id.
+ *
+ * It reads each transcript as the import does and keeps only each entry's time, eight bytes
+ * apiece. An entry whose time cannot be read, or that is earlier than the one before it in
+ * its conversation, takes that one's time; the first takes the conversation's `createdAt`, or
+ * 0. A time more than a day after the import, as a clock set forward leaves it, counts as one
+ * that cannot be read, so that it does not put the rest of its conversation after every other.
+ * Entries of the same time keep the order the import reads them in. `offsets[i]` is where
+ * conversation `i`'s entries start in `rowIds`.
+ */
+function rowIdsByTime(
+  paths: BotPaths,
+  source: Sources,
+  now: number,
+): { offsets: number[]; rowIds: Float64Array } {
+  const latest = now + 24 * 3_600_000;
+  const readable = (at: number): boolean => Number.isFinite(at) && at <= latest;
+  const times: number[] = [];
+  const offsets = [0];
+  // The problems are the import's to report, when it reads the transcripts itself.
+  const unreported = new Problems();
+  for (const [id, { value }] of source.conversations) {
+    let previous = Date.parse(String(value.createdAt));
+    if (!readable(previous)) previous = 0;
+    for (const entry of readTranscriptSource(paths, id, unreported)) {
+      // Never before the entry before it: a clock set back does not reorder a conversation.
+      const at = Date.parse(String((entry as { at?: unknown }).at));
+      if (readable(at) && at > previous) previous = at;
+      times.push(previous);
+    }
+    offsets.push(times.length);
+  }
+  const when = Float64Array.from(times);
+  times.length = 0;
+  const order = new Uint32Array(when.length);
+  for (let index = 0; index < order.length; index += 1) order[index] = index;
+  order.sort((a, b) => when[a]! - when[b]! || a - b);
+  const rowIds = new Float64Array(order.length);
+  for (let rank = 0; rank < order.length; rank += 1) rowIds[order[rank]!] = rank + 1;
+  return { offsets, rowIds };
 }
 
 /**

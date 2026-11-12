@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, test } from 'node:test';
 
-import { INDEX_FORM, MAX_QUERY_LENGTH } from '../../src/core/store/searchText.ts';
+import { conversationTerm, INDEX_FORM, MAX_QUERY_LENGTH } from '../../src/core/store/searchText.ts';
 import { sqliteDriver } from '../../src/core/store/sqliteDriver.ts';
 import { StateDatabaseError } from '../../src/core/store/stateDatabase.ts';
 import {
   openBotStateStore,
-  searchSql,
+  RANKED_MATCHES,
+  SEARCH_CANDIDATES_SQL,
+  SEARCH_ENTRY_SQL,
   type BotStateStore,
 } from '../../src/core/store/stateStore.ts';
 import type {
@@ -714,32 +716,93 @@ test('the best match comes first, with and without a conversation', () => {
   }
 });
 
-test('a search starts at the index, never at the entries of a conversation', () => {
-  // The SQLite in Electron 41 would otherwise walk every entry of the conversation and ask
-  // the index about each: half a minute for a long direct message.
+test('a search reads the newest matches backwards in the index, and their records by row id', () => {
+  // Ranking every match, or reading forwards from a row id, takes seconds on a million
+  // entries; reading the newest ones backwards takes milliseconds (PLAN-014 task 1.7).
   const { file, store } = filled(
     Array.from({ length: 300 }, (_, index) => `entry ${index} about the kettle`),
   );
   store.close();
-  const plan = (scoped: boolean): string[] =>
-    raw(file, (database) =>
-      database
-        .prepare(`explain query plan ${searchSql(scoped)}`)
-        .all(...(scoped ? ['"kettle"', 'home', 50] : ['"kettle"', 50]))
-        .map((row) => String(row.detail)),
+  raw(file, (database) => {
+    const candidates = database
+      .prepare(`explain query plan ${SEARCH_CANDIDATES_SQL}`)
+      .all('"kettle"', 50)
+      .map((row) => String(row.detail));
+    assert.deepEqual(candidates.length, 1, candidates.join(' | '));
+    assert.match(candidates[0]!, /^SCAN entries_fts VIRTUAL TABLE INDEX/u);
+    // No sort of its own: the index gives the rows newest first.
+    assert.equal(
+      candidates.some((step) => /TEMP B-TREE/u.test(step)),
+      false,
+      candidates.join(' | '),
     );
-  for (const scoped of [true, false]) {
-    const steps = plan(scoped);
+    const entry = database
+      .prepare(`explain query plan ${SEARCH_ENTRY_SQL}`)
+      .all(1)
+      .map((row) => String(row.detail));
+    assert.deepEqual(entry, ['SEARCH entries USING INTEGER PRIMARY KEY (rowid=?)']);
+  });
+});
+
+test('a search ranks the newest matches, so a better match older than them is not found', () => {
+  const file = freshFile();
+  withStore(file, 'writer', (store) => {
+    store.saveConversation(conversation('home'));
+    store.saveConversation(conversation('note-1'));
+    store.transaction(() => {
+      // The best match of all, and older than the newest RANKED_MATCHES.
+      store.appendEntry('home', entry('kettle kettle kettle kettle'));
+      for (let index = 0; index < RANKED_MATCHES; index += 1) {
+        store.appendEntry(
+          index % 2 ? 'home' : 'note-1',
+          entry(`a kettle and a long line of other words, number ${index}`),
+        );
+      }
+      // The best of the newest.
+      store.appendEntry('home', entry('kettle kettle'));
+    });
+    const best = store.search('kettle', { limit: 1 });
+    assert.equal(best[0]!.entry.text, 'kettle kettle');
+    assert.equal(
+      store
+        .search('kettle', { limit: RANKED_MATCHES })
+        .some((hit) => hit.entry.text === 'kettle kettle kettle kettle'),
+      false,
+    );
+    // No more than it ranks is asked for.
+    assert.throws(() => store.search('kettle', { limit: RANKED_MATCHES + 1 }), RangeError);
+    // Within one conversation the newest of its own matches are ranked, by its term: home
+    // holds fewer than RANKED_MATCHES of them, so its oldest and best is found there.
+    const inHome = store.search('kettle', { limit: 3, conversationId: 'home' });
+    assert.equal(inHome[0]!.entry.text, 'kettle kettle kettle kettle');
+    assert.ok(inHome.every((hit) => hit.conversationId === 'home'));
     assert.ok(
-      steps.some((step) => /entries_fts VIRTUAL TABLE/u.test(step)),
-      steps.join(' | '),
+      store
+        .search('kettle', { limit: 3, conversationId: 'note-1' })
+        .every((hit) => hit.conversationId === 'note-1'),
     );
-    // The entries are only ever fetched one by one, by the row id the index gave.
-    assert.deepEqual(
-      steps.filter((step) => /^(?:SCAN|SEARCH) e\b/u.test(step)),
-      ['SEARCH e USING INTEGER PRIMARY KEY (rowid=?)'],
-      steps.join(' | '),
-    );
+  });
+});
+
+test("a conversation's term can be neither typed nor written into another conversation's entries", () => {
+  const term = conversationTerm('home');
+  const { store } = filled(['remember the kettle', 'the garden'], ['a note']);
+  try {
+    // Typed in any form, it finds nothing: what a person types is rewritten into other tokens.
+    for (const typed of [term, term.slice(1), `zc${term.slice(1)}`, term.toUpperCase()]) {
+      assert.deepEqual(hits(store, typed), [], JSON.stringify(typed));
+    }
+    // Entries of another conversation that carry it, newer than all of home's: they neither
+    // hide home's matches from a search of home nor show up in it.
+    store.transaction(() => {
+      for (let index = 0; index < RANKED_MATCHES + 5; index += 1) {
+        store.appendEntry('note-1', entry(`${term} kettle ${term.slice(1)}`));
+      }
+    });
+    assert.deepEqual(hits(store, 'kettle', 'home'), ['home#1']);
+    assert.equal(hits(store, 'kettle', 'note-1').length, RANKED_MATCHES);
+  } finally {
+    store.close();
   }
 });
 
@@ -901,6 +964,9 @@ test('an index made the way another version searched is rebuilt when a writer op
     assert.deepEqual(hits(opened, '公園'), ['home#1']);
     assert.deepEqual(hits(opened, 'kettle'), ['home#2']);
     assert.deepEqual(hits(opened, 'something'), []);
+    // A search of one conversation finds its entries by the terms the rebuild gave them.
+    assert.deepEqual(hits(opened, '公園', 'home'), ['home#1']);
+    assert.deepEqual(hits(opened, 'kettle', 'note-1'), []);
   });
   assert.equal(
     raw(
