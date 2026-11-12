@@ -101,90 +101,6 @@ test('no source file imports from outside the repository', () => {
   assert.deepEqual(offenders, []);
 });
 
-test('only the driver module reaches node:sqlite (SPEC-014 FR-2)', () => {
-  // The driver is loaded through `process.getBuiltinModule`, which no import pattern sees, so
-  // this looks for the module name itself.
-  const driver = join(srcRoot, 'core', 'store', 'sqliteDriver.ts');
-  assert.ok(readFileSync(driver, 'utf8').includes('node:sqlite'));
-  const offenders = listTypeScriptFiles(srcRoot)
-    .filter((file) => file !== driver && readFileSync(file, 'utf8').includes('node:sqlite'))
-    .map((file) => relative(repoRoot, file));
-  assert.deepEqual(offenders, []);
-});
-
-test('only the store reaches the SQLite driver and the state database adapter (SPEC-014 FR-2)', () => {
-  // The driver gives a connection and the adapter runs whatever statement it is given, so a
-  // module outside the store gets neither: the rest of the bot uses what the store modules
-  // build on them.
-  const storeRoot = join(srcRoot, 'core', 'store');
-  const inner = [join(storeRoot, 'sqliteDriver.ts'), join(storeRoot, 'stateDatabase.ts')];
-  for (const file of inner) assert.ok(existsSync(file), file);
-  const offenders: string[] = [];
-  for (const file of listTypeScriptFiles(srcRoot)) {
-    if (!relative(storeRoot, file).startsWith('..')) continue;
-    for (const specifier of importSpecifiers(file)) {
-      if (isRelative(specifier) && inner.includes(resolve(dirname(file), specifier))) {
-        offenders.push(`${relative(repoRoot, file)} imports ${specifier}`);
-      }
-    }
-  }
-  assert.deepEqual(offenders, []);
-});
-
-test('nothing outside the store reads or writes the version-1 files (SPEC-014 FR-11)', () => {
-  // After the cutover the version-1 files are read once, by the import, and never written.
-  // Their modules stay for the import and for tests that make version-1 fixtures. The rule
-  // reads the text, not a parse of it, so it names each way of reaching those files.
-  const storeRoot = join(srcRoot, 'core', 'store');
-  const versionOne = ['transcript.ts', 'journal.ts'].map((name) => join(storeRoot, name));
-  const presentation = join(storeRoot, 'presentation.ts');
-  // Only what checks and projects a presentation; never the sidecar files.
-  const presentationAllowed = ['checkedResponse', 'projectPresentationTranscript'];
-  const versionOnePaths = [
-    // A property of the paths: `paths.journal`, `this.paths.transcripts`, `botPathsFor(root).journal`.
-    /(?:\bpaths|Paths\w*\([^)]*\))\.(?:conversations|transcripts|journal)\b/u,
-    // Taken out of them: `const { journal } = paths`, `= botPathsFor(root)`.
-    /\{[^{}]*\b(?:conversations|transcripts|journal)\b[^{}]*\}\s*=\s*(?:this\.)?(?:paths\b|\w*Paths\w*\()/u,
-    // The layout's own helpers and names.
-    /\b(?:conversationFile|transcriptFile|presentationsDirectory)\s*\(/u,
-    /['"`]journal\.jsonl['"`]/u,
-    /\bjoin\([^)]*['"`](?:conversations|transcripts|presentations)['"`]/u,
-  ];
-  const offenders: string[] = [];
-  for (const file of listTypeScriptFiles(srcRoot)) {
-    if (!relative(storeRoot, file).startsWith('..')) continue;
-    const name = relative(repoRoot, file);
-    const source = readFileSync(file, 'utf8');
-    for (const specifier of importSpecifiers(file)) {
-      if (!isRelative(specifier)) continue;
-      const target = resolve(dirname(file), specifier);
-      if (versionOne.includes(target)) offenders.push(`${name} imports ${specifier}`);
-      if (target !== presentation) continue;
-      // Every statement that names the module: a namespace or default import takes it whole.
-      const quoted = specifier.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
-      const statements = source.matchAll(
-        new RegExp(String.raw`\b(?:import|export)\s+(?:type\s+)?([^'";]*?)\s+from\s*['"]${quoted}['"]|\b(?:import|require)\s*\(\s*['"]${quoted}['"]`, 'gu'),
-      );
-      for (const [, clause] of statements) {
-        const named = /^\{([^}]*)\}$/u.exec(clause?.trim() ?? '');
-        if (!named) {
-          offenders.push(`${name} takes ${specifier} whole`);
-          continue;
-        }
-        for (const imported of named[1]!.split(',').map((part) => part.trim().replace(/^type\s+/u, '').split(/\s+as\s+/u)[0]!).filter(Boolean)) {
-          if (!presentationAllowed.includes(imported)) offenders.push(`${name} imports ${imported} from ${specifier}`);
-        }
-      }
-    }
-    // Code only: a comment may say what a version-1 file held.
-    const code = source.replace(/\/\*[\s\S]*?\*\//gu, '').replace(/^\s*\/\/.*$/gmu, '');
-    for (const pattern of versionOnePaths) {
-      if (pattern.test(code)) offenders.push(`${name} names a version-1 file (${pattern.source})`);
-    }
-  }
-  assert.deepEqual(offenders, []);
-});
-
 test('the shell never holds the runtime client directly', () => {
   const offenders: string[] = [];
   const runtimeClientDir = join(srcRoot, 'core', 'runtime');
@@ -210,7 +126,7 @@ test('the shell reaches the core only through the channel client and core types 
   // from anywhere in the core.
   const allowed = [
     'host-api/channel.ts', 'host-api/commands.ts', 'host-api/remote.ts', 'host-api/hubControl.ts', 'types.ts',
-    'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'store/removeTree.ts', 'store/checkReport.ts', 'profile/initialize.ts', 'hostEnv.ts',
+    'store/paths.ts', 'store/lock.ts', 'store/atomicFile.ts', 'store/removeTree.ts', 'profile/initialize.ts', 'hostEnv.ts',
     'providers/catalog.ts', 'providers/selection.ts', 'desktopControl/helper.ts', 'tools/hubTools.ts',
     'hub/peers.ts', 'hub/status.ts',
   ].map((file) => join(coreRoot, ...file.split('/')));

@@ -1,4 +1,4 @@
-import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, TranscriptPage, WorkItem } from '../../core/types.ts';
+import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
 import { t } from '../localeStore.ts';
 
 /**
@@ -60,60 +60,6 @@ export function mergeTranscriptEntries(current: readonly TranscriptEntry[], snap
     && !!entry.workItemId && final.workItemId === entry.workItemId
     && !(entry.presentationTerminalSeq === final.seq && entry.text === final.text)));
   return reconcilePresentationEntries(snapshot.reduce((entries, entry) => addEntry(entries, entry), retained));
-}
-
-/** SPEC-014 FR-10: how many entries the note reads at a time. */
-export const NOTE_PAGE_SIZE = 100;
-/** SPEC-014 FR-10: the most pages one reading of the newest entries goes back. */
-export const NOTE_NEWEST_PAGES = 20;
-
-/** The highest `seq` of an entry the note read from the transcript, or null when it read none. */
-export function newestStoredSeq(entries: readonly TranscriptEntry[]): number | null {
-  let newest: number | null = null;
-  for (const entry of entries) {
-    if (entry.seq > 0 && !entry.presentation && (newest === null || entry.seq > newest)) newest = entry.seq;
-  }
-  return newest;
-}
-
-export interface NewestPages {
-  /** The pages read, oldest first. */
-  entries: TranscriptEntry[];
-  /** The `beforeSeq` of the page before the oldest one read, or null at the start. */
-  olderBeforeSeq: number | null;
-  /** Whether they reach what the note held, so that both together have no gap. */
-  joined: boolean;
-}
-
-/**
- * SPEC-014 FR-10: the newest pages of a transcript, read back until they reach the newest
- * entry the note holds (`held`), or the start. With nothing held, one page. When `maxPages`
- * run out first, they do not join, and the note keeps only what they cover.
- */
-export async function readNewestPages(
-  read: (beforeSeq?: number) => Promise<TranscriptPage>,
-  held: number | null,
-  maxPages = NOTE_NEWEST_PAGES,
-): Promise<NewestPages> {
-  let entries: TranscriptEntry[] = [];
-  let beforeSeq: number | undefined;
-  for (let pages = 0; pages < maxPages; pages += 1) {
-    const page = await read(beforeSeq);
-    entries = [...page.entries, ...entries];
-    if (page.olderBeforeSeq === null || held === null || page.olderBeforeSeq <= held + 1) {
-      return { entries, olderBeforeSeq: page.olderBeforeSeq, joined: true };
-    }
-    beforeSeq = page.olderBeforeSeq;
-  }
-  return { entries, olderBeforeSeq: beforeSeq ?? null, joined: false };
-}
-
-/**
- * What the note keeps when the newest pages did not reach what it held: its own lines, and
- * whatever lies within the pages read, such as a reply streaming now.
- */
-export function entriesWithinNewest(current: readonly TranscriptEntry[], olderBeforeSeq: number | null): TranscriptEntry[] {
-  return current.filter((entry) => entry.seq < 0 || olderBeforeSeq === null || entry.seq >= olderBeforeSeq);
 }
 
 /** Streamed text of one reply; a different work item starts a new reply. */

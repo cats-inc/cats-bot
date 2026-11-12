@@ -1,12 +1,10 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import { BotCore, ContactNoteError, initializeBot } from '../../src/core/bot.ts';
-import { botPathsFor, stateDatabaseFile } from '../../src/core/store/paths.ts';
-import { migrationBackupDirectory } from '../../src/core/store/version1Migration.ts';
-import { withStateStore } from '../support/stateData.ts';
+import { botPathsFor } from '../../src/core/store/paths.ts';
 import { appendTranscript } from '../../src/core/store/transcript.ts';
 import { assertChoicesOnly } from '../../src/core/host-api/providerInteractions.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
@@ -38,12 +36,8 @@ function completed(core: BotCore, predicate: (item: WorkItem) => boolean): Promi
 }
 
 test('a sender conversation from before contact notes is upgraded once, backed up, and rebuilt without the owner\'s words (SPEC-012 FR-5, FR-8)', async () => {
-  const { root, profile } = initializeBot(home.botsHome, { id: 'legacy', name: 'Legacy Bot', provider: 'claude' });
+  const { root } = initializeBot(home.botsHome, { id: 'legacy', name: 'Legacy Bot', provider: 'claude' });
   const paths = botPathsFor(root);
-  // A bot as 0.5 left it: version-1 files and a schema-2 profile, no database (SPEC-014).
-  rmSync(stateDatabaseFile(paths));
-  writeFileSync(paths.profile, JSON.stringify({ ...profile, schemaVersion: 2 }));
-  mkdirSync(paths.conversations, { recursive: true });
   const at = '2026-11-01T00:00:00.000Z';
   const record = {
     schemaVersion: 1, id: 'bot-ada', role: 'note', title: 'Messages from Ada', createdAt: at, updatedAt: at,
@@ -64,25 +58,21 @@ test('a sender conversation from before contact notes is upgraded once, backed u
     runtime: { runtimeEntry: fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000, env: { ...process.env } },
     life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
   });
-  // A read-only host of a bot not yet migrated reads nothing, and writes nothing.
-  assert.deepEqual(await core.listConversations(), []);
-  assert.equal(existsSync(stateDatabaseFile(paths)), false);
-  // A profile change takes the lock and migrates first; the contact note is read as one.
+  // A read-only host sees the contact note but writes nothing.
+  assert.equal((await core.listConversations()).find((entry) => entry.id === 'bot-ada')!.contactOf, 'ada');
+  assert.equal(JSON.parse(readFileSync(join(paths.conversations, 'bot-ada.json'), 'utf8')).contactOf, undefined);
+  assert.equal(existsSync(join(paths.conversations, '.backup')), false);
   await core.updateProfile({ heartbeat: awakeNow() });
-  const stored = (): Record<string, unknown> =>
-    withStateStore(root, (store) => store.conversations().find((entry) => (entry as { id: string }).id === 'bot-ada') as Record<string, unknown>);
-  assert.equal(stored().contactOf, undefined, 'only a running core writes the upgrade');
   await core.start();
   try {
     const upgraded = (await core.listConversations()).find((entry) => entry.id === 'bot-ada')!;
     assert.equal(upgraded.contactOf, 'ada');
     assert.equal(upgraded.contactName, 'Ada');
     assert.equal(upgraded.attachment.state, 'stale', 'a session that saw the owner\'s words is rebuilt');
-    // The migration's copy of the version-1 files keeps the original.
-    const [copy] = readdirSync(migrationBackupDirectory(paths));
-    const backup = join(migrationBackupDirectory(paths), copy!, 'conversations', 'bot-ada.json');
-    assert.equal(JSON.parse(readFileSync(backup, 'utf8')).contactOf, undefined, 'the original is kept');
-    assert.equal(stored().contactOf, 'ada', 'the running core writes it');
+    const backup = join(paths.conversations, '.backup', 'bot-ada.before-contact-note.json');
+    assert.ok(existsSync(backup), 'the original is kept');
+    assert.equal(JSON.parse(readFileSync(backup, 'utf8')).contactOf, undefined);
+    assert.equal(JSON.parse(readFileSync(join(paths.conversations, 'bot-ada.json'), 'utf8')).contactOf, 'ada', 'the running core writes it');
 
     const done = completed(core, (item) => item.conversationId === 'bot-ada');
     core.admitBotMessage(delivery('ada', 'Ada', 'Any news?', 'd-legacy-1'));
@@ -192,6 +182,36 @@ test('handoff writes into a contact note are refused, and an interrupted turn th
     const after = internals.workItems.get('w-interrupted')!;
     assert.equal(after.state, 'failed', 'nothing in a contact note is rerun as the owner\'s message');
     assert.equal(core.transcript('bot-ada').some((entry) => entry.kind === 'owner' && entry.origin === 'owner'), false);
+  } finally {
+    await core.stop();
+  }
+});
+
+test('an upgrade whose old file cannot be copied aside still protects the note in memory (SPEC-012 FR-5)', async () => {
+  const { root } = initializeBot(home.botsHome, { id: 'readonly', name: 'Read Only', provider: 'claude' });
+  const paths = botPathsFor(root);
+  const at = '2026-11-01T00:00:00.000Z';
+  writeFileSync(join(paths.conversations, 'bot-ada.json'), JSON.stringify({
+    schemaVersion: 1, id: 'bot-ada', role: 'note', title: 'Messages from Ada', createdAt: at, updatedAt: at,
+    attachment: { state: 'none', sessionId: null, providerSessionId: null, provider: null, model: null, configRevision: null, updatedAt: at },
+    unreadCount: 0, lastOwnerMessageAt: null, lastBotMessageAt: null, checkpoint: null,
+  }));
+  // A file where the backup folder would go makes the upgrade's write fail.
+  writeFileSync(join(paths.conversations, '.backup'), 'not a folder');
+  const warnings: string[] = [];
+  const core = BotCore.open({
+    root, log: (line) => warnings.push(line),
+    runtime: { runtimeEntry: fakeRuntimeEntry, readyTimeoutMs: 15_000, stopTimeoutMs: 3_000, env: { ...process.env } },
+    life: { startupDelayMs: 3_600_000, intervalMs: 3_600_000 },
+  });
+  try {
+    await core.start();
+    const note = (await core.listConversations()).find((entry) => entry.id === 'bot-ada')!;
+    assert.equal(note.contactOf, 'ada', 'the note is a contact note in memory');
+    await assert.rejects(core.sendOwnerMessage('bot-ada', 'let me in'), ContactNoteError);
+    assert.equal(JSON.parse(readFileSync(join(paths.conversations, 'bot-ada.json'), 'utf8')).contactOf, undefined,
+      'without a copy of the old file the upgrade is not written');
+    assert.ok(warnings.some((line) => /could not be copied aside/u.test(line)));
   } finally {
     await core.stop();
   }

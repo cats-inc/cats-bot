@@ -541,7 +541,7 @@ export class TurnRunner {
         return { kind: 'completed', text: parsed.body, quiet: false };
       }
       if (text) {
-        const terminalSeq = this.deps.conversations.lastSeq(conversationId) + 1;
+        const terminalSeq = (this.deps.conversations.transcript(conversationId).at(-1)?.seq ?? 0) + 1;
         presentation?.seal('completed', terminalSeq);
         publishPresentation();
         this.deps.conversations.append(conversationId, { kind: 'bot', origin, text, workItemId: item.id });

@@ -1,14 +1,12 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
 import { nextBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import { botPathsFor, botRootIn, hubPathsFor } from '../store/paths.ts';
 import type { BotProfile } from '../types.ts';
-import { writeJsonAtomic } from '../store/atomicFile.ts';
-import { createProfile, loadProfile, PROFILE_SCHEMA_VERSION, saveProfile, type CreateProfileInput } from './profile.ts';
+import { createProfile, loadProfile, saveProfile, type CreateProfileInput } from './profile.ts';
 import { assertBotDataResetNotPending } from '../store/dataResetGuard.ts';
 import { acquireInstanceLock } from '../store/lock.ts';
-import { createNewBotDatabase, version1Items } from '../store/version1Migration.ts';
 
 /**
  * Creating a bot and reading whether one exists, without opening its core.
@@ -78,35 +76,13 @@ export function initializeBot(
   try {
     // A competing initializer may have finished after the first read.
     if (existsSync(paths.profile)) throw new Error(`Bot ${input.id} already exists at ${root}`);
-    for (const dir of [paths.root, paths.runtime, paths.logs, paths.workspace]) {
+    for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
       mkdirSync(dir, { recursive: true });
     }
     const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
-    if (version1Items(paths).some((item) => existsSync(item))) {
-      // SPEC-014 FR-11: version-1 files from before are migrated at the first start, as a
-      // bot of 0.5's are, so the profile is written at the version the migration raises.
-      writeJsonAtomic(paths.profile, { ...profile, schemaVersion: 2 });
-      return { profile, root };
-    }
-    // SPEC-014: the database first, so that the profile at the raised version is never on a
-    // root whose database is not finished.
-    createNewBotDatabase(paths);
     saveProfile(paths, profile);
     return { profile, root };
   } finally { lock.release(); }
-}
-
-/**
- * SPEC-014 FR-11: whether the bot's next start migrates its version-1 files, which can take
- * minutes for a large bot: its profile is still at a version before the state database.
- */
-export function stateMigrationPending(root: string): boolean {
-  try {
-    const raw = JSON.parse(readFileSync(botPathsFor(root).profile, 'utf8')) as { schemaVersion?: unknown };
-    return typeof raw.schemaVersion === 'number' && raw.schemaVersion < PROFILE_SCHEMA_VERSION;
-  } catch {
-    return false;
-  }
 }
 
 /** The bot's profile, or null when it was never set up; a corrupt profile throws. */

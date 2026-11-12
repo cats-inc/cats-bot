@@ -133,11 +133,6 @@ export function conversationFile(paths: BotPaths, conversationId: string): strin
   return join(paths.conversations, `${conversationId}.json`);
 }
 
-/** SPEC-014 FR-1: the bot's state database. */
-export function stateDatabaseFile(paths: BotPaths): string {
-  return join(paths.root, 'bot.db');
-}
-
 export function transcriptFile(paths: BotPaths, conversationId: string): string {
   return join(paths.transcripts, `${conversationId}.jsonl`);
 }

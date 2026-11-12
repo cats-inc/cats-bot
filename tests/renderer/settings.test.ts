@@ -35,7 +35,7 @@ import { readPackagedModelCatalog, CLI_PROVIDERS } from '../../src/core/provider
 /** SPEC-002 FR-1–FR-6, SPEC-003 FR-6: the settings and first-run decisions, apart from React. */
 
 const PROFILE: BotProfile = {
-  schemaVersion: 3,
+  schemaVersion: 2,
   providerPolicy: null,
   id: 'nori',
   name: 'Nori',

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import test from 'node:test';
 import { SessionBinder } from '../../src/core/conversations/binder.ts';
 import { ConversationStore } from '../../src/core/conversations/store.ts';
 import { createProfile } from '../../src/core/profile/profile.ts';
-import { botPathsFor } from '../../src/core/store/paths.ts';
+import { botPathsFor, conversationFile } from '../../src/core/store/paths.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeSessionView } from '../../src/core/runtime/client.ts';
 import type { AttachmentState } from '../../src/core/types.ts';
 import { makeTempHome } from '../support/harness.ts';
@@ -12,17 +13,13 @@ import { TurnRunner } from '../../src/core/queue/turnRunner.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import type { RuntimeStreamEvent } from '../../src/core/runtime/client.ts';
 import { LifeLoop } from '../../src/core/life/loop.ts';
-import { checkedResponse } from '../../src/core/store/presentation.ts';
-import { openTestStateStore } from '../support/stateData.ts';
+import { readPresentations } from '../../src/core/store/presentation.ts';
 
 function fixture(t: { after(fn: () => void): void }, state: AttachmentState = 'sleeping') {
-  const home = makeTempHome('cats-bot-continuity-');
+  const home = makeTempHome('cats-bot-continuity-'); t.after(() => home.cleanup());
   const paths = botPathsFor(join(home.botsHome, 'fixture'));
   const now = () => new Date('2026-11-11T00:00:00Z');
-  const db = openTestStateStore(paths, t);
-  // The database closes before its directory is removed; Windows refuses otherwise.
-  t.after(() => { db.close(); home.cleanup(); });
-  const store = new ConversationStore({ store: () => db, now }); store.load(); store.home();
+  const store = new ConversationStore({ paths, now }); store.load(); store.home();
   const profile = createProfile({ name: 'Fixture', provider: 'codex', cwd: join(paths.root, 'workspace') });
   const saved = (id: string) => ({ state, sessionId: `runtime-${id}`, providerSessionId: `native-${id}`,
     provider: 'codex', model: null, configRevision: profile.configRevision });
@@ -48,7 +45,7 @@ function fixture(t: { after(fn: () => void): void }, state: AttachmentState = 's
     retireSession: id => { calls.retired.push(id); },
     ...(attempted !== undefined ? { hasAttemptedSessionTurn: () => attempted! } : {}),
   });
-  return { paths, db, now, store, profile, saved, calls, client, binder: makeBinder(), makeBinder,
+  return { paths, now, store, profile, saved, calls, client, binder: makeBinder(), makeBinder,
     setAttempted(value: boolean | undefined) { attempted = value; } };
 }
 
@@ -88,7 +85,7 @@ for (const id of ['home', 'note']) {
     // Even if the new zero-turn worker also stops, restarting cannot create
     // another replacement before this one has completed a turn.
     f.store.setAttachment(id, { state: 'sleeping' });
-    const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
+    const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
     assert.equal((await f.makeBinder(reloaded).bind(id)).ok, false);
     assert.equal(f.calls.create.length, 1);
   });
@@ -121,7 +118,7 @@ test('a pending turn recovers an unused replacement after reload while ticks rem
   f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
   f.store.append('home', { kind: 'owner', origin: 'owner', text: 'Preserve my conversation' });
   f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
-  const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
   const binder = f.makeBinder(reloaded);
   for (let tick = 0; tick < 3; tick++) assert.equal((await binder.bind('home')).ok, false);
   assert.equal(f.calls.create.length, 0);
@@ -159,7 +156,7 @@ test('an ambiguous create while recovering an unused replacement stays fenced fo
   let attempts = 0;
   f.client.createSession = async () => { attempts++; throw new Error('request timed out'); };
   assert.equal((await f.binder.bind('home', { forTurn: true })).ok, false);
-  const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
   assert.equal((await f.makeBinder(reloaded).bind('home', { forTurn: true })).ok, false);
   assert.equal(attempts, 1);
 });
@@ -201,7 +198,7 @@ test('confirmed loss replaces once and the fence survives reload until a complet
   assert.match((f.calls.create[0] as { instructions: string }).instructions, /Keep this history/u);
   assert.equal(f.store.home().attachment.replacementPending, true);
   f.store.setAttachment('home', { state: 'sleeping' });
-  const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
   assert.equal((await f.makeBinder(reloaded).bind('home')).ok, false);
   assert.equal((await f.makeBinder(reloaded).bind('home')).ok, false);
   assert.equal(f.calls.create.length, 1);
@@ -219,10 +216,10 @@ test('a failed replacement request cannot create again on the next tick', async 
 
 test('old records load without rewriting, and intentional retarget creates a new session', async t => {
   const f = fixture(t, 'closed');
-  const stored = (): string => JSON.stringify(f.db.conversations().find((record) => (record as { id: string }).id === 'home'));
-  const before = stored();
-  const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
-  assert.equal(stored(), before);
+  const file = conversationFile(f.paths, 'home');
+  const before = readFileSync(file, 'utf8');
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
+  assert.equal(readFileSync(file, 'utf8'), before);
   assert.equal(reloaded.home().attachment.replacementPending, undefined);
   f.profile.configRevision++;
   const result = await f.makeBinder(reloaded).bind('home');
@@ -266,7 +263,7 @@ for (const transport of ['http', 'stream', 'repeated', 'partial', 'partial_text'
       assert.equal(outcome.kind, 'completed'); assert.equal(sends, 2); assert.equal(f.calls.create.length, 1);
       assert.equal(f.store.home().attachment.replacementPending, undefined);
     }
-    const presentations = f.db.responses('home').map((row) => checkedResponse(row)!);
+    const presentations = readPresentations(f.paths, 'home');
     assert.ok(presentations.every(entry => entry.presentation?.phase === 'sealed'));
     assert.ok(presentations.every(entry => entry.presentation?.blocks.every(block => block.status !== 'streaming')));
     if (transport === 'partial' || transport === 'partial_text') {
@@ -337,7 +334,7 @@ test('repeated-failure evidence survives reload and a fenced known-text failure 
   assert.equal((await run(initial, 'second')).kind, 'failed');
   assert.equal(sends, 2); assert.equal(f.calls.create.length, 0);
   assert.equal(f.store.home().attachment.unavailableReason, 'repeated_provider_failure');
-  const reloaded = new ConversationStore({ store: () => f.db, now: f.now }); reloaded.load();
+  const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
   assert.equal(reloaded.home().attachment.unavailableReason, 'repeated_provider_failure');
   const afterRestart = runnerFor(reloaded);
   failure = 'No saved copy of session fixture was found remotely.';

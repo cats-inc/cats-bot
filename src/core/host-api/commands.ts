@@ -2,15 +2,13 @@ import { delimiter, isAbsolute } from 'node:path';
 
 import { MAX_ATTACHMENT_BYTES } from '../../shared/attachments.ts';
 import { isHubLanguageReport, type HubLanguageReport } from '../../shared/language.ts';
-import { TRANSCRIPT_PAGE_MAX } from '../conversations/store.ts';
 import { asPeerBoards } from '../hub/peers.ts';
 import { isTerminalWorkState } from '../queue/workItems.ts';
 import { isValidBotId } from '../store/paths.ts';
 import { isHubRecordId, MAX_CHAIN_HOPS } from '../tools/hubTools.ts';
 import type {
   ApprovalDecision, BotDelivery, BotDeliveryState, BotHostApi, BotProfilePatch, BotInteractionResponse, BotStatus, BotWorkBoard,
-  ConversationRecord, DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, TranscriptPage,
-  TranscriptPageRequest, WorkItem,
+  ConversationRecord, DesktopGrantDecision, ModelCatalog, ProviderInfo, TelegramSettingsStatus, TranscriptEntry, WorkItem,
 } from '../types.ts';
 
 /**
@@ -26,7 +24,7 @@ import type {
 export const CORE_COMMANDS = [
   'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities',
   'getProfile', 'updateProfile', 'listConversations', 'createConversation', 'deleteConversation',
-  'transcript', 'conversationTranscript', 'conversationTranscriptPage', 'sendOwnerMessage', 'retryOwnerMessage', 'addOwnerAttachment',
+  'transcript', 'conversationTranscript', 'sendOwnerMessage', 'retryOwnerMessage', 'addOwnerAttachment',
   'attachmentPreview', 'cancelTurn', 'markSeen',
   'listSchedules', 'cancelSchedule', 'listWorkItems', 'resolveApproval', 'status',
   'listProviders', 'listModels', 'renameConversation', 'telegramStatus', 'setTelegramToken',
@@ -48,8 +46,6 @@ type MaybePromise<T> = T | Promise<T>;
 export interface CoreCommandTarget extends BotHostApi {
   transcript(conversationId: string): MaybePromise<TranscriptEntry[]>;
   conversationTranscript(conversationId: string): MaybePromise<TranscriptEntry[]>;
-  /** SPEC-014 FR-10: one page of the note, newest first; its size bounds itself. */
-  conversationTranscriptPage(conversationId: string, request?: TranscriptPageRequest): MaybePromise<TranscriptPage>;
   /** Every work item, or one conversation's. */
   listWorkItems(conversationId?: string): MaybePromise<WorkItem[]>;
   status(): MaybePromise<BotStatus>;
@@ -147,23 +143,6 @@ function asBase64(value: unknown, max: number): string {
   return value;
 }
 
-/** SPEC-014 FR-10: which page to read; both fields may be left out. */
-function asPageRequest(value: unknown): TranscriptPageRequest {
-  if (value === undefined || value === null) return {};
-  if (typeof value !== 'object' || Array.isArray(value)) throw new Error('page must be an object');
-  const raw = value as Record<string, unknown>;
-  const whole = (field: unknown, name: string, max: number): number | undefined => {
-    if (field === undefined || field === null) return undefined;
-    if (typeof field !== 'number' || !Number.isSafeInteger(field) || field < 1 || field > max) {
-      throw new Error(`${name} must be a whole number from 1 to ${max}`);
-    }
-    return field;
-  };
-  const limit = whole(raw.limit, 'limit', TRANSCRIPT_PAGE_MAX);
-  const beforeSeq = whole(raw.beforeSeq, 'beforeSeq', Number.MAX_SAFE_INTEGER);
-  return { ...(limit === undefined ? {} : { limit }), ...(beforeSeq === undefined ? {} : { beforeSeq }) };
-}
-
 function asOptionalConversation(value: unknown): string | undefined {
   return value === undefined || value === null ? undefined : asString(value, 'conversationId');
 }
@@ -193,8 +172,6 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       return null;
     case 'transcript': return recentEntries(await target.transcript(asString(args[0], 'conversationId')));
     case 'conversationTranscript': return recentEntries(await target.conversationTranscript(asString(args[0], 'conversationId')));
-    case 'conversationTranscriptPage':
-      return target.conversationTranscriptPage(asString(args[0], 'conversationId'), asPageRequest(args[1]));
     case 'sendOwnerMessage': return target.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text', MAX_TEXT));
     case 'retryOwnerMessage':
       return target.retryOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'workItemId'));

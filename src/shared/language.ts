@@ -271,7 +271,6 @@ export const zhTW: Record<string, string> = {
   '123456:ABC…': '123456:ABC…',
   'Cats Bot': 'Cats Bot',
   'The cat bot core stopped unexpectedly.': '機器貓核心意外停止了。',
-  "The bot's state database failed its check.": '機器貓的資料庫沒有通過檢查。',
   'The provider is waiting for your response.': 'Provider 正在等待你回覆。',
   'A desktop control request is waiting for you.': '有桌面控制要求等待你回覆。',
   'Follow system': '跟隨系統',
