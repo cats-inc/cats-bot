@@ -601,7 +601,10 @@ security review. Embeddings come only if the evaluation asks for them.
     after a stopped restore, every host advised copying an older snapshot instead of
     running the restore again; a child that could not be started left a stop waiting; a
     migrated bot without its `bot.db` was started again by the hub, as it wrote no
-    report. Known: a clock set back after a start hides that start's report from the
+    report. Its confirmation found two more, fixed as well: a clock set back more than a
+    day made the next snapshot remove every good one (now ones named after a time to come
+    go only once three others are kept), and the report of a missing database after a
+    stopped restore still advised an older snapshot. Known: a clock set back after a start hides that start's report from the
     hub, which then starts the core again a bounded number of times; Start pressed while
     a running core stops leaves the bot shown as stopped with the new core running, as
     before this work.

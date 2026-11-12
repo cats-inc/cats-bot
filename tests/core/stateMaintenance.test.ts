@@ -480,21 +480,32 @@ test('a snapshot that finds damage stops the core as a failed check does; one th
   assert.equal(readdirSync(root).filter((name) => name.startsWith('state-check-')).length, 1);
 });
 
-test('a snapshot or a report named after a time to come is never the newest, and the next snapshot removes it', async () => {
+test('a snapshot or a report named after a time to come is never the newest while another is, and no good snapshot is lost', async () => {
+  const day = 24 * 3_600_000;
+  const start = Date.parse(AT);
   const paths = filledRoot('future snapshot', 1);
   mkdirSync(backupsDirectory(paths), { recursive: true });
   const future = join(backupsDirectory(paths), 'bot-20271112T080000000Z.db');
   writeFileSync(future, '');
-  assert.equal(newestSnapshot(paths, new Date(AT)), null);
-  assert.equal(snapshotDue(paths, new Date(AT)), true);
-  const taken = await takeSnapshot(paths, new Date(AT)).result;
+  // Alone, it is what there is, and a snapshot is due.
+  assert.equal(newestSnapshot(paths, new Date(start))?.file, future);
+  assert.equal(snapshotDue(paths, new Date(start)), true);
+  const taken = await takeSnapshot(paths, new Date(start)).result;
+  assert.equal(newestSnapshot(paths, new Date(start))?.file, taken.file);
+  // Not due again a minute later, as it was every time while the other counted as newest.
+  assert.equal(snapshotDue(paths, new Date(start + 60_000)), false);
+  // It goes once three snapshots are named after a time that has been.
+  await takeSnapshot(paths, new Date(start + day)).result;
+  assert.equal(existsSync(future), true);
+  await takeSnapshot(paths, new Date(start + 2 * day)).result;
   assert.equal(existsSync(future), false);
-  assert.equal(newestSnapshot(paths, new Date(AT))?.file, taken.file);
-  // Not due again a minute later, as it would be every time while the other was newest.
-  assert.equal(snapshotDue(paths, new Date(Date.parse(AT) + 60_000)), false);
+  assert.equal(snapshots(paths).length, SNAPSHOTS_KEPT);
+  // A clock set back a fortnight: the three are kept beside the new one.
+  await takeSnapshot(paths, new Date(start - 14 * day)).result;
+  assert.equal(snapshots(paths).length, SNAPSHOTS_KEPT + 1);
   // A report a clock set forward wrote is not one of this start's.
   writeFileSync(join(paths.root, 'state-check-20271112T080000000Z.txt'), '');
-  assert.equal(checkReportSince(paths, new Date(AT), new Date(AT)), null);
+  assert.equal(checkReportSince(paths, new Date(start), new Date(start)), null);
   // A report lists each line of a problem that has several.
   const text = readFileSync(
     writeCheckReport(paths, ['*** in database main ***\nPage 9: never used'], new Date(AT)),
@@ -503,7 +514,7 @@ test('a snapshot or a report named after a time to come is never the newest, and
   assert.match(text, /\n {2}\*\*\* in database main \*\*\*\n {2}Page 9: never used\n/u);
 });
 
-test('a migrated bot whose database a stopped restore set aside says to run the restore again', () => {
+test('a migrated bot whose database a stopped restore set aside says to run the restore again', async () => {
   const { root } = openTestBot({ botsHome: home.botsHome, id: 'restore-stopped' });
   const paths = botPathsFor(root);
   mkdirSync(backupsDirectory(paths), { recursive: true });
@@ -522,4 +533,22 @@ test('a migrated bot whose database a stopped restore set aside says to run the 
       ) &&
       !error.message.includes('copy the newest snapshot'),
   );
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    assert.equal(
+      await main(['run', '--id', 'restore-stopped', '--json'], {
+        ...process.env,
+        CATS_BOT_HOME: home.root,
+      }),
+      1,
+    );
+  } finally {
+    process.stderr.write = write;
+  }
+  const report = readFileSync(checkReportSince(paths, new Date(Date.now() - 60_000))!, 'utf8');
+  assert.match(report, /cannot be used/u);
+  assert.match(report, /run `cats-bot restore` again/u);
+  assert.equal(report.includes('copy the snapshot there'), false);
+  assert.equal(report.includes('The newest snapshot'), false);
 });

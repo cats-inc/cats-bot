@@ -205,9 +205,13 @@ function errorText(error: unknown): string {
  * gone although the bot was moved to it. The host that starts the core reports it.
  */
 export class StateDatabaseUnavailableError extends Error {
-  constructor(message: string, options?: ErrorOptions) {
+  /** Set when a stopped restore set the database aside: running it again comes first. */
+  readonly restoreStopped: boolean;
+
+  constructor(message: string, options?: ErrorOptions & { restoreStopped?: boolean }) {
     super(message, options);
     this.name = 'StateDatabaseUnavailableError';
+    this.restoreStopped = options?.restoreStopped ?? false;
   }
 }
 
@@ -567,7 +571,7 @@ export class BotCore implements BotHostApi {
               : newest
                 ? `Put it back, or copy the newest snapshot (${newest.file}) there as bot.db.`
                 : 'Put it back.'),
-          { cause: error },
+          { cause: error, restoreStopped: asides.length > 0 },
         );
       }
       throw error;

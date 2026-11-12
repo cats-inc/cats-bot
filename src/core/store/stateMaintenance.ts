@@ -60,12 +60,14 @@ export function snapshots(paths: BotPaths): Snapshot[] {
  * removes it.
  */
 export function newestSnapshot(paths: BotPaths, now: Date): Snapshot | null {
-  return current(paths, now)[0] ?? null;
+  // When every snapshot is named after a time to come, the clock was set back: they are
+  // what there is.
+  return current(paths, now)[0] ?? snapshots(paths)[0] ?? null;
 }
 
 /** Whether a day has passed since the newest snapshot, or there is none. */
 export function snapshotDue(paths: BotPaths, now: Date): boolean {
-  const newest = newestSnapshot(paths, now);
+  const newest = current(paths, now)[0];
   return !newest || now.getTime() - newest.takenAt.getTime() >= SNAPSHOT_INTERVAL_MS;
 }
 
@@ -127,22 +129,42 @@ export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapsh
  * SPEC-014 FR-13: a report of a check that failed, beside the database, with the newest
  * snapshot and how to put it in place. Returns its path.
  */
-export function writeCheckReport(paths: BotPaths, problems: readonly string[], now: Date): string {
+export interface CheckReportOptions {
+  /** The first line's account; by default, a check that failed. */
+  heading?: string;
+  /**
+   * Whether to say how to put the newest snapshot in place: not when a stopped restore set
+   * the database aside, which holds more than any snapshot.
+   */
+  snapshotAdvice?: boolean;
+}
+
+export function writeCheckReport(
+  paths: BotPaths,
+  problems: readonly string[],
+  now: Date,
+  options: CheckReportOptions = {},
+): string {
   const file = checkReportFile(paths, now);
-  const newest = newestSnapshot(paths, now);
+  const advice = options.snapshotAdvice ?? true;
+  const newest = advice ? newestSnapshot(paths, now) : null;
   const listed = problems.slice(0, 100);
   const lines = [
-    `Cats Bot stopped at ${now.toISOString()}: its state database failed its check.`,
+    `Cats Bot stopped at ${now.toISOString()}: ${options.heading ?? 'its state database failed its check.'}`,
     `Database: ${stateDatabaseFile(paths)}`,
     '',
-    'What SQLite found:',
+    'What was found:',
     ...listed.map((problem) => `  ${problem.replace(/\n/gu, '\n  ')}`),
     ...(problems.length > listed.length ? [`  and ${problems.length - listed.length} more`] : []),
     '',
-    newest
-      ? `The newest snapshot: ${newest.file} (taken ${newest.takenAt.toISOString()}).`
-      : 'There is no snapshot yet. While the file can still be read, `cats-bot export` writes each',
-    ...(newest
+    ...(!advice
+      ? []
+      : newest
+        ? [`The newest snapshot: ${newest.file} (taken ${newest.takenAt.toISOString()}).`]
+        : [
+            'There is no snapshot yet. While the file can still be read, `cats-bot export` writes each',
+          ]),
+    ...(!advice || newest
       ? []
       : [
           'conversation out; the copy of the files from before the database, if the bot had them,',
@@ -168,8 +190,15 @@ function removeUnfinished(file: string): void {
 }
 
 function prune(paths: BotPaths, now: Date): void {
-  const kept = new Set(current(paths, now).slice(0, SNAPSHOTS_KEPT).map((snapshot) => snapshot.file));
-  for (const old of snapshots(paths)) if (!kept.has(old.file)) rmSync(old.file, { force: true });
+  // The newest three named after a time that has been are kept. Ones named after a time to
+  // come go only once there are three such: after a clock set back, they are the good ones.
+  const all = snapshots(paths);
+  const ok = current(paths, now).map((snapshot) => snapshot.file);
+  const kept = new Set(ok.slice(0, SNAPSHOTS_KEPT));
+  if (ok.length < SNAPSHOTS_KEPT) {
+    for (const snapshot of all) if (!ok.includes(snapshot.file)) kept.add(snapshot.file);
+  }
+  for (const old of all) if (!kept.has(old.file)) rmSync(old.file, { force: true });
   const directory = backupsDirectory(paths);
   for (const name of readdirSync(directory)) {
     if (name.includes(UNFINISHED)) rmSync(join(directory, name), { force: true });
@@ -241,7 +270,11 @@ function runInChild<T>(request: MaintenanceRequest): MaintenanceTask<T> {
     cancel: async () => {
       cancelled = true;
       // A process ends at once, a SQLite call in the middle of its work included.
-      if (child.exitCode === null && child.signalCode === null) child.kill();
+      try {
+        if (child.exitCode === null && child.signalCode === null) child.kill();
+      } catch {
+        // A child that never started cannot be signalled; it has ended already.
+      }
       await exited;
     },
   };

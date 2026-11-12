@@ -277,7 +277,10 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
     // the hub leaves the bot stopped with the report instead of starting it again.
     if (error instanceof StateDatabaseUnavailableError) {
       const paths = botPathsFor(target.root);
-      const report = writeCheckReport(paths, [error.message], new Date());
+      const report = writeCheckReport(paths, [error.message], new Date(), {
+        heading: 'its state database cannot be used.',
+        snapshotAdvice: !error.restoreStopped,
+      });
       createFileLogger(paths.logs)(`error the bot's state database cannot be read; see ${report}`);
       throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
     }
