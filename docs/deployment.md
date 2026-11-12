@@ -117,6 +117,13 @@ Bot + pinned Runtime source ZIP with a source/checksum manifest. Portable assets
 are not updater targets. Candidate CI artifacts carry a different distribution
 identity and cannot self-update.
 
+Bot packages omit Runtime's optional `ffmpeg-static` and `ffprobe-static`
+packages at every dependency depth. Bot exposes no media UI, and Runtime resolves
+these decoders only on first media use; its normal startup and image paths do not
+require them. Omitting the host-only binaries also keeps macOS universal builds
+from shipping one architecture's FFmpeg to both slices. This exclusion does not
+relax the native app/helper architecture, signature or notarization checks.
+
 Reuse Cats Desktop's existing macOS credentials through `cats-inc` organization
 secrets. Configure all five with **Selected repositories** access only to
 `cats-platform` and `cats-bot`; no new Apple certificate or API key is needed.
