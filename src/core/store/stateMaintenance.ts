@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { BotPaths } from './paths.ts';
 import { stateDatabaseFile } from './paths.ts';
-import { checkReportFile, parseTimeStamp, timeStamp } from './checkReport.ts';
+import { checkReportFile, CLOCK_SLACK_MS, parseTimeStamp, timeStamp } from './checkReport.ts';
 
 export { checkReportSince } from './checkReport.ts';
 
@@ -54,18 +54,24 @@ export function snapshots(paths: BotPaths): Snapshot[] {
   return found.sort((a, b) => b.takenAt.getTime() - a.takenAt.getTime());
 }
 
-export function newestSnapshot(paths: BotPaths): Snapshot | null {
-  return snapshots(paths)[0] ?? null;
+/**
+ * The newest whole snapshot taken by now. One named after a time to come, as a clock set
+ * forward leaves it, is the oldest in fact: it is never the newest, and the next snapshot
+ * removes it.
+ */
+export function newestSnapshot(paths: BotPaths, now: Date): Snapshot | null {
+  return current(paths, now)[0] ?? null;
 }
 
-/**
- * Whether a day has passed since the newest snapshot, or there is none. One named after a
- * time still to come, as a clock set back leaves it, does not hold the next one back.
- */
+/** Whether a day has passed since the newest snapshot, or there is none. */
 export function snapshotDue(paths: BotPaths, now: Date): boolean {
-  const newest = newestSnapshot(paths);
-  if (!newest || newest.takenAt.getTime() > now.getTime()) return true;
-  return now.getTime() - newest.takenAt.getTime() >= SNAPSHOT_INTERVAL_MS;
+  const newest = newestSnapshot(paths, now);
+  return !newest || now.getTime() - newest.takenAt.getTime() >= SNAPSHOT_INTERVAL_MS;
+}
+
+function current(paths: BotPaths, now: Date): Snapshot[] {
+  const latest = now.getTime() + CLOCK_SLACK_MS;
+  return snapshots(paths).filter((snapshot) => snapshot.takenAt.getTime() <= latest);
 }
 
 /** A task running in its own process; `cancel` ends it and settles once the process is gone. */
@@ -106,7 +112,7 @@ export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapsh
   const result = task.result.then(
     () => {
       renameSync(unfinished, file);
-      prune(paths);
+      prune(paths, now);
       return { file, takenAt: now };
     },
     (error: unknown) => {
@@ -123,7 +129,7 @@ export function takeSnapshot(paths: BotPaths, now: Date): MaintenanceTask<Snapsh
  */
 export function writeCheckReport(paths: BotPaths, problems: readonly string[], now: Date): string {
   const file = checkReportFile(paths, now);
-  const newest = newestSnapshot(paths);
+  const newest = newestSnapshot(paths, now);
   const listed = problems.slice(0, 100);
   const lines = [
     `Cats Bot stopped at ${now.toISOString()}: its state database failed its check.`,
@@ -161,8 +167,9 @@ function removeUnfinished(file: string): void {
     rmSync(`${file}${suffix}`, { force: true });
 }
 
-function prune(paths: BotPaths): void {
-  for (const old of snapshots(paths).slice(SNAPSHOTS_KEPT)) rmSync(old.file, { force: true });
+function prune(paths: BotPaths, now: Date): void {
+  const kept = new Set(current(paths, now).slice(0, SNAPSHOTS_KEPT).map((snapshot) => snapshot.file));
+  for (const old of snapshots(paths)) if (!kept.has(old.file)) rmSync(old.file, { force: true });
   const directory = backupsDirectory(paths);
   for (const name of readdirSync(directory)) {
     if (name.includes(UNFINISHED)) rmSync(join(directory, name), { force: true });
@@ -197,9 +204,13 @@ function runInChild<T>(request: MaintenanceRequest): MaintenanceTask<T> {
   child.stderr?.on('data', (chunk: string) => {
     if (stderr.length < STDERR_KEPT) stderr += chunk.slice(0, STDERR_KEPT - stderr.length);
   });
+  // A child that could not be started emits `error` and never `exit`.
   const exited = new Promise<void>((resolve) => {
     if (child.exitCode !== null || child.signalCode !== null) resolve();
-    else child.once('exit', () => resolve());
+    else {
+      child.once('exit', () => resolve());
+      child.once('error', () => resolve());
+    }
   });
   let cancelled = false;
   const result = new Promise<T>((resolve, reject) => {

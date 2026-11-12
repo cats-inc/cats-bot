@@ -1,3 +1,4 @@
+import { readdirSync } from 'node:fs';
 import { delimiter } from 'node:path';
 
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
@@ -199,6 +200,17 @@ function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * SPEC-014 FR-13: the bot's state database cannot be used: damaged, not one SQLite opens, or
+ * gone although the bot was moved to it. The host that starts the core reports it.
+ */
+export class StateDatabaseUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = 'StateDatabaseUnavailableError';
+  }
+}
+
 export type { BotStatus } from './types.ts';
 export { BotNotInitializedError, initializeBot, readBotProfile, type InitializeBotInput } from './profile/initialize.ts';
 
@@ -358,8 +370,8 @@ export class BotCore implements BotHostApi {
       // SPEC-014 FR-13: a database SQLite cannot read is named with the newest snapshot in
       // every host; the host that starts the core writes the report (`cats-bot run`).
       if (isDamagedDatabaseError(error)) {
-        const newest = newestSnapshot(this.paths);
-        throw new Error(
+        const newest = newestSnapshot(this.paths, this.now());
+        throw new StateDatabaseUnavailableError(
           `The bot's state database cannot be read: ${errorText(error)}` +
             (newest ? `. The newest snapshot is ${newest.file}` : ''),
           { cause: error },
@@ -542,12 +554,19 @@ export class BotCore implements BotHostApi {
       if (error instanceof StateDatabaseError && error.code === 'missing') {
         // The profile as written: a loaded one always reads as the current version.
         if (stateMigrationPending(this.paths.root)) return;
-        const newest = newestSnapshot(this.paths);
-        throw new Error(
-          `${stateDatabaseFile(this.paths)} is missing or empty, although this bot was moved to it; ` +
-            (newest
-              ? `put it back, or copy the newest snapshot (${newest.file}) there as bot.db`
-              : 'put it back'),
+        const newest = newestSnapshot(this.paths, this.now());
+        // A restore stopped after it set the database aside: running it again finishes it,
+        // and the database it set aside holds everything, where a snapshot holds less.
+        const asides = readdirSync(this.paths.root).filter(
+          (name) => name.startsWith('bot.db.set-aside-') && !name.endsWith('-wal') && !name.endsWith('-shm'),
+        );
+        throw new StateDatabaseUnavailableError(
+          `${stateDatabaseFile(this.paths)} is missing or empty, although this bot was moved to it. ` +
+            (asides.length > 0
+              ? `If a restore was stopped, run \`cats-bot restore\` again to finish it (the database it set aside: ${asides.join(', ')}); otherwise put the database back.`
+              : newest
+                ? `Put it back, or copy the newest snapshot (${newest.file}) there as bot.db.`
+                : 'Put it back.'),
           { cause: error },
         );
       }

@@ -389,9 +389,10 @@ Chosen on 2026-11-12 for PLAN-014 tasks 1.3, 1.5 and 1.6, under the same instruc
   writes the report; others name the newest snapshot in their error. The hub does not
   start again a core that stopped on a damaged database, and shows the report's path;
   `cats-bot run` then exits with 1. A bot moved to its database whose `bot.db` is missing
-  or empty is an error naming the newest snapshot, not an empty bot. A snapshot named
-  after a time still to come, as a clock set back leaves it, does not hold the next one
-  back.
+  or empty is an error naming the newest snapshot, not an empty bot, or saying to run
+  `cats-bot restore` again when a stopped restore set the database aside. A snapshot or a
+  report named after a time more than a day ahead, as a clock set forward leaves it, is
+  never taken for the newest; the next snapshot removes such a snapshot.
 - [x] FR-13: a snapshot is taken only after this run's check passed, so a damaged
   database never pushes a good snapshot out. It is written as `bot-<time>.db.partial`
   and renamed when whole; the three newest whole ones are kept.

@@ -579,7 +579,9 @@ security review. Embeddings come only if the evaluation asks for them.
     - The check and the snapshot ran in a worker thread, which `terminate()` cannot stop
       inside a SQLite call: a stop waited 6 to 10 s on that database, and a Quit on a
       bot of more than about 600 MB would have been ended by force. They run in a child
-      process now, which a stop ends in 0.1 to 0.4 s, leaving no unfinished file.
+      process now, which a stop ends in 0.1 to 2.7 s on an idle machine (6 s once under
+      load), leaving no unfinished file; a core killed outright leaves its unfinished
+      snapshot until the next one removes it.
     - A `backups/` that was a file ended the core from the timer; the report of a damaged
       database that could not be written left the core running. Neither does now.
     - The hub started a core on a damaged database again, four times or, for a large
@@ -593,6 +595,16 @@ security review. Embeddings come only if the evaluation asks for them.
   - Known, from the same review: a start of the core for `cats-bot say` or `tick` also
     begins the check, and its stop ends it; a check of a large bot after each start
     reads the whole file.
+  - From the review of the follow-up (#173), which found nothing that blocks, fixed in it:
+    a snapshot named after a time to come made a snapshot due at every look and stayed
+    the newest; a report named after a time to come kept a healthy bot from restarting;
+    after a stopped restore, every host advised copying an older snapshot instead of
+    running the restore again; a child that could not be started left a stop waiting; a
+    migrated bot without its `bot.db` was started again by the hub, as it wrote no
+    report. Known: a clock set back after a start hides that start's report from the
+    hub, which then starts the core again a bounded number of times; Start pressed while
+    a running core stops leaves the bot shown as stopped with the new core running, as
+    before this work.
   - Checked on a copy of one local bot root (one conversation, 77 lines): its export
     before the migration and after it are equal byte for byte. The copy was removed.
   - Chosen 2026-11-12, under the owner's instruction of that day, and listed in SPEC-014's

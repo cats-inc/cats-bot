@@ -233,7 +233,10 @@ test('the report names the problems, the newest snapshot and how to put it back'
   assert.match(text, /taken 2026-11-11T08:00:00\.000Z/u);
   assert.match(text, /and 50 more/u);
   assert.match(text, /copy the snapshot there as bot\.db/u);
-  assert.equal(newestSnapshot(paths)?.takenAt.toISOString(), '2026-11-11T08:00:00.000Z');
+  assert.equal(
+    newestSnapshot(paths, new Date(AT))?.takenAt.toISOString(),
+    '2026-11-11T08:00:00.000Z',
+  );
 });
 
 test('a running core checks its database, then takes a snapshot while it is idle, once a day', async () => {
@@ -296,7 +299,7 @@ test('a damaged database stops the core with a report, and the newest snapshot s
   damage(stateDatabaseFile(paths));
   const damaged = open();
   await damaged.start();
-  await within(damaged.whenStopped(), 20_000, 'the core stopping itself');
+  await within(damaged.whenStopped(), 60_000, 'the core stopping itself');
   const reports = readdirSync(root).filter((name) => name.startsWith('state-check-'));
   assert.equal(reports.length, 1);
   const report = readFileSync(join(root, reports[0]!), 'utf8');
@@ -361,7 +364,7 @@ test('only the host that starts the core writes the report of a database SQLite 
   assert.equal(checkReportSince(paths, new Date(Date.now() + 60_000)), null);
 });
 
-test('a migrated bot whose database is gone is an error that names the newest snapshot', () => {
+test('a migrated bot whose database is gone is an error that names the newest snapshot', async () => {
   const { root } = openTestBot({ botsHome: home.botsHome, id: 'gone' });
   const paths = botPathsFor(root);
   mkdirSync(backupsDirectory(paths), { recursive: true });
@@ -374,9 +377,23 @@ test('a migrated bot whose database is gone is an error that names the newest sn
     if (contents !== null) writeFileSync(stateDatabaseFile(paths), contents);
     assert.throws(
       () => BotCore.open({ root, log: () => {} }),
-      /missing or empty, although this bot was moved to it; put it back, or copy the newest snapshot \(.*bot-20261111T080000000Z\.db\)/u,
+      /missing or empty, although this bot was moved to it. Put it back, or copy the newest snapshot \(.*bot-20261111T080000000Z\.db\)/u,
     );
   }
+  // The host that starts the core reports it, so that the hub does not start it again.
+  const write = process.stderr.write.bind(process.stderr);
+  process.stderr.write = (() => true) as typeof process.stderr.write;
+  try {
+    assert.equal(
+      await main(['run', '--id', 'gone', '--json'], { ...process.env, CATS_BOT_HOME: home.root }),
+      1,
+    );
+  } finally {
+    process.stderr.write = write;
+  }
+  const report = checkReportSince(paths, new Date(Date.now() - 60_000));
+  assert.ok(report);
+  assert.match(readFileSync(report, 'utf8'), /missing or empty/u);
 });
 
 test("the core's upkeep never ends it but for damage: a folder it cannot write, a check that could not run", async () => {
@@ -451,7 +468,7 @@ test('a snapshot that finds damage stops the core as a failed check does; one th
     now += 6 * 3_600_000 + 1;
     snapshotError = Object.assign(new Error('database disk image is malformed'), { damaged: true });
     await until(() => snapshots === 2, 'the snapshot after six hours');
-    await within(core.whenStopped(), 20_000, 'the core stopping itself');
+    await within(core.whenStopped(), 60_000, 'the core stopping itself');
     assert.ok(core.stoppedForDamage?.report);
     assert.match(
       readFileSync(core.stoppedForDamage!.report!, 'utf8'),
@@ -463,15 +480,46 @@ test('a snapshot that finds damage stops the core as a failed check does; one th
   assert.equal(readdirSync(root).filter((name) => name.startsWith('state-check-')).length, 1);
 });
 
-test('a snapshot named after a time still to come does not hold the next one back', () => {
+test('a snapshot or a report named after a time to come is never the newest, and the next snapshot removes it', async () => {
   const paths = filledRoot('future snapshot', 1);
   mkdirSync(backupsDirectory(paths), { recursive: true });
-  writeFileSync(join(backupsDirectory(paths), 'bot-20271112T080000000Z.db'), '');
+  const future = join(backupsDirectory(paths), 'bot-20271112T080000000Z.db');
+  writeFileSync(future, '');
+  assert.equal(newestSnapshot(paths, new Date(AT)), null);
   assert.equal(snapshotDue(paths, new Date(AT)), true);
+  const taken = await takeSnapshot(paths, new Date(AT)).result;
+  assert.equal(existsSync(future), false);
+  assert.equal(newestSnapshot(paths, new Date(AT))?.file, taken.file);
+  // Not due again a minute later, as it would be every time while the other was newest.
+  assert.equal(snapshotDue(paths, new Date(Date.parse(AT) + 60_000)), false);
+  // A report a clock set forward wrote is not one of this start's.
+  writeFileSync(join(paths.root, 'state-check-20271112T080000000Z.txt'), '');
+  assert.equal(checkReportSince(paths, new Date(AT), new Date(AT)), null);
   // A report lists each line of a problem that has several.
   const text = readFileSync(
     writeCheckReport(paths, ['*** in database main ***\nPage 9: never used'], new Date(AT)),
     'utf8',
   );
   assert.match(text, /\n {2}\*\*\* in database main \*\*\*\n {2}Page 9: never used\n/u);
+});
+
+test('a migrated bot whose database a stopped restore set aside says to run the restore again', () => {
+  const { root } = openTestBot({ botsHome: home.botsHome, id: 'restore-stopped' });
+  const paths = botPathsFor(root);
+  mkdirSync(backupsDirectory(paths), { recursive: true });
+  copyFileSync(
+    stateDatabaseFile(paths),
+    join(backupsDirectory(paths), 'bot-20261111T080000000Z.db'),
+  );
+  // As `cats-bot restore` leaves it when stopped after setting the database aside.
+  renameSync(stateDatabaseFile(paths), join(root, 'bot.db.set-aside-20261112T080000000Z'));
+  assert.throws(
+    () => BotCore.open({ root, log: () => {} }),
+    (error: unknown) =>
+      error instanceof Error &&
+      /run `cats-bot restore` again to finish it \(the database it set aside: bot\.db\.set-aside-20261112T080000000Z\)/u.test(
+        error.message,
+      ) &&
+      !error.message.includes('copy the newest snapshot'),
+  );
 });

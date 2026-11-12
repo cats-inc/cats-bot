@@ -2,7 +2,7 @@
 import { existsSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot } from '../core/bot.ts';
+import { BotCore, BotInstanceRunningError, BotNotInitializedError, initializeBot, StateDatabaseUnavailableError } from '../core/bot.ts';
 import { readProviderOverrides } from '../core/hostEnv.ts';
 import { callHostControl, HostControlRejectedError } from '../core/host-api/control.ts';
 import { describeSchedule, type CreateScheduleInput } from '../core/life/schedules.ts';
@@ -23,7 +23,7 @@ import {
   type ConversationContent,
 } from '../core/store/conversationExport.ts';
 import { openBotStateStore, StateDatabaseError } from '../core/store/stateStore.ts';
-import { isDamagedDatabaseError, writeCheckReport } from '../core/store/stateMaintenance.ts';
+import { writeCheckReport } from '../core/store/stateMaintenance.ts';
 import { STATE_DATABASE_PROFILE_RAISE } from '../core/profile/profile.ts';
 
 /**
@@ -273,11 +273,11 @@ async function commandRun(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<n
       log: (line) => { if (!json) process.stderr.write(`${line}\n`); },
     });
   } catch (error) {
-    // SPEC-014 FR-13: the host that starts the core reports a database SQLite cannot read.
-    const cause = (error as Error | null)?.cause;
-    if (isDamagedDatabaseError(cause)) {
+    // SPEC-014 FR-13: the host that starts the core reports a database it cannot use, so that
+    // the hub leaves the bot stopped with the report instead of starting it again.
+    if (error instanceof StateDatabaseUnavailableError) {
       const paths = botPathsFor(target.root);
-      const report = writeCheckReport(paths, [cause instanceof Error ? cause.message : String(cause)], new Date());
+      const report = writeCheckReport(paths, [error.message], new Date());
       createFileLogger(paths.logs)(`error the bot's state database cannot be read; see ${report}`);
       throw new Error(`The bot's state database cannot be read; see ${report}`, { cause: error });
     }

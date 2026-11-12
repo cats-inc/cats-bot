@@ -125,7 +125,7 @@ export function migrateVersion1(options: MigrateVersion1Options): MigrationResul
   let summary: string | null = null;
 
   if (marker === undefined) {
-    checkProfileBeforeImport(paths, options.profile);
+    checkProfileBeforeImport(paths, options.profile, now());
     before('discard');
     removeDatabase(file);
     removeIncompleteCopies(paths);
@@ -341,10 +341,10 @@ function backupOf(paths: BotPaths, marker: string | undefined): string | null {
  * otherwise the import would finish and the raise after it fail at every start, while an
  * older Bot went on writing files the migration has stopped reading.
  */
-function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise): void {
+function checkProfileBeforeImport(paths: BotPaths, raise: ProfileRaise, at: Date): void {
   const profile = parseRecord(readText(paths.profile));
   if (profile?.schemaVersion === raise.to) {
-    const newest = newestSnapshot(paths);
+    const newest = newestSnapshot(paths, at);
     const asides = readdirSync(paths.root).filter(
       (name) =>
         name.startsWith('bot.db.set-aside-') && !name.endsWith('-wal') && !name.endsWith('-shm'),
