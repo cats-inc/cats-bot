@@ -186,15 +186,21 @@ textarea {
   margin-top: 3px;
 }
 
-/* SPEC-003 FR-12: the bot-wide live progress details switch above the conversation list. */
-.progress-details {
+/* SPEC-003 FR-12 and FR-14: the bot-wide display switches above the conversation list. */
+.display-switches {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 10px;
   margin: 4px 0 12px;
 }
 
-.progress-details .hint {
+.display-switch {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.display-switch .hint {
   padding-left: 24px;
 }
 

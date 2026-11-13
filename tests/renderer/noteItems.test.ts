@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { BotInteraction, TranscriptEntry, WorkItem } from '../../src/core/types.ts';
-import { buildNoteItems, liveInteractions, retryableOwnerEntry, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
+import { buildNoteItems, isVerboseItem, liveInteractions, retryableOwnerEntry, toolSummary, upsertWorkItem, type DecisionItem, type ToolItem } from '../../src/renderer/note/transcript.ts';
 
 /** SPEC-003 FR-4, FR-5: tool cards and the owner's decisions in the note. */
 
@@ -115,4 +115,17 @@ test('the note offers to retry only the latest owner message whose turn failed, 
   for (const state of ['cancelled', 'interrupted', 'completed'] as const)
     assert.equal(retryableOwnerEntry(entries, [items[0]!, { ...failed, state }], false), null, state);
   assert.equal(retryableOwnerEntry(entries, [items[0]!], false), null, 'not without its work item');
+});
+
+test('verbose messages are the system lines; a decision made from one, an error and every message stay (SPEC-003 FR-14)', () => {
+  const items = buildNoteItems([
+    entry(1, 'owner', 'hi'),
+    entry(2, 'system', 'Schedule created: daily 09:00.', { origin: 'schedule' }),
+    entry(3, 'system', 'Approval needed (w1): deploy?', { origin: 'event', workItemId: 'w1' }),
+    entry(4, 'error', 'Could not reach the provider.', { origin: 'system' }),
+    entry(5, 'bot', 'hello', { origin: 'owner' }),
+  ], [work('w1', 'awaiting_owner', { source: 'ask_owner' })]);
+  assert.deepEqual(items.map((item) => [item.type, isVerboseItem(item)]), [
+    ['entry', false], ['entry', true], ['decision', false], ['entry', false], ['entry', false],
+  ]);
 });

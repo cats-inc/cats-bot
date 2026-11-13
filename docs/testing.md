@@ -506,6 +506,11 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
     used a tool shows only its text and there is no link. Turn it on: the open note shows "1 step ▸" under
     that reply at once, and the link opens and folds that reply alone. A reply still being written shows its
     steps as they come and folds them when it is sealed. Turning the switch off folds every note at once.
+  - Dates and verbose messages (SPEC-003 FR-13, FR-14): with messages on several days, each day starts with a
+    divider (Today, Yesterday, then the date and weekday) and a bubble shows its time without seconds; hovering
+    the time shows the full date and time. Create a schedule: with "Show verbose messages" off its "Schedule
+    created" line is hidden, and it appears at once when the switch is turned on. Decisions and errors show
+    either way.
   - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
     shows at the top of the composer and the draft and buttons do not move. Nothing is added to the
     transcript, the notice stays (also past a minute), and ✕ dismisses it. A permission notice keeps "Open System Settings". Attach a file over

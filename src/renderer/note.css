@@ -550,6 +550,22 @@ html { font-size: 16px; }
   line-height: 1.6; gap: 4px; overflow-x: hidden; min-width: 0;
 }
 .catsConversation > .transcriptMessageStack { flex-shrink: 0; }
+/* SPEC-003 FR-13: the line where a new day starts, Today, Yesterday or the date, centered between two rules. */
+.day-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.day-divider::before,
+.day-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid #e3d6a4;
+}
+
 /* SPEC-003 FR-12: the link under a finished reply that opens or folds its steps, in the reply's meta line. */
 .response-steps {
   padding: 0;

@@ -96,6 +96,11 @@ export interface BotProfile {
    * they happen, and a link under each finished reply that opens its steps. Absent reads as off.
    */
   showProgressDetails: boolean;
+  /**
+   * SPEC-003 FR-14: show verbose messages, Cats Desktop's switch of that name: the system lines about sessions
+   * and schedules stay in every note of this bot. Absent reads as off; decisions and errors show either way.
+   */
+  showVerboseMessages: boolean;
   updatedAt: string;
 }
 
@@ -450,6 +455,7 @@ export interface BotProfilePatch {
   desktopControl?: Partial<DesktopControlPolicy>;
   replyLanguage?: BotReplyLanguage;
   showProgressDetails?: boolean;
+  showVerboseMessages?: boolean;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */

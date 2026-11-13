@@ -246,6 +246,12 @@ export const zhTW: Record<string, string> = {
   '1 step': '1 個步驟',
   '{count} steps': '{count} 個步驟',
   'Hide steps': '收起步驟',
+  // SPEC-003 FR-13 and FR-14: day dividers, and Cats Desktop's verbose messages switch.
+  Today: '今天',
+  Yesterday: '昨天',
+  'Show verbose messages': '顯示冗長訊息',
+  'Keep system-level session and orchestration messages visible in every conversation of this cat bot.':
+    '保留系統層級的會話與調度者訊息，在這隻機器貓的所有對話中顯示。',
   // The note header's (i): the bot's provider, model and effort.
   '{effort} effort': '推理強度 {effort}',
   'Provider and model: {summary}': 'Provider 與模型：{summary}',

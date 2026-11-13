@@ -113,6 +113,19 @@ for the current-versus-pending boundary.
     ("3 steps ▸") that opens and folds that reply alone. A reply with nothing folded has no link. The notes
     follow a switch at once, through `profile.updated`, which the core also sends when the execution target
     changes so the header's (i) follows a model change (FR-11).
+13. FR-13 (2026-11-14): A message shows when it was sent to the minute ("上午7:00", "7:00 AM"), without seconds;
+    its tooltip gives the whole date and time to the second, with the bubble's day period ("上午", not ICU's
+    "清晨"). Each new local day in the transcript starts with a centered divider: Today, Yesterday, then the
+    date with its weekday, and the year when it is another year. Transcript entries already carry the full
+    time; only the display had dropped the date. Dates and times show whatever the switches of FR-12 and
+    FR-14 say. A note left open past midnight relabels its dividers (Today becomes Yesterday): one timer per
+    note fires just after local midnight, and focusing or showing the note checks again after sleep; only the
+    dividers redraw, not the transcript.
+14. FR-14 (2026-11-14): "Show verbose messages", Cats Desktop's switch of that name, is one switch per bot
+    next to FR-12's, saved as it changes and off by default, stored as the profile's `showVerboseMessages`
+    (absent reads as off, not a session setting). Off, the system lines about sessions and schedules (for
+    example "Schedule created" or a session being replaced) hide; a decision made from a system line, an
+    error and every message show either way. Day dividers count only the lines shown.
 
 ## Acceptance
 

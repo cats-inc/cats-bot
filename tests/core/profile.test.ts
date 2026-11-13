@@ -332,6 +332,19 @@ test('live progress details are off by default and when absent, and turning them
   assert.equal(normalizeProfile({ ...older, showProgressDetails: true }, profile).showProgressDetails, true);
 });
 
+test('verbose messages are off by default and when absent, and turning them on never bumps the revision (SPEC-003 FR-14)', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  assert.equal(profile.showVerboseMessages, false);
+  const on = applyProfilePatch(profile, { showVerboseMessages: true }, now);
+  assert.equal(on.profile.showVerboseMessages, true);
+  assert.equal(on.sessionChanged, false);
+  assert.equal(on.profile.configRevision, profile.configRevision);
+  assert.equal(on.profile.showProgressDetails, false, 'the two switches are apart');
+  assert.throws(() => applyProfilePatch(profile, { showVerboseMessages: 1 as unknown as boolean }, now), /true or false/u);
+  const { showVerboseMessages: _dropped, ...older } = on.profile;
+  assert.equal(normalizeProfile(older, on.profile).showVerboseMessages, false);
+});
+
 test('desktop control is off by default, off when absent or invalid, and its patch never bumps the revision (SPEC-006 BDC-02)', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
   assert.deepEqual(profile.desktopControl, { enabled: false });
