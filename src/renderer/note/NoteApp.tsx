@@ -17,7 +17,6 @@ import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import {
   clearComposerNotice,
-  composerNoticeLifetime,
   raiseComposerNotice,
   type ComposerNotice,
   type ComposerNoticeSource,
@@ -163,24 +162,13 @@ function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
 }
 
 /**
- * ADR-024: a failed composer action (dictation, screenshot, send) is one notice above the composer's buttons. It
- * clears itself unless it opens System Settings (ADR-020), and not while the pointer or focus is on it.
+ * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice above the composer's
+ * buttons. It stays until the owner closes it, the action works again or another failure replaces it.
  */
 function ComposerNoticeBar({ notice, onDismiss }: { notice: ComposerNotice; onDismiss: () => void }) {
   useI18n();
-  const [held, setHeld] = useState(false);
-  const lifetime = composerNoticeLifetime(notice);
-  useEffect(() => {
-    if (lifetime === null || held) return;
-    const timer = window.setTimeout(onDismiss, lifetime);
-    return () => window.clearTimeout(timer);
-  }, [notice.id, lifetime, held, onDismiss]);
   const pane = notice.pane;
-  return <div className="composerNotice" role="status" data-source={notice.source}
-    onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
-    onFocus={() => setHeld(true)} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
-    }}>
+  return <div className="composerNotice" role="status" data-source={notice.source}>
     <span className="composerNoticeIcon"><NoticeSourceIcon source={notice.source} /></span>
     <span className="composerNoticeText">
       {notice.message}

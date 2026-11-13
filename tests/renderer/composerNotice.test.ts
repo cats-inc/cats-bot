@@ -2,9 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
-  COMPOSER_NOTICE_LIFETIME_MS,
   clearComposerNotice,
-  composerNoticeLifetime,
   raiseComposerNotice,
 } from '../../src/renderer/note/composerNotice.ts';
 
@@ -30,8 +28,7 @@ test('a tool working again clears only its own notice', () => {
   assert.equal(clearComposerNotice(refused, 'send'), null);
 });
 
-test('a notice clears itself unless it opens System Settings (ADR-020)', () => {
-  assert.equal(composerNoticeLifetime(raiseComposerNotice('voice', 'No microphone was detected.')), COMPOSER_NOTICE_LIFETIME_MS);
-  assert.equal(composerNoticeLifetime(raiseComposerNotice('voice', 'Microphone access was denied.', 'microphone')), null);
-  assert.equal(composerNoticeLifetime(raiseComposerNotice('screenshot', 'Screen Recording is off.', 'screen_recording')), null);
+test('a permission notice keeps its pane for "Open System Settings" (ADR-020)', () => {
+  assert.equal(raiseComposerNotice('voice', 'Microphone access was denied.', 'microphone').pane, 'microphone');
+  assert.equal(raiseComposerNotice('voice', 'No microphone was detected.').pane, null);
 });

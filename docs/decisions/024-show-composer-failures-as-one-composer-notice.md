@@ -8,6 +8,10 @@ failures to follow. Amends [SPEC-003](../specs/SPEC-003-note-reading-and-the-rea
 and FR-10 and [ADR-020](./020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md)
 decision 2.
 
+Amended 2026-11-14: the owner decided that an error does not clear itself. The 8 s lifetime first
+approved is removed (decision 3). Cats Desktop makes the same change in the same round: its new `error`
+toast level stays until it is closed.
+
 ## Context
 
 - SPEC-003 made a failed dictation or screenshot "a line in the note". A file too large to send, a send the
@@ -28,12 +32,11 @@ decision 2.
    longer adds lines of its own to the transcript.
 2. **A new failure replaces it.** A repeated failure is shown again with the notice's entrance, so the
    owner sees that the click was answered.
-3. **It goes away.** The owner can dismiss it. The action working again clears its own notice: dictation
-   reaching `ready`, a captured region, removing the file that was too large, or a send or retry the core
-   accepted. A notice with nothing to do clears itself after 8 s, and not while the pointer or focus is on
-   it.
-4. **"Open System Settings" stays until it is used or dismissed.** A notice for a missing macOS permission
-   keeps ADR-020's button and does not time out.
+3. **It stays until it is answered.** The owner can dismiss it. The action working again clears its own
+   notice: dictation reaching `ready`, a captured region, removing the file that was too large, or a send or
+   retry the core accepted. It never clears itself on a timer.
+4. **A missing permission offers "Open System Settings".** A notice for a missing macOS permission keeps
+   ADR-020's button.
 5. **It names its button.** The notice shows the struck-out glyph of the microphone, screenshot or attach
    button it is about. Send is a text button, so its notice has an alert mark.
 6. **A turn that failed stays on its message.** "Response failed" and its retry action belong to the
@@ -50,7 +53,8 @@ decision 2.
 
 ### Negative
 
-- A notice that clears itself leaves no record in the note.
+- A notice stays until it is answered, so a failure the owner ignores keeps a line of the composer.
+- A notice is not kept as a record once it is closed.
 
 ## Alternatives Considered
 
