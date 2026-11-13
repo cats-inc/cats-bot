@@ -31,7 +31,8 @@ Amends [SPEC-003](../specs/SPEC-003-note-reading-and-the-react-renderer.md) FR-9
    exposes `systemSettings` only there.
 2. **A line about a missing permission has "Open System Settings".** In the note, the line that reports a
    refused screenshot, a denied microphone or a denied Speech Recognition carries the button for its pane.
-   The text still names the pane.
+   The text still names the pane. [ADR-024](./024-show-composer-failures-as-one-composer-notice.md)
+   moves that line from the transcript to the composer's notice; the button and its panes are unchanged.
 3. **Speech Recognition is its own reason.** The macOS helper reports `speech_permission_denied`, apart from
    the microphone's `permission_denied`. The helper stays byte-identical to Desktop's.
 4. **Cats Bot asks for Screen Recording once per run.** While Screen Recording is not granted, the shell runs

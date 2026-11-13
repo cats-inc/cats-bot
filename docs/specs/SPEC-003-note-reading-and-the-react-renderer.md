@@ -70,7 +70,9 @@ for the current-versus-pending boundary.
    directory (git-ignored there, a taken name gets a numbered one), and the message starts with Cats
    Desktop's `[Attached files in working directory:]` block listing their relative paths, so the provider
    CLI reads them with its own tools. A message may be only files. If storing or sending fails, nothing is
-   sent and the draft and files come back. In the transcript an owner bubble shows the block's images
+   sent and the draft and files come back with a composer notice saying why; a file over 10 MB is a notice
+   until it is removed, and a refused retry is a notice too
+   ([ADR-024](../decisions/024-show-composer-failures-as-one-composer-notice.md)). In the transcript an owner bubble shows the block's images
    inline (read back by `attachmentPreview`, PNG, JPEG, GIF and WebP) and other files as names; copying
    it copies the text without the block.
 9. FR-9: Screenshots, as in Cats Desktop's composer. The composer's "Take screenshot" button hides the note
@@ -80,18 +82,19 @@ for the current-versus-pending boundary.
    at most 8000 px a side and 10 MB on the overlay path, as `grim` writes it on wlroots (where a larger
    picture is refused on send like any file over 10 MB). macOS needs Screen Recording for Cats Bot: while it is
    not granted the shell asks once per run through the dictation helper, so Cats Bot is listed in Privacy &
-   Security > Screen & System Audio Recording; the refusal is a line naming that pane, with "Open System
-   Settings" ([ADR-020](../decisions/020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md)).
+   Security > Screen & System Audio Recording; the refusal is a composer notice naming that pane, with "Open
+   System Settings" ([ADR-020](../decisions/020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md)).
    wlroots desktops use `grim` and `slurp`. Cancelling or a region too small adds nothing; other failures are
-   a line in the note.
+   a composer notice, and a captured region clears the screenshot's notice
+   ([ADR-024](../decisions/024-show-composer-failures-as-one-composer-notice.md)).
 10. FR-10: Dictation, as Cats Desktop's composer "voice input" (ADR-018). On macOS and Windows the composer
     has a microphone button; it turns speech into text with a native helper (macOS on-device speech
     recognition, Windows speech recognition, which may be online by Windows settings and is marked so) and
     inserts each final phrase at the owner's selection, or at the end. No audio is kept or sent. Clicking
     again stops; Escape, the composer becoming busy, closing the note and another note starting dictation
-    cancel. Helper errors (permission, no microphone, language, unavailable, stopped) are a line in the
-    note. A denied microphone and a denied Speech Recognition are separate lines, each with "Open System
-    Settings" for its macOS pane (ADR-020). Before creating a recognition task or tap on macOS, validate
+    cancel. Helper errors (permission, no microphone, language, unavailable, stopped) are a composer
+    notice (ADR-024), cleared when the helper next starts listening. A denied microphone and a denied
+    Speech Recognition are separate notices, each with "Open System Settings" for its macOS pane (ADR-020). Before creating a recognition task or tap on macOS, validate
     the hardware input format's sample rate and channel count. Missing or disabled input emits
     `mic_unavailable` and `end`, without a tap; the output scope's default format is not proof of a
     microphone. The macOS helper delivers recognition callbacks on a serial background queue while

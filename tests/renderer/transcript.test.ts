@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { TranscriptEntry } from '../../src/core/types.ts';
-import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, localEntry, noteRoleSuffix, visibleEntries } from '../../src/renderer/note/transcript.ts';
+import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, noteRoleSuffix, visibleEntries } from '../../src/renderer/note/transcript.ts';
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 
 /** SPEC-001 FR-33, SPEC-003: what the note shows from the transcript and the live events. */
@@ -39,10 +39,7 @@ test('entries keep their look: classes, tool lines, times and unprompted replies
   assert.equal(entryMeta(entry(1, 'system', 'note'), time), null);
 });
 
-test('a line the note shows by itself never collides with transcript entries', () => {
-  const first = localEntry('error', 'Could not send: offline');
-  const second = localEntry('error', 'again');
-  assert.ok(first.seq < 0 && second.seq < first.seq);
+test('a refused invoke reads as the core\'s own message', () => {
   assert.equal(errorText(new Error("Error invoking remote method 'bot:invoke': Error: An owner message needs text")), 'An owner message needs text');
 });
 

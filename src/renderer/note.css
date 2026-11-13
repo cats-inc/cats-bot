@@ -597,17 +597,62 @@ html { font-size: 16px; }
   50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
 }
 
-/* ADR-020: the button on a line about a missing macOS permission. */
-.entry-settings-action {
-  align-self: flex-start;
-  margin-top: 6px;
-  padding: 4px 10px;
+/* ADR-024: a failed composer tool's notice, between the draft and the buttons. It carries the struck-out
+   glyph of the button it is about; a new one replaces it and plays the entrance again. */
+.composerNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 5px 4px 5px 6px;
+  border: 1px solid #ecbcb3;
+  border-radius: 6px;
+  background: var(--error);
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.35;
+  animation: composerNoticeIn 160ms ease-out;
+}
+.composerNoticeIcon {
+  display: grid;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  color: #b4442f;
+}
+.composerNoticeText { flex: 1; min-width: 0; padding-top: 1px; overflow-wrap: anywhere; }
+/* ADR-020: the notice about a missing macOS permission opens its pane. */
+.composerNoticeAction {
+  display: block;
+  margin-top: 5px;
+  padding: 3px 10px;
   border: 1px solid #d9cc92;
   border-radius: 6px;
   background: #fffdf2;
   color: var(--ink);
   font: inherit;
-  font-size: 0.82rem;
   cursor: pointer;
 }
-.entry-settings-action:hover { background: rgba(0, 0, 0, 0.06); }
+.composerNoticeAction:hover { background: #fff6dc; }
+.composerNoticeDismiss {
+  display: grid;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 0;
+}
+.composerNoticeDismiss:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
+.composerNotice button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@keyframes composerNoticeIn {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composerNotice { animation: none; }
+}
