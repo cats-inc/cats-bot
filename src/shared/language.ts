@@ -219,7 +219,7 @@ export const zhTW: Record<string, string> = {
   'Retry response': '重試回覆',
   'Response failed': '回覆失敗',
   'Add photos and files': '新增照片和檔案',
-  'Take screenshot': '拍攝畫面截圖',
+  'Take screenshot': '擷取畫面',
   'A screenshot is already being taken.': '已經在截圖了。',
   'Could not take a screenshot: {error}': '無法截圖：{error}',
   'Failed to capture screenshot.': '擷取截圖失敗。',

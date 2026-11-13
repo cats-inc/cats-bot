@@ -15,9 +15,9 @@ import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type Me
 import { voicePrivacyMessage } from '../../shared/voice.ts';
 import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
+import { ComposerGlyph } from './composerIcons.tsx';
 import {
   clearComposerNotice,
-  composerNoticeLifetime,
   raiseComposerNotice,
   type ComposerNotice,
   type ComposerNoticeSource,
@@ -144,43 +144,17 @@ function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
       <path d="M8 11.1v.15" />
     </svg>;
   }
-  return <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
-    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {source === 'voice' ? <>
-      <rect x="6" y="2" width="4" height="8" rx="2" />
-      <path d="M3 8a5 5 0 0 0 10 0" />
-      <path d="M8 13v2" />
-    </> : source === 'attach' ? <>
-      <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3" />
-      <path d="M8 2v8" />
-      <path d="M4 6l4-4 4 4" />
-    </> : <>
-      <path d="M5 3.5l1-1h4l1 1h2a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1h2z" />
-      <circle cx="8" cy="8.5" r="2.5" />
-    </>}
-    <path d="M2.5 14.5l11-13" />
-  </svg>;
+  return <ComposerGlyph kind={source} size={14} struck />;
 }
 
 /**
- * ADR-024: a failed composer action (dictation, screenshot, send) is one notice above the composer's buttons. It
- * clears itself unless it opens System Settings (ADR-020), and not while the pointer or focus is on it.
+ * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice above the composer's
+ * buttons. It stays until the owner closes it, the action works again or another failure replaces it.
  */
 function ComposerNoticeBar({ notice, onDismiss }: { notice: ComposerNotice; onDismiss: () => void }) {
   useI18n();
-  const [held, setHeld] = useState(false);
-  const lifetime = composerNoticeLifetime(notice);
-  useEffect(() => {
-    if (lifetime === null || held) return;
-    const timer = window.setTimeout(onDismiss, lifetime);
-    return () => window.clearTimeout(timer);
-  }, [notice.id, lifetime, held, onDismiss]);
   const pane = notice.pane;
-  return <div className="composerNotice" role="status" data-source={notice.source}
-    onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
-    onFocus={() => setHeld(true)} onBlur={(event) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
-    }}>
+  return <div className="composerNotice" role="status" data-source={notice.source}>
     <span className="composerNoticeIcon"><NoticeSourceIcon source={notice.source} /></span>
     <span className="composerNoticeText">
       {notice.message}
@@ -689,18 +663,11 @@ export function NoteApp() {
         <div className="note-actions">
           <button className="composerIconButton" id="attach" type="button" aria-label={t('Add photos and files')}
             title={t('Add photos and files')} disabled={busy} onClick={() => fileInputRef.current?.click()}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3" />
-              <path d="M8 2v8" />
-              <path d="M4 6l4-4 4 4" />
-            </svg>
+            <ComposerGlyph kind="attach" />
           </button>
           <button className="composerIconButton" id="take-screenshot" type="button" aria-label={t('Take screenshot')}
             title={t('Take screenshot')} disabled={busy || capturing} onClick={() => void takeScreenshot()}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M5 3.5l1-1h4l1 1h2a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1h2z" />
-              <circle cx="8" cy="8.5" r="2.5" />
-            </svg>
+            <ComposerGlyph kind="screenshot" />
           </button>
           <span className="note-spacer" />
           {dictation.supported && <button
@@ -709,12 +676,7 @@ export function NoteApp() {
             aria-label={dictation.active ? `${t('Stop voice input')}${privacy ? ` (${t(privacy)})` : ''}` : t('Start voice input')}
             title={privacy ? t(privacy) : dictation.active ? t('Stop voice input') : t('Start voice input')}
             onClick={dictation.toggle}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="6" y="2" width="4" height="8" rx="2" />
-              <path d="M3 8a5 5 0 0 0 10 0" />
-              <path d="M8 13v2" />
-              <path d="M6 15h4" />
-            </svg>
+            <ComposerGlyph kind="voice" />
             {privacy && <span className="composerVoicePrivacyBadge" aria-hidden="true">!</span>}
           </button>}
           <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>

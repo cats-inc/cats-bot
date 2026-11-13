@@ -503,8 +503,8 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   - Deny Speech Recognition, then the microphone, and dictate: each composer notice names its own pane and
     its button opens it.
   - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
-    shows between the draft and the buttons, nothing is added to the transcript, it clears after 8 s
-    (not while hovered), and ✕ dismisses it. A permission notice stays until dismissed. Attach a file over
+    shows between the draft and the buttons, nothing is added to the transcript, it stays (also past
+    a minute), and ✕ dismisses it. A permission notice keeps "Open System Settings". Attach a file over
     10 MB and send: the notice names it and goes when the file is removed. A send or retry the core refuses
     is a notice under the restored draft, not a transcript line.
   - Switch Cats Bot off in General > Login Items with start at login on. Cats Bot Settings > General shows the
