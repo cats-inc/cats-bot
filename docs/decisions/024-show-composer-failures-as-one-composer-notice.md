@@ -44,7 +44,8 @@ went, which now happens when an action starts working again, while the owner is 
 4. **A missing permission offers "Open System Settings".** A notice for a missing macOS permission keeps
    ADR-020's button.
 5. **It names its button.** The notice shows the struck-out glyph of the microphone, screenshot or attach
-   button it is about. Send is a text button, so its notice has an alert mark.
+   button it is about. A failed send or retry has an alert mark, since it is about the message rather than
+   one tool button.
 6. **A turn that failed stays on its message.** "Response failed" and its retry action belong to the
    owner's message in the transcript and do not change.
 

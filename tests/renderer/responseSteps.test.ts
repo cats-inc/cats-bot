@@ -3,12 +3,12 @@ import { test } from 'node:test';
 
 import type { ConversationBlock } from '@cats-inc/platform-ui-web/contracts';
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
-import { foldedStepCount, isLiveReply, stepsLinkLabel } from '../../src/renderer/note/responseSteps.ts';
+import { foldedStepCount, hasVisibleBody, isLiveReply, replySteps, stepsLinkLabel } from '../../src/renderer/note/responseSteps.ts';
 
 /** SPEC-003 FR-12: a finished reply folds its tool steps behind a link; text and failed steps always show. */
 
-const block = (index: number, kind: ConversationBlock['kind'], status: ConversationBlock['status'] = 'complete'): ConversationBlock => ({
-  id: `b${index}`, index, kind, status, title: null, text: '', toolName: kind === 'tool' ? 'Bash' : null, toolId: null,
+const block = (index: number, kind: ConversationBlock['kind'], status: ConversationBlock['status'] = 'complete', text = ''): ConversationBlock => ({
+  id: `b${index}`, index, kind, status, title: null, text, toolName: kind === 'tool' ? 'Bash' : null, toolId: null,
 });
 
 test('the folded steps are the tool and progress blocks that did not fail', () => {
@@ -34,4 +34,19 @@ test('the link names how many steps it opens, and how to fold them again', () =>
   } finally {
     acceptLanguage({ preference: 'en', locale: 'en' });
   }
+});
+
+test('a finished reply folds its steps behind a link, unless folding would hide the whole reply', () => {
+  const answered = { phase: 'sealed' as const, blocks: [block(0, 'tool'), block(1, 'text', 'complete', 'done')] };
+  const toolsOnly = { phase: 'sealed' as const, blocks: [block(0, 'tool'), block(1, 'tool')] };
+  const plain = { phase: 'sealed' as const, blocks: [block(0, 'text', 'complete', 'hi')] };
+  const live = { phase: 'streaming' as const, blocks: [block(0, 'tool', 'streaming')] };
+  assert.equal(hasVisibleBody(answered), true);
+  assert.equal(hasVisibleBody(toolsOnly), false, 'a turn cancelled after its tools, or ending on a tool call');
+  assert.deepEqual(replySteps(answered, true, false), { open: false, link: 'open' });
+  assert.deepEqual(replySteps(answered, true, true), { open: true, link: 'close' });
+  assert.deepEqual(replySteps(toolsOnly, true, false), { open: true, link: null }, 'its steps are its only content');
+  assert.deepEqual(replySteps(plain, true, false), { open: false, link: null });
+  assert.deepEqual(replySteps(live, true, false), { open: true, link: null });
+  for (const reply of [answered, toolsOnly, live]) assert.deepEqual(replySteps(reply, false, true), { open: false, link: null }, 'switch off');
 });

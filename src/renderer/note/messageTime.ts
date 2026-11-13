@@ -37,6 +37,29 @@ export function messageTimestamp(at: Date): string {
   return formatter({ year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', ...time }).format(at);
 }
 
+/** A message's time, or null when it is missing or unreadable, so one bad row cannot break the note. */
+export function readTime(at: string | undefined): Date | null {
+  if (!at) return null;
+  const time = new Date(at);
+  return Number.isNaN(time.getTime()) ? null : time;
+}
+
+/**
+ * The keys of the items that start a new local day, in the order shown. Only the items passed count, so a line
+ * the verbose switch hides starts no day; an item without a time neither starts nor ends one.
+ */
+export function dayStartKeys<T>(items: readonly T[], timeOf: (item: T) => Date | null, keyOf: (item: T) => string): Set<string> {
+  const starts = new Set<string>();
+  let last = '';
+  for (const item of items) {
+    const at = timeOf(item);
+    if (!at) continue;
+    if (dayKey(at) !== last) starts.add(keyOf(item));
+    last = dayKey(at);
+  }
+  return starts;
+}
+
 /** The local calendar day a message belongs to, for telling where a new day starts. */
 export function dayKey(at: Date): string {
   return `${at.getFullYear()}-${at.getMonth() + 1}-${at.getDate()}`;
@@ -85,7 +108,9 @@ function onVisible(): void {
 export function subscribeDay(listener: () => void): () => void {
   dayListeners.add(listener);
   if (dayListeners.size === 1) {
-    checkDay();
+    // The clock was idle: take today's day without telling anyone. A subscriber reads the snapshot after
+    // subscribing anyway, and only a change seen while it listens is news.
+    today = dayKey(new Date());
     armMidnight();
     host.window?.addEventListener('focus', onVisible);
     host.document?.addEventListener('visibilitychange', onVisible);

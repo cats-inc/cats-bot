@@ -37,6 +37,8 @@ test('entries keep their look: classes, tool lines, times and unprompted replies
   assert.equal(entryMeta(entry(1, 'owner', 'hi'), time), '09:02');
   assert.equal(entryMeta(entry(1, 'bot', 'hey', { origin: 'heartbeat' }), time), 'unprompted · 09:02');
   assert.equal(entryMeta(entry(1, 'system', 'note'), time), null);
+  // A corrupt time shows no time rather than breaking the note.
+  assert.equal(entryMeta({ ...entry(1, 'owner', 'hi'), at: 'garbage' }), null);
 });
 
 test('a refused invoke reads as the core\'s own message', () => {

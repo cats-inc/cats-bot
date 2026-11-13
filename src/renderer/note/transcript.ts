@@ -1,6 +1,6 @@
 import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
 import { t } from '../localeStore.ts';
-import { messageTime } from './messageTime.ts';
+import { messageTime, readTime } from './messageTime.ts';
 
 /**
  * SPEC-001 FR-33, SPEC-003: what the note shows, apart from React. The note
@@ -98,12 +98,13 @@ export function entryMeta(
   entry: TranscriptEntry,
   formatTime = messageTime,
 ): string | null {
-  if (!entry.at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
+  const at = readTime(entry.at);
+  if (!at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
   const unprompted =
     entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('unprompted')} · ` : '';
   // SPEC-009 FR-10: a message from another bot carries that bot's name.
   const from = entry.origin === 'bot' && entry.from ? `${t('from {name}', { name: entry.from })} · ` : '';
-  return `${unprompted}${from}${formatTime(new Date(entry.at))}`;
+  return `${unprompted}${from}${formatTime(at)}`;
 }
 
 export { errorText } from '../errors.ts';

@@ -17,8 +17,8 @@ import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
 import { executionSummary } from './executionSummary.ts';
-import { foldedStepCount, isLiveReply, stepsLinkLabel } from './responseSteps.ts';
-import { currentDayKey, dayKey, dayLabel, messageTimestamp, subscribeDay } from './messageTime.ts';
+import { foldedStepCount, replySteps, stepsLinkLabel } from './responseSteps.ts';
+import { currentDayKey, dayLabel, dayStartKeys, messageTimestamp, readTime, subscribeDay } from './messageTime.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -72,7 +72,7 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
 
 /** SPEC-003 FR-13: when a note item was sent; a tool card of an old transcript has no time of its own. */
 function itemAt(item: NoteItem): Date | null {
-  return item.type === 'tool' || !item.entry.at ? null : new Date(item.entry.at);
+  return item.type === 'tool' ? null : readTime(item.entry.at);
 }
 
 /**
@@ -167,14 +167,14 @@ function Entry({ entry, conversationId, retry }: {
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
       : entry.kind === 'owner' ? <OwnerBody conversationId={conversationId} entry={entry} />
         : <p className="messageBody">{entryText(entry)}</p>}
-    {meta && <span className="entry-meta" title={messageTimestamp(new Date(entry.at))}>{meta}</span>}
+    {meta && <span className="entry-meta" title={messageTimestamp(readTime(entry.at)!)}>{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;
 }
 
 /**
  * The glyph of the composer button a notice is about, struck out, so the notice reads as that button's.
- * Send is a text button: its notice has an alert mark instead.
+ * A failed send or retry is about the message, not one tool button: its notice has an alert mark instead.
  */
 function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
   if (source === 'send') {
@@ -316,6 +316,7 @@ export function NoteApp() {
   // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
   const [executionInfo, setExecutionInfo] = useState('');
   const executionRequest = useRef(0);
+  const executionTarget = useRef('');
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
@@ -416,15 +417,21 @@ export function NoteApp() {
     setSpeakerAvatar(avatarUrl(profile.avatar));
     // SPEC-009 FR-10: the role belongs to the bot, so it follows the name, before the conversation.
     setTitle(`${profile.name}${noteRoleSuffix(status.bossCat)} · ${conversationTitle(record)}`);
-    const request = ++executionRequest.current;
+    // The provider's and model's names change only with the target (and the effort's wording with the language);
+    // the header refreshes far more often, and listing providers probes every CLI on the PATH.
     const target = profile.executionTarget;
-    void Promise.all([
-      api.invoke('listModels', target.provider).catch(() => null),
-      api.invoke('listProviders').catch(() => []),
-    ]).then(([catalog, providers]) => {
-      if (request !== executionRequest.current) return;
-      setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
-    });
+    const targetKey = `${locale}|${JSON.stringify(target)}`;
+    if (targetKey !== executionTarget.current) {
+      executionTarget.current = targetKey;
+      const request = ++executionRequest.current;
+      void Promise.all([
+        api.invoke('listModels', target.provider).catch(() => null),
+        api.invoke('listProviders').catch(() => []),
+      ]).then(([catalog, providers]) => {
+        if (request !== executionRequest.current) return;
+        setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+      });
+    }
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
@@ -535,17 +542,7 @@ export function NoteApp() {
   const visibleItems = useMemo(() => (verboseMessages ? items : items.filter((item) => !isVerboseItem(item))),
     [items, verboseMessages]);
   // SPEC-003 FR-13: the items that start a new day get a divider above them, whatever the switches say.
-  const dayStarts = useMemo(() => {
-    const starts = new Set<string>();
-    let last = '';
-    for (const item of visibleItems) {
-      const at = itemAt(item);
-      if (!at) continue;
-      if (dayKey(at) !== last) starts.add(item.key);
-      last = dayKey(at);
-    }
-    return starts;
-  }, [visibleItems]);
+  const dayStarts = useMemo(() => dayStartKeys(visibleItems, itemAt, (item) => item.key), [visibleItems]);
   const activity = conversationWorkState(workItems, conversation.current);
   const busy = running || activity.active;
   const activeRequests = liveInteractions(interactions);
@@ -621,13 +618,12 @@ export function NoteApp() {
       const response = item.entry.presentation;
       // SPEC-003 FR-12: with the switch on, a live reply shows its steps and a finished one folds them
       // behind a link of its own; with it off, only text and failed steps show.
-      const live = isLiveReply(response);
-      const folded = foldedStepCount(response);
-      const open = progressDetails && (live || openSteps.has(response.id));
+      const steps = replySteps(response, progressDetails, openSteps.has(response.id));
+      const open = steps.open;
       const meta = entryMeta(item.entry);
-      const link = progressDetails && !live && folded > 0
+      const link = steps.link
         ? <button type="button" className="response-steps" aria-expanded={open} onClick={() => toggleSteps(response.id)}>
-          {stepsLinkLabel(folded, open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
+          {stepsLinkLabel(foldedStepCount(response), open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
         </button>
         : null;
       return <ConversationResponse
@@ -635,7 +631,7 @@ export function NoteApp() {
         labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
         showProgressDetails={open} copyLabel={t('Copy')}
         afterBubble={<span className="entry-meta">
-          {meta && <span title={messageTimestamp(new Date(item.entry.at))}>{meta}</span>}{meta && link ? ' · ' : null}{link}
+          {meta && <span title={messageTimestamp(readTime(item.entry.at)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
         </span>}
         onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
     }

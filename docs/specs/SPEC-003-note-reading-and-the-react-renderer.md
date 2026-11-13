@@ -110,7 +110,10 @@ for the current-versus-pending boundary.
     name. It is stored as the profile's `showProgressDetails`; absent reads as off, and it is not a session
     setting. Off, a reply shows its text and any failed step. On, a reply still being written shows its tool
     and progress steps as they come, and a finished reply folds them behind a link in its meta line
-    ("3 steps ▸") that opens and folds that reply alone. A reply with nothing folded has no link. The notes
+    ("3 steps ▸") that opens and folds that reply alone. A reply with nothing folded has no link, and a
+    finished reply with nothing but steps (cancelled after its tools, or ending on a tool call) keeps them
+    open, since folding would hide it whole. Replies recorded without a presentation, such as unprompted
+    heartbeat turns and older transcripts, keep their tool cards whatever the switch says. The notes
     follow a switch at once, through `profile.updated`, which the core also sends when the execution target
     changes so the header's (i) follows a model change (FR-11).
 13. FR-13 (2026-11-14): A message shows when it was sent to the minute ("上午7:00", "7:00 AM"), without seconds;

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
-import { currentDayKey, dayKey, dayLabel, messageTime, messageTimestamp, msUntilNextDay, subscribeDay } from '../../src/renderer/note/messageTime.ts';
+import { currentDayKey, dayKey, dayLabel, dayStartKeys, messageTime, messageTimestamp, msUntilNextDay, readTime, subscribeDay } from '../../src/renderer/note/messageTime.ts';
 
 /** SPEC-003 FR-13: a message's time to the minute, a divider for each new day, the full time in the tooltip. */
 
@@ -66,4 +66,20 @@ test('the day clock wakes once just after local midnight and tells only its list
   } finally {
     unsubscribe();
   }
+});
+
+test('a divider starts each day among the items shown; an item without a readable time starts none', () => {
+  const items = [
+    { key: 'a', at: new Date(2026, 10, 12, 7, 0) },
+    { key: 'b', at: new Date(2026, 10, 12, 9, 0) },
+    { key: 'tool', at: null },
+    { key: 'c', at: new Date(2026, 10, 13, 7, 0) },
+    { key: 'd', at: new Date(2026, 10, 14, 7, 0) },
+  ];
+  assert.deepEqual([...dayStartKeys(items, (item) => item.at, (item) => item.key)], ['a', 'c', 'd']);
+  // A line hidden by the verbose switch is not passed in, so the next shown item starts the day.
+  assert.deepEqual([...dayStartKeys(items.filter((item) => item.key !== 'c'), (item) => item.at, (item) => item.key)], ['a', 'd']);
+  assert.equal(readTime('not a time'), null);
+  assert.equal(readTime(undefined), null);
+  assert.equal(readTime('2026-11-12T23:00:13.000Z')?.toISOString(), '2026-11-12T23:00:13.000Z');
 });
