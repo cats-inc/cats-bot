@@ -239,6 +239,13 @@ export const zhTW: Record<string, string> = {
   '{fileName} is larger than {limit} MB': '{fileName} 超過 {limit} MB',
   'Start voice input': '開始語音輸入',
   'Stop voice input': '停止語音輸入',
+  // SPEC-003 FR-12: live progress details, a bot-wide switch, and the link under each finished reply.
+  'Show live progress details': '顯示即時進度細節',
+  'For every conversation of this cat bot: a reply shows its tool steps while it runs, and each finished reply gets a link that opens them.':
+    '套用到這隻機器貓的所有對話：回覆進行中會即時顯示工具步驟，完成後每則回覆下方會有連結可以展開。',
+  '1 step': '1 個步驟',
+  '{count} steps': '{count} 個步驟',
+  'Hide steps': '收起步驟',
   // The note header's (i): the bot's provider, model and effort.
   '{effort} effort': '推理強度 {effort}',
   'Provider and model: {summary}': 'Provider 與模型：{summary}',
@@ -608,7 +615,6 @@ export const zhTW: Record<string, string> = {
   Send: '傳送',
   'Settings and conversations': '設定與對話',
   'Settings sections': '設定分類',
-  'Show input and result': '顯示輸入與結果',
   'Show the floating cat above other windows': '在其他視窗上方顯示浮動貓咪',
   'Starting…': '正在啟動…',
   'Still running…': '仍在執行…',

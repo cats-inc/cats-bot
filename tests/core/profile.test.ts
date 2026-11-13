@@ -314,6 +314,24 @@ test('applyProfilePatch bumps configRevision for instructions, permissions and c
   assert.equal(telegram.sessionChanged, false);
 });
 
+test('live progress details are off by default and when absent, and turning them on never bumps the revision (SPEC-003 FR-12)', () => {
+  const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
+  assert.equal(profile.showProgressDetails, false);
+
+  const on = applyProfilePatch(profile, { showProgressDetails: true }, now);
+  assert.equal(on.profile.showProgressDetails, true);
+  assert.equal(on.sessionChanged, false, 'not a session setting: only how the notes draw a reply');
+  assert.equal(on.profile.configRevision, profile.configRevision);
+  assert.equal(applyProfilePatch(on.profile, { name: 'Renamed' }, now).profile.showProgressDetails, true, 'other edits keep it');
+  assert.throws(() => applyProfilePatch(profile, { showProgressDetails: 'yes' as unknown as boolean }, now), /true or false/u);
+
+  // A profile written before the setting, or by an older Bot that drops it, reads as off.
+  const { showProgressDetails: _dropped, ...older } = on.profile;
+  assert.equal(normalizeProfile(older, on.profile).showProgressDetails, false);
+  assert.equal(normalizeProfile({ ...older, showProgressDetails: 1 }, on.profile).showProgressDetails, false);
+  assert.equal(normalizeProfile({ ...older, showProgressDetails: true }, profile).showProgressDetails, true);
+});
+
 test('desktop control is off by default, off when absent or invalid, and its patch never bumps the revision (SPEC-006 BDC-02)', () => {
   const profile = createProfile({ id: 'b1', name: 'Bot', provider: 'claude', cwd: 'C:/work', now });
   assert.deepEqual(profile.desktopControl, { enabled: false });

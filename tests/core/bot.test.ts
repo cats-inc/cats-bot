@@ -471,6 +471,12 @@ test('a new look is announced at once and keeps the session (SPEC-008 FR-29)', a
     assert.equal(seen.length, 1, 'nothing to show, nothing sent');
     await core.updateProfile({ name: 'Dressy' });
     assert.deepEqual(seen.at(-1), { type: 'profile.updated', name: 'Dressy', avatar: 'calico' });
+    // SPEC-003 FR-12: the notes redraw replies when live progress details are switched.
+    await core.updateProfile({ showProgressDetails: true });
+    assert.equal(seen.length, 3);
+    assert.equal((await core.getProfile()).configRevision, revision, 'not a session setting');
+    await core.updateProfile({ showProgressDetails: true });
+    assert.equal(seen.length, 3, 'unchanged, nothing sent');
   } finally {
     off();
     await core.stop();

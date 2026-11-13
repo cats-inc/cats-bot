@@ -91,6 +91,11 @@ export interface BotProfile {
   replyLanguage: BotReplyLanguage;
   /** SPEC-008 FR-28: what the hub last reported through `setHubLanguage`; null until it has. */
   hubLanguage: HubLanguageReport | null;
+  /**
+   * SPEC-003 FR-12: show live progress details in every note of this bot: a running reply's tool steps as
+   * they happen, and a link under each finished reply that opens its steps. Absent reads as off.
+   */
+  showProgressDetails: boolean;
   updatedAt: string;
 }
 
@@ -444,6 +449,7 @@ export interface BotProfilePatch {
   telegram?: Partial<TelegramPolicy>;
   desktopControl?: Partial<DesktopControlPolicy>;
   replyLanguage?: BotReplyLanguage;
+  showProgressDetails?: boolean;
 }
 
 /** SPEC-001 FR-32 events. The renderer never receives runtime URLs or keys. */

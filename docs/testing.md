@@ -502,6 +502,10 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
     restarting Cats Bot.
   - Deny Speech Recognition, then the microphone, and dictate: each composer notice names its own pane and
     its button opens it.
+  - Live progress details (SPEC-003 FR-12): with the switch off in Settings → Conversations, a reply that
+    used a tool shows only its text and there is no link. Turn it on: the open note shows "1 step ▸" under
+    that reply at once, and the link opens and folds that reply alone. A reply still being written shows its
+    steps as they come and folds them when it is sealed. Turning the switch off folds every note at once.
   - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
     shows at the top of the composer and the draft and buttons do not move. Nothing is added to the
     transcript, the notice stays (also past a minute), and ✕ dismisses it. A permission notice keeps "Open System Settings". Attach a file over
