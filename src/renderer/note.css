@@ -61,6 +61,36 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* The (i) after the title, Cats Desktop's model-picker (i): hover or focus shows the bot's provider, model and
+   effort. It stays whole when the title is cut short. */
+.note-info {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  margin-left: -2px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+  -webkit-app-region: no-drag;
+}
+
+.note-info:hover,
+.note-info:focus-visible {
+  color: var(--ink);
+}
+
+.note-info:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
 .note-unread {
   min-width: 18px;
   padding: 0 6px;

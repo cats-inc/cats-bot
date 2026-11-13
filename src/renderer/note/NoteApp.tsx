@@ -16,6 +16,7 @@ import { voicePrivacyMessage } from '../../shared/voice.ts';
 import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
+import { executionSummary } from './executionSummary.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -293,6 +294,9 @@ export function NoteApp() {
   const [title, setTitle] = useState('Cats Bot');
   // The direct message's send button is a paper plane; every other note's is an up arrow.
   const [directMessage, setDirectMessage] = useState(requested === 'home');
+  // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
+  const [executionInfo, setExecutionInfo] = useState('');
+  const executionRequest = useRef(0);
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
@@ -380,7 +384,17 @@ export function NoteApp() {
     setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
     setSpeakerAvatar(avatarUrl(profile.avatar));
-    setTitle(`${profile.name} · ${conversationTitle(record)}${noteRoleSuffix(status.bossCat)}`);
+    // SPEC-009 FR-10: the role belongs to the bot, so it follows the name, before the conversation.
+    setTitle(`${profile.name}${noteRoleSuffix(status.bossCat)} · ${conversationTitle(record)}`);
+    const request = ++executionRequest.current;
+    const target = profile.executionTarget;
+    void Promise.all([
+      api.invoke('listModels', target.provider).catch(() => null),
+      api.invoke('listProviders').catch(() => []),
+    ]).then(([catalog, providers]) => {
+      if (request !== executionRequest.current) return;
+      setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+    });
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
@@ -573,6 +587,9 @@ export function NoteApp() {
         <span className="note-title" id="title">
           {title}
         </span>
+        {/* Not a button: it shows its text on hover and on focus, like Cats Desktop's model (i). */}
+        {executionInfo && <span className="note-info" id="execution-info" role="img" tabIndex={0} title={executionInfo}
+          aria-label={t('Provider and model: {summary}', { summary: executionInfo })}>i</span>}
         <span className="note-unread" id="unread" hidden={unread === 0}>
           {unread}
         </span>

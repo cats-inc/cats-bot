@@ -100,6 +100,11 @@ for the current-versus-pending boundary.
     microphone. The macOS helper delivers recognition callbacks on a serial background queue while
     its main thread waits; callbacks remain suspended during tap startup and resume after `ready`
     or startup-failure cleanup. Linux has no helper yet and shows no button.
+11. FR-11 (2026-11-14): The note header reads "bot name · conversation", with the Boss Cat's role between
+    them (SPEC-009 FR-10). An (i) follows the title, as in Cats Desktop's model picker: not a button, it
+    shows on hover and on focus the bot's provider, model and reasoning effort as the model catalog names
+    them ("Claude · Opus 5.5 · Medium effort"), falling back to the ids without a catalog. When the header
+    is short of room the title is cut; the (i) and the status stay whole and on one line.
 
 ## Acceptance
 
