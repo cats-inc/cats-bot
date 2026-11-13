@@ -105,6 +105,14 @@ for the current-versus-pending boundary.
     shows on hover and on focus the bot's provider, model and reasoning effort as the model catalog names
     them ("Claude · Opus 5.5 · Medium effort"), falling back to the ids without a catalog. When the header
     is short of room the title is cut; the (i) and the status stay whole and on one line.
+12. FR-12 (2026-11-14): "Show live progress details" is one switch per bot, at the top of its Settings →
+    Conversations, saved as it changes and off by default, like Cats Desktop's per-product setting of that
+    name. It is stored as the profile's `showProgressDetails`; absent reads as off, and it is not a session
+    setting. Off, a reply shows its text and any failed step. On, a reply still being written shows its tool
+    and progress steps as they come, and a finished reply folds them behind a link in its meta line
+    ("3 steps ▸") that opens and folds that reply alone. A reply with nothing folded has no link. The notes
+    follow a switch at once, through `profile.updated`, which the core also sends when the execution target
+    changes so the header's (i) follows a model change (FR-11).
 
 ## Acceptance
 

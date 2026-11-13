@@ -51,6 +51,7 @@ const PROFILE: BotProfile = {
   desktopControl: { enabled: false },
   replyLanguage: 'hub',
   hubLanguage: null,
+  showProgressDetails: false,
   updatedAt: '2026-10-28T00:00:00.000Z',
 };
 

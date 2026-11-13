@@ -550,7 +550,17 @@ html { font-size: 16px; }
   line-height: 1.6; gap: 4px; overflow-x: hidden; min-width: 0;
 }
 .catsConversation > .transcriptMessageStack { flex-shrink: 0; }
-.conversation-details-toggle { align-self: flex-start; max-width: 100%; border: 0; background: transparent; color: var(--muted); cursor: pointer; white-space: normal; }
+/* SPEC-003 FR-12: the link under a finished reply that opens or folds its steps, in the reply's meta line. */
+.response-steps {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+}
+.response-steps:hover { color: var(--ink); text-decoration: underline; }
+.response-steps:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
 .catsConversation .transcriptMessageTop strong { overflow-wrap: anywhere; min-width: 0; }
 .catsConversation .entry-meta { display: block; margin-top: 4px; color: var(--muted); font-size: 0.72rem; }
 

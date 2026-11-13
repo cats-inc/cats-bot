@@ -96,6 +96,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     desktopControl: { ...DESKTOP_CONTROL_DEFAULTS },
     replyLanguage: BOT_REPLY_LANGUAGE_DEFAULT,
     hubLanguage: null,
+    showProgressDetails: false,
     updatedAt: now,
   };
 }
@@ -246,6 +247,8 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     hubLanguage: isHubLanguageReport(raw.hubLanguage)
       ? { reply: raw.hubLanguage.reply, display: raw.hubLanguage.display }
       : null,
+    // SPEC-003 FR-12: only an explicit true turns it on; an older writer drops it, which reads as off.
+    showProgressDetails: raw.showProgressDetails === true,
     updatedAt: stringOr(raw.updatedAt, fallback.updatedAt),
   };
 }
@@ -392,6 +395,9 @@ export function applyProfilePatch(
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
   }
   if (patch.avatar !== undefined && !isBotAvatar(patch.avatar)) throw new Error('avatar must be one of the Cat looks');
+  if (patch.showProgressDetails !== undefined && typeof patch.showProgressDetails !== 'boolean') {
+    throw new Error('showProgressDetails must be true or false');
+  }
   const nextHeartbeat = patch.heartbeat ? checkedHeartbeatPatch(profile.heartbeat, patch.heartbeat) : profile.heartbeat;
   const nextReplyLanguage = patch.replyLanguage ?? profile.replyLanguage;
   const replyLanguageChanged = effectiveReplyLanguage({ replyLanguage: nextReplyLanguage, hubLanguage: profile.hubLanguage })
@@ -421,6 +427,8 @@ export function applyProfilePatch(
       ? normalizeDesktopControl({ ...profile.desktopControl, ...patch.desktopControl })
       : profile.desktopControl,
     replyLanguage: nextReplyLanguage,
+    // Not a session setting: only how the notes draw a reply (SPEC-003 FR-12).
+    showProgressDetails: patch.showProgressDetails ?? profile.showProgressDetails,
     updatedAt: now.toISOString(),
   };
   return {

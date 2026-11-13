@@ -186,6 +186,18 @@ textarea {
   margin-top: 3px;
 }
 
+/* SPEC-003 FR-12: the bot-wide live progress details switch above the conversation list. */
+.progress-details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 4px 0 12px;
+}
+
+.progress-details .hint {
+  padding-left: 24px;
+}
+
 .pair {
   display: flex;
   gap: 6px;

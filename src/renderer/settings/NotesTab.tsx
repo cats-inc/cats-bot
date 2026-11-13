@@ -10,7 +10,8 @@ import { useToast } from './toast.ts';
 
 /**
  * SPEC-002 FR-5, FR-8: every conversation with its unread count, session
- * state and layer; open, add, rename and delete (twice to confirm).
+ * state and layer; open, add, rename and delete (twice to confirm). SPEC-003
+ * FR-12: above them, the bot-wide switch for live progress details.
  */
 
 const api = window.catsBot;
@@ -157,6 +158,42 @@ function NoteRow({
   );
 }
 
+/** SPEC-003 FR-12: one switch for every note of this bot, saved as it changes, like Cats Desktop's. */
+function ProgressDetailsSwitch() {
+  useI18n();
+  const toast = useToast();
+  const [on, setOn] = useState<boolean | null>(null);
+  useEffect(() => {
+    let live = true;
+    void api.invoke('getProfile').then((profile) => { if (live) setOn(profile.showProgressDetails); }).catch(() => undefined);
+    const offEvent = api.onEvent((event) => {
+      if (event.type === 'profile.updated') void api.invoke('getProfile').then((profile) => { if (live) setOn(profile.showProgressDetails); });
+    });
+    return () => { live = false; offEvent(); };
+  }, []);
+  const change = async (next: boolean) => {
+    setOn(next);
+    try {
+      await api.invoke('updateProfile', { showProgressDetails: next });
+    } catch (failure) {
+      setOn(!next);
+      toast(t('Could not save: {value0}', { value0: errorText(failure) }));
+    }
+  };
+  return (
+    <div className="progress-details">
+      <label className="check">
+        <input type="checkbox" id="notes-progress-details" checked={on === true} disabled={on === null}
+          onChange={(event) => void change(event.target.checked)} />
+        <span>{t('Show live progress details')}</span>
+      </label>
+      <p className="hint">
+        {t('For every conversation of this cat bot: a reply shows its tool steps while it runs, and each finished reply gets a link that opens them.')}
+      </p>
+    </div>
+  );
+}
+
 export function NotesTab() {
   useI18n();
   const [records, setRecords] = useState<ConversationRecord[]>([]);
@@ -198,6 +235,7 @@ export function NotesTab() {
         </button>
       </div>
       <p className="lead">{t('Each conversation keeps its own history. Closing its window only hides it.')}</p>
+      <ProgressDetailsSwitch />
       <ul className="notes" id="notes-list">
         {layers &&
           records.map((record) => (

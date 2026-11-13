@@ -17,6 +17,7 @@ import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
 import { executionSummary } from './executionSummary.ts';
+import { foldedStepCount, isLiveReply, stepsLinkLabel } from './responseSteps.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -304,7 +305,14 @@ export function NoteApp() {
   const [speakerName, setSpeakerName] = useState('Cats Bot');
   // SPEC-008 FR-29: replies carry the bot's look; nothing until its profile is read.
   const [speakerAvatar, setSpeakerAvatar] = useState<string | undefined>(undefined);
-  const [showDetails, setShowDetails] = useState(false);
+  // SPEC-003 FR-12: the bot's live progress details switch, and the finished replies whose steps are open.
+  const [progressDetails, setProgressDetails] = useState(false);
+  const [openSteps, setOpenSteps] = useState<ReadonlySet<string>>(() => new Set());
+  const toggleSteps = useCallback((id: string) => setOpenSteps((current) => {
+    const next = new Set(current);
+    if (!next.delete(id)) next.add(id);
+    return next;
+  }), []);
   const followTranscript = useRef(true);
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
@@ -380,6 +388,7 @@ export function NoteApp() {
     conversation.current = record.id;
     setDirectMessage(record.role === 'home');
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
+    setProgressDetails(profile.showProgressDetails);
     // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
     setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
@@ -634,16 +643,28 @@ export function NoteApp() {
       {contact === null && <DesktopControlBar model={desktop} />}
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
         onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
-        <button type="button" className="conversation-details-toggle" aria-pressed={showDetails}
-          onClick={() => setShowDetails(value => !value)}>{showDetails ? t('Hide details') : t('Show input and result')}</button>
         {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}
         {items.map((item) => {
-          if (item.type === 'response' && item.entry.presentation) return <ConversationResponse key={item.key}
-            response={item.entry.presentation} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
-            labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
-            showProgressDetails={showDetails} copyLabel={t('Copy')}
-            afterBubble={<span className="entry-meta">{entryMeta(item.entry)}</span>}
-            onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
+          if (item.type === 'response' && item.entry.presentation) {
+            const response = item.entry.presentation;
+            // SPEC-003 FR-12: with the switch on, a live reply shows its steps and a finished one folds them
+            // behind a link of its own; with it off, only text and failed steps show.
+            const live = isLiveReply(response);
+            const folded = foldedStepCount(response);
+            const open = progressDetails && (live || openSteps.has(response.id));
+            const meta = entryMeta(item.entry);
+            const link = progressDetails && !live && folded > 0
+              ? <button type="button" className="response-steps" aria-expanded={open} onClick={() => toggleSteps(response.id)}>
+                {stepsLinkLabel(folded, open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
+              </button>
+              : null;
+            return <ConversationResponse key={item.key}
+              response={response} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
+              labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
+              showProgressDetails={open} copyLabel={t('Copy')}
+              afterBubble={<span className="entry-meta">{meta}{meta && link ? ' · ' : null}{link}</span>}
+              onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
+          }
           if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
           const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
