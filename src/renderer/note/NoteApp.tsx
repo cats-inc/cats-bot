@@ -206,7 +206,8 @@ function AttachmentCard({ file, disabled, onRemove }: { file: File; disabled: bo
   }, [file]);
   return <div className="attachmentCard">
     <button className="attachmentRemove" type="button" disabled={disabled} onClick={onRemove}
-      aria-label={t('Remove {fileName}', { fileName: file.name })}>&times;</button>
+      aria-label={t('Remove {fileName}', { fileName: file.name })}
+      title={t('Remove {fileName}', { fileName: file.name })}>&times;</button>
     {preview ? <img className="attachmentPreview" src={preview} alt={file.name} />
       : <div className="attachmentFileIcon"><FileIcon size={24} /></div>}
     <span className="attachmentName">{file.name}</span>
@@ -290,6 +291,8 @@ export function NoteApp() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('Cats Bot');
+  // The direct message's send button is a paper plane; every other note's is an up arrow.
+  const [directMessage, setDirectMessage] = useState(requested === 'home');
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
@@ -371,6 +374,7 @@ export function NoteApp() {
       return;
     }
     conversation.current = record.id;
+    setDirectMessage(record.role === 'home');
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
     setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
@@ -703,8 +707,9 @@ export function NoteApp() {
             <ComposerGlyph kind="voice" />
             {privacy && <span className="composerVoicePrivacyBadge" aria-hidden="true">!</span>}
           </button>}
-          <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>
-            {t('Send')}
+          <button className="note-send" id="send" type="button" disabled={busy} onClick={() => void send()}
+            aria-label={t('Send')} title={t('Send')}>
+            <ComposerGlyph kind={directMessage ? 'sendDirect' : 'send'} />
           </button>
           <button
             className="note-cancel"
