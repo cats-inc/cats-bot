@@ -101,9 +101,13 @@ html, body {
   text-align: center;
 }
 
+/* One line, whole: when the header is short of room the title is cut instead, so the status never wraps a
+   character per line and grows the header. */
 .note-state {
+  flex: none;
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .note-spacer {
