@@ -239,6 +239,9 @@ export const zhTW: Record<string, string> = {
   '{fileName} is larger than {limit} MB': '{fileName} 超過 {limit} MB',
   'Start voice input': '開始語音輸入',
   'Stop voice input': '停止語音輸入',
+  // The note header's (i): the bot's provider, model and effort.
+  '{effort} effort': '推理強度 {effort}',
+  'Provider and model: {summary}': 'Provider 與模型：{summary}',
   'Microphone access was denied. Check your system voice permissions.': '麥克風存取遭拒。請檢查系統語音權限。',
   'Voice input needs system microphone and speech permissions.': '語音輸入需要系統麥克風與語音權限。',
   'No microphone was detected.': '未偵測到麥克風。',

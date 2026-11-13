@@ -61,6 +61,36 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* The (i) after the title, Cats Desktop's model-picker (i): hover or focus shows the bot's provider, model and
+   effort. It stays whole when the title is cut short. */
+.note-info {
+  display: inline-flex;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  margin-left: -2px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: help;
+  -webkit-app-region: no-drag;
+}
+
+.note-info:hover,
+.note-info:focus-visible {
+  color: var(--ink);
+}
+
+.note-info:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
 .note-unread {
   min-width: 18px;
   padding: 0 6px;
@@ -71,22 +101,32 @@ html, body {
   text-align: center;
 }
 
+/* One line, whole: when the header is short of room the title is cut instead, so the status never wraps a
+   character per line and grows the header. */
 .note-state {
+  flex: none;
   font-size: 11px;
   color: var(--muted);
+  white-space: nowrap;
 }
 
 .note-spacer {
   flex: 1;
 }
 
+/* The header's settings, layer and hide buttons: one square each, whatever their glyph. */
 .note-button {
+  display: grid;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  padding: 0;
   border: 0;
+  border-radius: 6px;
   background: transparent;
+  color: var(--ink);
   cursor: pointer;
-  font-size: 13px;
-  padding: 2px 6px;
-  border-radius: 4px;
 }
 
 .note-button:hover {
@@ -97,7 +137,8 @@ html, body {
   background: rgba(217, 138, 43, 0.25);
 }
 
-/* The layer button's plates (note/layerPlates.ts). */
+/* The header glyphs; the layer button's plates come from note/layerPlates.ts. */
+.note-header-icon,
 .note-layer-icon {
   display: block;
   width: 18px;
@@ -195,18 +236,19 @@ textarea {
   justify-content: flex-end;
 }
 
-.note-send,
-.note-cancel {
-  border: 0;
-  border-radius: 6px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font: inherit;
-}
-
+/* Send is a round icon button like Cats Desktop's: an up arrow, or a paper plane in the direct message. */
 .note-send {
+  display: grid;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
   background: var(--accent);
   color: #fff;
+  cursor: pointer;
 }
 
 .note-send:disabled {
@@ -215,6 +257,11 @@ textarea {
 }
 
 .note-cancel {
+  border: 0;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font: inherit;
   background: #e8dcc0;
 }
 
@@ -597,7 +644,7 @@ html { font-size: 16px; }
   50% { box-shadow: 0 0 0 4px rgba(220, 38, 38, 0); }
 }
 
-/* ADR-024: a failed composer tool's notice, between the draft and the buttons. It carries the struck-out
+/* ADR-024: a failed composer action's notice, at the top of the composer. It carries the struck-out
    glyph of the button it is about; a new one replaces it and plays the entrance again. */
 .composerNotice {
   display: flex;

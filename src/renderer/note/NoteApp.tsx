@@ -16,6 +16,7 @@ import { voicePrivacyMessage } from '../../shared/voice.ts';
 import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
+import { executionSummary } from './executionSummary.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -61,6 +62,27 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
   return (
     <svg className="note-layer-icon" viewBox="0 0 24 24" aria-hidden="true">
       {LAYER_PLATES.map((plate, index) => <path key={plate.layer} d={plate.path} className={states[index]} />)}
+    </svg>
+  );
+}
+
+/**
+ * The header's other two glyphs, drawn like the layer plates (24 unit grid shown at 18 px, 1.5 stroke) so the
+ * three buttons read as one set; a text "⚙" and "✕" sized with the font did not.
+ */
+function SettingsGlyph() {
+  return (
+    <svg className="note-header-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10.31 5.21L10.59 3.11A9 9 0 0 1 13.41 3.11L13.69 5.21A7 7 0 0 1 15.61 6L17.29 4.72A9 9 0 0 1 19.28 6.71L18 8.39A7 7 0 0 1 18.79 10.31L20.89 10.59A9 9 0 0 1 20.89 13.41L18.79 13.69A7 7 0 0 1 18 15.61L19.28 17.29A9 9 0 0 1 17.29 19.28L15.61 18A7 7 0 0 1 13.69 18.79L13.41 20.89A9 9 0 0 1 10.59 20.89L10.31 18.79A7 7 0 0 1 8.39 18L6.71 19.28A9 9 0 0 1 4.72 17.29L6 15.61A7 7 0 0 1 5.21 13.69L3.11 13.41A9 9 0 0 1 3.11 10.59L5.21 10.31A7 7 0 0 1 6 8.39L4.72 6.71A9 9 0 0 1 6.71 4.72L8.39 6A7 7 0 0 1 10.31 5.21Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function HideGlyph() {
+  return (
+    <svg className="note-header-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
     </svg>
   );
 }
@@ -148,8 +170,8 @@ function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
 }
 
 /**
- * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice above the composer's
- * buttons. It stays until the owner closes it, the action works again or another failure replaces it.
+ * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice at the top of the
+ * composer. It stays until the owner closes it, the action works again or another failure replaces it.
  */
 function ComposerNoticeBar({ notice, onDismiss }: { notice: ComposerNotice; onDismiss: () => void }) {
   useI18n();
@@ -185,7 +207,8 @@ function AttachmentCard({ file, disabled, onRemove }: { file: File; disabled: bo
   }, [file]);
   return <div className="attachmentCard">
     <button className="attachmentRemove" type="button" disabled={disabled} onClick={onRemove}
-      aria-label={t('Remove {fileName}', { fileName: file.name })}>&times;</button>
+      aria-label={t('Remove {fileName}', { fileName: file.name })}
+      title={t('Remove {fileName}', { fileName: file.name })}>&times;</button>
     {preview ? <img className="attachmentPreview" src={preview} alt={file.name} />
       : <div className="attachmentFileIcon"><FileIcon size={24} /></div>}
     <span className="attachmentName">{file.name}</span>
@@ -269,6 +292,11 @@ export function NoteApp() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('Cats Bot');
+  // The direct message's send button is a paper plane; every other note's is an up arrow.
+  const [directMessage, setDirectMessage] = useState(requested === 'home');
+  // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
+  const [executionInfo, setExecutionInfo] = useState('');
+  const executionRequest = useRef(0);
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
@@ -350,12 +378,23 @@ export function NoteApp() {
       return;
     }
     conversation.current = record.id;
+    setDirectMessage(record.role === 'home');
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
     setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
     setSpeakerAvatar(avatarUrl(profile.avatar));
-    setTitle(`${profile.name} · ${conversationTitle(record)}${noteRoleSuffix(status.bossCat)}`);
+    // SPEC-009 FR-10: the role belongs to the bot, so it follows the name, before the conversation.
+    setTitle(`${profile.name}${noteRoleSuffix(status.bossCat)} · ${conversationTitle(record)}`);
+    const request = ++executionRequest.current;
+    const target = profile.executionTarget;
+    void Promise.all([
+      api.invoke('listModels', target.provider).catch(() => null),
+      api.invoke('listProviders').catch(() => []),
+    ]).then(([catalog, providers]) => {
+      if (request !== executionRequest.current) return;
+      setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+    });
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
@@ -548,6 +587,9 @@ export function NoteApp() {
         <span className="note-title" id="title">
           {title}
         </span>
+        {/* Not a button: it shows its text on hover and on focus, like Cats Desktop's model (i). */}
+        {executionInfo && <span className="note-info" id="execution-info" role="img" tabIndex={0} title={executionInfo}
+          aria-label={t('Provider and model: {summary}', { summary: executionInfo })}>i</span>}
         <span className="note-unread" id="unread" hidden={unread === 0}>
           {unread}
         </span>
@@ -565,9 +607,10 @@ export function NoteApp() {
           className="note-button"
           id="settings"
           title={t('Settings and conversations')}
+          aria-label={t('Settings and conversations')}
           onClick={() => void api.shell.openSettings()}
         >
-          ⚙
+          <SettingsGlyph />
         </button>
         <button
           className="note-button"
@@ -582,9 +625,10 @@ export function NoteApp() {
           className="note-button"
           id="hide"
           title={t('Hide (the cat bot keeps running)')}
+          aria-label={t('Hide (the cat bot keeps running)')}
           onClick={() => void api.window.hide()}
         >
-          ✕
+          <HideGlyph />
         </button>
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
@@ -646,6 +690,8 @@ export function NoteApp() {
           </div>
         </footer>
       ) : <footer className="note-composer">
+        {/* ADR-024: on top, so neither the draft nor the buttons move when a notice comes or goes. */}
+        {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         {files.length > 0 && <div className="composerAttachments">
           {files.map((file, index) => <AttachmentCard key={`${file.name}-${file.size}-${index}`} file={file} disabled={busy}
             onRemove={() => setFiles((current) => current.filter((_, i) => i !== index))} />)}
@@ -659,7 +705,6 @@ export function NoteApp() {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         <div className="note-actions">
           <button className="composerIconButton" id="attach" type="button" aria-label={t('Add photos and files')}
             title={t('Add photos and files')} disabled={busy} onClick={() => fileInputRef.current?.click()}>
@@ -679,8 +724,9 @@ export function NoteApp() {
             <ComposerGlyph kind="voice" />
             {privacy && <span className="composerVoicePrivacyBadge" aria-hidden="true">!</span>}
           </button>}
-          <button className="note-send" id="send" disabled={busy} onClick={() => void send()}>
-            {t('Send')}
+          <button className="note-send" id="send" type="button" disabled={busy} onClick={() => void send()}
+            aria-label={t('Send')} title={t('Send')}>
+            <ComposerGlyph kind={directMessage ? 'sendDirect' : 'send'} />
           </button>
           <button
             className="note-cancel"
