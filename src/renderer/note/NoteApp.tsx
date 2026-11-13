@@ -682,7 +682,9 @@ export function NoteApp() {
           id="settings"
           title={t('Settings and conversations')}
           aria-label={t('Settings and conversations')}
-          onClick={() => void api.shell.openSettings()}
+          // SPEC-002 FR-4: like the Cat's "Manage conversations…", on the Conversations tab, where this note's
+          // display switches are.
+          onClick={() => void api.shell.openSettings('notes')}
         >
           <SettingsGlyph />
         </button>
