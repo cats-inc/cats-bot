@@ -31,6 +31,9 @@ Bot 0.5.11 selects Runtime main at `512c074713cbe563124f21c4ed9218e0b408c33f`,
 including #223 write-only OpenClaw gateway token storage. This pin does not add
 a Bot token-setting UI or change Bot profile/conversation/journal formats.
 
+Bot 0.5.12 selects the same Runtime main, which had nothing after that commit at
+selection; a clean-clone rebuild reproduced the same artifact bytes.
+
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed
 at the startup deadline. Provider progress resets the latter; Runtime HTTP
