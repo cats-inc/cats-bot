@@ -12,6 +12,10 @@ Amended 2026-11-14: the owner decided that an error does not clear itself. The 8
 approved is removed (decision 3). Cats Desktop makes the same change in the same round: its new `error`
 toast level stays until it is closed.
 
+Amended 2026-11-14, later the same day: the notice moved from between the draft and the buttons to the top
+of the composer (decision 1). Between them it pushed the draft up by its own height whenever it came or
+went, which now happens when an action starts working again, while the owner is typing or dictating.
+
 ## Context
 
 - SPEC-003 made a failed dictation or screenshot "a line in the note". A file too large to send, a send the
@@ -28,8 +32,10 @@ toast level stays until it is closed.
 ## Decision
 
 1. **One notice in the composer.** A failed dictation, screenshot, attachment, send or retry is a notice
-   between the draft and the composer's buttons (`src/renderer/note/composerNotice.ts`). The note no
-   longer adds lines of its own to the transcript.
+   at the top of the composer, above the waiting files and the draft (`src/renderer/note/composerNotice.ts`).
+   The composer is anchored to the bottom of the note, so on top nothing the owner is typing in or about to
+   click moves when the notice comes or goes; only the transcript gets shorter. The note no longer adds
+   lines of its own to the transcript.
 2. **A new failure replaces it.** A repeated failure is shown again with the notice's entrance, so the
    owner sees that the click was answered.
 3. **It stays until it is answered.** The owner can dismiss it. The action working again clears its own
@@ -47,8 +53,8 @@ toast level stays until it is closed.
 ### Positive
 
 - The conversation shows only conversation. A missing microphone no longer stacks lines under replies.
-- The failure sits next to the button that caused it, and a failed send's reason sits under the draft that
-  came back.
+- The failure sits on the composer it is about, with the struck glyph of its button, and a file too large
+  is named right above its card.
 - With no local lines, the transcript sorts by sequence number alone.
 
 ### Negative

@@ -169,8 +169,8 @@ function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
 }
 
 /**
- * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice above the composer's
- * buttons. It stays until the owner closes it, the action works again or another failure replaces it.
+ * ADR-024: a failed composer action (dictation, screenshot, attachment, send) is one notice at the top of the
+ * composer. It stays until the owner closes it, the action works again or another failure replaces it.
  */
 function ComposerNoticeBar({ notice, onDismiss }: { notice: ComposerNotice; onDismiss: () => void }) {
   useI18n();
@@ -669,6 +669,8 @@ export function NoteApp() {
           </div>
         </footer>
       ) : <footer className="note-composer">
+        {/* ADR-024: on top, so neither the draft nor the buttons move when a notice comes or goes. */}
+        {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         {files.length > 0 && <div className="composerAttachments">
           {files.map((file, index) => <AttachmentCard key={`${file.name}-${file.size}-${index}`} file={file} disabled={busy}
             onRemove={() => setFiles((current) => current.filter((_, i) => i !== index))} />)}
@@ -682,7 +684,6 @@ export function NoteApp() {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
-        {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         <div className="note-actions">
           <button className="composerIconButton" id="attach" type="button" aria-label={t('Add photos and files')}
             title={t('Add photos and files')} disabled={busy} onClick={() => fileInputRef.current?.click()}>
