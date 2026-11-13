@@ -15,6 +15,13 @@ import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type Me
 import { voicePrivacyMessage } from '../../shared/voice.ts';
 import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
+import {
+  clearComposerNotice,
+  composerNoticeLifetime,
+  raiseComposerNotice,
+  type ComposerNotice,
+  type ComposerNoticeSource,
+} from './composerNotice.ts';
 import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
   addEntry,
@@ -25,7 +32,6 @@ import {
   entryText,
   errorText,
   liveInteractions,
-  localEntry,
   mergeTranscriptEntries,
   upsertWorkItem,
   mergeWorkItems,
@@ -103,12 +109,10 @@ interface EntryRetry {
   onRetry: () => void;
 }
 
-function Entry({ entry, conversationId, retry, settingsPane }: {
+function Entry({ entry, conversationId, retry }: {
   entry: TranscriptEntry;
   conversationId: string;
   retry?: EntryRetry;
-  /** ADR-020: the macOS pane that fixes this line's missing permission. */
-  settingsPane?: SystemSettingsPane;
 }) {
   useI18n();
   const meta = entryMeta(entry);
@@ -124,11 +128,74 @@ function Entry({ entry, conversationId, retry, settingsPane }: {
         : <p className="messageBody">{entryText(entry)}</p>}
     {meta && <span className="entry-meta">{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
-    {settingsPane && <button type="button" className="entry-settings-action"
-      onClick={() => { void api.systemSettings?.open(settingsPane).catch(() => undefined); }}>
-      {t('Open System Settings')}
-    </button>}
   </ConversationMessage>;
+}
+
+/**
+ * The glyph of the composer button a notice is about, struck out, so the notice reads as that button's.
+ * Send is a text button: its notice has an alert mark instead.
+ */
+function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
+  if (source === 'send') {
+    return <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" aria-hidden="true">
+      <circle cx="8" cy="8" r="6" />
+      <path d="M8 4.75v3.75" />
+      <path d="M8 11.1v.15" />
+    </svg>;
+  }
+  return <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+    strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    {source === 'voice' ? <>
+      <rect x="6" y="2" width="4" height="8" rx="2" />
+      <path d="M3 8a5 5 0 0 0 10 0" />
+      <path d="M8 13v2" />
+    </> : source === 'attach' ? <>
+      <path d="M14 10v3a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-3" />
+      <path d="M8 2v8" />
+      <path d="M4 6l4-4 4 4" />
+    </> : <>
+      <path d="M5 3.5l1-1h4l1 1h2a1 1 0 0 1 1 1v7.5a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1h2z" />
+      <circle cx="8" cy="8.5" r="2.5" />
+    </>}
+    <path d="M2.5 14.5l11-13" />
+  </svg>;
+}
+
+/**
+ * ADR-024: a failed composer action (dictation, screenshot, send) is one notice above the composer's buttons. It
+ * clears itself unless it opens System Settings (ADR-020), and not while the pointer or focus is on it.
+ */
+function ComposerNoticeBar({ notice, onDismiss }: { notice: ComposerNotice; onDismiss: () => void }) {
+  useI18n();
+  const [held, setHeld] = useState(false);
+  const lifetime = composerNoticeLifetime(notice);
+  useEffect(() => {
+    if (lifetime === null || held) return;
+    const timer = window.setTimeout(onDismiss, lifetime);
+    return () => window.clearTimeout(timer);
+  }, [notice.id, lifetime, held, onDismiss]);
+  const pane = notice.pane;
+  return <div className="composerNotice" role="status" data-source={notice.source}
+    onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
+    onFocus={() => setHeld(true)} onBlur={(event) => {
+      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setHeld(false);
+    }}>
+    <span className="composerNoticeIcon"><NoticeSourceIcon source={notice.source} /></span>
+    <span className="composerNoticeText">
+      {notice.message}
+      {pane && <button type="button" className="composerNoticeAction"
+        onClick={() => { void api.systemSettings?.open(pane).catch(() => undefined); }}>
+        {t('Open System Settings')}
+      </button>}
+    </span>
+    <button type="button" className="composerNoticeDismiss" aria-label={t('Dismiss')} title={t('Dismiss')}
+      onClick={onDismiss}>
+      <svg width="10" height="10" viewBox="0 0 10 10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <path d="M2 2l6 6M8 2l-6 6" />
+      </svg>
+    </button>
+  </div>;
 }
 
 /** SPEC-003 FR-8: a file waiting to go with the next message, as Cats Desktop shows it in its composer. */
@@ -240,13 +307,13 @@ export function NoteApp() {
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
-  // ADR-020: a line about a missing macOS permission offers its System Settings pane.
-  const settingsPanes = useRef(new Map<number, SystemSettingsPane>());
-  const noteError = useCallback((text: string, pane?: SystemSettingsPane | null) => {
-    const entry = localEntry('error', text);
-    if (pane && api.systemSettings) settingsPanes.current.set(entry.seq, pane);
-    setEntries((current) => [...current, entry]);
+  // ADR-024: a failed composer action is one notice in the composer, never a transcript line.
+  const [notice, setNotice] = useState<ComposerNotice | null>(null);
+  const composerError = useCallback((source: ComposerNoticeSource, text: string, pane?: SystemSettingsPane | null) => {
+    // ADR-020: the pane only where the shell can open it (macOS).
+    setNotice(raiseComposerNotice(source, text, pane && api.systemSettings ? pane : null));
   }, []);
+  const dismissNotice = useCallback(() => setNotice(null), []);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [pending, setPending] = useState<PendingReply | null>(null);
   const [running, setRunningState] = useState(false);
@@ -256,16 +323,22 @@ export function NoteApp() {
   // SPEC-003 FR-8: files for the next message.
   const [files, setFiles] = useState<File[]>([]);
   const [capturing, setCapturing] = useState(false);
+  // ADR-024: removing the file that was too large answers its notice.
+  useEffect(() => {
+    if (!files.some((file) => file.size > MAX_ATTACHMENT_BYTES)) setNotice((current) => clearComposerNotice(current, 'attach'));
+  }, [files]);
   // SPEC-003 FR-9: the note steps aside while the owner drags out a region; the picture waits like a picked file.
   const takeScreenshot = async () => {
     if (capturing) return;
     setCapturing(true);
     try {
       const outcome = screenshotOutcome(await api.window.captureScreenshot());
-      if (outcome.kind === 'file') setFiles((current) => [...current, outcome.file]);
-      else if (outcome.kind === 'error') noteError(t(outcome.message), outcome.systemSettingsPane);
+      if (outcome.kind === 'file') {
+        setFiles((current) => [...current, outcome.file]);
+        setNotice((current) => clearComposerNotice(current, 'screenshot'));
+      } else if (outcome.kind === 'error') composerError('screenshot', t(outcome.message), outcome.systemSettingsPane);
     } catch (error) {
-      setEntries((current) => [...current, localEntry('error', t('Could not take a screenshot: {error}', { error: errorText(error) }))]);
+      composerError('screenshot', t('Could not take a screenshot: {error}', { error: errorText(error) }));
     } finally {
       setCapturing(false);
     }
@@ -436,8 +509,7 @@ export function NoteApp() {
     if ((!text && files.length === 0) || runningRef.current || busy || contact !== null) return;
     const tooLarge = files.find((file) => file.size > MAX_ATTACHMENT_BYTES);
     if (tooLarge) {
-      setEntries((current) => [...current, localEntry('error',
-        t('{fileName} is larger than {limit} MB', { fileName: tooLarge.name, limit: String(MAX_ATTACHMENT_BYTES / (1024 * 1024)) }))]);
+      composerError('attach', t('{fileName} is larger than {limit} MB', { fileName: tooLarge.name, limit: String(MAX_ATTACHMENT_BYTES / (1024 * 1024)) }));
       return;
     }
     const sending = files;
@@ -452,15 +524,13 @@ export function NoteApp() {
         paths.push(stored.relativePath);
       }
       await api.invoke('sendOwnerMessage', conversation.current, attachedFilesMessage(text, paths));
+      setNotice((current) => clearComposerNotice(current, 'send'));
     } catch (error) {
       setRunning(false);
-      // Nothing was sent: the owner gets the draft and the files back.
+      // Nothing was sent: the owner gets the draft and the files back, with the reason under them.
       setDraft((current) => current || text);
       setFiles((current) => (current.length ? current : sending));
-      setEntries((current) => [
-        ...current,
-        localEntry('error', t('Could not send: {error}', { error: errorText(error) })),
-      ]);
+      composerError('send', t('Could not send: {error}', { error: errorText(error) }));
     }
   };
 
@@ -471,21 +541,23 @@ export function NoteApp() {
     setRunning(true);
     try {
       await api.invoke('retryOwnerMessage', conversation.current, workItemId);
+      setNotice((current) => clearComposerNotice(current, 'send'));
     } catch (error) {
       setRunning(false);
-      setEntries((current) => [
-        ...current,
-        localEntry('error', t('Could not retry: {error}', { error: errorText(error) })),
-      ]);
+      composerError('send', t('Could not retry: {error}', { error: errorText(error) }));
     }
   };
 
   // SPEC-003 FR-10: dictation into the composer.
   const dictation = useDictation({
     inputRef, draft, setDraft, disabled: busy,
-    onError: (message, pane) => noteError(t(message), pane),
+    onError: (message, pane) => composerError('voice', t(message), pane),
   });
   const privacy = voicePrivacyMessage(dictation.privacyMode);
+  // The helper listening means the microphone and permissions are there now.
+  useEffect(() => {
+    if (dictation.listening) setNotice((current) => clearComposerNotice(current, 'voice'));
+  }, [dictation.listening]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter that confirms an IME candidate (Chinese, Japanese, …) is not a send.
@@ -558,8 +630,7 @@ export function NoteApp() {
           if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
           const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
           return <Entry key={item.key} entry={item.entry} conversationId={conversation.current}
-            retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined}
-            settingsPane={settingsPanes.current.get(item.entry.seq)} />;
+            retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined} />;
         })}
         {pending && (
           <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>
@@ -614,6 +685,7 @@ export function NoteApp() {
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={onKeyDown}
         />
+        {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         <div className="note-actions">
           <button className="composerIconButton" id="attach" type="button" aria-label={t('Add photos and files')}
             title={t('Add photos and files')} disabled={busy} onClick={() => fileInputRef.current?.click()}>

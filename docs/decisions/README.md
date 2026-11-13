@@ -58,6 +58,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [018](./018-dictate-through-native-speech-helpers.md) | Dictate through Native Speech Helpers | Accepted | 2026-11-11 |
 | [019](./019-manage-agent-clis-from-cats-bot-settings-with-the-wizard-rows.md) | Manage Agent CLIs from Cats Bot Settings with the Wizard's Rows | Accepted | 2026-11-11 |
 | [020](./020-send-the-owner-to-the-macos-system-settings-pane-a-permission-needs.md) | Send the Owner to the macOS System Settings Pane a Permission Needs | Accepted | 2026-11-11 |
+| [024](./024-show-composer-failures-as-one-composer-notice.md) | Show Composer Failures as One Composer Notice | Accepted | 2026-11-14 |
 | [021](./021-keep-each-bots-state-in-a-sqlite-database.md) | Keep Each Bot's State in a SQLite Database | Withdrawn from Bot before release (tag `state-db-p1`) | 2026-11-12 |
 | [022](./022-give-each-bot-layered-memory-it-consolidates-while-asleep.md) | Give Each Bot Layered Memory It Consolidates While Asleep | Accepted | 2026-11-11 |
 | [023](./023-persist-utility-windows-and-reset-bot-data-offline.md) | Persist Utility Windows and Reset Bot Data Offline | Accepted | 2026-11-11 |

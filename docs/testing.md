@@ -497,11 +497,16 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   note comes back focused and still on its layer once it loses focus. On every display the overlay
   covers the screen, a drag selects, Escape cancels. On wlroots, check with and without `grim`/`slurp`.
 - System Settings panes (ADR-020), on a fresh macOS profile with a signed package:
-  - The first screenshot is refused with a line naming Screen & System Audio Recording. Cats Bot (not
+  - The first screenshot is refused with a composer notice naming Screen & System Audio Recording. Cats Bot (not
     `cats-stt-macos`) is now listed there, and "Open System Settings" opens that pane. A grant works after
     restarting Cats Bot.
-  - Deny Speech Recognition, then the microphone, and dictate: each line names its own pane and its button
-    opens it.
+  - Deny Speech Recognition, then the microphone, and dictate: each composer notice names its own pane and
+    its button opens it.
+  - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
+    shows between the draft and the buttons, nothing is added to the transcript, it clears after 8 s
+    (not while hovered), and ✕ dismisses it. A permission notice stays until dismissed. Attach a file over
+    10 MB and send: the notice names it and goes when the file is removed. A send or retry the core refuses
+    is a notice under the restored draft, not a transcript line.
   - Switch Cats Bot off in General > Login Items with start at login on. Cats Bot Settings > General shows the
     approval line, and its button opens Login Items.
 - Dictation (SPEC-003 FR-10): only a signed and notarized macOS package (hardened runtime, the

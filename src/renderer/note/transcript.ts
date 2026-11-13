@@ -48,10 +48,10 @@ function reconcilePresentationEntries(entries: TranscriptEntry[]): TranscriptEnt
   return entries.filter(entry => entry.presentation || !projections.some(response => (
     response.workItemId === entry.workItemId && ((response.presentationSeqs ?? []).includes(entry.seq)
       || (response.presentationTerminalSeq === entry.seq && entry.kind === 'bot' && response.text === entry.text))
-  ))).sort((a, b) => (a.seq < 0 ? Infinity : a.seq) - (b.seq < 0 ? Infinity : b.seq));
+  ))).sort((a, b) => a.seq - b.seq);
 }
 
-/** A late snapshot cannot discard a newer live revision or a local send failure. */
+/** A late snapshot cannot discard a newer live revision. */
 export function mergeTranscriptEntries(current: readonly TranscriptEntry[], snapshot: readonly TranscriptEntry[]): TranscriptEntry[] {
   // A recovered sidecar may predate finalization. A terminal JSONL row in the
   // authoritative read replaces that unbound live partial, including in an open view.
@@ -66,14 +66,6 @@ export function mergeTranscriptEntries(current: readonly TranscriptEntry[], snap
 export function appendDelta(pending: PendingReply | null, workItemId: string, text: string): PendingReply {
   if (pending && pending.workItemId === workItemId) return { workItemId, text: pending.text + text };
   return { workItemId, text };
-}
-
-let localSeq = 0;
-
-/** A line the note shows by itself (for example a send that failed); it never reaches the transcript. */
-export function localEntry(kind: TranscriptEntryKind, text: string, at = new Date()): TranscriptEntry {
-  localSeq -= 1;
-  return { seq: localSeq, at: at.toISOString(), kind, text, origin: 'system' };
 }
 
 export function entryKey(entry: TranscriptEntry): string {
