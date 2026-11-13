@@ -65,6 +65,27 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
   );
 }
 
+/**
+ * The header's other two glyphs, drawn like the layer plates (24 unit grid shown at 18 px, 1.5 stroke) so the
+ * three buttons read as one set; a text "⚙" and "✕" sized with the font did not.
+ */
+function SettingsGlyph() {
+  return (
+    <svg className="note-header-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M10.31 5.21L10.59 3.11A9 9 0 0 1 13.41 3.11L13.69 5.21A7 7 0 0 1 15.61 6L17.29 4.72A9 9 0 0 1 19.28 6.71L18 8.39A7 7 0 0 1 18.79 10.31L20.89 10.59A9 9 0 0 1 20.89 13.41L18.79 13.69A7 7 0 0 1 18 15.61L19.28 17.29A9 9 0 0 1 17.29 19.28L15.61 18A7 7 0 0 1 13.69 18.79L13.41 20.89A9 9 0 0 1 10.59 20.89L10.31 18.79A7 7 0 0 1 8.39 18L6.71 19.28A9 9 0 0 1 4.72 17.29L6 15.61A7 7 0 0 1 5.21 13.69L3.11 13.41A9 9 0 0 1 3.11 10.59L5.21 10.31A7 7 0 0 1 6 8.39L4.72 6.71A9 9 0 0 1 6.71 4.72L8.39 6A7 7 0 0 1 10.31 5.21Z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function HideGlyph() {
+  return (
+    <svg className="note-header-icon" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+    </svg>
+  );
+}
+
 const api = window.catsBot;
 
 const FileIcon = ({ size }: { size: number }) => (
@@ -565,9 +586,10 @@ export function NoteApp() {
           className="note-button"
           id="settings"
           title={t('Settings and conversations')}
+          aria-label={t('Settings and conversations')}
           onClick={() => void api.shell.openSettings()}
         >
-          ⚙
+          <SettingsGlyph />
         </button>
         <button
           className="note-button"
@@ -582,9 +604,10 @@ export function NoteApp() {
           className="note-button"
           id="hide"
           title={t('Hide (the cat bot keeps running)')}
+          aria-label={t('Hide (the cat bot keeps running)')}
           onClick={() => void api.window.hide()}
         >
-          ✕
+          <HideGlyph />
         </button>
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
