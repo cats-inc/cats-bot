@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { TranscriptEntry } from '../../src/core/types.ts';
-import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, noteRoleSuffix, visibleEntries } from '../../src/renderer/note/transcript.ts';
+import { addEntry, appendDelta, entryClass, entryMeta, entryText, entryTime, errorText, visibleEntries } from '../../src/renderer/note/transcript.ts';
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 
 /** SPEC-001 FR-33, SPEC-003: what the note shows from the transcript and the live events. */
@@ -26,7 +26,7 @@ test('streamed text joins one reply per work item', () => {
   assert.deepEqual(appendDelta(pending, 'w2', 'next'), { workItemId: 'w2', text: 'next' });
 });
 
-test('entries keep their look: classes, tool lines, times and unprompted replies', () => {
+test('entries keep their look: classes, tool lines, times and what the cat says on its own', () => {
   assert.equal(entryClass('owner'), 'entry entry-owner');
   assert.equal(entryClass('tool_result'), 'entry entry-tool');
   assert.equal(entryClass('system'), 'entry entry-system');
@@ -35,7 +35,16 @@ test('entries keep their look: classes, tool lines, times and unprompted replies
   assert.equal(entryText(entry(1, 'tool_result', 'contents')), '↳ contents');
   const time = () => '09:02';
   assert.equal(entryMeta(entry(1, 'owner', 'hi'), time), '09:02');
-  assert.equal(entryMeta(entry(1, 'bot', 'hey', { origin: 'heartbeat' }), time), 'unprompted · 09:02');
+  assert.equal(entryMeta(entry(1, 'bot', 'hey', { origin: 'heartbeat' }), time), 'On its own initiative · 09:02');
+  // Another cat's name is over its bubble now (speakers.ts), not in the time.
+  assert.equal(entryMeta(entry(1, 'owner', 'hello', { origin: 'bot', from: 'Mochi' }), time), '09:02');
+  try {
+    acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
+    // The words of the Cat's "own initiative" menu (自主活動).
+    assert.equal(entryMeta(entry(1, 'bot', 'hey', { origin: 'heartbeat' }), time), '自主訊息 · 09:02');
+  } finally {
+    acceptLanguage({ preference: 'en', locale: 'en' });
+  }
   assert.equal(entryMeta(entry(1, 'system', 'note'), time), null);
   // A corrupt time shows no time rather than breaking the note.
   assert.equal(entryMeta({ ...entry(1, 'owner', 'hi'), at: 'garbage' }), null);
@@ -45,16 +54,16 @@ test('a refused invoke reads as the core\'s own message', () => {
   assert.equal(errorText(new Error("Error invoking remote method 'bot:invoke': Error: An owner message needs text")), 'An owner message needs text');
 });
 
-test('the Boss Cat note header names only the role, with or without provider tools (SPEC-009 FR-10, FR-11)', () => {
-  try {
-    for (const [locale, role] of [['en', ' · Boss Cat'], ['zh-TW', ' · 主控貓']] as const) {
-      acceptLanguage({ preference: locale, locale });
-      assert.equal(noteRoleSuffix({ holder: true, tools: true }), role);
-      assert.equal(noteRoleSuffix({ holder: true, tools: false }), role);
-      assert.equal(noteRoleSuffix({ holder: false, tools: false }), '');
-      assert.equal(noteRoleSuffix(undefined), '');
-    }
-  } finally {
-    acceptLanguage({ preference: 'en', locale: 'en' });
-  }
+test('a reply shows when it was sealed, an older one when its turn started, and one being written no time', () => {
+  const presentation = (phase: 'streaming' | 'sealed') => ({ version: 1 as const, id: 'r', phase, blocks: [] });
+  const started = '2026-11-14T07:20:38.000Z';
+  const ended = '2026-11-14T07:24:05.000Z';
+  const sealed = entry(2, 'bot', 'done', { at: started, presentation: presentation('sealed'), presentationEndedAt: ended });
+  assert.equal(entryTime(sealed)?.toISOString(), ended);
+  assert.equal(entryMeta(sealed, (at) => at.toISOString()), ended);
+  const older = entry(2, 'bot', 'done', { at: started, presentation: presentation('sealed') });
+  assert.equal(entryTime(older)?.toISOString(), started);
+  const live = entry(2, 'bot', 'writing', { at: started, presentation: presentation('streaming'), presentationEndedAt: ended });
+  assert.equal(entryTime(live)?.toISOString(), started, 'its day is still its start');
+  assert.equal(entryMeta(live), null);
 });

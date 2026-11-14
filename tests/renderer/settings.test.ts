@@ -263,7 +263,7 @@ test('the Life tab sends the mode and Desktop\'s rhythm, refuses times Desktop r
   const status = (heartbeat: Partial<BotStatus['heartbeat']>) => ({
     heartbeat: { enabled: true, nextAt: null, mode: 'companion', phase: 'awake_hours', unanswered: 0, waitingForOwner: false, ...heartbeat },
   }) as BotStatus;
-  assert.match(nextHeartbeatText(status({ unanswered: 5, waitingForOwner: true })), /waiting for you: 5 unprompted messages/u);
+  assert.match(nextHeartbeatText(status({ unanswered: 5, waitingForOwner: true })), /waiting for you: 5 own-initiative messages/u);
   assert.equal(nextHeartbeatText(status({ nextAt: '2026-11-10T10:00:00.000Z' }), () => 'Tue 18:00'), 'Next activity on its own around Tue 18:00.');
   assert.equal(nextHeartbeatText(status({ enabled: false })), 'Own initiative is paused.');
 });

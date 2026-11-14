@@ -43,6 +43,9 @@ test('the same 7 AM on two days is told apart by the day divider', () => {
   assert.match(inLocale('zh-TW', () => dayLabel(new Date(2025, 10, 12, 7, 0), now)), /^2025年11月12日 星期三$/u);
   // Yesterday across a month boundary.
   assert.equal(inLocale('en', () => dayLabel(new Date(2026, 9, 31, 8, 0), new Date(2026, 10, 1, 8, 0))), 'Yesterday');
+  // Across New Year: the last day of the old year is Yesterday, the day before it names its year.
+  assert.equal(inLocale('zh-TW', () => dayLabel(new Date(2026, 11, 31, 23, 0), new Date(2027, 0, 1, 8, 0))), '昨天');
+  assert.match(inLocale('zh-TW', () => dayLabel(new Date(2026, 11, 30, 23, 0), new Date(2027, 0, 1, 8, 0))), /^2026年12月30日 星期三$/u);
 });
 
 test('the day clock wakes once just after local midnight and tells only its listeners', (t) => {
@@ -79,6 +82,13 @@ test('a divider starts each day among the items shown; an item without a readabl
   assert.deepEqual([...dayStartKeys(items, (item) => item.at, (item) => item.key)], ['a', 'c', 'd']);
   // A line hidden by the verbose switch is not passed in, so the next shown item starts the day.
   assert.deepEqual([...dayStartKeys(items.filter((item) => item.key !== 'c'), (item) => item.at, (item) => item.key)], ['a', 'd']);
+  // A reply sealed after midnight, then a line written while it ran: the day is not started twice.
+  const midnight = [
+    { key: 'reply', at: new Date(2026, 10, 14, 0, 1) },
+    { key: 'line', at: new Date(2026, 10, 13, 23, 59) },
+    { key: 'next', at: new Date(2026, 10, 14, 0, 5) },
+  ];
+  assert.deepEqual([...dayStartKeys(midnight, (item) => item.at, (item) => item.key)], ['reply']);
   assert.equal(readTime('not a time'), null);
   assert.equal(readTime(undefined), null);
   assert.equal(readTime('2026-11-12T23:00:13.000Z')?.toISOString(), '2026-11-12T23:00:13.000Z');

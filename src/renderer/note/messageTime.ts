@@ -46,16 +46,22 @@ export function readTime(at: string | undefined): Date | null {
 
 /**
  * The keys of the items that start a new local day, in the order shown. Only the items passed count, so a line
- * the verbose switch hides starts no day; an item without a time neither starts nor ends one.
+ * the verbose switch hides starts no day; an item without a time neither starts nor ends one, and an item
+ * earlier than one before it starts none.
  */
 export function dayStartKeys<T>(items: readonly T[], timeOf: (item: T) => Date | null, keyOf: (item: T) => string): Set<string> {
   const starts = new Set<string>();
-  let last = '';
+  // The latest day reached so far. Items keep their transcript order, and a reply shows when it was sealed, so a
+  // line written while it ran can sit after it with an earlier time: going back a day starts nothing.
+  let reached = -1;
   for (const item of items) {
     const at = timeOf(item);
     if (!at) continue;
-    if (dayKey(at) !== last) starts.add(keyOf(item));
-    last = dayKey(at);
+    const day = at.getFullYear() * 10000 + (at.getMonth() + 1) * 100 + at.getDate();
+    if (day > reached) {
+      starts.add(keyOf(item));
+      reached = day;
+    }
   }
   return starts;
 }

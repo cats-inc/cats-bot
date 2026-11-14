@@ -480,6 +480,13 @@ test('a new look is announced at once and keeps the session (SPEC-008 FR-29)', a
     // SPEC-003 FR-14: and when verbose messages are switched.
     await core.updateProfile({ showVerboseMessages: true });
     assert.equal(seen.length, 4);
+    // SPEC-003 FR-15: and when Telegram is switched or its token changes (the direct message's send button).
+    await core.updateProfile({ telegram: { enabled: true } });
+    assert.equal(seen.length, 5);
+    await core.setTelegramToken(null);
+    assert.equal(seen.length, 6);
+    await core.updateProfile({ telegram: { enabled: false } });
+    assert.equal(seen.length, 7);
   } finally {
     off();
     await core.stop();

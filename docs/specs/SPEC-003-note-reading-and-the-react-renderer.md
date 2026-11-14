@@ -100,17 +100,24 @@ for the current-versus-pending boundary.
     microphone. The macOS helper delivers recognition callbacks on a serial background queue while
     its main thread waits; callbacks remain suspended during tap startup and resume after `ready`
     or startup-failure cleanup. Linux has no helper yet and shows no button.
-11. FR-11 (2026-11-14): The note header reads "bot name · conversation", with the Boss Cat's role between
-    them (SPEC-009 FR-10). An (i) follows the title, as in Cats Desktop's model picker: not a button, it
-    shows on hover and on focus the bot's provider, model and reasoning effort as the model catalog names
-    them ("Claude · Opus 5.5 · Medium effort"), falling back to the ids without a catalog. When the header
-    is short of room the title is cut; the (i) and the status stay whole and on one line.
+11. FR-11 (2026-11-14): The note header reads "bot name · conversation", after a small face of the note's cat
+    (20 px, smaller than a bubble's), ringed in gold for the Boss Cat, whose role is named on the face's
+    tooltip and to assistive technology rather than in the title (SPEC-009 FR-10); a contact note's header
+    shows the cat the Boss Cat looks after (FR-16). An (i) follows the title, as in Cats Desktop's model
+    picker: not a button and with the plain arrow cursor, it shows on hover and on focus the bot's provider,
+    model and reasoning effort as the model catalog names them ("Claude · Opus 5.5 · Medium effort"),
+    falling back to the ids without a catalog. When the header is short of room the title is cut; the face,
+    the (i) and the status stay whole and on one line.
+    Every hover text in a note (buttons, the (i), times, dividers) is the note's own tooltip, drawn in the
+    page above or below what it explains and kept inside the window; keyboard focus shows it too. A note
+    opens without taking focus, and macOS shows a native `title` tooltip only for the active app. What can
+    be clicked in a Cats Bot window shows a cat's paw cursor, plain CSS with the pointing hand as fallback.
 12. FR-12 (2026-11-14): "Show live progress details" is one switch per bot, at the top of its Settings →
     Conversations, saved as it changes and off by default, like Cats Desktop's per-product setting of that
     name. It is stored as the profile's `showProgressDetails`; absent reads as off, and it is not a session
     setting. Off, a reply shows its text and any failed step. On, a reply still being written shows its tool
-    and progress steps as they come, and a finished reply folds them behind a link in its meta line
-    ("3 steps ▸") that opens and folds that reply alone. A reply with nothing folded has no link, and a
+    and progress steps as they come, and a finished reply folds them behind a link next to its time, inside
+    its last bubble ("3 steps ▸"), that opens and folds that reply alone. A reply with nothing folded has no link, and a
     finished reply with nothing but steps (cancelled after its tools, or ending on a tool call) keeps them
     open, since folding would hide it whole. Replies recorded without a presentation, such as unprompted
     heartbeat turns and older transcripts, keep their tool cards whatever the switch says. The notes
@@ -123,12 +130,35 @@ for the current-versus-pending boundary.
     time; only the display had dropped the date. Dates and times show whatever the switches of FR-12 and
     FR-14 say. A note left open past midnight relabels its dividers (Today becomes Yesterday): one timer per
     note fires just after local midnight, and focusing or showing the note checks again after sleep; only the
-    dividers redraw, not the transcript.
+    dividers redraw, not the transcript. The time closes every bubble, inside it, a reply's included (its
+    last bubble when it has several). A reply was sent when it was sealed (finished, failed or cancelled),
+    which the presentation sidecar keeps as the optional `presentationEndedAt`; a reply sealed before that was
+    kept shows when its turn started, and one still being written shows no time yet. Its day follows the
+    same time. What the cat says on its own
+    initiative is marked so, in the words of the Cat's "own initiative" menu ("On its own initiative ·
+    7:00 AM", 「自主訊息 · 上午7:00」). Copy takes a message's text alone, never its time or sender.
 14. FR-14 (2026-11-14): "Show verbose messages", Cats Desktop's switch of that name, is one switch per bot
     next to FR-12's, saved as it changes and off by default, stored as the profile's `showVerboseMessages`
     (absent reads as off, not a session setting). Off, the system lines about sessions and schedules (for
     example "Schedule created" or a session being replaced) hide; a decision made from a system line, an
-    error and every message show either way. Day dividers count only the lines shown.
+    error and every message show either way. Day dividers count only the lines shown. A session that cannot
+    go on ("Could not resume the previous session", "Automatic session replacement stopped") is an error: it
+    is why a message got no answer, so it shows with the switch off.
+15. FR-15 (2026-11-14): The direct message's send button is a paper plane once the direct message reaches
+    Telegram: Telegram on, its token stored and the owner's chat bound. Otherwise, and in every other note,
+    it is an up arrow. The core sends `profile.updated` when Telegram is switched, its token is stored or
+    cleared, or the owner's chat is bound, so an open note follows.
+16. FR-16 (2026-11-14): A note is a talk between the owner and one cat, so its bubbles carry no face or name:
+    the owner writes on the right, the cat on the left, and the cat's face is the header's (FR-11). Another
+    cat's message (a reply in the Boss Cat's conversations) sits on the left with that cat's face and name.
+    In a contact note both sides are cats and every bubble carries its cat's face and name: the Boss Cat on
+    the right, ringed in gold, and the cat it looks after on the left; the header shows the latter. When
+    neither holds the role any more, the other cat keeps the right side. The shell gives a note the faces
+    of the cats it can hear from and no others: every other cat for the Boss Cat, the Boss Cat for any
+    other (`window.state().peers`); a cat it does not know by look is drawn from its initial.
+17. FR-17 (2026-11-14): While the end of the transcript is out of sight, Cats Desktop's scroll-to-latest
+    button hangs over the top edge of the note's footer, centered; it takes the note to the end and goes.
+    A composer notice (ADR-024) is inside the footer, so it pushes the button up rather than covering it.
 
 ## Acceptance
 

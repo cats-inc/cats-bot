@@ -158,7 +158,6 @@ export const zhTW: Record<string, string> = {
   'Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.': 'Antigravity 原生工具需要 Google 官方 Antigravity ACP server 並完成登入，僅安裝一般 agy CLI 並不足夠。目前此供應商尚未開放 Cats 工具。',
   'Hops per chain': '每條對話鏈的轉送次數',
   'Messages per hour': '每小時訊息數',
-  'from {name}': '來自 {name}',
   'Only you can allow this. The request expires in 10 minutes.': '只有你能允許這件事。這個請求 10 分鐘後失效。',
 
   Start: '啟動',
@@ -275,7 +274,8 @@ export const zhTW: Record<string, string> = {
   'on ({health})': '已開啟（{health}）',
   'not bound yet: send your bot a private message': '尚未連結：請向機器人傳送私訊',
   Runtime: 'Runtime',
-  unprompted: '主動訊息',
+  'On its own initiative': '自主訊息',
+  'Scroll to latest': '捲動到最新',
   stopped: '已停止',
   starting: '正在啟動',
   Effort: '推理強度',
@@ -418,8 +418,8 @@ export const zhTW: Record<string, string> = {
   Bedtime: '就寢時間',
   'Wakes up between': '起床時間介於',
   and: '到',
-  'Own initiative is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.':
-    '自主活動正在等你：已有 {value0} 則主動訊息沒有回覆，等你傳訊息後才會再開始。',
+  'Own initiative is waiting for you: {value0} own-initiative messages in a row went unanswered. It starts again when you write.':
+    '自主活動正在等你：已有 {value0} 則自主訊息沒有回覆，等你傳訊息後才會再開始。',
   'Check the times: bedtime must fall outside the wake window, and the window must not end before it starts.':
     '請檢查時間：就寢時間不能落在起床區間內，起床區間的結束也不能早於開始。',
   'Times must be HH:MM': '時間格式必須是 HH:MM',
@@ -883,7 +883,7 @@ export const zhTW: Record<string, string> = {
   'After that, every': '之後每隔',
   'A conversation sleeps after': '對話閒置後休眠',
   'At night its direct message sleeps after 15 quiet minutes.': '夜裡私訊安靜 15 分鐘就會休眠。',
-  'Each unanswered message doubles the wait; after 5 in a row it waits for you.': '主動訊息沒回，下次就多等一倍；連續 5 則沒回就等你先開口。',
+  'Each unanswered message doubles the wait; after 5 in a row it waits for you.': '自主訊息沒回，下次就多等一倍；連續 5 則沒回就等你先開口。',
   'Create a bot with @BotFather, paste its token here, then send it a private message to chat from your phone.': '透過 @BotFather 建立機器人並貼上權杖，再傳一則私訊給它，就能用手機聊天。',
   'Your account': '你的帳號',
   'Waiting for your approval in macOS': '等待你在 macOS 核准',

@@ -238,10 +238,11 @@ export function NotesTab() {
       </div>
       <p className="lead">{t('Each conversation keeps its own history. Closing its window only hides it.')}</p>
       <div className="display-switches">
-        <DisplaySwitch setting="showProgressDetails" id="notes-progress-details" label={t('Show live progress details')}
-          hint={t('For every conversation of this cat bot: a reply shows its tool steps while it runs, and each finished reply gets a link that opens them.')} />
+        {/* In Cats Desktop's order: verbose messages, then live progress details. */}
         <DisplaySwitch setting="showVerboseMessages" id="notes-verbose-messages" label={t('Show verbose messages')}
           hint={t('Keep system-level session and orchestration messages visible in every conversation of this cat bot.')} />
+        <DisplaySwitch setting="showProgressDetails" id="notes-progress-details" label={t('Show live progress details')}
+          hint={t('For every conversation of this cat bot: a reply shows its tool steps while it runs, and each finished reply gets a link that opens them.')} />
       </div>
       <ul className="notes" id="notes-list">
         {layers &&

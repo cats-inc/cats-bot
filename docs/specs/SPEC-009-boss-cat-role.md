@@ -118,8 +118,10 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    session's handoff names it as another bot's, never as the owner's. The
    records keep ids only; arguments that are not valid ids are left out.
 10. FR-10: Settings → Bots shows the holder. The holder's note shows its role,
-    and messages from another bot render with that bot's name. In the note header the role follows the
-    bot's name, since it describes the bot: "Mochi · Boss Cat · Direct message" (2026-11-14, SPEC-003 FR-11).
+    and messages from another bot render with that bot's name. In the note header the role is a gold ring
+    around the bot's face, before its name, named on the face's tooltip: "Mochi · Direct message" with a
+    ringed face (2026-11-14, SPEC-003 FR-11; it replaced "Mochi · Boss Cat · Direct message"). Another bot's
+    messages carry its face and name over the bubble (SPEC-003 FR-16).
 11. FR-11: A holder that is not bound to the native environment (ADR-010), or
     whose provider's sessions do not support session MCP servers (FR-3; in the
     pinned Runtime 0.6.2, Antigravity, Grok and Muse), keeps the role but gets

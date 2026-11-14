@@ -24,7 +24,7 @@ function optionsFor(botsHome: string, provider = 'codex'): Partial<BotCoreOption
   };
 }
 
-for (const provider of ['codex', 'claude']) test(`an unused ${provider} replacement survives a second real Runtime restart when a turn arrives`, { timeout: 120_000 }, async () => {
+for (const provider of ['codex', 'claude']) test(`an unused ${provider} replacement is rewarmed once after a second real Runtime restart, and the turn runs in it`, { timeout: 120_000 }, async () => {
   const home = makeTempHome('cats-bot-unstarted-');
   const options = optionsFor(home.botsHome, provider);
   const { core, root } = openTestBot({ botsHome: home.botsHome, profile: { provider }, core: options });
@@ -56,27 +56,32 @@ for (const provider of ['codex', 'claude']) test(`an unused ${provider} replacem
     assert.notEqual(replacement.sessionId, warm.sessionId);
     assert.equal(replacement.replacementPending, true);
     assert.ok(reopened.transcript('home').some(entry => entry.text === 'History before the warm session'));
-    assert.equal(reopened.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 1);
+    // Nothing was said in the warm session, so replacing it loses nothing and adds no notice.
+    assert.equal(reopened.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 0);
     await reopened.tick();
     assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, replacement.sessionId);
 
-    // The replacement was only warmed by reconcile. A second host shutdown
-    // must not permanently lock the conversation before its first real turn.
+    // The replacement was only warmed by reconcile, and a second host shutdown stopped it unused. The next
+    // process's reconcile rewarms it once, so the cat is awake (and keeps its heartbeat) before the owner
+    // writes; later ticks keep that session rather than create one per tick.
     await reopened.stop();
     reopened = BotCore.open({ root, ...options });
     await reopened.start();
     assert.equal(reopened.runtimeState(), 'ready');
-    for (let tick = 0; tick < 3; tick++) {
+    assert.equal((await reopened.tick()).outcome, 'rebuilt');
+    const rewarmed = (await reopened.listConversations())[0]!.attachment;
+    assert.notEqual(rewarmed.sessionId, replacement.sessionId);
+    for (let tick = 0; tick < 2; tick++) {
       await reopened.tick();
-      assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, replacement.sessionId,
+      assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, rewarmed.sessionId,
         'background ticks must not create another unused replacement');
     }
-    assert.equal(reopened.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 1);
+    assert.equal(reopened.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 0);
 
     const next = await sendAndWait(reopened, 'home', 'Continue after restart', 60_000);
     assert.equal(next.state, 'completed', next.error);
     const continued = (await reopened.listConversations())[0]!.attachment;
-    assert.notEqual(continued.sessionId, replacement.sessionId);
+    assert.equal(continued.sessionId, rewarmed.sessionId, 'the turn runs in the rewarmed session');
     assert.ok(continued.providerSessionId);
     assert.equal(continued.replacementPending, undefined);
     assert.equal(reopened.listWorkItems().filter(item => item.run).length, 2,

@@ -193,6 +193,11 @@ export interface TranscriptEntry {
   presentationRevision?: number;
   presentationSeqs?: number[];
   presentationTerminalSeq?: number;
+  /**
+   * SPEC-003 FR-13: when the reply was sealed (finished, failed or cancelled), the time it shows. Absent on
+   * replies sealed before it was kept, which show `at`, when their turn started.
+   */
+  presentationEndedAt?: string;
 }
 
 export type WorkItemKind = 'owner_message' | 'heartbeat' | 'schedule' | 'event';

@@ -531,6 +531,8 @@ export class LifeLoop {
         return 'runtime_unknown';
       }
     }
+    // SPEC-001 FR-27: put to sleep, not failed; an unused one may be rewarmed in the morning.
+    this.deps.binder.sessionClosed(sessionId);
     // A turn that bound the session meanwhile resumes it on its own; only an untouched one is marked.
     const current = this.deps.conversations.home().attachment;
     if (
@@ -595,6 +597,7 @@ export class LifeLoop {
       if (now.getTime() - lastActivity < idleMs) continue;
       try {
         await client.closeSession(attachment.sessionId);
+        this.deps.binder.sessionClosed(attachment.sessionId);
         this.deps.conversations.setAttachment(note.id, { state: 'sleeping' });
         this.deps.log(`conversation ${note.id}: idle, session ${attachment.sessionId} closed`);
         report.sleptNotes.push(note.id);

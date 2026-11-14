@@ -953,6 +953,8 @@ export class BotCore implements BotHostApi {
         this.profile = { ...this.profile, telegram: { ...this.profile.telegram, ownerChatId: chatId }, updatedAt: this.now().toISOString() };
         saveProfile(this.paths, this.profile);
         this.log('telegram owner chat bound and saved');
+        // SPEC-003 FR-15: the direct message now reaches Telegram too.
+        this.bus.emit({ type: 'profile.updated', name: this.profile.name, avatar: this.profile.avatar });
       },
       onOwnerMessage: async (message) => {
         // A redelivered update whose work item was journaled before a crash is not accepted twice.
@@ -982,6 +984,8 @@ export class BotCore implements BotHostApi {
     this.log(`telegram token ${token ? 'stored' : 'cleared'} (${this.secrets.protection()} protection)`);
     await this.stopTelegram();
     this.startTelegram();
+    // SPEC-003 FR-15: whether the direct message reaches Telegram may have changed.
+    this.bus.emit({ type: 'profile.updated', name: this.profile.name, avatar: this.profile.avatar });
   }
 
   /** Re-stores secrets a host without a cipher (the CLI) wrote, when this host has one. */
@@ -1589,10 +1593,12 @@ export class BotCore implements BotHostApi {
     const desktopWas = this.profile.desktopControl.enabled;
     const heartbeatWas = this.profile.heartbeat.enabled;
     // Anything a window draws from the profile: the Cat's name and look, the note header's (i) of the
-    // execution target (SPEC-003 FR-11), whether replies show their steps (FR-12) and system lines (FR-14).
+    // execution target (SPEC-003 FR-11), whether replies show their steps (FR-12) and system lines (FR-14),
+    // and whether the direct message's send button is Telegram's paper plane (FR-15).
     const presentationChanged = result.profile.name !== this.profile.name || result.profile.avatar !== this.profile.avatar
       || result.targetChanged || result.profile.showProgressDetails !== this.profile.showProgressDetails
-      || result.profile.showVerboseMessages !== this.profile.showVerboseMessages;
+      || result.profile.showVerboseMessages !== this.profile.showVerboseMessages
+      || result.profile.telegram.enabled !== this.profile.telegram.enabled;
     saveProfile(this.paths, result.profile);
     this.profile = result.profile;
     if (presentationChanged) this.bus.emit({ type: 'profile.updated', name: this.profile.name, avatar: this.profile.avatar });

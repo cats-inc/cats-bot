@@ -63,9 +63,10 @@ export class ResponsePresentation {
       block.status = entry.isError ? 'error' : 'complete';
     }
   }
-  seal(state: 'completed' | 'cancelled' | 'failed' | 'interrupted', terminalSeq?: number): void {
+  seal(state: 'completed' | 'cancelled' | 'failed' | 'interrupted', endedAt: Date, terminalSeq?: number): void {
     this.response.text = this.response.text.trim();
     this.response.presentation!.phase = 'sealed';
+    this.response.presentationEndedAt = endedAt.toISOString();
     for (const block of this.response.presentation!.blocks) {
       if (block.status === 'streaming') block.status = state === 'completed' ? 'complete' : 'error';
     }

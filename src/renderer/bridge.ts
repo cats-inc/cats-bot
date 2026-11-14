@@ -107,6 +107,11 @@ export interface NoteWindowState {
   layer: NoteLayer;
   layers: NoteLayer[];
   botName: string;
+  /**
+   * SPEC-012 FR-5: the faces of the cats this bot's notes can hear from: every other cat for the Boss Cat, the
+   * Boss Cat for any other. Notes draw another cat's messages with them.
+   */
+  peers: Array<{ id: string; name: string; avatar: BotAvatar | null; bossCat: boolean }>;
 }
 
 export interface NoteLayersView {

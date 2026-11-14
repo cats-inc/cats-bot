@@ -515,6 +515,14 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   the time shows the full date and time. Create a schedule: with "Show verbose messages" off its "Schedule
   created" line is hidden, and it appears at once when the switch is turned on. Decisions and errors show
   either way.
+- Note header, faces and tooltips (SPEC-003 FR-11, FR-15 to FR-17): on a note shown without focus, hover each
+  header and composer button, the (i) and a time: the note's own tooltip shows (a native one does not, which
+  is the point). Clickable controls show the paw cursor and the (i) the plain arrow. The Boss Cat's header
+  face has the gold ring and its tooltip names the role; replies carry no face, and the time sits inside
+  each bubble. A contact note puts the Boss Cat on the right and the other cat on the left, both with face
+  and name, and the header shows the other cat. The direct message's send button is a paper plane only
+  with Telegram on, a token stored and the owner's chat bound. Scroll up: the scroll-to-latest button shows
+  over the footer, also above a composer notice, and takes the note to the end.
 - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
   shows at the top of the composer and the draft and buttons do not move. Nothing is added to the
   transcript, the notice stays (also past a minute), and ✕ dismisses it. A permission notice keeps "Open

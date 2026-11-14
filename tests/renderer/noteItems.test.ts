@@ -128,4 +128,10 @@ test('verbose messages are the system lines; a decision made from one, an error 
   assert.deepEqual(items.map((item) => [item.type, isVerboseItem(item)]), [
     ['entry', false], ['entry', true], ['decision', false], ['entry', false], ['entry', false],
   ]);
+  // A session that cannot go on is why a message got no answer: the owner sees it with the switch off too.
+  const stuck = buildNoteItems([
+    entry(1, 'error', 'Could not resume the previous session: No provider session ID to resume', { origin: 'system' }),
+    entry(2, 'error', 'Automatic session replacement stopped because the previous replacement has not completed a turn.', { origin: 'system' }),
+  ], []);
+  assert.deepEqual(stuck.map(isVerboseItem), [false, false]);
 });
