@@ -52,6 +52,7 @@ const PROFILE: BotProfile = {
   replyLanguage: 'hub',
   hubLanguage: null,
   showProgressDetails: false,
+  showVerboseMessages: false,
   updatedAt: '2026-10-28T00:00:00.000Z',
 };
 

@@ -1,5 +1,6 @@
 import type { BotInteraction, TranscriptEntry, TranscriptEntryKind, WorkItem } from '../../core/types.ts';
 import { t } from '../localeStore.ts';
+import { messageTime, readTime } from './messageTime.ts';
 
 /**
  * SPEC-001 FR-33, SPEC-003: what the note shows, apart from React. The note
@@ -95,14 +96,15 @@ export function entryText(entry: TranscriptEntry): string {
 /** The time under an owner or bot message; an unprompted (heartbeat) reply says so. */
 export function entryMeta(
   entry: TranscriptEntry,
-  formatTime = (at: Date) => at.toLocaleTimeString(),
+  formatTime = messageTime,
 ): string | null {
-  if (!entry.at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
+  const at = readTime(entry.at);
+  if (!at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
   const unprompted =
     entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('unprompted')} · ` : '';
   // SPEC-009 FR-10: a message from another bot carries that bot's name.
   const from = entry.origin === 'bot' && entry.from ? `${t('from {name}', { name: entry.from })} · ` : '';
-  return `${unprompted}${from}${formatTime(new Date(entry.at))}`;
+  return `${unprompted}${from}${formatTime(at)}`;
 }
 
 export { errorText } from '../errors.ts';
@@ -134,6 +136,14 @@ export interface DecisionItem {
 }
 
 export type NoteItem = { type: 'entry' | 'response'; key: string; entry: TranscriptEntry } | ToolItem | DecisionItem;
+
+/**
+ * SPEC-003 FR-14: what "Show verbose messages" keeps: the system lines about sessions and schedules. A decision
+ * made from a system line, an error and every message show either way.
+ */
+export function isVerboseItem(item: NoteItem): boolean {
+  return item.type === 'entry' && item.entry.kind === 'system';
+}
 
 /** Work items that ask the owner something: `ask_owner` questions and interrupted turns to run again. */
 const DECIDED_BY_OWNER = new Set(['ask_owner', 'recovery']);

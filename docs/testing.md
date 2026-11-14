@@ -502,17 +502,24 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
     restarting Cats Bot.
   - Deny Speech Recognition, then the microphone, and dictate: each composer notice names its own pane and
     its button opens it.
-  - Live progress details (SPEC-003 FR-12): with the switch off in Settings → Conversations, a reply that
-    used a tool shows only its text and there is no link. Turn it on: the open note shows "1 step ▸" under
-    that reply at once, and the link opens and folds that reply alone. A reply still being written shows its
-    steps as they come and folds them when it is sealed. Turning the switch off folds every note at once.
-  - Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
-    shows at the top of the composer and the draft and buttons do not move. Nothing is added to the
-    transcript, the notice stays (also past a minute), and ✕ dismisses it. A permission notice keeps "Open System Settings". Attach a file over
-    10 MB and send: the notice names it and goes when the file is removed. A send or retry the core refuses
-    is a notice above the restored draft, not a transcript line.
   - Switch Cats Bot off in General > Login Items with start at login on. Cats Bot Settings > General shows the
     approval line, and its button opens Login Items.
+- Live progress details (SPEC-003 FR-12): with the switch off in Settings → Conversations, a reply that
+  used a tool shows only its text and there is no link; an unprompted (heartbeat) reply's tool cards show
+  either way. Turn it on: the open note shows "1 step ▸" under that reply at once, and the link opens and
+  folds that reply alone. A reply still being written shows its steps as they come and folds them when it
+  is sealed; a finished reply with only tool steps keeps them open. Turning the switch off folds every
+  note at once.
+- Dates and verbose messages (SPEC-003 FR-13, FR-14): with messages on several days, each day starts with a
+  divider (Today, Yesterday, then the date and weekday) and a bubble shows its time without seconds; hovering
+  the time shows the full date and time. Create a schedule: with "Show verbose messages" off its "Schedule
+  created" line is hidden, and it appears at once when the switch is turned on. Decisions and errors show
+  either way.
+- Composer notices (ADR-024): on a Mac with no microphone, click the microphone button twice. One notice
+  shows at the top of the composer and the draft and buttons do not move. Nothing is added to the
+  transcript, the notice stays (also past a minute), and ✕ dismisses it. A permission notice keeps "Open
+  System Settings". Attach a file over 10 MB and send: the notice names it and goes when the file is
+  removed. A send or retry the core refuses is a notice above the restored draft, not a transcript line.
 - Dictation (SPEC-003 FR-10): only a signed and notarized macOS package (hardened runtime, the
   audio-input entitlement and the usage strings) proves the microphone works as shipped; an unsigned
   development run proves the helper and the note. Grant the microphone and speech recognition, dictate

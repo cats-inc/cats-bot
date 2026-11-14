@@ -477,6 +477,9 @@ test('a new look is announced at once and keeps the session (SPEC-008 FR-29)', a
     assert.equal((await core.getProfile()).configRevision, revision, 'not a session setting');
     await core.updateProfile({ showProgressDetails: true });
     assert.equal(seen.length, 3, 'unchanged, nothing sent');
+    // SPEC-003 FR-14: and when verbose messages are switched.
+    await core.updateProfile({ showVerboseMessages: true });
+    assert.equal(seen.length, 4);
   } finally {
     off();
     await core.stop();

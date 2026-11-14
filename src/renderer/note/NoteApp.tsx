@@ -4,7 +4,7 @@ import { t, useI18n } from '../i18n.ts';
 import { conversationWorkState } from './workState.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { conversationTitle } from '../localeStore.ts';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 
 import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from '../../core/types.ts';
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
@@ -17,7 +17,8 @@ import type { SystemSettingsPane } from '../../shared/systemSettings.ts';
 import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
 import { executionSummary } from './executionSummary.ts';
-import { foldedStepCount, isLiveReply, stepsLinkLabel } from './responseSteps.ts';
+import { foldedStepCount, replySteps, stepsLinkLabel } from './responseSteps.ts';
+import { currentDayKey, dayLabel, dayStartKeys, messageTimestamp, readTime, subscribeDay } from './messageTime.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -33,6 +34,7 @@ import {
   entryMeta,
   entryText,
   errorText,
+  isVerboseItem,
   liveInteractions,
   mergeTranscriptEntries,
   upsertWorkItem,
@@ -41,6 +43,7 @@ import {
   visibleEntries,
   type DecisionItem,
   type DecisionStatus,
+  type NoteItem,
   type PendingReply,
   type ToolItem,
 } from './transcript.ts';
@@ -65,6 +68,21 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
       {LAYER_PLATES.map((plate, index) => <path key={plate.layer} d={plate.path} className={states[index]} />)}
     </svg>
   );
+}
+
+/** SPEC-003 FR-13: when a note item was sent; a tool card of an old transcript has no time of its own. */
+function itemAt(item: NoteItem): Date | null {
+  return item.type === 'tool' ? null : readTime(item.entry.at);
+}
+
+/**
+ * SPEC-003 FR-13: the line that starts a new day in the transcript. It alone follows the day clock, so at
+ * midnight "Today" becomes "Yesterday" here without redrawing the transcript.
+ */
+function DayDivider({ at }: { at: Date }) {
+  useI18n();
+  useSyncExternalStore(subscribeDay, currentDayKey);
+  return <div className="day-divider" role="separator" title={messageTimestamp(at)}><span>{dayLabel(at)}</span></div>;
 }
 
 /**
@@ -149,14 +167,14 @@ function Entry({ entry, conversationId, retry }: {
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
       : entry.kind === 'owner' ? <OwnerBody conversationId={conversationId} entry={entry} />
         : <p className="messageBody">{entryText(entry)}</p>}
-    {meta && <span className="entry-meta">{meta}</span>}
+    {meta && <span className="entry-meta" title={messageTimestamp(readTime(entry.at)!)}>{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;
 }
 
 /**
  * The glyph of the composer button a notice is about, struck out, so the notice reads as that button's.
- * Send is a text button: its notice has an alert mark instead.
+ * A failed send or retry is about the message, not one tool button: its notice has an alert mark instead.
  */
 function NoticeSourceIcon({ source }: { source: ComposerNoticeSource }) {
   if (source === 'send') {
@@ -298,6 +316,7 @@ export function NoteApp() {
   // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
   const [executionInfo, setExecutionInfo] = useState('');
   const executionRequest = useRef(0);
+  const executionTarget = useRef('');
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
@@ -307,6 +326,8 @@ export function NoteApp() {
   const [speakerAvatar, setSpeakerAvatar] = useState<string | undefined>(undefined);
   // SPEC-003 FR-12: the bot's live progress details switch, and the finished replies whose steps are open.
   const [progressDetails, setProgressDetails] = useState(false);
+  // SPEC-003 FR-14: the bot's verbose messages switch; off, the system lines about sessions and schedules hide.
+  const [verboseMessages, setVerboseMessages] = useState(false);
   const [openSteps, setOpenSteps] = useState<ReadonlySet<string>>(() => new Set());
   const toggleSteps = useCallback((id: string) => setOpenSteps((current) => {
     const next = new Set(current);
@@ -389,21 +410,30 @@ export function NoteApp() {
     setDirectMessage(record.role === 'home');
     const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
     setProgressDetails(profile.showProgressDetails);
+    setVerboseMessages(profile.showVerboseMessages);
     // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
     setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
     setSpeakerAvatar(avatarUrl(profile.avatar));
     // SPEC-009 FR-10: the role belongs to the bot, so it follows the name, before the conversation.
     setTitle(`${profile.name}${noteRoleSuffix(status.bossCat)} · ${conversationTitle(record)}`);
-    const request = ++executionRequest.current;
+    // The provider's and model's names change only with the target (and the effort's wording with the language);
+    // the header refreshes far more often, and listing providers probes every CLI on the PATH.
     const target = profile.executionTarget;
-    void Promise.all([
-      api.invoke('listModels', target.provider).catch(() => null),
-      api.invoke('listProviders').catch(() => []),
-    ]).then(([catalog, providers]) => {
-      if (request !== executionRequest.current) return;
-      setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
-    });
+    const targetKey = `${locale}|${JSON.stringify(target)}`;
+    if (targetKey !== executionTarget.current) {
+      const request = ++executionRequest.current;
+      void Promise.all([
+        api.invoke('listModels', target.provider).catch(() => null),
+        api.invoke('listProviders').catch(() => []),
+      ]).then(([catalog, providers]) => {
+        if (request !== executionRequest.current) return;
+        setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+        // Before Runtime answers, the catalog is missing or the packaged one, which may not name the model yet:
+        // only Runtime's own catalog settles the names, so until then the next refresh asks again.
+        if (catalog?.source === 'runtime') executionTarget.current = targetKey;
+      });
+    }
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
@@ -511,6 +541,10 @@ export function NoteApp() {
   }, [markSeenIfFocused, refreshHeader, reload, setRunning, refreshInteractions, refreshDesktop]);
 
   const items = useMemo(() => buildNoteItems(entries, workItems), [entries, workItems]);
+  const visibleItems = useMemo(() => (verboseMessages ? items : items.filter((item) => !isVerboseItem(item))),
+    [items, verboseMessages]);
+  // SPEC-003 FR-13: the items that start a new day get a divider above them, whatever the switches say.
+  const dayStarts = useMemo(() => dayStartKeys(visibleItems, itemAt, (item) => item.key), [visibleItems]);
   const activity = conversationWorkState(workItems, conversation.current);
   const busy = running || activity.active;
   const activeRequests = liveInteractions(interactions);
@@ -581,6 +615,35 @@ export function NoteApp() {
     if (dictation.listening) setNotice((current) => clearComposerNotice(current, 'voice'));
   }, [dictation.listening]);
 
+  const renderItem = (item: NoteItem) => {
+    if (item.type === 'response' && item.entry.presentation) {
+      const response = item.entry.presentation;
+      // SPEC-003 FR-12: with the switch on, a live reply shows its steps and a finished one folds them
+      // behind a link of its own; with it off, only text and failed steps show.
+      const steps = replySteps(response, progressDetails, openSteps.has(response.id));
+      const open = steps.open;
+      const meta = entryMeta(item.entry);
+      const link = steps.link
+        ? <button type="button" className="response-steps" aria-expanded={open} onClick={() => toggleSteps(response.id)}>
+          {stepsLinkLabel(foldedStepCount(response), open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
+        </button>
+        : null;
+      return <ConversationResponse
+        response={response} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
+        labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
+        showProgressDetails={open} copyLabel={t('Copy')}
+        afterBubble={<span className="entry-meta">
+          {meta && <span title={messageTimestamp(readTime(item.entry.at)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
+        </span>}
+        onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
+    }
+    if (item.type === 'tool') return <ToolCard item={item} />;
+    if (item.type === 'decision') return <DecisionCard item={item} />;
+    const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
+    return <Entry entry={item.entry} conversationId={conversation.current}
+      retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined} />;
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     // Enter that confirms an IME candidate (Chinese, Japanese, …) is not a send.
     if (event.nativeEvent.isComposing || event.keyCode === 229) return;
@@ -617,7 +680,9 @@ export function NoteApp() {
           id="settings"
           title={t('Settings and conversations')}
           aria-label={t('Settings and conversations')}
-          onClick={() => void api.shell.openSettings()}
+          // SPEC-002 FR-4: like the Cat's "Manage conversations…", on the Conversations tab, where this note's
+          // display switches are.
+          onClick={() => void api.shell.openSettings('notes')}
         >
           <SettingsGlyph />
         </button>
@@ -644,32 +709,9 @@ export function NoteApp() {
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
         onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
         {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}
-        {items.map((item) => {
-          if (item.type === 'response' && item.entry.presentation) {
-            const response = item.entry.presentation;
-            // SPEC-003 FR-12: with the switch on, a live reply shows its steps and a finished one folds them
-            // behind a link of its own; with it off, only text and failed steps show.
-            const live = isLiveReply(response);
-            const folded = foldedStepCount(response);
-            const open = progressDetails && (live || openSteps.has(response.id));
-            const meta = entryMeta(item.entry);
-            const link = progressDetails && !live && folded > 0
-              ? <button type="button" className="response-steps" aria-expanded={open} onClick={() => toggleSteps(response.id)}>
-                {stepsLinkLabel(folded, open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
-              </button>
-              : null;
-            return <ConversationResponse key={item.key}
-              response={response} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
-              labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
-              showProgressDetails={open} copyLabel={t('Copy')}
-              afterBubble={<span className="entry-meta">{meta}{meta && link ? ' · ' : null}{link}</span>}
-              onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
-          }
-          if (item.type === 'tool') return <ToolCard key={item.key} item={item} />;
-          if (item.type === 'decision') return <DecisionCard key={item.key} item={item} />;
-          const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
-          return <Entry key={item.key} entry={item.entry} conversationId={conversation.current}
-            retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined} />;
+        {visibleItems.map((item) => {
+          const startsDay = dayStarts.has(item.key) ? itemAt(item) : null;
+          return <Fragment key={item.key}>{startsDay && <DayDivider at={startsDay} />}{renderItem(item)}</Fragment>;
         })}
         {pending && (
           <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>
@@ -677,6 +719,7 @@ export function NoteApp() {
           </ConversationMessage>
         )}
         <div ref={interactionAnchor}>
+
           {activeRequests.map((i) => (
             <InteractionCard
               key={`${i.workerGeneration}:${i.interactionId}`}
