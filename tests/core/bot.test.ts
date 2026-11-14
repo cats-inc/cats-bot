@@ -312,8 +312,15 @@ test('a crashed runtime is restarted with backoff and the home session is rebuil
   try {
     const first = await sendAndWait(core, 'home', 'before crash');
     assert.equal(first.state, 'completed');
+    // SPEC-001 FR-27: a Runtime exit stops the live sessions; that is not their own failure.
+    const binder = (core as unknown as { binder: { sessionClosed(id: string): void } }).binder;
+    const stopped: string[] = [];
+    const sessionClosed = binder.sessionClosed.bind(binder);
+    binder.sessionClosed = (id) => { stopped.push(id); sessionClosed(id); };
+    const live = (await core.listConversations())[0]!.attachment.sessionId;
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'failed', 10_000);
     assert.equal((await core.listConversations())[0]!.attachment.state, 'sleeping');
+    assert.deepEqual(stopped, [live], 'the binder learns the exit stopped the live session');
     await waitForEvent(core, (event) => event.type === 'runtime.status' && event.state === 'ready', 10_000);
     const second = await sendAndWait(core, 'home', 'after crash');
     assert.equal(second.state, 'completed', second.error);

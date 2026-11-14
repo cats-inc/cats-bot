@@ -8,7 +8,7 @@ import { createProfile } from '../../src/core/profile/profile.ts';
 import { botPathsFor, conversationFile } from '../../src/core/store/paths.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeSessionView } from '../../src/core/runtime/client.ts';
 import type { AttachmentState } from '../../src/core/types.ts';
-import { makeTempHome } from '../support/harness.ts';
+import { awakeNow, makeTempHome } from '../support/harness.ts';
 import { TurnRunner } from '../../src/core/queue/turnRunner.ts';
 import { createWorkItem } from '../../src/core/queue/workItems.ts';
 import type { RuntimeStreamEvent } from '../../src/core/runtime/client.ts';
@@ -258,6 +258,86 @@ for (const refusal of ['no capacity', 'bad request', 'never sent'] as const) {
     if (refusal !== 'never sent') assert.equal(sent, 2);
   });
 }
+
+for (const refusal of ['never sent', 'no capacity'] as const) {
+  test(`reconcile's refused try (${refusal}) leaves no worker, so a later tick tries again`, async t => {
+    const f = fixture(t);
+    f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+    f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+    let refuse = true;
+    if (refusal === 'never sent') {
+      const controls = f.client.sessionControls;
+      f.client.sessionControls = async () => { if (refuse) throw new Error('fetch failed'); return controls(); };
+    } else {
+      const create = f.client.createSession;
+      f.client.createSession = async (body: unknown) => {
+        if (refuse) throw new RuntimeHttpError(503, 'Max sessions (8) reached', null);
+        return create(body);
+      };
+    }
+    // Runtime is not taking sessions yet: the try is refused, so no worker exists and the fence goes back.
+    assert.equal((await f.binder.bind('home')).ok, false);
+    assert.equal(f.store.home().attachment.replacementPending, true);
+    assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+    refuse = false;
+    // A refused try spent nothing: the next tick, after the wake back-off, tries again and the cat wakes.
+    assert.deepEqual(await f.binder.bind('home'), { ok: true, sessionId: 'new-1', how: 'created' });
+  });
+}
+
+test('reconcile tries an earlier process\'s unused session once even when it was never fenced', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const create = f.client.createSession;
+  let attempts = 0;
+  let timeout = true;
+  f.client.createSession = async (body: unknown) => {
+    attempts++;
+    if (timeout) throw new Error('request timed out');
+    return create(body);
+  };
+  // A timeout may have left a worker: the try is spent, and the attachment goes back as it was.
+  assert.equal((await f.binder.bind('home')).ok, false);
+  assert.equal(f.store.home().attachment.replacementPending, undefined);
+  assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+  for (let tick = 0; tick < 3; tick++) assert.equal((await f.binder.bind('home')).ok, false);
+  assert.equal(attempts, 1, 'not retried on every tick');
+  timeout = false;
+  // The owner's next turn still rebuilds.
+  assert.deepEqual(await f.binder.bind('home', { forTurn: true }), { ok: true, sessionId: 'new-1', how: 'created' });
+  assert.equal(attempts, 2);
+});
+
+test('rest hours close an unused replacement through the life loop, and the morning tick rewarms it', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const closed: string[] = [];
+  Object.assign(f.client, { closeSession: async (id: string) => { closed.push(id); } });
+  // This process makes the replacement, and the cat, waiting for the owner, runs no turn in it.
+  assert.deepEqual(await f.binder.bind('home'), { ok: true, sessionId: 'new-1', how: 'created' });
+  assert.equal(f.store.home().attachment.replacementPending, true);
+  let now = new Date(2026, 10, 11, 12, 0);
+  f.profile.heartbeat = { ...f.profile.heartbeat, enabled: true, ...awakeNow(now, { sinceWake: 5 * 60, untilBed: 1 }) };
+  const life = new LifeLoop({ now: () => now, random: () => 0, profile: () => f.profile,
+    heartbeatMode: () => 'assist', conversations: f.store, binder: f.binder,
+    client: () => f.client as unknown as RuntimeClient, runtimeState: () => 'ready', ensureRuntime: async () => true,
+    isTurnRunning: () => false, hasQueuedWork: () => false, hasQueuedWorkIn: () => false, enqueue: () => {}, schedules: () => [],
+    saveSchedule: () => {}, awaitingOwner: () => [], expireWorkItem: () => {}, journal: () => {}, emit: () => {},
+    log: () => {}, readLifeState: () => null, writeLifeState: () => {},
+  });
+  now = new Date(now.getTime() + 5 * 60_000);
+  assert.equal((await life.tick()).outcome, 'slept');
+  assert.deepEqual(closed, ['new-1']);
+  assert.equal(f.store.home().attachment.state, 'sleeping');
+  // The next morning's wake time.
+  now = new Date(2026, 10, 12, 7, 30);
+  const morning = await life.tick();
+  assert.equal(morning.outcome, 'rebuilt');
+  assert.equal(f.store.home().attachment.sessionId, 'new-2');
+  assert.equal(f.calls.create.length, 2);
+});
 
 test('a turn joining a reconcile bind shares its unstarted replacement instead of staying blocked', async t => {
   const f = fixture(t);
