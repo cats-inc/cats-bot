@@ -69,7 +69,7 @@ button {
   border: 1px solid var(--edge);
   background: var(--panel);
   color: var(--ink);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 button:hover {
@@ -252,7 +252,7 @@ textarea {
 }
 
 .advanced summary {
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   font-weight: 600;
 }
 
@@ -288,7 +288,7 @@ textarea {
   font-size: 12px;
   line-height: 1.25;
   text-align: center;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .avatar-choice:hover {
@@ -303,7 +303,7 @@ textarea {
   height: 100%;
   margin: 0;
   opacity: 0;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .avatar-choice:has(input:checked) {
@@ -621,7 +621,7 @@ input[type='checkbox'].switch {
   border: 0;
   border-radius: 10px;
   background: var(--switch-off);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   transition: background-color 0.15s ease;
 }
 
@@ -810,7 +810,7 @@ button.quiet.danger {
   padding-right: 4px;
   color: var(--muted-text);
   font-size: 12px;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .bot-run {
@@ -1352,7 +1352,7 @@ button.quiet.danger {
   font-size: 12px;
   line-height: 1.25;
   text-align: center;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .setup-choice:hover {
@@ -1366,7 +1366,7 @@ button.quiet.danger {
   height: 100%;
   margin: 0;
   opacity: 0;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .setup-choice:has(input:checked) {
@@ -1446,7 +1446,7 @@ button.quiet.danger {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .setup-row-top input[type='checkbox'] {
@@ -1624,7 +1624,7 @@ button.quiet.danger {
   color: var(--ink);
   font-size: 12px;
   white-space: nowrap;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .setup-update.is-empty {

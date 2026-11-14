@@ -185,7 +185,7 @@ body.offline .cat {
   border: 1px solid #f1e3a6;
   border-radius: 12px;
   box-shadow: 0 4px 12px rgba(60, 40, 10, 0.25);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   animation: rise 0.25s ease-out;
 }
 
@@ -228,6 +228,6 @@ body.offline .cat {
   color: #7b7560;
   font-size: 15px;
   line-height: 1;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   padding: 2px 4px;
 }

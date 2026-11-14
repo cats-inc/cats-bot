@@ -40,6 +40,7 @@ import { arrangeFloating } from './floatingPlacement.ts';
 import { attachOrStartCore, CoreHostedElsewhereError } from './coreHost.ts';
 import { BotManagementError, BotManager } from './hub/botManager.ts';
 import { BossCatBroker } from './hub/bossCatBroker.ts';
+import { notePeers } from './notePeers.ts';
 import { PeerBoardsPusher } from './hub/peerBoards.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, startAtLoginByDefault, writeHubState, type HubState } from './hub/hubState.ts';
@@ -1584,6 +1585,10 @@ async function main(): Promise<void> {
       layers: presenter?.windows.availableLayers() ?? ['normal'],
       // FR-17: a window shows the name of the bot it belongs to.
       botName: (presenter ? (await presenter.core.getProfile().catch(() => null))?.name : null) ?? app.getName(),
+      peers: presenter && owner ? notePeers(manager.registry, presenter.botId, (id) => {
+        const root = join(hubPaths.bots, id);
+        return existsSync(root) ? readBotProfile(root) : null;
+      }) : [],
     };
   });
   ipcMain.handle('window:layerMenu', (event) => {

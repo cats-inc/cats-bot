@@ -61,6 +61,56 @@ html, body {
   text-overflow: ellipsis;
 }
 
+/* SPEC-009 FR-10: the note's cat by its face, before its name. Smaller than a bubble's face: it sits with the
+   18 px header glyphs. The Boss Cat's face has a gold ring, as in Cats Desktop, a shade deeper here so it
+   reads on the yellow header. */
+.note-face {
+  display: grid;
+  flex: none;
+  /* The header drags the window; the face keeps its pointer events for its tooltip. */
+  -webkit-app-region: no-drag;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.note-face img,
+.transcriptAvatar img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.catFaceBoss {
+  background: #fffdf2;
+  box-shadow: 0 0 0 2px #d4a32a;
+}
+
+.catFaceBoss img {
+  width: 86%;
+  height: 86%;
+}
+
+/* A cat this note does not know by look: its initial, as Cats Desktop draws a face without a picture. */
+.catFaceInitial {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #8b7e74;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.transcriptAvatar {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
 /* The (i) after the title, Cats Desktop's model-picker (i): hover or focus shows the bot's provider, model and
    effort. It stays whole when the title is cut short. */
 .note-info {
@@ -77,7 +127,8 @@ html, body {
   font-size: 9px;
   font-weight: 600;
   line-height: 1;
-  cursor: help;
+  /* Not a button and not a help link: the plain arrow, with the tooltip (tooltip.ts) on hover or focus. */
+  cursor: default;
   -webkit-app-region: no-drag;
 }
 
@@ -89,28 +140,6 @@ html, body {
 .note-info:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 1px;
-}
-
-/* Keyboard focus shows the text too: Chromium shows a title only on hover. */
-.note-info { position: relative; }
-.note-info:focus-visible::after {
-  content: attr(title);
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 50%;
-  z-index: 20;
-  transform: translateX(-50%);
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--ink);
-  color: var(--paper);
-  width: max-content;
-  max-width: 220px;
-  font-size: 11px;
-  font-weight: 400;
-  line-height: 1.3;
-  white-space: normal;
-  pointer-events: none;
 }
 
 .note-unread {
@@ -148,7 +177,7 @@ html, body {
   border-radius: 6px;
   background: transparent;
   color: var(--ink);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .note-button:hover {
@@ -235,11 +264,37 @@ html, body {
 }
 
 .note-composer {
+  position: relative;
   padding: 6px 8px 8px;
   background: var(--paper-edge);
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* SPEC-003 FR-17: Cats Desktop's scroll-to-latest button. It hangs over the footer's top edge, so a composer
+   notice (which is inside the footer, at its top) pushes it up instead of hiding under it. */
+.note-scroll-latest {
+  position: absolute;
+  top: -40px;
+  left: 50%;
+  z-index: 5;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  padding: 0;
+  transform: translateX(-50%);
+  border: 1px solid #e3d48f;
+  border-radius: 50%;
+  background: #fffdf2;
+  color: var(--muted);
+  box-shadow: 0 2px 8px rgba(60, 40, 10, 0.16);
+}
+
+.note-scroll-latest:hover {
+  color: var(--ink);
+  box-shadow: 0 4px 12px rgba(60, 40, 10, 0.22);
 }
 
 textarea {
@@ -270,7 +325,7 @@ textarea {
   border-radius: 50%;
   background: var(--accent);
   color: #fff;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .note-send:disabled {
@@ -282,7 +337,7 @@ textarea {
   border: 0;
   border-radius: 6px;
   padding: 5px 12px;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   font: inherit;
   background: #e8dcc0;
 }
@@ -304,7 +359,7 @@ textarea {
   border-radius: 6px;
   padding: 5px 12px;
   background: #fffdf2;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   font: inherit;
 }
 
@@ -334,7 +389,7 @@ textarea {
   color: var(--muted);
   font: inherit;
   text-align: left;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .tool-head:hover {
@@ -432,7 +487,7 @@ textarea {
   border-radius: 6px;
   padding: 4px 12px;
   font: inherit;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .decision-approve {
@@ -497,7 +552,7 @@ textarea {
   background: #b5452f;
   color: #fff;
   font: inherit;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .desktop-stop:disabled {
@@ -554,7 +609,7 @@ textarea {
   border-radius: 6px;
   padding: 4px 12px;
   font: inherit;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 
 .desktop-grant .provider-actions button:disabled {
@@ -595,7 +650,7 @@ html { font-size: 16px; }
   background: transparent;
   color: var(--muted);
   font: inherit;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 .response-steps:hover { color: var(--ink); text-decoration: underline; }
 .response-steps:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
@@ -615,7 +670,7 @@ html { font-size: 16px; }
   border-radius: 50%;
   background: transparent;
   color: var(--muted);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   padding: 0;
 }
 .composerIconButton:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
@@ -643,7 +698,7 @@ html { font-size: 16px; }
   background: rgba(0, 0, 0, 0.5);
   color: #fff;
   font-size: 0.72rem;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   display: grid;
   place-items: center;
   padding: 0;
@@ -726,7 +781,7 @@ html { font-size: 16px; }
   background: #fffdf2;
   color: var(--ink);
   font: inherit;
-  cursor: pointer;
+  cursor: var(--paw-cursor);
 }
 .composerNoticeAction:hover { background: #fff6dc; }
 .composerNoticeDismiss {
@@ -739,7 +794,7 @@ html { font-size: 16px; }
   border-radius: 50%;
   background: transparent;
   color: var(--muted);
-  cursor: pointer;
+  cursor: var(--paw-cursor);
   padding: 0;
 }
 .composerNoticeDismiss:hover { background: rgba(0, 0, 0, 0.06); color: var(--ink); }
@@ -750,4 +805,34 @@ html { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .composerNotice { animation: none; }
+}
+
+/* tooltip.ts: the note's own tooltips. A note opens without taking focus, and macOS shows a native title only
+   for the active app. Narrow notes wrap a long tooltip instead of running it off the window. */
+.tooltipPortal {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  max-width: min(240px, calc(100vw - 8px));
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.tooltipPortal.tooltipVisible {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tooltipPortal { transition: none; }
 }

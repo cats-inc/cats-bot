@@ -1,10 +1,22 @@
-import { ConversationMessage, ConversationResponse, ConversationMarkdown, RetryActionIcon } from '@cats-inc/platform-ui-web';
+import {
+  ConversationMessage,
+  ConversationResponse,
+  ConversationMarkdown,
+  ConversationSegmentBody,
+  RetryActionIcon,
+  type ConversationLabels,
+} from '@cats-inc/platform-ui-web';
+import {
+  conversationPlainText,
+  splitConversationPresentation,
+  type ConversationPresentation,
+} from '@cats-inc/platform-ui-web/contracts';
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
 import { conversationWorkState } from './workState.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { conversationTitle } from '../localeStore.ts';
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 
 import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from '../../core/types.ts';
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
@@ -27,6 +39,16 @@ import {
 } from './composerNotice.ts';
 import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
+  entrySpeaker,
+  headerCat,
+  reachesTelegram,
+  selfSpeaker,
+  type BubbleSpeaker,
+  type NoteCast,
+  type NoteCat,
+  type NotePeerLook,
+} from './speakers.ts';
+import {
   addEntry,
   appendDelta,
   buildNoteItems,
@@ -39,7 +61,6 @@ import {
   mergeTranscriptEntries,
   upsertWorkItem,
   mergeWorkItems,
-  noteRoleSuffix,
   visibleEntries,
   type DecisionItem,
   type DecisionStatus,
@@ -108,6 +129,56 @@ function HideGlyph() {
 
 const api = window.catsBot;
 
+/** A cat's face: its picture, or its initial while its look is not known to this note. */
+function CatFace({ cat, className }: { cat: NoteCat; className: string }) {
+  useI18n();
+  const classes = `${className}${cat.bossCat ? ' catFaceBoss' : ''}`;
+  // SPEC-009 FR-10: the gold ring is the Boss Cat's; the role is named on hover and to assistive technology.
+  // `data-tooltip`, not `title`: the tooltip takes a title over for good, and this one must go with the role.
+  const role = cat.bossCat
+    ? { role: 'img', 'aria-label': t('Boss Cat'), 'data-tooltip': t('Boss Cat') }
+    : { 'aria-hidden': true };
+  return cat.avatar
+    ? <span className={classes} {...role}><img src={cat.avatar} alt="" /></span>
+    : <span className={`${classes} catFaceInitial`} {...role}>{[...cat.name.trim()][0] ?? '?'}</span>;
+}
+
+/** SPEC-003 FR-16: the face and name over a bubble from another cat, or from either cat of a contact note. */
+function SpeakerTop({ cat }: { cat: NoteCat }) {
+  return <div className="transcriptMessageTop"><CatFace cat={cat} className="transcriptAvatar" /><strong>{cat.name}</strong></div>;
+}
+
+function replyLabels(): ConversationLabels {
+  return { tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') };
+}
+
+/**
+ * A reply, as Cats Desktop's transcript item composes it: one bubble per text segment. Its time and its steps
+ * link close the last bubble, inside it, like the time under every other message (SPEC-003 FR-13).
+ */
+function ReplyBubbles({ response, speaker, showProgressDetails, footer }: {
+  response: ConversationPresentation;
+  speaker: BubbleSpeaker;
+  showProgressDetails: boolean;
+  footer: ReactNode;
+}) {
+  useI18n();
+  const parts = splitConversationPresentation(response).filter((part) => part.phase !== 'sealed'
+    || part.blocks.some((block) => (block.kind === 'text' ? block.text.trim() : showProgressDetails || block.status === 'error')));
+  const tone = speaker.side === 'right' ? 'User' : 'Agent';
+  return <>{parts.map((part, index) => {
+    const text = conversationPlainText(part.blocks);
+    return <ConversationMessage key={part.id} id={part.id} senderKind={speaker.side === 'right' ? 'user' : 'agent'}
+      stackClassName={`transcriptMessageStack transcriptMessageStack${tone} typingIndicator`}
+      speaker={index === 0 && speaker.cat ? <SpeakerTop cat={speaker.cat} /> : null}
+      showCopy={part.phase === 'sealed' && !!text.trim()} copyLabel={t('Copy')}
+      onCopy={() => { void navigator.clipboard.writeText(text).catch(() => {}); }}>
+      <ConversationSegmentBody phase={part.phase} blocks={part.blocks} showProgressDetails={showProgressDetails} labels={replyLabels()} />
+      {index === parts.length - 1 ? footer : null}
+    </ConversationMessage>;
+  })}</>;
+}
+
 const FileIcon = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -150,18 +221,22 @@ interface EntryRetry {
   onRetry: () => void;
 }
 
-function Entry({ entry, conversationId, retry }: {
+function Entry({ entry, conversationId, retry, cast }: {
   entry: TranscriptEntry;
   conversationId: string;
   retry?: EntryRetry;
+  cast: NoteCast;
 }) {
   useI18n();
   const meta = entryMeta(entry);
+  // Copy takes the message alone, never its time or its sender.
   const copyText = entry.kind === 'owner' ? extractAttachments(entry.text).text : entry.text;
   const actions = retry
     ? [{ key: `retry:${entry.seq}`, title: t('Retry response'), icon: <RetryActionIcon />, onSelect: retry.onRetry }]
     : undefined;
-  return <ConversationMessage senderKind={entry.kind === 'owner' ? 'user' : entry.kind === 'bot' ? 'agent' : 'system'}
+  const speaker = entry.kind === 'owner' || entry.kind === 'bot' ? entrySpeaker(entry, cast) : null;
+  return <ConversationMessage senderKind={!speaker ? 'system' : speaker.side === 'right' ? 'user' : 'agent'}
+    speaker={speaker?.cat ? <SpeakerTop cat={speaker.cat} /> : null}
     copyLabel={t('Copy')} showCopy={!!copyText.trim()}
     onCopy={() => { void navigator.clipboard.writeText(copyText); }} actions={actions}>
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
@@ -246,8 +321,7 @@ function ToolCard({ item }: { item: ToolItem }) {
   return <ConversationResponse response={{ version: 1, id: item.key, phase: item.status === 'running' ? 'streaming' : 'sealed',
     blocks: [{ id: item.key, index: 0, kind: 'tool', status: item.status === 'running' ? 'streaming' : item.status === 'error' ? 'error' : 'complete',
       title: null, text: item.result ?? item.input, toolId: null, toolName: item.name, input: item.input, result: item.result }] }}
-    labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
-    copyLabel={t('Copy')} showProgressDetails />;
+    labels={replyLabels()} copyLabel={t('Copy')} showProgressDetails />;
 }
 
 const DECISION_OUTCOMES: Record<Exclude<DecisionStatus, 'waiting'>, string> = {
@@ -299,6 +373,19 @@ function DecisionCard({ item }: { item: DecisionItem }) {
   );
 }
 
+/** SPEC-003 FR-17: Cats Desktop's scroll-to-latest button, centered over the note's footer. */
+function ScrollToLatest({ onClick }: { onClick: () => void }) {
+  useI18n();
+  return <button type="button" className="note-scroll-latest" id="scroll-latest" aria-label={t('Scroll to latest')}
+    title={t('Scroll to latest')} onClick={onClick}>
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M8 3v10" />
+      <path d="M3 9l5 5 5-5" />
+    </svg>
+  </button>;
+}
+
 export function NoteApp() {
   const { locale } = useI18n();
   const requested = api.conversationId;
@@ -311,8 +398,10 @@ export function NoteApp() {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const [title, setTitle] = useState('Cats Bot');
-  // The direct message's send button is a paper plane; every other note's is an up arrow.
+  // SPEC-003 FR-15: the send button is a paper plane in the direct message once it reaches Telegram, an up
+  // arrow everywhere else. Until both are known it is the arrow.
   const [directMessage, setDirectMessage] = useState(requested === 'home');
+  const [telegram, setTelegram] = useState(false);
   // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
   const [executionInfo, setExecutionInfo] = useState('');
   const executionRequest = useRef(0);
@@ -320,10 +409,18 @@ export function NoteApp() {
 
   // Undefined until the header is read: nothing is sent before the window knows what note this is.
   // A header that cannot be read leaves the window usable; the core refuses contact-note writes anyway.
-  const [contact, setContact] = useState<{ bot: string; other: string } | null | undefined>(undefined);
+  const [contact, setContact] = useState<{ id: string; bot: string; other: string } | null | undefined>(undefined);
   const [speakerName, setSpeakerName] = useState('Cats Bot');
-  // SPEC-008 FR-29: replies carry the bot's look; nothing until its profile is read.
+  // SPEC-008 FR-29: the header carries the bot's look; nothing until its profile is read.
   const [speakerAvatar, setSpeakerAvatar] = useState<string | undefined>(undefined);
+  const [bossCat, setBossCat] = useState(false);
+  // SPEC-012 FR-5: the cats this note can hear from, by face.
+  const [peers, setPeers] = useState<NotePeerLook[]>([]);
+  const cast = useMemo<NoteCast>(() => ({
+    self: { name: speakerName, avatar: speakerAvatar, bossCat },
+    peers,
+    contact: contact ? { id: contact.id, name: contact.other } : null,
+  }), [speakerName, speakerAvatar, bossCat, peers, contact]);
   // SPEC-003 FR-12: the bot's live progress details switch, and the finished replies whose steps are open.
   const [progressDetails, setProgressDetails] = useState(false);
   // SPEC-003 FR-14: the bot's verbose messages switch; off, the system lines about sessions and schedules hide.
@@ -335,6 +432,8 @@ export function NoteApp() {
     return next;
   }), []);
   const followTranscript = useRef(true);
+  // SPEC-003 FR-17: whether the transcript shows its end; when it does not, a button takes it there.
+  const [atEnd, setAtEnd] = useState(true);
   const [unread, setUnread] = useState(0);
   const [layer, setLayer] = useState<NoteLayer>('normal');
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
@@ -408,15 +507,20 @@ export function NoteApp() {
     }
     conversation.current = record.id;
     setDirectMessage(record.role === 'home');
-    const [profile, status] = await Promise.all([api.invoke('getProfile'), api.invoke('status')]);
+    const [profile, status, telegramStatus] = await Promise.all([
+      api.invoke('getProfile'), api.invoke('status'), api.invoke('telegramStatus').catch(() => null),
+    ]);
     setProgressDetails(profile.showProgressDetails);
     setVerboseMessages(profile.showVerboseMessages);
+    setTelegram(reachesTelegram(profile.telegram, telegramStatus?.tokenStored === true));
     // SPEC-012 FR-6: the owner reads a contact note but never writes in it.
-    setContact(record.contactOf ? { bot: profile.name, other: record.contactName ?? record.contactOf } : null);
+    setContact(record.contactOf
+      ? { id: record.contactOf, bot: profile.name, other: record.contactName ?? record.contactOf } : null);
     setSpeakerName(profile.name);
     setSpeakerAvatar(avatarUrl(profile.avatar));
-    // SPEC-009 FR-10: the role belongs to the bot, so it follows the name, before the conversation.
-    setTitle(`${profile.name}${noteRoleSuffix(status.bossCat)} · ${conversationTitle(record)}`);
+    // SPEC-009 FR-10: the Boss Cat's role is the gold ring of the header's face, not words in the title.
+    setBossCat(status.bossCat?.holder === true);
+    setTitle(`${profile.name} · ${conversationTitle(record)}`);
     // The provider's and model's names change only with the target (and the effort's wording with the language);
     // the header refreshes far more often, and listing providers probes every CLI on the PATH.
     const target = profile.executionTarget;
@@ -437,7 +541,11 @@ export function NoteApp() {
     // SPEC-008 FR-17: the window's title carries the bot's name too.
     document.title = `${profile.name} · ${conversationTitle(record)}`;
     setUnread(record.unreadCount);
-    setLayer((await api.window.state()).layer);
+    const windowState = await api.window.state();
+    setLayer(windowState.layer);
+    setPeers((windowState.peers ?? []).map((peer) => ({
+      id: peer.id, name: peer.name, avatar: peer.avatar ? avatarUrl(peer.avatar) : undefined, bossCat: peer.bossCat,
+    })));
   }, [requested, locale]);
 
   // A transcript read keeps the reply being streamed; it is not in the transcript until the turn ends.
@@ -552,10 +660,12 @@ export function NoteApp() {
   const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
 
   useLayoutEffect(() => {
-    if (activeRequestIds) return;
     const element = transcriptRef.current;
-    if (element && followTranscript.current) element.scrollTop = element.scrollHeight;
-  }, [items, pending, activeRequestIds]);
+    if (!element) return;
+    if (!activeRequestIds && followTranscript.current) element.scrollTop = element.scrollHeight;
+    // SPEC-003 FR-17: content that shrank to fit, or grew while the owner reads above, changes it too.
+    setAtEnd(element.scrollHeight - element.clientHeight - element.scrollTop < 40);
+  }, [visibleItems, pending, activeRequestIds]);
   useLayoutEffect(() => {
     if (activeRequestIds) interactionAnchor.current?.scrollIntoView({ block: 'start' });
   }, [activeRequestIds]);
@@ -628,20 +738,24 @@ export function NoteApp() {
           {stepsLinkLabel(foldedStepCount(response), open)}<span aria-hidden="true">{open ? ' ▾' : ' ▸'}</span>
         </button>
         : null;
-      return <ConversationResponse
-        response={response} speaker={<div className="transcriptMessageTop"><img className="transcriptAvatar" src={speakerAvatar} alt="" /><strong>{speakerName}</strong></div>}
-        labels={{ tool: t('Tool'), input: t('Input'), result: t('Result'), noResult: t('No result was reported.'), error: t('Incomplete or failed') }}
-        showProgressDetails={open} copyLabel={t('Copy')}
-        afterBubble={<span className="entry-meta">
+      return <ReplyBubbles response={response} speaker={selfSpeaker(cast)} showProgressDetails={open}
+        footer={meta || link ? <span className="entry-meta">
           {meta && <span title={messageTimestamp(readTime(item.entry.at)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
-        </span>}
-        onCopy={text => { void navigator.clipboard.writeText(text).catch(() => {}); }} />;
+        </span> : null} />;
     }
     if (item.type === 'tool') return <ToolCard item={item} />;
     if (item.type === 'decision') return <DecisionCard item={item} />;
     const failed = retryable !== null && item.entry.seq === retryable.seq && item.entry.workItemId;
-    return <Entry entry={item.entry} conversationId={conversation.current}
+    return <Entry entry={item.entry} conversationId={conversation.current} cast={cast}
       retry={failed && contact === null ? { onRetry: () => void retry(failed) } : undefined} />;
+  };
+
+  const scrollToLatest = () => {
+    const element = transcriptRef.current;
+    if (!element) return;
+    followTranscript.current = true;
+    const reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    element.scrollTo({ top: element.scrollHeight, behavior: reduced ? 'auto' : 'smooth' });
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -656,6 +770,8 @@ export function NoteApp() {
   return (
     <>
       <header className="note-header" id="header">
+        {/* SPEC-009 FR-10, SPEC-012 FR-5: the note's cat (on a contact note, the cat the Boss Cat looks after). */}
+        {speakerAvatar !== undefined && <CatFace cat={headerCat(cast)} className="note-face" />}
         <span className="note-title" id="title">
           {title}
         </span>
@@ -707,14 +823,19 @@ export function NoteApp() {
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
-        onScroll={() => { const element = transcriptRef.current; if (element) followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40; }}>
+        onScroll={() => {
+          const element = transcriptRef.current;
+          if (!element) return;
+          followTranscript.current = element.scrollHeight - element.clientHeight - element.scrollTop < 40;
+          setAtEnd(followTranscript.current);
+        }}>
         {historyError && <div role="alert" className="decision-error">{t('Conversation history could not be restored: {error}', { error: historyError })}</div>}
         {visibleItems.map((item) => {
           const startsDay = dayStarts.has(item.key) ? itemAt(item) : null;
           return <Fragment key={item.key}>{startsDay && <DayDivider at={startsDay} />}{renderItem(item)}</Fragment>;
         })}
         {pending && (
-          <ConversationMessage senderKind="agent" copyLabel={t('Copy')}>
+          <ConversationMessage senderKind={selfSpeaker(cast).side === 'right' ? 'user' : 'agent'} copyLabel={t('Copy')}>
             <ConversationMarkdown text={pending.text} />
           </ConversationMessage>
         )}
@@ -735,6 +856,7 @@ export function NoteApp() {
       </main>
       {contact ? (
         <footer className="note-composer note-contact" id="contact-note">
+          {!atEnd && <ScrollToLatest onClick={scrollToLatest} />}
           <p>
             {t('This is the contact note between {bot} and {other}. You can read it but not write in it. To talk to {bot}, use its direct message.', contact)}
           </p>
@@ -754,6 +876,8 @@ export function NoteApp() {
           </div>
         </footer>
       ) : <footer className="note-composer">
+        {/* Over the composer and its notice, never on them; it shows only while the end is out of sight. */}
+        {!atEnd && <ScrollToLatest onClick={scrollToLatest} />}
         {/* ADR-024: on top, so neither the draft nor the buttons move when a notice comes or goes. */}
         {notice && <ComposerNoticeBar key={notice.id} notice={notice} onDismiss={dismissNotice} />}
         {files.length > 0 && <div className="composerAttachments">
@@ -790,7 +914,7 @@ export function NoteApp() {
           </button>}
           <button className="note-send" id="send" type="button" disabled={busy} onClick={() => void send()}
             aria-label={t('Send')} title={t('Send')}>
-            <ComposerGlyph kind={directMessage ? 'sendDirect' : 'send'} />
+            <ComposerGlyph kind={directMessage && telegram ? 'sendDirect' : 'send'} />
           </button>
           <button
             className="note-cancel"

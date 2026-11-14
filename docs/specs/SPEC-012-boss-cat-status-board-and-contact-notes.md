@@ -121,6 +121,8 @@ alone would protect the direct message and the Boss Cat's tools.
      written either way, since the upgrade only adds what an older version ignores.
    - The note is shown as 「與 {name} 的聯絡簿」 (en "Contact with {name}").
 6. FR-6: The owner can open, read, scroll and delete a contact note, but cannot write in it.
+   - Both sides carry their cat's face and name; the Boss Cat writes on the right and the cat it looks
+     after on the left, whose face is in the header (2026-11-14, SPEC-003 FR-16).
    - The composer is replaced by: 「這是 {holder} 和 {bot} 的聯絡簿，你可以看，但不能在這裡輸入。要跟 {bot} 說話，請到它的私訊。」
    - A button opens that bot's direct message.
    - The core refuses, with that reason, every owner-written path into a conversation with

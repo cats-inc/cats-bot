@@ -465,7 +465,7 @@ export function nextHeartbeatText(
   formatTime = (at: Date) => at.toLocaleString(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' }),
 ): string {
   if (status.heartbeat.enabled && status.heartbeat.waitingForOwner)
-    return t('Own initiative is waiting for you: {value0} unprompted messages in a row went unanswered. It starts again when you write.', {
+    return t('Own initiative is waiting for you: {value0} own-initiative messages in a row went unanswered. It starts again when you write.', {
       value0: String(status.heartbeat.unanswered),
     });
   if (status.heartbeat.enabled && status.heartbeat.nextAt)

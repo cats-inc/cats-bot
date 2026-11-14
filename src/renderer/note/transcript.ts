@@ -9,15 +9,6 @@ import { messageTime, readTime } from './messageTime.ts';
  * transcript is read again.
  */
 
-/**
- * SPEC-009 FR-10: the Boss Cat's note names its role in the header, right after
- * the bot's name. Whether its provider gives it tools is shown only in
- * Settings → Bots (FR-11).
- */
-export function noteRoleSuffix(bossCat: { holder: boolean; tools: boolean } | undefined): string {
-  return bossCat?.holder ? ` · ${t('Boss Cat')}` : '';
-}
-
 export interface PendingReply {
   workItemId: string;
   text: string;
@@ -93,18 +84,19 @@ export function entryText(entry: TranscriptEntry): string {
   return entry.text;
 }
 
-/** The time under an owner or bot message; an unprompted (heartbeat) reply says so. */
+/**
+ * The time under an owner or bot message. What the cat says on its own initiative (a heartbeat) says so, in
+ * the words of the Cat's "own initiative" switch. Another cat's name is over its bubble (speakers.ts), not here.
+ */
 export function entryMeta(
   entry: TranscriptEntry,
   formatTime = messageTime,
 ): string | null {
   const at = readTime(entry.at);
   if (!at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
-  const unprompted =
-    entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('unprompted')} · ` : '';
-  // SPEC-009 FR-10: a message from another bot carries that bot's name.
-  const from = entry.origin === 'bot' && entry.from ? `${t('from {name}', { name: entry.from })} · ` : '';
-  return `${unprompted}${from}${formatTime(at)}`;
+  const ownInitiative =
+    entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('On its own initiative')} · ` : '';
+  return `${ownInitiative}${formatTime(at)}`;
 }
 
 export { errorText } from '../errors.ts';

@@ -43,6 +43,9 @@ test('the same 7 AM on two days is told apart by the day divider', () => {
   assert.match(inLocale('zh-TW', () => dayLabel(new Date(2025, 10, 12, 7, 0), now)), /^2025年11月12日 星期三$/u);
   // Yesterday across a month boundary.
   assert.equal(inLocale('en', () => dayLabel(new Date(2026, 9, 31, 8, 0), new Date(2026, 10, 1, 8, 0))), 'Yesterday');
+  // Across New Year: the last day of the old year is Yesterday, the day before it names its year.
+  assert.equal(inLocale('zh-TW', () => dayLabel(new Date(2026, 11, 31, 23, 0), new Date(2027, 0, 1, 8, 0))), '昨天');
+  assert.match(inLocale('zh-TW', () => dayLabel(new Date(2026, 11, 30, 23, 0), new Date(2027, 0, 1, 8, 0))), /^2026年12月30日 星期三$/u);
 });
 
 test('the day clock wakes once just after local midnight and tells only its listeners', (t) => {

@@ -1,0 +1,14 @@
+/*
+ * What can be clicked in a Cats Bot window takes a cat's paw instead of the pointing hand. It is plain CSS, so
+ * nothing is installed and the paw is the window's own: outside it the system cursor is unchanged. A dark paw
+ * with a light rim reads on the yellow paper and on white alike; the hot spot is the tip of the middle toes.
+ * The pointing hand stays as the fallback where an image cursor is refused.
+ */
+:root {
+  --paw-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cg fill='%232b2a26' stroke='%23fffdf2' stroke-width='1.6' paint-order='stroke'%3E%3Cpath d='M12 11.2c-3.2 0-6.3 3.7-6.3 6.6 0 2.1 1.7 3.1 3.4 2.6 1.1-.3 1.9-.8 2.9-.8s1.8.5 2.9.8c1.7.5 3.4-.5 3.4-2.6 0-2.9-3.1-6.6-6.3-6.6z'/%3E%3Cellipse cx='5.4' cy='10.4' rx='1.9' ry='2.4' transform='rotate(-22 5.4 10.4)'/%3E%3Cellipse cx='9.2' cy='6.2' rx='2' ry='2.6' transform='rotate(-8 9.2 6.2)'/%3E%3Cellipse cx='14.8' cy='6.2' rx='2' ry='2.6' transform='rotate(8 14.8 6.2)'/%3E%3Cellipse cx='18.6' cy='10.4' rx='1.9' ry='2.4' transform='rotate(22 18.6 10.4)'/%3E%3C/g%3E%3C/svg%3E") 12 4, pointer;
+}
+
+/* Controls drawn by shared components (the conversation's copy and step buttons) take it too. */
+:is(button, summary, a[href], [role="button"], select, input[type="checkbox"], input[type="radio"]):not(:disabled):not([aria-disabled="true"]) {
+  cursor: var(--paw-cursor);
+}
