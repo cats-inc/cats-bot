@@ -131,7 +131,10 @@ for the current-versus-pending boundary.
     FR-14 say. A note left open past midnight relabels its dividers (Today becomes Yesterday): one timer per
     note fires just after local midnight, and focusing or showing the note checks again after sleep; only the
     dividers redraw, not the transcript. The time closes every bubble, inside it, a reply's included (its
-    last bubble when it has several); a reply's time is when its turn started. What the cat says on its own
+    last bubble when it has several). A reply was sent when it was sealed (finished, failed or cancelled),
+    which the presentation sidecar keeps as the optional `presentationEndedAt`; a reply sealed before that was
+    kept shows when its turn started, and one still being written shows no time yet. Its day follows the
+    same time. What the cat says on its own
     initiative is marked so, in the words of the Cat's "own initiative" menu ("On its own initiative ·
     7:00 AM", 「自主訊息 · 上午7:00」). Copy takes a message's text alone, never its time or sender.
 14. FR-14 (2026-11-14): "Show verbose messages", Cats Desktop's switch of that name, is one switch per bot

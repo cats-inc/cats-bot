@@ -82,6 +82,13 @@ test('a divider starts each day among the items shown; an item without a readabl
   assert.deepEqual([...dayStartKeys(items, (item) => item.at, (item) => item.key)], ['a', 'c', 'd']);
   // A line hidden by the verbose switch is not passed in, so the next shown item starts the day.
   assert.deepEqual([...dayStartKeys(items.filter((item) => item.key !== 'c'), (item) => item.at, (item) => item.key)], ['a', 'd']);
+  // A reply sealed after midnight, then a line written while it ran: the day is not started twice.
+  const midnight = [
+    { key: 'reply', at: new Date(2026, 10, 14, 0, 1) },
+    { key: 'line', at: new Date(2026, 10, 13, 23, 59) },
+    { key: 'next', at: new Date(2026, 10, 14, 0, 5) },
+  ];
+  assert.deepEqual([...dayStartKeys(midnight, (item) => item.at, (item) => item.key)], ['reply']);
   assert.equal(readTime('not a time'), null);
   assert.equal(readTime(undefined), null);
   assert.equal(readTime('2026-11-12T23:00:13.000Z')?.toISOString(), '2026-11-12T23:00:13.000Z');

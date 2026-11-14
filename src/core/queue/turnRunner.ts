@@ -504,7 +504,7 @@ export class TurnRunner {
       outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal, () => this.deps.accepted?.(item));
     } catch (error) {
       for (const pending of pendingErrors.splice(0)) appendError(pending);
-      presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed');
+      presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed', this.deps.now());
       publishPresentation();
       throw error;
     }
@@ -542,13 +542,13 @@ export class TurnRunner {
       }
       if (text) {
         const terminalSeq = (this.deps.conversations.transcript(conversationId).at(-1)?.seq ?? 0) + 1;
-        presentation?.seal('completed', terminalSeq);
+        presentation?.seal('completed', this.deps.now(), terminalSeq);
         publishPresentation();
         this.deps.conversations.append(conversationId, { kind: 'bot', origin, text, workItemId: item.id });
-      } else { presentation?.seal('completed'); publishPresentation(); }
+      } else { presentation?.seal('completed', this.deps.now()); publishPresentation(); }
       return { kind: 'completed', text, quiet: false };
     }
-    presentation?.seal(controller.signal.aborted ? 'cancelled' : outcome.errorText ? 'failed' : 'interrupted');
+    presentation?.seal(controller.signal.aborted ? 'cancelled' : outcome.errorText ? 'failed' : 'interrupted', this.deps.now());
     publishPresentation();
     if (controller.signal.aborted) return { kind: 'cancelled' };
     if (outcome.errorText) {

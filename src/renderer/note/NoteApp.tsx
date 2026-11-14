@@ -30,7 +30,7 @@ import { useDictation } from './dictation.ts';
 import { ComposerGlyph } from './composerIcons.tsx';
 import { executionSummary } from './executionSummary.ts';
 import { foldedStepCount, replySteps, stepsLinkLabel } from './responseSteps.ts';
-import { currentDayKey, dayLabel, dayStartKeys, messageTimestamp, readTime, subscribeDay } from './messageTime.ts';
+import { currentDayKey, dayLabel, dayStartKeys, messageTimestamp, subscribeDay } from './messageTime.ts';
 import {
   clearComposerNotice,
   raiseComposerNotice,
@@ -55,6 +55,7 @@ import {
   retryableOwnerEntry,
   entryMeta,
   entryText,
+  entryTime,
   errorText,
   isVerboseItem,
   liveInteractions,
@@ -93,7 +94,7 @@ function LayerIcon({ layer }: { layer: NoteLayer }) {
 
 /** SPEC-003 FR-13: when a note item was sent; a tool card of an old transcript has no time of its own. */
 function itemAt(item: NoteItem): Date | null {
-  return item.type === 'tool' ? null : readTime(item.entry.at);
+  return item.type === 'tool' ? null : entryTime(item.entry);
 }
 
 /**
@@ -242,7 +243,7 @@ function Entry({ entry, conversationId, retry, cast }: {
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
       : entry.kind === 'owner' ? <OwnerBody conversationId={conversationId} entry={entry} />
         : <p className="messageBody">{entryText(entry)}</p>}
-    {meta && <span className="entry-meta" title={messageTimestamp(readTime(entry.at)!)}>{meta}</span>}
+    {meta && <span className="entry-meta" title={messageTimestamp(entryTime(entry)!)}>{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;
 }
@@ -740,7 +741,7 @@ export function NoteApp() {
         : null;
       return <ReplyBubbles response={response} speaker={selfSpeaker(cast)} showProgressDetails={open}
         footer={meta || link ? <span className="entry-meta">
-          {meta && <span title={messageTimestamp(readTime(item.entry.at)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
+          {meta && <span title={messageTimestamp(entryTime(item.entry)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
         </span> : null} />;
     }
     if (item.type === 'tool') return <ToolCard item={item} />;

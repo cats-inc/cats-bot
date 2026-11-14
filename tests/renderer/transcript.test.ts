@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import type { TranscriptEntry } from '../../src/core/types.ts';
-import { addEntry, appendDelta, entryClass, entryMeta, entryText, errorText, visibleEntries } from '../../src/renderer/note/transcript.ts';
+import { addEntry, appendDelta, entryClass, entryMeta, entryText, entryTime, errorText, visibleEntries } from '../../src/renderer/note/transcript.ts';
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 
 /** SPEC-001 FR-33, SPEC-003: what the note shows from the transcript and the live events. */
@@ -52,4 +52,18 @@ test('entries keep their look: classes, tool lines, times and what the cat says 
 
 test('a refused invoke reads as the core\'s own message', () => {
   assert.equal(errorText(new Error("Error invoking remote method 'bot:invoke': Error: An owner message needs text")), 'An owner message needs text');
+});
+
+test('a reply shows when it was sealed, an older one when its turn started, and one being written no time', () => {
+  const presentation = (phase: 'streaming' | 'sealed') => ({ version: 1 as const, id: 'r', phase, blocks: [] });
+  const started = '2026-11-14T07:20:38.000Z';
+  const ended = '2026-11-14T07:24:05.000Z';
+  const sealed = entry(2, 'bot', 'done', { at: started, presentation: presentation('sealed'), presentationEndedAt: ended });
+  assert.equal(entryTime(sealed)?.toISOString(), ended);
+  assert.equal(entryMeta(sealed, (at) => at.toISOString()), ended);
+  const older = entry(2, 'bot', 'done', { at: started, presentation: presentation('sealed') });
+  assert.equal(entryTime(older)?.toISOString(), started);
+  const live = entry(2, 'bot', 'writing', { at: started, presentation: presentation('streaming'), presentationEndedAt: ended });
+  assert.equal(entryTime(live)?.toISOString(), started, 'its day is still its start');
+  assert.equal(entryMeta(live), null);
 });

@@ -26,7 +26,10 @@ function parse(text: string, id: string): PresentationFile {
       || !Array.isArray(entry.presentationSeqs)
       || !entry.presentationSeqs.every(seq => Number.isSafeInteger(seq) && seq >= entry.seq)
       || (entry.presentationTerminalSeq !== undefined
-        && (!Number.isSafeInteger(entry.presentationTerminalSeq) || entry.presentationTerminalSeq < entry.seq))) {
+        && (!Number.isSafeInteger(entry.presentationTerminalSeq) || entry.presentationTerminalSeq < entry.seq))
+      // Optional and additive: an older build reads past it and shows `at`.
+      || (entry.presentationEndedAt !== undefined
+        && (typeof entry.presentationEndedAt !== 'string' || !Number.isFinite(Date.parse(entry.presentationEndedAt))))) {
       throw new Error('Invalid conversation presentation record');
     }
     ids.add(presentation.id);

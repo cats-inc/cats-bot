@@ -32,9 +32,12 @@ test('tool result closes a text boundary and reuses Desktop grouping without dup
   recorder.text('before');
   recorder.entry(entry('tool_result', 2));
   recorder.text('after');
-  recorder.seal('completed', 3);
+  const ended = new Date('2026-11-14T08:03:00.000Z');
+  recorder.seal('completed', ended, 3);
   recorder.checkpoint();
   assert.deepEqual(saved[0]!.presentation!.blocks.map(block => block.text), ['tool_result', 'before', 'after']);
+  // SPEC-003 FR-13: a sealed reply keeps when it ended; its turn's start stays in `at`.
+  assert.equal(saved[0]!.presentationEndedAt, ended.toISOString());
   assert.deepEqual(splitConversationPresentation(saved[0]!.presentation!).map(part => part.blocks.map(block => block.kind)), [['tool', 'text'], ['text']]);
 });
 
@@ -54,6 +57,11 @@ test('versioned sidecar preserves legacy bytes, backs up, recovers corrupt gener
     writeFileSync(file, '{"version":99}');
     assert.throws(() => savePresentation(paths, 'conversation', snapshot(4)), /Unsupported/);
     assert.equal(readFileSync(file, 'utf8'), '{"version":99}');
+    // The end time is optional and additive: a sidecar written without it still reads, a bad one does not save.
+    writeFileSync(file, JSON.stringify({ version: 1, conversationId: 'conversation', responses: [snapshot(5)] }));
+    savePresentation(paths, 'conversation', { ...snapshot(6), presentationEndedAt: '2026-10-30T00:01:00.000Z' });
+    assert.equal(readPresentations(paths, 'conversation')[0]!.presentationEndedAt, '2026-10-30T00:01:00.000Z');
+    assert.throws(() => savePresentation(paths, 'conversation', { ...snapshot(7), presentationEndedAt: 'later' }), /Invalid/);
     deletePresentations(paths, 'conversation');
     assert.equal(existsSync(file), false);
     assert.equal(existsSync(`${file}.bak`), false);
@@ -144,6 +152,9 @@ test('real Bot core event adapter persists ordered tools, preserves old API and 
       assert.deepEqual(entry.presentation!.blocks.map(block => block.kind), ['tool', 'text']);
       assert.equal(entry.presentation!.blocks[0]!.input, 'Read file.txt');
       assert.equal(entry.presentation!.phase, 'sealed');
+      // SPEC-003 FR-13: a real turn's reply reaches the note with when it was sealed, not before its start.
+      assert.ok(entry.presentationEndedAt, 'the sealed reply keeps its end');
+      assert.ok(Date.parse(entry.presentationEndedAt!) >= Date.parse(entry.at));
     }
     assert.notEqual(view[1]!.presentation!.id, view[3]!.presentation!.id);
     await core.stop();

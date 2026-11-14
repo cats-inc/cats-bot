@@ -85,14 +85,26 @@ export function entryText(entry: TranscriptEntry): string {
 }
 
 /**
- * The time under an owner or bot message. What the cat says on its own initiative (a heartbeat) says so, in
- * the words of the Cat's "own initiative" switch. Another cat's name is over its bubble (speakers.ts), not here.
+ * SPEC-003 FR-13: when a message was sent, the time it shows and the day it belongs to. A reply was sent when
+ * it was sealed (its turn may have run for minutes); one sealed before that was kept shows when its turn
+ * started. Everything else was sent at `at`.
+ */
+export function entryTime(entry: TranscriptEntry): Date | null {
+  if (entry.presentation?.phase === 'sealed') return readTime(entry.presentationEndedAt) ?? readTime(entry.at);
+  return readTime(entry.at);
+}
+
+/**
+ * The time under an owner or bot message; a reply still being written has none yet. What the cat says on its
+ * own initiative (a heartbeat) says so, in the words of the Cat's "own initiative" switch. Another cat's name
+ * is over its bubble (speakers.ts), not here.
  */
 export function entryMeta(
   entry: TranscriptEntry,
   formatTime = messageTime,
 ): string | null {
-  const at = readTime(entry.at);
+  if (entry.presentation && entry.presentation.phase !== 'sealed') return null;
+  const at = entryTime(entry);
   if (!at || (entry.kind !== 'owner' && entry.kind !== 'bot')) return null;
   const ownInitiative =
     entry.kind === 'bot' && entry.origin === 'heartbeat' ? `${t('On its own initiative')} · ` : '';
