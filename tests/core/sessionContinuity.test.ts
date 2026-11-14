@@ -79,15 +79,24 @@ for (const id of ['home', 'note']) {
     assert.match((f.calls.create[0] as { instructions: string }).instructions, /Keep my previous conversation/u);
     assert.deepEqual(f.calls.retired, [`runtime-${id}`]);
     assert.equal(f.store.require(id).attachment.replacementPending, true);
-    assert.equal(f.store.transcript(id).filter(entry => entry.text.includes('a new session starts')).length, 1);
+    // Nothing was said in the unused session, so nothing is lost and the owner reads no notice.
+    assert.equal(f.store.transcript(id).filter(entry => entry.text.includes('a new session starts')).length, 0);
     if (id === 'note') assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
 
-    // Even if the new zero-turn worker also stops, restarting cannot create
-    // another replacement before this one has completed a turn.
+    // The new zero-turn worker is stopped by the app quitting. The next process's reconcile replaces it once,
+    // so the cat wakes (and keeps its heartbeat) without waiting for the owner to write.
     f.store.setAttachment(id, { state: 'sleeping' });
     const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
-    assert.equal((await f.makeBinder(reloaded).bind(id)).ok, false);
-    assert.equal(f.calls.create.length, 1);
+    const next = f.makeBinder(reloaded);
+    assert.deepEqual(await next.bind(id), { ok: true, sessionId: 'new-2', how: 'created' });
+    assert.deepEqual(f.calls.retired, [`runtime-${id}`, 'new-1']);
+    assert.equal(reloaded.require(id).attachment.replacementPending, true);
+    // A replacement this process made that stops unused again stays fenced for reconcile: no worker per tick.
+    reloaded.setAttachment(id, { state: 'sleeping' });
+    for (let tick = 0; tick < 3; tick++) assert.equal((await next.bind(id)).ok, false);
+    assert.equal(f.calls.create.length, 2);
+    // A turn still gets through.
+    assert.deepEqual(await next.bind(id, { forTurn: true }), { ok: true, sessionId: 'new-3', how: 'created' });
   });
 }
 
@@ -113,15 +122,25 @@ for (const replacementPending of [false, true]) for (const condition of ['live',
   });
 }
 
-test('a pending turn recovers an unused replacement after reload while ticks remain fenced', async t => {
+test('after reload reconcile replaces an earlier process\'s unused replacement once, then a turn recovers its own', async t => {
   const f = fixture(t);
   f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
   f.store.append('home', { kind: 'owner', origin: 'owner', text: 'Preserve my conversation' });
   f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
   const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
-  const binder = f.makeBinder(reloaded);
+  const logs: string[] = [];
+  const binder = new SessionBinder({ client: () => f.client as unknown as RuntimeClient, profile: () => f.profile,
+    conversations: reloaded, now: f.now, log: line => { logs.push(line); }, hasAttemptedSessionTurn: () => false,
+    retireSession: id => { f.calls.retired.push(id); } });
+  // runtime-home was made by an earlier process: one tick replaces it, with the conversation's handoff.
+  assert.deepEqual(await binder.bind('home'), { ok: true, sessionId: 'new-1', how: 'created' });
+  assert.match((f.calls.create[0] as { instructions: string }).instructions, /Preserve my conversation/u);
+  assert.deepEqual(f.calls.retired, ['runtime-home']);
+  // new-1 is this process's own; when it stops unused, ticks stay fenced and say so once in the log.
+  reloaded.setAttachment('home', { state: 'sleeping' });
   for (let tick = 0; tick < 3; tick++) assert.equal((await binder.bind('home')).ok, false);
-  assert.equal(f.calls.create.length, 0);
+  assert.equal(f.calls.create.length, 1);
+  assert.equal(logs.filter(line => line.includes('new-1 fenced')).length, 1);
 
   Object.assign(f.client, {
     streamMessage: async () => ({ completed: true, errorText: null }),
@@ -130,12 +149,115 @@ test('a pending turn recovers an unused replacement after reload while ticks rem
     binder, conversations: reloaded, now: f.now, emit: () => {}, persistRun: () => {}, log: () => {} });
   const item = createWorkItem({ kind: 'owner_message', source: 'fixture', conversationId: 'home', prompt: 'Continue' }, f.now());
   assert.equal((await runner.run(item, new AbortController())).kind, 'completed');
-  assert.equal(f.calls.create.length, 1);
-  assert.match((f.calls.create[0] as { instructions: string }).instructions, /Preserve my conversation/u);
-  assert.deepEqual(f.calls.retired, ['runtime-home']);
-  assert.equal(reloaded.home().attachment.sessionId, 'new-1');
+  assert.equal(f.calls.create.length, 2);
+  assert.match((f.calls.create[1] as { instructions: string }).instructions, /Preserve my conversation/u);
+  assert.deepEqual(f.calls.retired, ['runtime-home', 'new-1']);
+  assert.equal(reloaded.home().attachment.sessionId, 'new-2');
   assert.equal(reloaded.home().attachment.replacementPending, undefined);
 });
+
+test('after a restart one reconcile tick wakes a cat whose replacement stopped unused, opening its heartbeat\'s gate', async t => {
+  // The 2026-11-11 incident: a replacement made by reconcile, then the app quit before its first turn. The next
+  // process found it fenced and the cat stayed asleep, with no heartbeat, until the owner wrote two days later.
+  const f = fixture(t);
+  // Off, so the profile's own wake time (drawn from its random id) cannot put this tick in rest hours: what is
+  // checked is the gate the heartbeat waits on, a live home session.
+  f.profile.heartbeat.enabled = false;
+  f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const life = new LifeLoop({ now: f.now, random: () => 0, profile: () => f.profile,
+    heartbeatMode: () => 'companion', conversations: f.store, binder: f.binder,
+    client: () => f.client as unknown as RuntimeClient, runtimeState: () => 'ready', ensureRuntime: async () => true,
+    isTurnRunning: () => false, hasQueuedWork: () => false, hasQueuedWorkIn: () => false, enqueue: () => {}, schedules: () => [],
+    saveSchedule: () => {}, awaitingOwner: () => [], expireWorkItem: () => {}, journal: () => {}, emit: () => {},
+    log: () => {}, readLifeState: () => null, writeLifeState: () => {},
+  });
+  const report = await life.tick();
+  assert.notEqual(report.outcome, 'wake_failed');
+  assert.equal(f.calls.create.length, 1);
+  const home = f.store.home().attachment;
+  assert.equal(home.sessionId, 'new-1');
+  assert.ok(home.state === 'ready' || home.state === 'initializing', 'live: the heartbeat gate is open');
+});
+
+test('reconcile\'s own failed try never spends the owner\'s next turn, and is not retried on every tick', async t => {
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  const create = f.client.createSession;
+  let attempts = 0;
+  f.client.createSession = async (body: unknown) => {
+    attempts++;
+    if (attempts === 1) throw new Error('request timed out');
+    return create(body);
+  };
+  // An earlier process's unused replacement: the tick tries once, and the timeout leaves it as it was.
+  assert.equal((await f.binder.bind('home')).ok, false);
+  const attachment = f.store.home().attachment;
+  assert.equal(attachment.replacementPending, true);
+  assert.equal(attachment.unavailableReason, undefined);
+  assert.equal(attachment.sessionId, 'runtime-home');
+  for (let tick = 0; tick < 3; tick++) assert.equal((await f.binder.bind('home')).ok, false);
+  assert.equal(attempts, 1, 'one try per session in this process');
+  // The owner's message still gets its way through, as before the tick tried.
+  assert.equal((await f.binder.bind('home', { forTurn: true })).ok, true);
+  assert.equal(attempts, 2);
+});
+
+test('an unused replacement this core put to sleep for the night is rewarmed by the morning tick, not left asleep', async t => {
+  // No restart needed: a cat waiting for the owner runs no turn, rest hours close its replacement, and the
+  // morning wake found it fenced until the owner wrote.
+  const f = fixture(t);
+  f.store.setAttachment('home', { providerSessionId: null });
+  f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+  assert.deepEqual(await f.binder.bind('home'), { ok: true, sessionId: 'new-1', how: 'created' });
+  // A worker that stopped by itself stays fenced for reconcile.
+  f.store.setAttachment('home', { state: 'sleeping' });
+  assert.equal((await f.binder.bind('home')).ok, false);
+  // The same worker, closed by the core for rest hours (LifeLoop.restHome), is rewarmed once.
+  const g = fixture(t);
+  g.store.setAttachment('home', { providerSessionId: null });
+  g.client.getSession = f.client.getSession;
+  assert.deepEqual(await g.binder.bind('home'), { ok: true, sessionId: 'new-1', how: 'created' });
+  g.binder.sessionClosed('new-1');
+  g.store.setAttachment('home', { state: 'sleeping' });
+  assert.deepEqual(await g.binder.bind('home'), { ok: true, sessionId: 'new-2', how: 'created' });
+  assert.equal(g.store.transcript('home').filter(entry => entry.text.includes('a new session starts')).length, 0);
+});
+
+for (const refusal of ['no capacity', 'bad request', 'never sent'] as const) {
+  test(`a replacement Runtime refuses (${refusal}) leaves no worker, so the fence goes back and the next turn tries again`, async t => {
+    const f = fixture(t);
+    f.store.setAttachment('home', { providerSessionId: null });
+    f.client.getSession = async id => ({ id, status: 'closed', origin: 'runtime', providerBackend: 'cli', messageCount: 0 });
+    const create = f.client.createSession;
+    let refuse = true;
+    let sent = 0;
+    if (refusal === 'never sent') {
+      const controls = f.client.sessionControls;
+      f.client.sessionControls = async () => { if (refuse) throw new Error('fetch failed'); return controls(); };
+    } else {
+      f.client.createSession = async (body: unknown) => {
+        sent++;
+        if (refuse) throw new RuntimeHttpError(refusal === 'no capacity' ? 503 : 400,
+          refusal === 'no capacity' ? 'Max sessions (8) reached' : 'Unknown model', null);
+        return create(body);
+      };
+    }
+    const failed = await f.binder.bind('home', { forTurn: true });
+    assert.equal(failed.ok, false);
+    if (refusal === 'no capacity') assert.equal(failed.ok === false && failed.noCapacity, true);
+    const attachment = f.store.home().attachment;
+    assert.equal(attachment.replacementPending, undefined, 'the one replacement is not spent');
+    assert.equal(attachment.unavailableReason, undefined);
+    assert.equal(attachment.sessionId, 'runtime-home');
+    assert.ok(attachment.lastError, 'the reason is kept');
+    refuse = false;
+    const reloaded = new ConversationStore({ paths: f.paths, now: f.now }); reloaded.load();
+    assert.deepEqual(await f.makeBinder(reloaded).bind('home', { forTurn: true }), { ok: true, sessionId: 'new-1', how: 'created' });
+    if (refusal !== 'never sent') assert.equal(sent, 2);
+  });
+}
 
 test('a turn joining a reconcile bind shares its unstarted replacement instead of staying blocked', async t => {
   const f = fixture(t);

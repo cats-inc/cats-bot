@@ -89,6 +89,17 @@ function inContactHandoff(entry: TranscriptEntry): boolean {
 export class SessionBinder {
   private readonly deps: SessionBinderDependencies;
   private readonly inFlight = new Map<string, { intent: BindIntent; result: Promise<BindResult> }>();
+  /**
+   * The sessions this binder created, in this core process. An unused replacement made by an earlier process
+   * was stopped by that process's shutdown, not by its own failure: reconcile may replace it once (FR-27).
+   */
+  private readonly createdHere = new Set<string>();
+  /** Sessions this core closed on purpose (rest hours, idle): stopped by the core, not by their own failure. */
+  private readonly closedHere = new Set<string>();
+  /** Unused replacements reconcile has already tried to replace in this process: one try each. */
+  private readonly reconcileTried = new Set<string>();
+  /** Fenced sessions already logged, so a fence is logged once per process, not on every tick. */
+  private readonly fenceLogged = new Set<string>();
 
   constructor(deps: SessionBinderDependencies) {
     this.deps = deps;
@@ -100,6 +111,11 @@ export class SessionBinder {
    * bind of the same conversation runs joins it, so the tick and a turn never
    * create two sessions and overwrite each other's attachment.
    */
+  /** The core closed this session on purpose (rest hours, idle), so an unused one was not stopped by a failure. */
+  sessionClosed(sessionId: string): void {
+    this.closedHere.add(sessionId);
+  }
+
   bind(conversationId: string, options: { forTurn?: boolean } = {}): Promise<BindResult> {
     const pending = this.inFlight.get(conversationId);
     if (pending) {
@@ -181,10 +197,21 @@ export class SessionBinder {
         && !observed.inspection?.currentRun && !observed.inspection?.lastRun
         && this.deps.hasAttemptedSessionTurn?.(id) === false) {
         // An unused replacement may itself have been stopped by shutdown or
-        // sleep. Only a pending turn can replace it again; reconcile must not
-        // create a fresh idle worker on every tick. The complete evidence above
-        // excludes failed sends/bootstrap and unknown or lost session records.
-        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable', intent.forTurn);
+        // sleep. A pending turn can replace it again. Reconcile can too, once per
+        // session in this process, when the stop was not the worker's own: an
+        // earlier process made it (its shutdown stopped it) or this core closed
+        // it for rest hours or idling. Otherwise a cat whose replacement never ran
+        // a turn stays asleep, with no heartbeat, until the owner writes. A
+        // replacement this process made that stopped by itself stays fenced for
+        // reconcile, so no fresh idle worker is created on every tick. The
+        // complete evidence above excludes failed sends/bootstrap and unknown or
+        // lost session records. Nothing was said in an unused session, so its
+        // replacement adds no notice.
+        const reconcileMay = (!this.createdHere.has(id) || this.closedHere.has(id)) && !this.reconcileTried.has(id);
+        const byReconcile = !intent.forTurn && reconcileMay;
+        if (byReconcile) this.reconcileTried.add(id);
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable',
+          intent.forTurn || reconcileMay, false, byReconcile);
       }
       const controls = await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy);
       const servers = this.deps.mcpServers?.(conversation.id, id);
@@ -218,24 +245,55 @@ export class SessionBinder {
     }
   }
 
-  private replaceUnavailable(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile,
-    reason: NonNullable<SessionAttachment['unavailableReason']>, unstartedTurn = false): Promise<BindResult> {
-    if (conversation.attachment.replacementPending && !unstartedTurn) {
-      return Promise.resolve({ ok: false, kind: 'resume_failed', noCapacity: false,
-        reason: 'Automatic session replacement stopped because the previous replacement has not completed a turn.' });
+  private async replaceUnavailable(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile,
+    reason: NonNullable<SessionAttachment['unavailableReason']>, unstartedTurn = false, notice = true,
+    byReconcile = false): Promise<BindResult> {
+    const { attachment } = conversation;
+    if (attachment.replacementPending && !unstartedTurn) {
+      const key = `${conversation.id}:${attachment.sessionId ?? ''}`;
+      if (!this.fenceLogged.has(key)) {
+        this.fenceLogged.add(key);
+        this.deps.log(`conversation ${conversation.id}: replacement of ${attachment.sessionId ?? 'its session'} fenced`
+          + ' until a turn completes');
+      }
+      return { ok: false, kind: 'resume_failed', noCapacity: false,
+        reason: 'Automatic session replacement stopped because the previous replacement has not completed a turn.' };
     }
+    const before = {
+      state: attachment.state, unavailableReason: attachment.unavailableReason, replacementPending: attachment.replacementPending,
+    };
     this.deps.conversations.setAttachment(conversation.id, {
       state: 'failed', unavailableReason: reason, replacementPending: true,
     });
-    return this.create(client, this.deps.conversations.require(conversation.id), profile, true);
+    const { result, refused } = await this.createSession(client, this.deps.conversations.require(conversation.id), profile, true, notice);
+    // The one replacement is spent only when a worker may exist. A request Runtime refused outright (no
+    // capacity, a bad request) or one never sent leaves no worker: the fence goes back as it was, so the next
+    // turn, or the no-capacity retry, can try again. An ambiguous failure (a timeout) keeps the fence, except
+    // after reconcile's own try: that must never spend the owner's next turn (it tries once per session).
+    const after = this.deps.conversations.get(conversation.id)?.attachment;
+    if (!result.ok && (refused || byReconcile) && after?.sessionId === attachment.sessionId) {
+      this.deps.conversations.setAttachment(conversation.id, { ...before, lastError: after.lastError });
+      this.deps.log(`conversation ${conversation.id}: replacement ${refused ? 'refused before a worker started' : 'by reconcile failed'}; fence restored`);
+    }
+    return result;
   }
 
   private async create(
     client: RuntimeClient,
     conversation: ConversationRecord,
     profile: BotProfile,
-    replacementPending = false,
   ): Promise<BindResult> {
+    return (await this.createSession(client, conversation, profile, false, false)).result;
+  }
+
+  /** `refused`: the failure left no worker (Runtime refused the request, or it was never sent). */
+  private async createSession(
+    client: RuntimeClient,
+    conversation: ConversationRecord,
+    profile: BotProfile,
+    replacementPending: boolean,
+    notice: boolean,
+  ): Promise<{ result: BindResult; refused: boolean }> {
     const isPending = this.deps.isPendingWorkItem;
     const pack = buildHandoffPack(
       this.deps.conversations.transcript(conversation.id)
@@ -259,6 +317,7 @@ export class SessionBinder {
       ...(this.deps.mcpServers ? { mcpServers: this.deps.mcpServers(conversation.id, null) } : {}),
     };
     const replaced = conversation.attachment.sessionId;
+    let sent = false;
     try {
       if (profile.executionTarget.modelSelection)
         request.modelSelection = await client.currentModelSelection(
@@ -266,7 +325,9 @@ export class SessionBinder {
           profile.executionTarget.modelSelection,
         );
       Object.assign(request, await client.sessionControls(profile.executionTarget.provider, profile.providerPolicy));
+      sent = true;
       const view = await client.createSession(request);
+      this.createdHere.add(view.id);
       this.deps.conversations.setAttachment(conversation.id, {
         state: view.status === 'ready' ? 'ready' : 'initializing',
         sessionId: view.id,
@@ -283,18 +344,24 @@ export class SessionBinder {
           record.checkpoint = { digest: pack.text, throughSeq: pack.throughSeq, updatedAt: this.deps.now().toISOString() };
         });
       }
-      if (replacementPending) this.deps.conversations.append(conversation.id, {
+      if (replacementPending && notice) this.deps.conversations.append(conversation.id, {
         kind: 'system', origin: 'system', text: REBUILT_SESSION_NOTICE,
       });
       this.deps.log(`conversation ${conversation.id}: created session ${view.id} (${view.status})`);
       // FR-27: nothing else would ever close the replaced session's worker.
       if (replaced && replaced !== view.id) this.deps.retireSession?.(replaced);
-      return { ok: true, sessionId: view.id, how: 'created' };
+      return { result: { ok: true, sessionId: view.id, how: 'created' }, refused: false };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.log(`conversation ${conversation.id}: session create failed`);
       this.deps.conversations.setAttachment(conversation.id, { lastError: reason });
-      return { ok: false, reason: `session create failed: ${reason}`, kind: 'create_failed', noCapacity: isNoCapacity(reason) };
+      // Runtime answers a refused request with a 4xx (a timeout, 408, is not an answer) or names its full pool.
+      const refused = !sent || isNoCapacity(reason)
+        || (error instanceof RuntimeHttpError && error.status >= 400 && error.status < 500 && error.status !== 408);
+      return {
+        result: { ok: false, reason: `session create failed: ${reason}`, kind: 'create_failed', noCapacity: isNoCapacity(reason) },
+        refused,
+      };
     }
   }
 }

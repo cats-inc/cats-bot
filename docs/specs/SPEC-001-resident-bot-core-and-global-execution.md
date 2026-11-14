@@ -152,13 +152,22 @@ freeze of the storage format.
     messages alone does not establish that no authentication/policy/bootstrap
     failure occurred. Unknown evidence preserves the mapping. This recovers a
     warm worker stopped before its first turn without replay or repeated creates.
-    The visible notice is added only after creation succeeds; the transcript handoff omits
-    errors and rebuild notices. Optional
+    The visible notice is added only after creation succeeds, and not when an unused worker is replaced
+    (nothing was said in it); the transcript handoff omits errors and rebuild notices. Optional
     `unavailableReason` and `replacementPending` fields persist the reason and one-attempt fence until a
-    successful turn; even an ambiguous replacement-request failure cannot create again on each tick.
+    successful turn; even an ambiguous replacement-request failure (a timeout, a 5xx) cannot create again on
+    each tick. A request Runtime refused outright (a 4xx other than 408, or no capacity) or one never sent
+    leaves no worker: the fence and reason go back as they were, so the next turn or no-capacity retry can try
+    again (2026-11-14).
     A replacement stopped before any attempted turn may use the complete unstarted-worker evidence above
-    to create again only when a work item is about to send a prompt. Reconcile alone remains fenced, so
-    repeated shutdowns of unused warm workers cannot lock out the next turn or create workers on each tick.
+    to create again when a work item is about to send a prompt. Reconcile may do so too, once per session
+    in a core process, when the stop was not the worker's own (2026-11-14): an earlier process made it (that
+    process's shutdown stopped it) or this core closed it for rest hours or idling. Otherwise the cat stayed
+    asleep with no heartbeat until the owner wrote, as QQ did for two days. Reconcile's try, if it fails in
+    any way, puts the fence back as it was, so it never spends the owner's next turn, and it is not retried
+    on later ticks. A replacement this process made that stopped by itself stays fenced for reconcile, so
+    repeated stops of unused warm workers cannot lock out the next turn or create workers on each tick. A
+    fenced replacement is logged once per process.
     Terminal loss, missing records, unknown evidence and attempted bootstrap/send failures retain the fence.
     An explicit reset/retarget can establish a fresh binding. Old version-1 records load without rewriting;
     absent optional fields mean no recorded terminal evidence or replacement attempt. Ordinary updates use
