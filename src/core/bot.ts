@@ -1068,6 +1068,8 @@ export class BotCore implements BotHostApi {
         for (const conversation of this.conversations.list()) {
           const { attachment } = conversation;
           if (attachment.sessionId && (attachment.state === 'ready' || attachment.state === 'initializing')) {
+            // SPEC-001 FR-27: the exit stopped it, not its own failure, so an unused one may be rewarmed.
+            this.binder.sessionClosed(attachment.sessionId);
             const updated = this.conversations.setAttachment(conversation.id, { state: 'sleeping' });
             this.bus.emit({ type: 'conversation.updated', conversation: updated });
           }

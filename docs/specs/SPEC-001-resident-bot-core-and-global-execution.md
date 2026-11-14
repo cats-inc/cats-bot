@@ -162,10 +162,13 @@ freeze of the storage format.
     A replacement stopped before any attempted turn may use the complete unstarted-worker evidence above
     to create again when a work item is about to send a prompt. Reconcile may do so too, once per session
     in a core process, when the stop was not the worker's own (2026-11-14): an earlier process made it (that
-    process's shutdown stopped it) or this core closed it for rest hours or idling. Otherwise the cat stayed
-    asleep with no heartbeat until the owner wrote, as QQ did for two days. Reconcile's try, if it fails in
-    any way, puts the fence back as it was, so it never spends the owner's next turn, and it is not retried
-    on later ticks. A replacement this process made that stopped by itself stays fenced for reconcile, so
+    process's shutdown stopped it), this core closed it for rest hours or idling, or a Runtime exit stopped
+    it. Otherwise the cat stayed asleep with no heartbeat until the owner wrote, as QQ did for two days.
+    A try reconcile makes under this rule, if it fails in any way, puts the attachment back as it was, so it
+    never spends the owner's next turn. (A first, unfenced session this process made that stopped by itself
+    is replaced as unavailable instead: an ambiguous failure of that create keeps the fence, as before.) A try that may have left a worker (a timeout) is not retried on later ticks, whether
+    or not the session was fenced; a try Runtime refused outright left none, so reconcile tries again after
+    its wake back-off. A replacement this process made that stopped by itself stays fenced for reconcile, so
     repeated stops of unused warm workers cannot lock out the next turn or create workers on each tick. A
     fenced replacement is logged once per process.
     Terminal loss, missing records, unknown evidence and attempted bootstrap/send failures retain the fence.
