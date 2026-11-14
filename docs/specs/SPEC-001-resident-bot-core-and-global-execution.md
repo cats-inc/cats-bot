@@ -164,8 +164,9 @@ freeze of the storage format.
     in a core process, when the stop was not the worker's own (2026-11-14): an earlier process made it (that
     process's shutdown stopped it), this core closed it for rest hours or idling, or a Runtime exit stopped
     it. Otherwise the cat stayed asleep with no heartbeat until the owner wrote, as QQ did for two days.
-    Reconcile's try, if it fails in any way, puts the attachment back as it was, so it never spends the
-    owner's next turn. A try that may have left a worker (a timeout) is not retried on later ticks, whether
+    A try reconcile makes under this rule, if it fails in any way, puts the attachment back as it was, so it
+    never spends the owner's next turn. (A first, unfenced session this process made that stopped by itself
+    is replaced as unavailable instead: an ambiguous failure of that create keeps the fence, as before.) A try that may have left a worker (a timeout) is not retried on later ticks, whether
     or not the session was fenced; a try Runtime refused outright left none, so reconcile tries again after
     its wake back-off. A replacement this process made that stopped by itself stays fenced for reconcile, so
     repeated stops of unused warm workers cannot lock out the next turn or create workers on each tick. A
