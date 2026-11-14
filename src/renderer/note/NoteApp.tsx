@@ -422,7 +422,6 @@ export function NoteApp() {
     const target = profile.executionTarget;
     const targetKey = `${locale}|${JSON.stringify(target)}`;
     if (targetKey !== executionTarget.current) {
-      executionTarget.current = targetKey;
       const request = ++executionRequest.current;
       void Promise.all([
         api.invoke('listModels', target.provider).catch(() => null),
@@ -430,6 +429,9 @@ export function NoteApp() {
       ]).then(([catalog, providers]) => {
         if (request !== executionRequest.current) return;
         setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+        // Before Runtime answers, the catalog is missing or the packaged one, which may not name the model yet:
+        // only Runtime's own catalog settles the names, so until then the next refresh asks again.
+        if (catalog?.source === 'runtime') executionTarget.current = targetKey;
       });
     }
     // SPEC-008 FR-17: the window's title carries the bot's name too.
