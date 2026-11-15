@@ -145,7 +145,7 @@ async function handleTurn(full) {
       mcp_servers: Object.keys(mcpServers).map((name) => ({ name, status: 'connected' })),
     });
   }
-  log({ turn: turns, message, args, full });
+  log({ turn: turns, message, args, full, cwd: process.cwd() });
   let reply;
   if (message.startsWith('slow:')) {
     const ms = Number(message.slice('slow:'.length)) || 1000;
@@ -200,6 +200,10 @@ async function handleTurn(full) {
     const answer = await askHost({ subtype: 'elicitation', mcp_server_name: 'fixture_tools', message: 'Pick one', mode: 'form',
       requested_schema: { type: 'object', properties: { choice: { type: 'string', enum: ['a', 'b'] } }, required: ['choice'] } });
     reply = `form ${answer.action} ${answer.content?.choice ?? ''}`.trim();
+  } else if (message.startsWith('{"ownerMessage"')) {
+    // SPEC-002 FR-5a: the bot names a note from its first exchange.
+    const { ownerMessage } = JSON.parse(message);
+    reply = JSON.stringify({ title: `About ${ownerMessage.slice(0, 20)}` });
   } else if (message.startsWith('[Cats heartbeat')) {
     reply = process.env.CATS_BOT_FIXTURE_HEARTBEAT_REPLY || '[quiet]';
   } else {

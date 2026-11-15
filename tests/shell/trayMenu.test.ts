@@ -75,6 +75,7 @@ function conversation(id: string, role: 'home' | 'note', unreadCount: number, ti
     id,
     role,
     title,
+    titleSource: 'owner',
     createdAt: '2026-10-27T10:00:00.000Z',
     updatedAt: '2026-10-27T10:00:00.000Z',
     attachment: { state: 'none', sessionId: null, providerSessionId: null, provider: null, model: null, configRevision: null, updatedAt: '2026-10-27T10:00:00.000Z' },

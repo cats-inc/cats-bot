@@ -10,9 +10,11 @@ import type {
   AttachmentState,
   ConversationRecord,
   ConversationRole,
+  ConversationTitleSource,
   SessionAttachment,
   TranscriptEntry,
 } from '../types.ts';
+import { readTitleSource } from './titles.ts';
 
 /**
  * SPEC-001 FR-9, FR-10, FR-12: conversation records under
@@ -84,16 +86,22 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
       updatedAt: typeof raw.checkpoint.updatedAt === 'string' ? raw.checkpoint.updatedAt : now,
     }
     : null;
+  const title = typeof raw.title === 'string'
+    ? raw.title
+    : role === 'home'
+      ? 'Direct message'
+      : 'Conversation';
+  const contactOf = role === 'note' && typeof raw.contactOf === 'string' && isValidBotId(raw.contactOf) ? raw.contactOf : null;
+  const titleAttempts = typeof raw.titleAttempts === 'number' && Number.isSafeInteger(raw.titleAttempts) && raw.titleAttempts > 0
+    ? raw.titleAttempts : 0;
   return {
     schemaVersion: 1,
     id: raw.id,
     role,
-    title:
-      typeof raw.title === 'string'
-        ? raw.title
-        : role === 'home'
-          ? 'Direct message'
-          : 'Conversation',
+    title,
+    // SPEC-002 FR-5a: a record from before titles had a source reads it from its title.
+    titleSource: readTitleSource(raw.titleSource, { role, title, contactOf }),
+    ...(titleAttempts ? { titleAttempts } : {}),
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
     attachment: normalizeAttachment(raw.attachment, now),
@@ -102,7 +110,7 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
     lastOwnerMessageAt: stringOrNull(raw.lastOwnerMessageAt),
     lastBotMessageAt: stringOrNull(raw.lastBotMessageAt),
     checkpoint,
-    contactOf: role === 'note' && typeof raw.contactOf === 'string' && isValidBotId(raw.contactOf) ? raw.contactOf : null,
+    contactOf,
     contactName: role === 'note' && typeof raw.contactName === 'string' && raw.contactName.trim()
       ? raw.contactName.trim().slice(0, 80)
       : null,
@@ -176,6 +184,8 @@ export class ConversationStore {
     this.unwrittenUpgrades.add(record.id);
     return {
       ...record,
+      // A contact note is named after the other bot; its old title was the hub's, not the owner's.
+      titleSource: 'default',
       contactOf: sender,
       contactName: SENDER_TITLE.exec(record.title)?.[1]?.trim().slice(0, 80) || sender,
       ...(record.attachment.sessionId ? { attachment: { ...record.attachment, state: 'stale' as const } } : {}),
@@ -255,6 +265,7 @@ export class ConversationStore {
     role: ConversationRole = 'note',
     id?: string,
     contact?: { botId: string; name: string },
+    titleSource: ConversationTitleSource = 'default',
   ): ConversationRecord {
     const now = this.now().toISOString();
     const record: ConversationRecord = {
@@ -262,6 +273,7 @@ export class ConversationStore {
       id: id ?? `conv-${randomUUID().slice(0, 8)}`,
       role,
       title,
+      titleSource,
       createdAt: now,
       updatedAt: now,
       attachment: emptyAttachment(now),

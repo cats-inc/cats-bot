@@ -94,7 +94,8 @@ export function buildWorkBoard(input: WorkBoardInput): BotWorkBoard {
     .slice(0, BOARD_NOTE_LIMIT)
     .map((record) => ({
       id: record.id,
-      title: cleanBoardText(record.title),
+      // FR-3: a title drafted from a message or named by the bot from one is message text; it never leaves.
+      title: record.titleSource === 'owner' || record.titleSource === 'default' ? cleanBoardText(record.title) : '',
       lastOwnerMessageAt: record.lastOwnerMessageAt,
       lastBotMessageAt: record.lastBotMessageAt,
       lastTurn: lastTurnOf(record.id),
