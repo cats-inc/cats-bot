@@ -1696,7 +1696,7 @@ async function main(): Promise<void> {
     const owner = fromSettings(event)?.settings.browserWindow;
     if (!owner) return null;
     const result = await dialog.showOpenDialog(owner, {
-      title: t('Workspace folder'),
+      title: t('Filespace'),
       properties: ['openDirectory', 'createDirectory'],
       ...(typeof current === 'string' && current ? { defaultPath: current } : {}),
     });

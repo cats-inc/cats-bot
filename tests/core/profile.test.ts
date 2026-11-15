@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import {
@@ -12,6 +13,7 @@ import {
   normalizeProfile,
   saveProfile,
 } from '../../src/core/profile/profile.ts';
+import { initializeBot, readBotProfile } from '../../src/core/profile/initialize.ts';
 import { botPathsFor } from '../../src/core/store/paths.ts';
 import { makeTempHome, type TempHome } from '../support/harness.ts';
 
@@ -424,4 +426,21 @@ test('only a change in the language sessions are told bumps the revision (SPEC-0
   assert.equal(effectiveReplyLanguage(mixed.profile), null);
 
   assert.throws(() => applyProfilePatch(base, { replyLanguage: 'klingon' as never }, now), /replyLanguage/u);
+});
+
+test('a new bot works in its own filespace; a bot made before keeps the folder its profile names', () => {
+  const temp = makeTempHome('cats-bot-filespace-');
+  try {
+    const { profile, root } = initializeBot(temp.botsHome, { id: 'fresh', name: 'Fresh', provider: 'claude' });
+    assert.equal(profile.permissions.cwd, join(root, 'filespace'));
+    assert.equal(existsSync(join(root, 'filespace')), true);
+    assert.equal(existsSync(join(root, 'workspace')), false);
+    // No migration: an older bot's stored `workspace` folder stays its working folder.
+    const older = botPathsFor(join(temp.botsHome, 'older'));
+    mkdirSync(older.root, { recursive: true });
+    saveProfile(older, createProfile({ id: 'older', name: 'Older', provider: 'claude', cwd: join(older.root, 'workspace') }));
+    assert.equal(readBotProfile(older.root)?.permissions.cwd, join(older.root, 'workspace'));
+  } finally {
+    temp.cleanup();
+  }
 });

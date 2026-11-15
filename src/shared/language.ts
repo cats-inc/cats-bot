@@ -132,9 +132,9 @@ export const zhTW: Record<string, string> = {
   'Erase selected data': '清除所選資料',
   'Stopping cat bots and restarting…': '正在停止機器貓並重新啟動…',
   'Erase all active and archived cat bots, conversations, memories, schedules, stored secrets and Hub settings. Cats Bot restarts and returns to setup. Erased data cannot be recovered.': '清除所有使用中與封存的機器貓、對話、記憶、排程、已儲存的密鑰及 Hub 設定。Cats Bot 將重新啟動並回到初始設定。清除的資料無法復原。',
-  'Runtime data is kept by default. Installed tools, provider logins, native CLI conversations outside Runtime storage, external workspaces and Cats Desktop data are kept.': '預設保留 Runtime 資料。已安裝的工具、provider 登入、Runtime 儲存範圍外的 CLI 原生對話、外部工作區及 Cats Desktop 資料都會保留。',
+  "Runtime data is kept by default. Installed tools, provider logins, native CLI conversations outside Runtime storage, filespaces outside the cat bots' data and Cats Desktop data are kept.": '預設保留 Runtime 資料。已安裝的工具、provider 登入、Runtime 儲存範圍外的 CLI 原生對話、機器貓資料以外的檔案空間及 Cats Desktop 資料都會保留。',
   'All cat bots and Hub settings will be permanently erased. Running bots will stop before Cats Bot restarts.': '所有機器貓與 Hub 設定將永久清除。執行中的機器貓會先停止，接著 Cats Bot 將重新啟動。',
-  'Also erases every cat bot’s Runtime settings, provider selections, sessions, caches and Runtime-managed workspace files, including Runtime data retained by earlier resets. Installed tools and provider logins are kept.': '一併清除每隻機器貓的 Runtime 設定、provider 選擇、工作階段、快取與 Runtime 管理的工作區檔案，也包含先前重置時保留的 Runtime 資料。已安裝的工具與 provider 登入會保留。',
+  'Also erases every cat bot’s Runtime settings, provider selections, sessions, caches and Runtime-managed workspace files, including Runtime data retained by earlier resets. Installed tools and provider logins are kept.': '一併清除每隻機器貓的 Runtime 設定、provider 選擇、工作階段、快取與 Runtime 管理的工作空間檔案，也包含先前重置時保留的 Runtime 資料。已安裝的工具與 provider 登入會保留。',
   'Data can be reset only from Cats Bot Settings.': '只能從 Cats Bot 設定重置資料。',
   'Type RESET to confirm the selected data reset.': '請輸入 RESET 以確認重置所選資料。',
   'Finish the current setup or update before resetting data.': '請先完成目前的設定或更新，再重置資料。',
@@ -262,8 +262,6 @@ export const zhTW: Record<string, string> = {
   'Keep system-level session and orchestration messages visible in every conversation of this cat bot.':
     '保留系統層級的會話與調度者訊息，在這隻機器貓的所有對話中顯示。',
   // The note header's (i): the bot's provider, model and effort.
-  '{effort} effort': '推理強度 {effort}',
-  'Provider and model: {summary}': 'Provider 與模型：{summary}',
   'Microphone access was denied. Check your system voice permissions.': '麥克風存取遭拒。請檢查系統語音權限。',
   'Voice input needs system microphone and speech permissions.': '語音輸入需要系統麥克風與語音權限。',
   'No microphone was detected.': '未偵測到麥克風。',
@@ -640,8 +638,8 @@ export const zhTW: Record<string, string> = {
   "The CLI's own default": 'CLI 本身的預設值',
   'The saved model is unavailable. Choose a model before saving.':
     '已儲存的模型目前無法選用。請先選擇模型再儲存。',
-  'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.':
-    '選擇的 Runtime/provider 必須支援這項政策。核准工具無法繞過工作區或網路限制。遠端 MCP 伺服器可能有各自的存取權限。',
+  'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited filespace or network policy. Remote MCP servers may have their own access.':
+    '選擇的 Runtime/provider 必須支援這項政策。核准工具無法繞過檔案空間或網路限制。遠端 MCP 伺服器可能有各自的存取權限。',
   'This is the top-level MCP list. Nested tools may load later. Discovery does not verify a browser or desktop operation.':
     '這是最上層的 MCP 清單，內層工具可能稍後才載入。探索結果不代表已驗證瀏覽器或桌面操作。',
   'This session': '這個工作階段',
@@ -653,9 +651,9 @@ export const zhTW: Record<string, string> = {
   Version: '版本',
   'Where this conversation lives': '對話所在層級',
   'Who the cat bot is and how it should talk to you.': '機器貓的角色，以及它該如何與你交談。',
-  'Workspace and permissions': '工作區與權限',
-  'Workspace folder': '工作區資料夾',
-  'Write in the workspace': '可寫入工作區',
+  'Filespace and permissions': '檔案空間與權限',
+  'Filespace': '檔案空間',
+  'Write in the filespace': '可寫入檔案空間',
   Yes: '是',
   allowed: '允許',
   'idle minutes': '分鐘',
@@ -781,8 +779,8 @@ export const zhTW: Record<string, string> = {
   'Session observation is unavailable.': '目前無法取得工作階段觀察結果。',
   'Saved. The current turn keeps its admitted policy; new sessions use this selection.':
     '已儲存。目前回合會沿用原政策，新工作階段將使用這項設定。',
-  'Could not apply this policy. Check the workspace boundary and clear any legacy tool allowlist first.':
-    '無法套用此政策。請檢查工作區限制，並先清除舊工具允許清單。',
+  'Could not apply this policy. Check the filespace boundary and clear any legacy tool allowlist first.':
+    '無法套用此政策。請檢查檔案空間限制，並先清除舊工具允許清單。',
   'Desktop control on; turn it on in each conversation that should use it':
     '已開啟桌面控制；請在需要使用的各個對話中開啟',
   'Desktop control off; every app grant is revoked': '已關閉桌面控制，並撤銷所有應用程式授權',
@@ -812,7 +810,7 @@ export const zhTW: Record<string, string> = {
   'Owner chat': '擁有者聊天',
   'Last error': '最近錯誤',
   'Cat bot id': '機器貓 ID',
-  'Data folder': '資料資料夾',
+  'Data folder': '資料位置',
   'Check for a newer version of Cats Bot.': '檢查是否有新版 Cats Bot。',
   'You are up to date.': '目前已是最新版本。',
   'A new version is available.': '有新版本可以使用。',

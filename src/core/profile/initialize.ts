@@ -76,10 +76,10 @@ export function initializeBot(
   try {
     // A competing initializer may have finished after the first read.
     if (existsSync(paths.profile)) throw new Error(`Bot ${input.id} already exists at ${root}`);
-    for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.workspace]) {
+    for (const dir of [paths.root, paths.conversations, paths.transcripts, paths.runtime, paths.logs, paths.filespace]) {
       mkdirSync(dir, { recursive: true });
     }
-    const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.workspace });
+    const profile = createProfile({ ...input, avatar: input.avatar ?? suggestBotAvatar(botsHome), cwd: input.cwd ?? paths.filespace });
     saveProfile(paths, profile);
     return { profile, root };
   } finally { lock.release(); }
@@ -88,7 +88,7 @@ export function initializeBot(
 /** The bot's profile, or null when it was never set up; a corrupt profile throws. */
 export function readBotProfile(root: string): BotProfile | null {
   const paths = botPathsFor(root);
-  const placeholder = createProfile({ id: 'bot', name: 'bot', provider: 'claude', cwd: paths.workspace });
+  const placeholder = createProfile({ id: 'bot', name: 'bot', provider: 'claude', cwd: paths.filespace });
   const loaded = loadProfile(paths, placeholder);
   if (loaded.ok) return loaded.profile;
   if (loaded.reason === 'missing') return null;

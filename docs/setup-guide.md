@@ -303,7 +303,8 @@ for the app's architecture, with the .NET runtime's license texts. Both steps
 do nothing on macOS and Linux.
 
 `init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
-the bot's own `workspace/`) and `--permission-mode skip|whitelist|default`.
+the bot's own `filespace/`, or `workspace/` for bots made before 2026-11-16) and
+`--permission-mode skip|whitelist|default`.
 The provider is the CLI's product name as cats-runtime knows it (`claude`,
 `codex`, `copilot`, `pi`, …); that CLI must be installed and logged in.
 

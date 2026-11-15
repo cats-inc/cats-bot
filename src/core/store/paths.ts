@@ -16,7 +16,7 @@ export interface BotPaths {
   journal: string;
   runtime: string;
   logs: string;
-  workspace: string;
+  filespace: string;
   lock: string;
   handoff: string;
   life: string;
@@ -120,7 +120,9 @@ export function botPathsFor(root: string): BotPaths {
     journal: join(root, 'journal.jsonl'),
     runtime: join(root, 'runtime'),
     logs: join(root, 'logs'),
-    workspace: join(root, 'workspace'),
+    // A new bot's default working folder: its filespace, the Chat surface's name for the CLI's working
+    // directory (2026-11-16). Bots made before keep the `workspace/` their profile names; nothing moves.
+    filespace: join(root, 'filespace'),
     lock: join(root, 'instance.lock.json'),
     handoff: join(root, 'handoff'),
     life: join(root, 'life.json'),

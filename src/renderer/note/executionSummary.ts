@@ -1,47 +1,42 @@
 import type { ExecutionTarget, ModelCatalog, ModelControl, ModelControlValue } from '../../core/types.ts';
-import { t } from '../localeStore.ts';
 
 /**
- * The note header's (i): which provider, model and reasoning effort the bot runs, named as its model catalog
- * names them ("Claude · Opus 5.5 · Medium effort"). Without a catalog it falls back to the ids it has.
+ * SPEC-003 FR-11: the note header face's model line, composed as Cats Desktop's audience chip composes a cat's
+ * tooltip ("QQ · Claude-CLI · Opus 5.5 · xHigh"): the cat's name, the provider with its CLI backend, the
+ * model's catalog label and the label of each control the target chooses, none of them translated. A bot on
+ * the provider default is named by the catalog's default selection. Without a catalog it falls back to the ids.
  */
-export function executionSummary(target: ExecutionTarget, catalog: ModelCatalog | null, providerLabel: string | null): string {
-  const parts = [providerLabel?.trim() || target.provider];
+export function executionSummary(catName: string, target: ExecutionTarget, catalog: ModelCatalog | null): string {
   const usesDefault = !target.modelSelection && !target.model;
   const entryId = target.modelSelection?.entryId ?? target.model
     ?? catalog?.defaultSelection?.entryId ?? catalog?.defaultModel ?? null;
   const model = entryId ? catalog?.models.find((option) => option.id === entryId) : undefined;
-  if (entryId) parts.push(model?.label ?? entryId);
-  const control = effortControl([...(model?.controls ?? []), ...(catalog?.controls ?? [])], entryId);
-  if (control) {
-    const chosen = target.modelSelection?.controls?.[control.key]
-      ?? (usesDefault && catalog?.defaultSelection?.entryId === entryId ? catalog.defaultSelection.controls?.[control.key] : undefined)
-      ?? model?.controlDefaults?.[control.key]
-      ?? control.default
-      ?? markedDefault(control);
-    if (chosen !== undefined) parts.push(t('{effort} effort', { effort: valueLabel(control, chosen) }));
-  }
-  return parts.join(' · ');
+  const chosen = target.modelSelection?.controls
+    ?? (usesDefault && catalog?.defaultSelection?.entryId === entryId ? catalog.defaultSelection.controls : undefined)
+    ?? {};
+  const controls = [...(model?.controls ?? []), ...(catalog?.controls ?? [])];
+  const controlLabels = Object.entries(chosen)
+    .filter(([, value]) => value !== '' && value !== false)
+    .map(([key, value]) => valueLabel(controls.find((control) => control.key === key), value))
+    .filter((label) => label.length > 0);
+  return [catName.trim(), `${providerName(target.provider)}-CLI`, ...(entryId ? [withoutDefaultMark(model?.label ?? entryId)] : []),
+    ...controlLabels].filter(Boolean).join(' · ');
 }
 
-/** The reasoning-effort control that applies to `entryId`, whatever the provider prefixes its key with. */
-function effortControl(controls: readonly ModelControl[], entryId: string | null): ModelControl | undefined {
-  return controls.find((control) => /(?:^|[._])(?:reasoning_)?effort$/u.test(control.key)
-    && (!control.applicableEntryIds || (entryId !== null && control.applicableEntryIds.includes(entryId))));
-}
-
-function entries(control: ModelControl): Array<{ value: ModelControlValue; label: string }> {
-  return (control.values ?? []).map((value) => (typeof value === 'object' ? value : { value, label: String(value) }));
+/** Cats Desktop's provider display name: the id capitalized, OpenClaw as it spells itself. */
+function providerName(provider: string): string {
+  const id = provider.trim();
+  return id === 'openclaw' ? 'OpenClaw' : id.charAt(0).toUpperCase() + id.slice(1);
 }
 
 /** Catalogs mark the default value in its label, "Medium (default)". */
-const DEFAULT_MARK = /\s*\(default\)\s*$/iu;
-
-function markedDefault(control: ModelControl): ModelControlValue | undefined {
-  return entries(control).find((entry) => DEFAULT_MARK.test(entry.label))?.value;
+function withoutDefaultMark(label: string): string {
+  return label.replace(/\s*\(default\)\s*$/iu, '').trim();
 }
 
-function valueLabel(control: ModelControl, value: ModelControlValue): string {
-  const label = entries(control).find((entry) => entry.value === value)?.label ?? String(value);
-  return label.replace(DEFAULT_MARK, '');
+function valueLabel(control: ModelControl | undefined, value: ModelControlValue): string {
+  const entry = (control?.values ?? [])
+    .map((option) => (typeof option === 'object' ? option : { value: option, label: String(option) }))
+    .find((option) => option.value === value);
+  return withoutDefaultMark(entry?.label ?? String(value));
 }

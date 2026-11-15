@@ -524,8 +524,9 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   header and composer button, the header's face and a time: the note's own tooltip shows (a native one does
   not, which is the point). Clickable controls show the paw cursor on Linux, the system's pointing hand on
   macOS and an ordinary cursor on Windows; the face shows the plain arrow. Every face sits on a paper disc;
-  the Boss Cat's has the gold ring. The header face's tooltip names the role, if any, above the provider,
-  model and effort, and Tab reaches it. Replies carry no face, and the time sits inside each bubble. A contact note puts
+  the Boss Cat's has the gold ring. The header face's tooltip names the role, if any, above the line Cats
+  Desktop's audience chip shows for that cat ("QQ · Claude-CLI · Opus 5.5 · xHigh", untranslated in zh-TW),
+  and Tab reaches it. Replies carry no face, and the time sits inside each bubble. A contact note puts
   the Boss Cat on the right and the other cat on the left, both with face and name, and the header shows the
   other cat. The direct message's send button is a paper plane only
   with Telegram on, a token stored and the owner's chat bound. Scroll up: the scroll-to-latest button shows

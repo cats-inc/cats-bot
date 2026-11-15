@@ -191,9 +191,9 @@ export function BotTab({
           </select>
         </label>
         <details className="advanced">
-          <summary>{t('Workspace and permissions')}</summary>
+          <summary>{t('Filespace and permissions')}</summary>
           <label className="field">
-            <span>{t('Workspace folder')}</span>
+            <span>{t('Filespace')}</span>
             <div className="row">
               <input
                 id="bot-cwd"
