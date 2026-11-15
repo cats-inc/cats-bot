@@ -41,6 +41,7 @@ import { LAYER_PLATES, layerPlateStates } from './layerPlates.ts';
 import {
   entrySpeaker,
   headerCat,
+  headerShowsSelf,
   reachesTelegram,
   selfSpeaker,
   type BubbleSpeaker,
@@ -130,14 +131,21 @@ function HideGlyph() {
 
 const api = window.catsBot;
 
-/** A cat's face: its picture, or its initial while its look is not known to this note. */
-function CatFace({ cat, className }: { cat: NoteCat; className: string }) {
+/**
+ * A cat's face: its picture, or its initial while its look is not known to this note. `execution` is the bot's
+ * provider, model and effort, which the header's face of the note's own cat names after the role (FR-11).
+ */
+function CatFace({ cat, className, execution = '' }: { cat: NoteCat; className: string; execution?: string }) {
   useI18n();
   const classes = `${className}${cat.bossCat ? ' catFaceBoss' : ''}`;
   // SPEC-009 FR-10: the gold ring is the Boss Cat's; the role is named on hover and to assistive technology.
-  // `data-tooltip`, not `title`: the tooltip takes a title over for good, and this one must go with the role.
-  const role = cat.bossCat
-    ? { role: 'img', 'aria-label': t('Boss Cat'), 'data-tooltip': t('Boss Cat') }
+  // `data-tooltip`, not `title`: the tooltip takes a title over for good, and this one must follow the role
+  // and the model. A face that names its model takes keyboard focus, which shows the tooltip too.
+  const shown = [cat.bossCat ? t('Boss Cat') : '', execution].filter(Boolean);
+  const spoken = [cat.bossCat ? t('Boss Cat') : '', execution ? t('Provider and model: {summary}', { summary: execution }) : '']
+    .filter(Boolean);
+  const role = shown.length > 0
+    ? { role: 'img', 'aria-label': spoken.join('\n'), 'data-tooltip': shown.join('\n'), ...(execution ? { tabIndex: 0 } : {}) }
     : { 'aria-hidden': true };
   return cat.avatar
     ? <span className={classes} {...role}><img src={cat.avatar} alt="" /></span>
@@ -403,7 +411,7 @@ export function NoteApp() {
   // arrow everywhere else. Until both are known it is the arrow.
   const [directMessage, setDirectMessage] = useState(requested === 'home');
   const [telegram, setTelegram] = useState(false);
-  // The header's (i): the bot's provider, model and reasoning effort, read from its model catalog.
+  // The header face's tooltip: the bot's provider, model and reasoning effort, read from its model catalog.
   const [executionInfo, setExecutionInfo] = useState('');
   const executionRequest = useRef(0);
   const executionTarget = useRef('');
@@ -772,13 +780,13 @@ export function NoteApp() {
     <>
       <header className="note-header" id="header">
         {/* SPEC-009 FR-10, SPEC-012 FR-5: the note's cat (on a contact note, the cat the Boss Cat looks after). */}
-        {speakerAvatar !== undefined && <CatFace cat={headerCat(cast)} className="note-face" />}
+        {/* SPEC-003 FR-11: hovering or focusing the face names the role and, for the note's own cat, the bot's
+            provider, model and effort, which an (i) after the title showed before (2026-11-16). */}
+        {speakerAvatar !== undefined
+          && <CatFace cat={headerCat(cast)} className="note-face" execution={headerShowsSelf(cast) ? executionInfo : ''} />}
         <span className="note-title" id="title">
           {title}
         </span>
-        {/* Not a button: it shows its text on hover and on focus, like Cats Desktop's model (i). */}
-        {executionInfo && <span className="note-info" id="execution-info" role="img" tabIndex={0} title={executionInfo}
-          aria-label={t('Provider and model: {summary}', { summary: executionInfo })}>i</span>}
         <span className="note-unread" id="unread" hidden={unread === 0}>
           {unread}
         </span>

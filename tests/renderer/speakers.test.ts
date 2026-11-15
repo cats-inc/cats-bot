@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { entrySpeaker, headerCat, reachesTelegram, selfSpeaker, type NoteCast } from '../../src/renderer/note/speakers.ts';
+import { entrySpeaker, headerCat, headerShowsSelf, reachesTelegram, selfSpeaker, type NoteCast } from '../../src/renderer/note/speakers.ts';
 
 /** SPEC-003 FR-15, FR-16, SPEC-009 FR-10, SPEC-012 FR-5: who speaks in a note, where, and by which face. */
 
@@ -59,4 +59,12 @@ test('the direct message is Telegram\'s once Telegram is on, its token stored an
   assert.equal(reachesTelegram({ enabled: true, ownerChatId: 42 }, false), false);
   // Not bound yet: nothing reaches Telegram until the owner writes to the bot there.
   assert.equal(reachesTelegram({ enabled: true, ownerChatId: null }, true), false);
+});
+
+test('the header face carries the provider and model only while it is the note\'s own cat (SPEC-003 FR-11)', () => {
+  assert.equal(headerShowsSelf({ self: qq, peers: [boss], contact: null }), true);
+  // The looked-after cat's contact note shows that cat itself.
+  assert.equal(headerShowsSelf({ self: qq, peers: [boss], contact: { id: 'boss', name: 'Boss' } }), true);
+  // The Boss Cat's contact note shows the cat it looks after, whose model this note does not know.
+  assert.equal(headerShowsSelf({ self: { ...boss }, peers: [mochi], contact: { id: 'mochi', name: 'Mochi' } }), false);
 });

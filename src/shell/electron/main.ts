@@ -23,7 +23,7 @@ import { readBotIdFromEnv, readProviderOverrides } from '../../core/hostEnv.ts';
 import { initializeBot, readBotProfile, suggestBotAvatar } from '../../core/profile/initialize.ts';
 import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
 import { CLI_PROVIDERS, fixedProviders, listProviders, readPackagedModelCatalog } from '../../core/providers/catalog.ts';
-import { providerCanOfferSessionTools } from '../../shared/providerTools.ts';
+import { bossCatToolsState, type BossCatToolsState } from '../../shared/providerTools.ts';
 import { readInstanceLock } from '../../core/store/lock.ts';
 import { botPathsFor, botRootIn, deriveBotId, hubPathsFor, InvalidBotIdError, isValidBotId, resolveCatsBotHome } from '../../core/store/paths.ts';
 import {
@@ -171,8 +171,8 @@ interface BotRow {
   pid: number | null;
   startAutomatically: boolean;
   bossCat: boolean;
-  /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
-  bossCatTools: boolean | null;
+  /** SPEC-009 FR-11: for the holder, whether its tools are connected, wait for its next reply, or cannot come. */
+  bossCatTools: BossCatToolsState | null;
   /** SPEC-012 FR-12: whether the Boss Cat may see this bot's status. */
   bossCatSees: boolean;
 }
@@ -539,9 +539,10 @@ async function main(): Promise<void> {
         pid: runner?.handle?.hosted.pid ?? external,
         startAutomatically: bot.startAutomatically,
         bossCat: registry.bossCat.holder === bot.id,
-        // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools.
+        // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools;
+        // otherwise they wait for its next send until its running core reports them fetched.
         bossCatTools: registry.bossCat.holder === bot.id && profile !== null
-          && !providerCanOfferSessionTools(profile.executionTarget.provider, profile.providerPolicy) ? false
+          ? bossCatToolsState(profile.executionTarget.provider, profile.providerPolicy, false)
           : null,
         bossCatSees: bot.bossCatSees,
       };
@@ -557,11 +558,11 @@ async function main(): Promise<void> {
   };
   const listBotsWithStatus = async () => {
     const listing = listBots();
-    await Promise.all(listing.bots.filter(bot => bot.bossCat).map(async bot => {
+    await Promise.all(listing.bots.filter(bot => bot.bossCatTools === 'pending').map(async bot => {
       const core = runners.get(bot.id)?.handle?.core;
       if (!core) return;
       const status = await core.status().catch(() => null);
-      bot.bossCatTools = status?.bossCat.holder ? status.bossCat.tools : null;
+      if (bot.bossCatTools === 'pending' && status?.bossCat.holder && status.bossCat.tools) bot.bossCatTools = 'connected';
     }));
     return listing;
   };
@@ -756,6 +757,12 @@ async function main(): Promise<void> {
     event: (presenter, event) => {
       if (event.type === 'turn.completed') {
         void bossCat.turnCompleted(presenter.botId, event.workItem).catch((error: unknown) => log(`Boss Cat: ${diagnosticError(error)}`, 'error'));
+      }
+      // FR-11: the holder's tools are fetched in its turns and dropped with its Runtime, so Cats Bot Settings
+      // reads them again after either instead of waiting for its window to be focused.
+      if ((event.type === 'turn.completed' || event.type === 'runtime.status')
+        && manager.registry.bossCat.holder === presenter.botId) {
+        hubSettings.browserWindow?.webContents.send('hub:botsChanged');
       }
     },
     // `cats-bot quit` stops that bot; with one bot the hub ends with it, as the shell did.

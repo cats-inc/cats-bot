@@ -151,8 +151,14 @@ export const zhTW: Record<string, string> = {
   'You can create {name} now. If Codex setup is incomplete, finish it before chatting.': '現在可以建立 {name}。若 Codex 尚未完成設定，請在開始對話前完成。',
   'Waiting for the current turn…': '等待目前回合結束…',
   'The session is still busy. Automatic retries stopped. Your message is kept here; try again later.': '工作階段仍忙碌，已停止自動重試。你的訊息仍保留在這裡，請稍後再試。',
-  'Boss Cat tools have not connected. Check provider access settings or start a conversation.': '主控貓的工具還沒連上，請檢查 provider 存取設定，或開始一段對話。',
-  'Boss Cat tool availability has not been checked.': '還沒確認主控貓的工具能不能用。',
+  // SPEC-009 FR-11: the holder's tools in Settings → Cat bots (2026-11-16).
+  'The Boss Cat tools are connected.': '主控貓的工具已連上。',
+  '{name} gets the Boss Cat tools at its next reply: your next message or its own next activity. Its conversations stay as they are, and nothing needs restarting.':
+    '{name} 下一次回覆時會接上主控貓的工具：你的下一則訊息，或它下一次自主活動。對話照常使用，不必重新啟動。',
+  "{provider} gives the Boss Cat tools once its access is set: {name}'s Settings → Cat bot → Provider access and tools.":
+    '{provider} 要先設定存取方式，才能使用主控貓的工具：到 {name} 的設定 →「機器貓」→「Provider 存取與工具」。',
+  '{provider} does not support the Boss Cat tools. {name} keeps the role and gets them at its next reply after moving to another provider.':
+    '{provider} 不支援主控貓的工具。{name} 仍是主控貓，換成其他 provider 後，下一次回覆就會接上。',
   'Enable native tools with provider permissions': '啟用原生工具，沿用供應商權限',
   "Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.": '原生工具可使用檔案、指令和網路。供應商會沿用自身的權限設定，需要你核准的要求會出現在機器貓的對話中。此模式下機器貓無法額外限制檔案或網路存取範圍。',
   'Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.': 'Antigravity 原生工具需要 Google 官方 Antigravity ACP server 並完成登入，僅安裝一般 agy CLI 並不足夠。目前此供應商尚未開放 Cats 工具。',

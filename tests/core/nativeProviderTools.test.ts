@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { renderProvidersConfig } from '../../src/core/runtime/providersConfig.ts';
 import { assertHostedProviderPolicy } from '../../src/core/runtime/providerPolicy.ts';
-import { providerCanOfferSessionTools } from '../../src/shared/providerTools.ts';
+import { bossCatToolsState, providerCanOfferSessionTools } from '../../src/shared/providerTools.ts';
 import { fetchFakeState, makeTempHome, openTestBot, sendAndWait, waitForEvent } from '../support/harness.ts';
 
 const policy = { version: 1, mode: 'provider', constraints: { maxAccess: 'full-access', network: true } } as const;
@@ -21,6 +21,16 @@ test('hosted targets enable session tools without changing legacy defaults', () 
   assert.equal(providerCanOfferSessionTools('codex', null), true);
   assert.match(renderProvidersConfig({ provider: 'antigravity', protocol: 'hosted' }), /agy_acp_server/u);
   assert.match(renderProvidersConfig({ provider: 'antigravity' }), /command: "agy"/u);
+});
+
+test('the Boss Cat tools state says why a holder has none, or that they come at its next send (SPEC-009 FR-11)', () => {
+  assert.equal(bossCatToolsState('claude', null, false), 'pending');
+  assert.equal(bossCatToolsState('claude', null, true), 'connected');
+  assert.equal(bossCatToolsState('grok', null, false), 'needsAccess');
+  assert.equal(bossCatToolsState('muse', null, true), 'needsAccess');
+  assert.equal(bossCatToolsState('grok', policy, false), 'pending');
+  assert.equal(bossCatToolsState('antigravity', null, false), 'unsupported');
+  assert.equal(bossCatToolsState('antigravity', policy, true), 'unsupported');
 });
 
 test('policy-only transport switches wait for the active turn, replace Runtime, and preserve history', async () => {

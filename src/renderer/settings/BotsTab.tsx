@@ -5,7 +5,7 @@ import type { BotAction, BotListing, BotRow } from '../bridge.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { errorText } from '../errors.ts';
 import { Group, Row } from './Rows.tsx';
-import { bossCatChoice, botStateLine } from './settingsLogic.ts';
+import { bossCatChoice, bossCatToolsHint, botStateLine } from './settingsLogic.ts';
 import { useToast } from './toast.ts';
 
 /**
@@ -150,9 +150,7 @@ export function BotsTab() {
     const choice = bossCatChoice(holder?.id ?? null, chosen);
     if (choice) void act(choice.id)(choice.action);
   };
-  const toolsHint = holder?.bossCatTools === false
-    ? t('Boss Cat tools have not connected. Check provider access settings or start a conversation.')
-    : holder?.bossCatTools === null ? t('Boss Cat tool availability has not been checked.') : null;
+  const toolsHint = holder ? bossCatToolsHint(holder) : null;
   return (
     <section className="panel" data-panel="bots">
       <div className="panel-head">
@@ -190,7 +188,7 @@ export function BotsTab() {
           id="bots-boss-cat"
           lead={t('The Boss Cat can hand work to the other cat bots. It asks you before it creates or starts a cat bot or passes the role on.')}
         >
-          <Row label={t('Assigned to')} htmlFor="boss-cat-holder" hint={toolsHint} warn={holder?.bossCatTools === false}>
+          <Row label={t('Assigned to')} htmlFor="boss-cat-holder" hint={toolsHint?.text} warn={toolsHint?.warn}>
             <select id="boss-cat-holder" value={holder?.id ?? ''} onChange={(event) => chooseBossCat(event.target.value)}>
               <option value="">{t('None')}</option>
               {active.map((bot) => <option key={bot.id} value={bot.id}>{bot.name}</option>)}
