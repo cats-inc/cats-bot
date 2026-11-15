@@ -43,7 +43,7 @@ const page = {
   iconPath: join(repo, 'assets/icon.png'),
 };
 const calls = [],
-  installed = new Set(['claude', 'antigravity', 'grok', 'muse']);
+  installed = new Set(['claude', 'antigravity', 'grok', 'muse', 'kimi']);
 const providers = new ProviderSetup(async (helper, apply) => {
   calls.push(`${helper}:${apply}`);
   if (apply) installed.add(helper);

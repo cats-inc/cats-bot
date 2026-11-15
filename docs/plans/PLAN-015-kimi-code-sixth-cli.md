@@ -2,16 +2,18 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Implemented on `feat/kimi-sixth-cli`; native Bot acceptance pending |
+| Status | Implemented; headless native acceptance passed; GUI note acceptance pending |
 | Decision | [ADR-025](../decisions/025-add-kimi-code-as-a-hosted-only-sixth-cli.md) |
-| Runtime | cats-inc/cats-runtime#225 (hosted `kimi acp`, ADR-054 decision 11) |
+| Runtime | `b9819a6c`: cats-inc/cats-runtime#225 (hosted `kimi acp`, ADR-054 decision 11) and #226 (45 s start-up, typed cards) |
 | Created | 2026-11-16 |
 
 ## Slices
 
-1. **Runtime pin.** Select the Runtime `main` commit that contains #225 with
-   `node scripts/refresh-runtime-pin.mjs`. It carries #224 (the Kimi provider, catalog and native
-   session management) and #225.
+1. **Runtime pin.** Select Runtime `main` at `b9819a6c` with
+   `node scripts/refresh-runtime-pin.mjs --ref b9819a6c`. It carries:
+   - #224: the Kimi provider, its catalog and native session management.
+   - #225: hosted `kimi acp`.
+   - #226: the 45 s start-up and command and file cards.
 2. **Provider lists.** Add Kimi in every place the Bot lists providers:
    - `CLI_PROVIDERS`, `SETUP_PROVIDER_IDS` and `SetupHelperId`
    - the settings picker, the wizard's native-installer group and the Agent CLIs rows
@@ -37,10 +39,19 @@
   - native provider tools, including the new hosted-only profile test
 - After the Runtime repin:
   - `tests/integration/nativeProviderTools.test.ts` runs the packed Runtime against the scripted
-    ACP fixture for Kimi as well.
-  - The full `npm test` and `npm run build` run in CI.
-- Native acceptance on Windows with a signed-in Kimi plan:
-  - Create a Kimi bot. Ask for a screenshot of a test window.
-  - Approve the card in the note and confirm the cell shown on it.
-  - Decline once and confirm that nothing runs.
-  - Not yet run in the Bot itself. The Runtime path was accepted end to end in Runtime #225.
+    ACP fixture for Kimi as well, covering session MCP, Boss Cat tools and accept/decline cards.
+  - Local results on Windows: typecheck passed; `npm test` 932 tests, 922 passed, 10 skipped,
+    0 failed; `npm run build` passed.
+- Headless native acceptance, 2026-11-16, Windows 11. Setup: the Bot core from this branch on the
+  packed Runtime `b9819a6c`, real Kimi Code 2.6.0 on a real plan with `kimi-cu-win`, and an
+  isolated `CATS_BOT_HOME`.
+  - `cats-bot init --provider kimi` saved the hosted policy. `capabilities home` reported it
+    `verified` in Default mode, and `computer_use` as `available`.
+  - Approved owner message: `interactions home` showed one `tool_approval` card with the JS cell
+    and only "Approve once". `respond` with accept ran the tool, and the turn completed with its
+    output.
+  - Declined owner message: no tool ran, and the bot said it was declined.
+  - Kimi's session was deleted afterwards. No desktop input was sent.
+- Still to do on a real desktop:
+  - The same cards in the note window.
+  - A screenshot of a test window.

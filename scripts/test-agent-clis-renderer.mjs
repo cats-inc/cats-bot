@@ -40,7 +40,7 @@ const check = (name, ok, detail = '') => {
 /** A computer that is partly set up: Codex missing, Claude and Grok working, Muse's check broken. */
 function world() {
   const calls = [];
-  const state = { node: 'ready', npm: 'ready', codex: 'changes_required', claude: 'ready', antigravity: 'changes_required', grok: 'ready', muse: 'throw', shell: 'changes_required' };
+  const state = { node: 'ready', npm: 'ready', codex: 'changes_required', claude: 'ready', antigravity: 'changes_required', grok: 'ready', muse: 'throw', kimi: 'ready', shell: 'changes_required' };
   const versions = { node: '22.11.0', claude: '2.0.14', grok: '0.9.0' };
   const run = async (helper, change) => {
     calls.push(`${helper}:${change}`);

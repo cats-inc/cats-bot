@@ -71,7 +71,7 @@ Use [000-template.md](./000-template.md) as the starting point for new plans.
 | [PLAN-011](./PLAN-011-setup-wizard.md) | Setup Wizard | Implemented; clean-machine acceptance pending | [SPEC-010](../specs/SPEC-010-setup-wizard.md) |
 | [PLAN-012](./PLAN-012-agent-clis-in-cats-bot-settings.md) | Agent CLIs in Cats Bot Settings | Implemented; clean-machine acceptance pending | [SPEC-013](../specs/SPEC-013-agent-clis-in-cats-bot-settings.md) |
 | [PLAN-014](./PLAN-014-bot-state-database-and-memory.md) | Bot State Database and Memory | P1 withdrawn 2026-11-12 (tag `state-db-p1`); P2 onward wait on Cats Desktop's pilot | [SPEC-014](../specs/SPEC-014-bot-state-database-and-migration.md), [SPEC-015](../specs/SPEC-015-bot-memory-layers-recall-and-consolidation.md) |
-| [PLAN-015](./PLAN-015-kimi-code-sixth-cli.md) | Kimi Code as the Sixth CLI | Implemented; native Bot acceptance pending | [ADR-025](../decisions/025-add-kimi-code-as-a-hosted-only-sixth-cli.md) |
+| [PLAN-015](./PLAN-015-kimi-code-sixth-cli.md) | Kimi Code as the Sixth CLI | Implemented; headless native acceptance passed, GUI note acceptance pending | [ADR-025](../decisions/025-add-kimi-code-as-a-hosted-only-sixth-cli.md) |
 
 <!-- Add new plans above this line -->
 
