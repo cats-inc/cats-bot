@@ -3,6 +3,7 @@ import { delimiter } from 'node:path';
 import { attachmentIsCurrent, SessionBinder, staleNotice } from './conversations/binder.ts';
 import { readAttachmentImage, storeAttachment, type StoredAttachment } from './conversations/attachmentStore.ts';
 import { ConversationStore } from './conversations/store.ts';
+import { ConversationNamer } from './conversations/titles.ts';
 import {
   catsDesktopExecutables,
   createDesktopControlHelperClient,
@@ -205,6 +206,8 @@ export class BotCore implements BotHostApi {
   private readonly workItems = new Map<string, WorkItem>();
   private readonly schedules = new Map<string, ScheduleRecord>();
   private readonly binder: SessionBinder;
+  /** SPEC-002 FR-5a: drafts and names notes' titles. */
+  private readonly namer: ConversationNamer;
   private readonly runner: TurnRunner;
   private readonly toolServer: BotToolServer | null;
   /** SPEC-009 FR-3: the Boss Cat's `cats-hub` tools, offered only while the hub reports this bot as holder. */
@@ -318,6 +321,13 @@ export class BotCore implements BotHostApi {
       });
     this.desktopSwitches = new DesktopControlSwitches(this.paths.desktopControl, (line) => this.log(`warn ${line}`));
     this.desktop = this.createDesktopControl();
+    this.namer = new ConversationNamer({
+      conversations: this.conversations,
+      client: () => this.client(),
+      profile: () => this.profile,
+      renamed: (record) => this.bus.emit({ type: 'conversation.updated', conversation: record }),
+      log: this.log,
+    });
     this.binder = new SessionBinder({
       client: () => this.client(),
       profile: () => this.profile,
@@ -1176,6 +1186,8 @@ export class BotCore implements BotHostApi {
       }
     }
     if (running) this.interactions.end(running.item.id, 'bot_stopped');
+    // A naming in flight is cancelled and its session closed before the runtime goes (SPEC-002 FR-5a).
+    await Promise.race([this.namer.stop(), new Promise((resolve) => { setTimeout(resolve, 5_000).unref(); })]);
     } finally {
       running?.controller.abort();
       // BDC-07: grants live in memory only; the helper ends with the core.
@@ -1709,15 +1721,18 @@ export class BotCore implements BotHostApi {
     if (!trimmed) throw new Error('A title cannot be empty');
     const record = this.conversations.update(this.resolveConversationId(conversationId), (next) => {
       next.title = trimmed.slice(0, 80);
+      // FR-5a: the owner's name is final; the bot never names the note again.
+      next.titleSource = 'owner';
     });
     this.bus.emit({ type: 'conversation.updated', conversation: record });
     return structuredClone(record);
   }
 
   async createConversation(title?: string): Promise<ConversationRecord> {
-    const record = this.conversations.create(
-      title ?? `Conversation ${this.conversations.list().length}`,
-    );
+    // SPEC-002 FR-5a: a name given here is the owner's (the host API); otherwise the note waits for its first message.
+    const record = title === undefined
+      ? this.conversations.create(`Conversation ${this.conversations.list().length}`)
+      : this.conversations.create(title, 'note', undefined, undefined, 'owner');
     this.bus.emit({ type: 'conversation.updated', conversation: record });
     return structuredClone(record);
   }
@@ -1795,6 +1810,8 @@ export class BotCore implements BotHostApi {
       ...(sourceRef ? { sourceRef } : {}),
     };
     this.conversations.append(id, { kind: 'owner', origin: 'owner', text: prompt, workItemId: item.id });
+    // SPEC-002 FR-5a: a note still called what it was made with reads the start of its first message.
+    this.namer.draft(id);
     this.record(item);
     this.bus.emit({ type: 'conversation.updated', conversation: this.conversations.require(id) });
     this.queue.enqueue(item);
@@ -2131,5 +2148,12 @@ export class BotCore implements BotHostApi {
       }
     }
     this.bus.emit({ type: 'turn.completed', conversationId: item.conversationId, workItem: item });
+    // SPEC-002 FR-5a: after an owner turn's reply, the bot names a note whose title was only drafted.
+    if (item.state === 'completed' && item.kind === 'owner_message') this.namer.afterTurn(item.conversationId, item.id);
+  }
+
+  /** For tests: every naming started has ended. */
+  async namingIdle(): Promise<void> {
+    await this.namer.idle();
   }
 }

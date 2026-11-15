@@ -222,7 +222,7 @@ test('after a save the page says when sessions are replaced and when the runtime
 
 test('notes: home first, then the most recently active; ages read like a person would say them', () => {
   const record = (id: string, role: 'home' | 'note', last: string | null, created = '2026-10-01T00:00:00.000Z'): ConversationRecord => ({
-    schemaVersion: 1, id, role, title: id, createdAt: created, updatedAt: created,
+    schemaVersion: 1, id, role, title: id, titleSource: 'owner', createdAt: created, updatedAt: created,
     attachment: { state: 'none', sessionId: null, provider: null, model: null, configRevision: null } as unknown as ConversationRecord['attachment'],
     unreadCount: 0, lastOwnerMessageAt: last, lastBotMessageAt: null, checkpoint: null, contactOf: null, contactName: null,
   });

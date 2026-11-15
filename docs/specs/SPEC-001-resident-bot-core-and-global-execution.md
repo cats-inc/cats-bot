@@ -200,7 +200,8 @@ freeze of the storage format.
     `attempts`, `coalesceKey?`, `result?`, `notification?`.
 16. FR-16: The queue is bot-scoped and serialized, with only one `running` at a time. Owner messages jump ahead
     of all background work items; a `running` background work item is not preempted; cancellation is triggered
-    only by an explicit owner action (`POST /sessions/{id}/cancel`).
+    only by an explicit owner action (`POST /sessions/{id}/cancel`). Naming a note (SPEC-002 FR-5a, ADR-025) is
+    not a turn: it runs in a short session of its own, outside the queue, and may overlap a turn.
 17. FR-17: The core holds a gate keyed by runtime session, to ensure its own concurrency does not cause 409s.
     Only a recognized session-busy 409 is retried: a background work item is retried once after 4 minutes;
     an owner message waits 15 seconds between attempts, with at most eight attempts. Waiting remains

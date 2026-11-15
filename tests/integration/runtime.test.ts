@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
 
 import type { RuntimeClient } from '../../src/core/runtime/client.ts';
@@ -74,12 +74,12 @@ test('a host restart reuses home and note identities from the real Runtime regis
 });
 after(() => home.cleanup());
 
-function fixtureTurns(file = fixtureLog): Array<{ message: string; resumed: boolean; args: string[] }> {
+function fixtureTurns(file = fixtureLog): Array<{ message: string; resumed: boolean; args: string[]; cwd?: string }> {
   try {
     return readFileSync(file, 'utf8')
       .split('\n')
       .filter(Boolean)
-      .map((line) => JSON.parse(line) as { message: string; resumed: boolean; args: string[] });
+      .map((line) => JSON.parse(line) as { message: string; resumed: boolean; args: string[]; cwd?: string });
   } catch {
     return [];
   }
@@ -215,4 +215,88 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
     await core.stop();
   }
   assert.equal(core.runtimeState(), 'stopped');
+});
+
+test('the real runtime runs the bot\'s naming in an empty read-only sandbox and keeps no session of it (SPEC-002 FR-5a)', async () => {
+  const namingLog = join(home.botsHome, 'naming-fixture.log');
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'naming',
+    core: {
+      runtime: {
+        runtimeEntry: resolveRuntimeEntry(), providerCommand: fixtureCliCommand, providerLaunchArgs: fixtureCliLaunchArgs,
+        instanceExtras: { projects_dir: projectsDir }, readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome,
+          APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+          XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
+          CATS_BOT_FIXTURE_LOG: namingLog },
+      },
+    },
+  });
+  await core.start();
+  try {
+    const note = await core.createConversation();
+    const turn = await sendAndWait(core, note.id, 'plan a trip to Kyoto', 60_000);
+    assert.equal(turn.state, 'completed', turn.error);
+    await core.namingIdle();
+    const named = (await core.listConversations()).find((record) => record.id === note.id)!;
+    assert.deepEqual([named.title, named.titleSource], ['About plan a trip to Kyoto', 'cat']);
+
+    const turns = fixtureTurns(namingLog);
+    const naming = turns.find((entry) => entry.message.startsWith('{"ownerMessage"'))!;
+    assert.ok(naming, `naming turn in ${turns.map((entry) => entry.message).join(' | ')}`);
+    assert.deepEqual(JSON.parse(naming.message), { ownerMessage: 'plan a trip to Kyoto', reply: 'echo: plan a trip to Kyoto' });
+    // Not the note's folder (the bot's filespace): an empty sandbox the Runtime made for the session, without MCP.
+    const noteTurn = turns.find((entry) => entry.message === 'plan a trip to Kyoto')!;
+    assert.ok(naming.cwd && noteTurn.cwd && naming.cwd !== noteTurn.cwd, `${naming.cwd} / ${noteTurn.cwd}`);
+    assert.ok(!naming.args.includes('--mcp-config'), naming.args.join(' '));
+    assert.ok(!naming.args.includes('--dangerously-skip-permissions'), naming.args.join(' '));
+    const client = (core as unknown as { client(): RuntimeClient }).client();
+    const sessions = await (client as unknown as { request(method: string, path: string): Promise<{ sessions?: Array<{ sessionLabel?: string }> } | Array<{ sessionLabel?: string }>> })
+      .request('GET', '/sessions');
+    const list = Array.isArray(sessions) ? sessions : sessions.sessions ?? [];
+    assert.ok(!list.some((session) => String(session.sessionLabel ?? '').includes('naming a conversation')),
+      'the naming session was deleted');
+    // The CLI may still be letting go of its folder (Windows), so the Runtime gets a moment to remove it.
+    const removedBy = Date.now() + 10_000;
+    while (existsSync(naming.cwd!) && Date.now() < removedBy) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(existsSync(naming.cwd!), false, 'the Runtime removed the sandbox with the session');
+  } finally {
+    await core.stop();
+  }
+});
+
+test('a Codex bot names a note in an ephemeral read-only thread (SPEC-002 FR-5a)', async () => {
+  const codexLog = join(home.botsHome, 'naming-codex.log');
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'naming-codex',
+    profile: { provider: 'codex' },
+    core: {
+      tools: false,
+      runtime: {
+        runtimeEntry: resolveRuntimeEntry(), providerCommand: process.execPath,
+        providerLaunchArgs: [join(dirname(fixtureCliLaunchArgs[0]!), 'codex-fixture.mjs')], readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, CODEX_HOME: join(home.botsHome, 'codex'),
+          APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+          XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
+          CATS_BOT_FIXTURE_LOG: codexLog },
+      },
+    },
+  });
+  await core.start();
+  try {
+    const note = await core.createConversation();
+    const turn = await sendAndWait(core, note.id, 'plan a trip to Kyoto', 60_000);
+    assert.equal(turn.state, 'completed', turn.error);
+    await core.namingIdle();
+    const named = (await core.listConversations()).find((record) => record.id === note.id)!;
+    assert.deepEqual([named.title, named.titleSource], ['About plan a trip to Kyoto', 'cat']);
+    const threads = readFileSync(codexLog, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
+      .filter((entry) => entry.method === 'thread/start');
+    assert.deepEqual(threads.map((entry) => [entry.ephemeral, entry.sandbox]), [[false, 'workspace-write'], [true, 'read-only']],
+      'the note\'s own thread is kept; the naming thread is ephemeral and read-only');
+  } finally {
+    await core.stop();
+  }
 });

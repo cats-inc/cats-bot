@@ -95,7 +95,10 @@ alone would protect the direct message and the Boss Cat's tools.
      removed.
    - Every consumer shows titles fenced as data.
    - Titles are set by the owner, or by the bot when it creates a note. They are never derived
-     from a message.
+     from a message: a title drafted from the owner's first message or named by the bot from its
+     first exchange (SPEC-002 FR-5a, 2026-11-16) is listed empty, which consumers read as "an
+     untitled note". Only `default` and `owner` titles appear. An older build rewriting a record
+     drops its `titleSource`, after which such a title reads as the owner's.
    - Nothing else leaves the core through the board: no message text, prompt, tool argument,
      schedule prompt, decision content, error text, memory, file path or secret. It does not
      say which bots wrote to this one either.
@@ -253,7 +256,8 @@ alone would protect the direct message and the Boss Cat's tools.
   what SPEC-009 FR-6 lists. An injected Boss Cat can still message, start or stop other bots
   and use its native tools in an owner-present turn, as under SPEC-009.
 - **Privacy**: a direct message leaves its bot only as message times. Notes leave only as
-  titles, and the per-bot switch removes even those.
+  titles the owner set (or the name a note was made with), and the per-bot switch removes even
+  those. A title the note took from its messages stays with its bot (SPEC-002 FR-5a).
 
 ## Design Overview (Phase 1)
 

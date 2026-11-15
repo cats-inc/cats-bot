@@ -155,6 +155,18 @@ async function handleMessage(req, res, session, body) {
     write({ type: 'text', text });
     write({ type: 'content_block', block: { id: 'b1', index: 0, kind: 'text', status: 'complete', text } });
   };
+  // SPEC-002 FR-5a: a naming session answers with a title in a code fence, or none for an owner message
+  // that starts with "untitled".
+  if (String(session.instructions ?? '').startsWith('You name one conversation')) {
+    const { ownerMessage = '' } = JSON.parse(message);
+    // "slow-title": the answer takes ten seconds, unless the session is cancelled first.
+    for (let waited = 0; ownerMessage.startsWith('slow-title') && waited < 10_000 && !aborted(); waited += 50) await sleep(50);
+    if (aborted()) return finish(false);
+    reply(ownerMessage.startsWith('untitled') ? 'I would rather not.'
+      : `\`\`\`json\n${JSON.stringify({ title: `About ${ownerMessage.slice(0, 20)}` })}\n\`\`\``);
+    write({ type: 'result', sessionId: session.providerSessionId });
+    return finish(true);
+  }
   if (message === 'provider-question') {
     const request = {
       interactionId: randomUUID(), sessionId: session.id, workerGeneration: session.generation,

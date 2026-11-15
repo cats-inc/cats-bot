@@ -1,5 +1,8 @@
 import { createInterface } from 'node:readline';
 import { randomUUID } from 'node:crypto';
+import { appendFileSync } from 'node:fs';
+
+const log = entry => { if (process.env.CATS_BOT_FIXTURE_LOG) appendFileSync(process.env.CATS_BOT_FIXTURE_LOG, `${JSON.stringify(entry)}\n`); };
 
 if (process.argv.includes('--version')) { console.log('codex-cli 0.164.0'); process.exit(0); }
 if (process.argv.includes('--help')) { console.log('codex app-server --listen stdio://'); process.exit(0); }
@@ -50,7 +53,9 @@ createInterface({ input: process.stdin }).on('line', async line => {
       cwd = frame.params.cwd ?? cwd;
       sandbox = frame.params.sandbox ?? sandbox;
       approval = frame.params.approvalPolicy ?? approval;
-      reply(frame.id, { thread: { id: threadId }, cwd, approvalPolicy: approval, approvalsReviewer: 'user',
+      log({ method: frame.method, ephemeral: frame.params.ephemeral === true, sandbox, approval, cwd });
+      // Codex confirms an ephemeral thread; Runtime refuses to start a turn otherwise.
+      reply(frame.id, { thread: { id: threadId, ...(frame.params.ephemeral === true ? { ephemeral: true } : {}) }, cwd, approvalPolicy: approval, approvalsReviewer: 'user',
         sandbox: sandbox === 'workspace-write' ? { type: 'workspaceWrite', writableRoots: [], networkAccess: false }
           : sandbox === 'read-only' ? { type: 'readOnly', access: { type: 'fullAccess' } } : { type: 'dangerFullAccess' } });
       break;
@@ -71,6 +76,10 @@ createInterface({ input: process.stdin }).on('line', async line => {
     case 'turn/start': {
       turnId = randomUUID(); reply(frame.id, { turn: { id: turnId } });
       const text = frame.params.input?.map(i => i.text ?? '').join('') ?? '';
+      log({ method: 'turn/start', text });
+      // SPEC-002 FR-5a: the bot names a note from its first exchange.
+      const naming = /\{"ownerMessage":"([^"]*)"/u.exec(text);
+      if (naming) { complete(JSON.stringify({ title: `About ${naming[1].slice(0, 20)}` })); break; }
       if (text.includes('provider-desktop')) {
         desktopStep = 0;
         requestDesktop('request_app_access', { apps: ['記事本'], reason: 'Read the fixture window' }); break;

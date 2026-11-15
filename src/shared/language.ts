@@ -104,6 +104,11 @@ const REPLY_LANGUAGE_PROMPT_NAMES: Record<ReplyLanguageCode, string> = {
 };
 
 /** The session instruction for a reply language, worded as Desktop words it. */
+/** The language's name as a prompt gives it, "Traditional Chinese". */
+export function replyLanguagePromptName(code: ReplyLanguageCode): string {
+  return REPLY_LANGUAGE_PROMPT_NAMES[code];
+}
+
 export function replyLanguageInstruction(code: ReplyLanguageCode | null): string | null {
   if (!code) return null;
   return [
