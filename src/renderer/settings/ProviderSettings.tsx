@@ -64,7 +64,7 @@ export function ProviderSettings({
     } catch {
       setNotice(
         t(
-          'Could not apply this policy. Check the workspace boundary and clear any legacy tool allowlist first.',
+          'Could not apply this policy. Check the filespace boundary and clear any legacy tool allowlist first.',
         ),
       );
     } finally {
@@ -96,7 +96,7 @@ export function ProviderSettings({
               </span>
               <select value={access} disabled={nativeTools} onChange={(e) => setAccess(e.target.value as ExecutionAccess)}>
                 <option value="read-only">{t('Read only')}</option>
-                <option value="workspace-write">{t('Write in the workspace')}</option>
+                <option value="workspace-write">{t('Write in the filespace')}</option>
                 <option value="full-access">{t('Full machine access')}</option>
               </select>
             </label>
@@ -130,7 +130,7 @@ export function ProviderSettings({
             )}
             <p className="hint">
               {t(
-                'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited workspace or network policy. Remote MCP servers may have their own access.',
+                'The selected Runtime/provider must support this policy. A tool approval cannot bypass a limited filespace or network policy. Remote MCP servers may have their own access.',
               )}
             </p>
             {nativeTools && <p className="hint">

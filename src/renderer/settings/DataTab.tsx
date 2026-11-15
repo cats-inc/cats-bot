@@ -30,7 +30,7 @@ export function DataTab() {
       <div className="form">
         <h3>{t('Reset Cats Bot data')}</h3>
         <p>{t('Erase all active and archived cat bots, conversations, memories, schedules, stored secrets and Hub settings. Cats Bot restarts and returns to setup. Erased data cannot be recovered.')}</p>
-        <p className="hint">{t('Runtime data is kept by default. Installed tools, provider logins, native CLI conversations outside Runtime storage, external workspaces and Cats Desktop data are kept.')}</p>
+        <p className="hint">{t("Runtime data is kept by default. Installed tools, provider logins, native CLI conversations outside Runtime storage, filespaces outside the cat bots' data and Cats Desktop data are kept.")}</p>
         <div className="row"><button type="button" className="danger" id="data-reset-open" onClick={open}>{t('Reset data…')}</button></div>
       </div>
       <dialog ref={dialog} className="data-reset-dialog" aria-labelledby="data-reset-title" onCancel={event => { if (busy) event.preventDefault(); }}>
