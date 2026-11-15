@@ -25,6 +25,7 @@ const NATIVE: Readonly<Record<string, { vendor: string; script: string }>> = {
   antigravity: { vendor: 'Google', script: 'antigravity.google/cli/install' },
   grok: { vendor: 'xAI', script: 'x.ai/cli/install' },
   muse: { vendor: 'Meta', script: 'dev.meta.ai/install' },
+  kimi: { vendor: 'Moonshot AI', script: 'code.kimi.ai/kimi-code/install' },
 };
 
 /** Who makes each provider's CLI, for page 1. */
@@ -34,6 +35,7 @@ export const PROVIDER_VENDORS: Readonly<Record<string, string>> = {
   antigravity: 'Google',
   grok: 'xAI',
   muse: 'Meta',
+  kimi: 'Moonshot AI',
 };
 
 const pathTag = (platform: string): StepTag => ({ text: platform === 'win32' ? 'Changes your user PATH' : 'Changes your shell profile' });

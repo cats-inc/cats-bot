@@ -5,7 +5,7 @@ import { readCatalogFactory, readLocalCatalogProjection } from '@cats-inc/cats-r
 
 /**
  * SPEC-002 FR-3: what a settings page may offer as the bot's provider and
- * model. The product exposes five CLI providers. Runtime's public catalogs
+ * model. The product exposes six CLI providers. Runtime's public catalogs
  * API supplies factory data, local overrides, revision and model controls;
  * the running Runtime's advanced catalog is authoritative for the active
  * provider (see `BotCore.listModels`). No Platform application is imported.
@@ -26,6 +26,7 @@ export const CLI_PROVIDERS: readonly ProviderDefinition[] = [
   { id: 'antigravity', label: 'Antigravity', command: 'agy' },
   { id: 'grok', label: 'Grok', command: 'grok' },
   { id: 'muse', label: 'Muse', command: 'muse' },
+  { id: 'kimi', label: 'Kimi', command: 'kimi' },
 ];
 
 /** The command the runtime launches for a provider; an unknown provider is its own command. */

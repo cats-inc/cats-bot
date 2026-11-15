@@ -20,7 +20,7 @@ The desktop shell restores avatar and conversation visibility, bounds and layers
 offers System/English/Traditional Chinese display languages and a reply language that
 every bot follows unless it picks its own, and shows tray update
 results in a native dialog. Onboarding checks and installs the selected provider;
-the picker offers Codex, Claude, Antigravity, Grok and Muse with Runtime's exact
+the picker offers Codex, Claude, Antigravity, Grok, Muse and Kimi with Runtime's exact
 model and effort choices. See [desktop parity](docs/plans/PLAN-007-desktop-experience-parity.md).
 
 Manual **Cats Bot Standard Preview** publication and host-owned **Check for Updates**

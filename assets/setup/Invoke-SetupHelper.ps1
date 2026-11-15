@@ -2,7 +2,7 @@
 .SYNOPSIS
     Run one packaged Cats Bot provider helper with refreshed host PATH.
 .DESCRIPTION
-    Only the five supported providers and Codex prerequisites are accepted.
+    Only the six supported providers and Codex prerequisites are accepted.
     No command strings or additional arguments are accepted from the UI.
     -Upgrade installs a newer release of Node.js or a provider CLI that already
     works (SPEC-013 FR-8); the npm folder and PowerShell scripts have none.
@@ -15,7 +15,7 @@
 #>
 param(
   [Parameter(Mandatory = $true)]
-  [ValidateSet('node', 'npm', 'shell', 'codex', 'claude', 'antigravity', 'grok', 'muse')]
+  [ValidateSet('node', 'npm', 'shell', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi')]
   [string]$Helper,
   [switch]$Apply,
   [switch]$Upgrade
@@ -26,7 +26,8 @@ if ($Upgrade -and $Helper -in @('npm', 'shell')) { throw "The $Helper helper has
 $scripts = @{
   node = 'Install-Node.ps1'; npm = 'Setup-NodeGlobalPrefix.ps1'; shell = 'Setup-CliReadiness.ps1';
   codex = 'Install-Codex.ps1'; claude = 'Install-ClaudeCode.ps1';
-  antigravity = 'Install-Antigravity.ps1'; grok = 'Install-Grok.ps1'; muse = 'Install-MetaCli.ps1'
+  antigravity = 'Install-Antigravity.ps1'; grok = 'Install-Grok.ps1'; muse = 'Install-MetaCli.ps1';
+  kimi = 'Install-KimiCode.ps1'
 }
 # `shell` only lets PowerShell run npm's .ps1 shims (CurrentUser RemoteSigned): with no
 # home folders the helper seeds no PATH entries, and Claude Code's helper adds its own.

@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
+import { requiredProviderPolicy } from '../../shared/providerTools.ts';
 import { parseModelSelection } from '../providers/selection.ts';
 
 import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
@@ -89,7 +90,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
       ...(input.allowedTools ? { allowedTools: [...input.allowedTools] } : {}),
       cwd: input.cwd,
     },
-    providerPolicy: null,
+    providerPolicy: requiredProviderPolicy(input.provider, null),
     heartbeat: { ...HEARTBEAT_DEFAULTS },
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
     telegram: { ...TELEGRAM_DEFAULTS },
@@ -225,6 +226,7 @@ export function normalizeEnvironment(value: unknown): BotEnvironment {
 export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile {
   if (!isRecord(raw)) return { ...fallback };
   const configRevision = positiveNumberOr(raw.configRevision, fallback.configRevision);
+  const executionTarget = normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget);
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: stringOr(raw.id, fallback.id),
@@ -233,11 +235,11 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     avatar: resolveBotAvatar(raw.avatar),
     instructions: stringOr(raw.instructions, fallback.instructions),
     environment: normalizeEnvironment(raw.environment),
-    executionTarget: normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget),
+    executionTarget,
     configRevision: Math.max(1, Math.floor(configRevision)),
     permissions: normalizePermissions(raw.permissions, fallback.permissions),
-    providerPolicy: raw.schemaVersion === 1 || raw.providerPolicy === undefined
-      ? null : parseProviderPolicy(raw.providerPolicy),
+    providerPolicy: requiredProviderPolicy(executionTarget.provider, raw.schemaVersion === 1 || raw.providerPolicy === undefined
+      ? null : parseProviderPolicy(raw.providerPolicy)),
     heartbeat: normalizeHeartbeat(raw.heartbeat, fallback.heartbeat),
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
     telegram: normalizeTelegram(raw.telegram, fallback.telegram),
@@ -391,7 +393,9 @@ export function applyProfilePatch(
   const nextPermissions = patch.permissions
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
-  const nextProviderPolicy = patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy);
+  const nextProviderPolicy = requiredProviderPolicy(nextTarget.provider,
+    patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy),
+    profile.executionTarget.provider, patch.providerPolicy !== undefined);
   assertPolicyBoundary(nextProviderPolicy, nextPermissions);
   if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');

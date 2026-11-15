@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { makeTempHome, openTestBot, sendAndWait, waitForEvent } from '../support/harness.ts';
 
-for (const provider of ['muse', 'grok', 'antigravity']) {
+for (const provider of ['muse', 'grok', 'antigravity', 'kimi']) {
   test(`packed Runtime hosts ${provider} tools and approvals without a desktop`, { timeout: 90_000 }, async () => {
     const home = makeTempHome(`cats-hosted-${provider}-`);
     const log = join(home.root, 'fixture.jsonl');

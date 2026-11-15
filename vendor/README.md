@@ -59,7 +59,7 @@ It retains explicitly selected native Muse MSP and Grok/official Google
 ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
 private session MCP and live native interactions; Google ACP supports local
 work/approvals while its session MCP is gated pending verified native credential
-persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
+persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-kimi-and-antigravity-native-work-tools).
 
 Reproduce an artifact from its exact source with its lockfile: `npm ci`, `npm run
 build`, then `npm pack --ignore-scripts`. `node scripts/refresh-runtime-pin.mjs` does

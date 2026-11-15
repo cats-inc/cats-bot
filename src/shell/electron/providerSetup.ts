@@ -81,6 +81,7 @@ const FILES: Record<string, [string, string]> = {
   antigravity: ['Install-Antigravity.ps1', 'install-antigravity.sh'],
   grok: ['Install-Grok.ps1', 'install-grok.sh'],
   muse: ['Install-MetaCli.ps1', 'install-meta-cli.sh'],
+  kimi: ['Install-KimiCode.ps1', 'install-kimi-code.sh'],
 };
 export interface HelperResult {
   status: string;
@@ -594,6 +595,7 @@ export class ProviderSetup {
       provider('antigravity'),
       provider('grok'),
       provider('muse'),
+      provider('kimi'),
       ...(this.windows ? [{ id: 'shell', helper: 'shell', label: 'PowerShell scripts', needsNode: false, optional: true } satisfies SetupLink<SetupHelperId>] : []),
     ];
   }
