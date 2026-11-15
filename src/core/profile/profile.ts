@@ -28,6 +28,7 @@ import type {
   HeartbeatMode,
   HeartbeatPolicy,
   PermissionMode,
+  SessionExecutionPolicy,
   TelegramPolicy,
   WorkspaceAccess,
 } from '../types.ts';
@@ -237,7 +238,9 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
   const executionTarget = normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget);
   const storedPolicy = raw.schemaVersion === 1 || raw.providerPolicy === undefined ? null : parseProviderPolicy(raw.providerPolicy);
   const providerPolicy = requiredProviderPolicy(executionTarget.provider, storedPolicy);
-  const providerPolicyAuto = providerPolicy !== null && (storedPolicy === null || raw.providerPolicyAuto === true);
+  // Only a hosted-only provider carries the marker; on any other provider a policy is the owner's.
+  const providerPolicyAuto = providerPolicy !== null && HOSTED_ONLY_PROVIDERS.includes(executionTarget.provider)
+    && (storedPolicy === null || raw.providerPolicyAuto === true);
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: stringOr(raw.id, fallback.id),
@@ -325,6 +328,14 @@ export function saveProfile(paths: BotPaths, profile: BotProfile): void {
   writeJsonAtomic(paths.profile, profile);
 }
 
+/** The same policy whatever order its keys were sent in. */
+function samePolicy(a: SessionExecutionPolicy | null, b: SessionExecutionPolicy | null): boolean {
+  const values = (p: SessionExecutionPolicy | null) => p === null ? null : p.mode === 'provider'
+    ? [p.mode, p.version, p.constraints.maxAccess, p.constraints.network]
+    : [p.mode, p.version, p.access, p.network, p.approval];
+  return JSON.stringify(values(a)) === JSON.stringify(values(b));
+}
+
 export function sameExecutionTarget(a: ExecutionTarget, b: ExecutionTarget): boolean {
   return (
     a.provider === b.provider &&
@@ -408,12 +419,16 @@ export function applyProfilePatch(
   // so a bot returns to its own earlier mode; one the owner chose (say Grok's native tools) stays.
   const explicitPolicy = patch.providerPolicy !== undefined;
   let basePolicy = explicitPolicy ? parseProviderPolicy(patch.providerPolicy) : profile.providerPolicy;
-  let baseAuto = !explicitPolicy && profile.providerPolicyAuto === true;
+  // Saving the very policy Cats filled in while staying on Kimi (Settings offers it nothing else) is
+  // not a new choice; a policy sent together with a new provider is.
+  let baseAuto = profile.providerPolicyAuto === true && (!explicitPolicy
+    || nextTarget.provider === profile.executionTarget.provider && samePolicy(basePolicy, profile.providerPolicy));
   if (baseAuto && HOSTED_ONLY_PROVIDERS.includes(profile.executionTarget.provider) && !HOSTED_ONLY_PROVIDERS.includes(nextTarget.provider)) {
     basePolicy = null; baseAuto = false;
   }
   const nextProviderPolicy = requiredProviderPolicy(nextTarget.provider, basePolicy);
-  const nextProviderPolicyAuto = nextProviderPolicy !== null && (baseAuto || basePolicy === null);
+  const nextProviderPolicyAuto = nextProviderPolicy !== null && HOSTED_ONLY_PROVIDERS.includes(nextTarget.provider)
+    && (baseAuto || basePolicy === null);
   assertPolicyBoundary(nextProviderPolicy, nextPermissions);
   if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
