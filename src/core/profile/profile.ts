@@ -91,6 +91,7 @@ export function createProfile(input: CreateProfileInput): BotProfile {
       cwd: input.cwd,
     },
     providerPolicy: requiredProviderPolicy(input.provider, null),
+    ...(HOSTED_ONLY_PROVIDERS.includes(input.provider) ? { providerPolicyAuto: true as const } : {}),
     heartbeat: { ...HEARTBEAT_DEFAULTS },
     idleSleepMinutes: IDLE_SLEEP_MINUTES_DEFAULT,
     telegram: { ...TELEGRAM_DEFAULTS },
@@ -234,6 +235,9 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
   if (!isRecord(raw)) return { ...fallback };
   const configRevision = positiveNumberOr(raw.configRevision, fallback.configRevision);
   const executionTarget = normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget);
+  const storedPolicy = raw.schemaVersion === 1 || raw.providerPolicy === undefined ? null : parseProviderPolicy(raw.providerPolicy);
+  const providerPolicy = requiredProviderPolicy(executionTarget.provider, storedPolicy);
+  const providerPolicyAuto = providerPolicy !== null && (storedPolicy === null || raw.providerPolicyAuto === true);
   return {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: stringOr(raw.id, fallback.id),
@@ -245,8 +249,8 @@ export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile
     executionTarget,
     configRevision: Math.max(1, Math.floor(configRevision)),
     permissions: normalizePermissions(raw.permissions, fallback.permissions),
-    providerPolicy: requiredProviderPolicy(executionTarget.provider, raw.schemaVersion === 1 || raw.providerPolicy === undefined
-      ? null : parseProviderPolicy(raw.providerPolicy)),
+    providerPolicy,
+    ...(providerPolicyAuto ? { providerPolicyAuto: true as const } : {}),
     heartbeat: normalizeHeartbeat(raw.heartbeat, fallback.heartbeat),
     idleSleepMinutes: positiveNumberOr(raw.idleSleepMinutes, fallback.idleSleepMinutes),
     telegram: normalizeTelegram(raw.telegram, fallback.telegram),
@@ -400,8 +404,16 @@ export function applyProfilePatch(
   const nextPermissions = patch.permissions
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
-  const nextProviderPolicy = requiredProviderPolicy(nextTarget.provider,
-    patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy));
+  // ADR-025: a policy the patch sets is the owner's. Leaving Kimi drops only the policy Kimi brought,
+  // so a bot returns to its own earlier mode; one the owner chose (say Grok's native tools) stays.
+  const explicitPolicy = patch.providerPolicy !== undefined;
+  let basePolicy = explicitPolicy ? parseProviderPolicy(patch.providerPolicy) : profile.providerPolicy;
+  let baseAuto = !explicitPolicy && profile.providerPolicyAuto === true;
+  if (baseAuto && HOSTED_ONLY_PROVIDERS.includes(profile.executionTarget.provider) && !HOSTED_ONLY_PROVIDERS.includes(nextTarget.provider)) {
+    basePolicy = null; baseAuto = false;
+  }
+  const nextProviderPolicy = requiredProviderPolicy(nextTarget.provider, basePolicy);
+  const nextProviderPolicyAuto = nextProviderPolicy !== null && (baseAuto || basePolicy === null);
   assertPolicyBoundary(nextProviderPolicy, nextPermissions);
   if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');
@@ -419,8 +431,10 @@ export function applyProfilePatch(
     || !samePermissions(nextPermissions, profile.permissions)
     || JSON.stringify(nextProviderPolicy) !== JSON.stringify(profile.providerPolicy);
   const sessionChanged = otherSessionChange || replyLanguageChanged;
+  const { providerPolicyAuto: _previousAuto, ...unmarked } = profile;
   const next: BotProfile = {
-    ...profile,
+    ...unmarked,
+    ...(nextProviderPolicyAuto ? { providerPolicyAuto: true as const } : {}),
     name: nextName,
     // Not a session setting: no session is told how its Cat looks, so no revision bump (SPEC-008 FR-29).
     avatar: patch.avatar ?? profile.avatar,

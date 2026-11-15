@@ -127,31 +127,44 @@ test('Boss Cat tool status requires authenticated discovery and expires when the
   } finally { await core.stop(); home.cleanup(); }
 });
 
-test('Kimi runs only on its hosted target: choosing it brings the hosted policy, and leaving keeps every policy (ADR-025)', async () => {
+test('Kimi runs only on its hosted target, and leaving it drops only the policy it brought (ADR-025)', async () => {
   const { applyProfilePatch, createProfile, normalizeProfile } = await import('../../src/core/profile/profile.ts');
   const { HOSTED_PROVIDER_POLICY, usesHostedProvider } = await import('../../src/shared/providerTools.ts');
   const now = new Date('2026-11-16T00:00:00.000Z');
+  const leave = (profile: ReturnType<typeof createProfile>, provider: string) =>
+    applyProfilePatch(profile, { executionTarget: { provider, model: null } }, now).profile;
   const kimi = createProfile({ name: 'Nori', provider: 'kimi', cwd: '/tmp/kimi', now });
   assert.deepEqual(kimi.providerPolicy, HOSTED_PROVIDER_POLICY);
+  assert.equal(kimi.providerPolicyAuto, true);
   assert.equal(usesHostedProvider('kimi', kimi.providerPolicy), true);
   // The owner cannot clear it while Kimi is the provider; print mode would approve computer use unasked.
   assert.deepEqual(applyProfilePatch(kimi, { providerPolicy: null }, now).profile.providerPolicy, HOSTED_PROVIDER_POLICY);
-  assert.deepEqual(normalizeProfile({ ...kimi, providerPolicy: null }, kimi).providerPolicy, HOSTED_PROVIDER_POLICY);
-  // A legacy bot switched to Kimi gets the policy too.
+  const reloaded = normalizeProfile(JSON.parse(JSON.stringify(kimi)), kimi);
+  assert.equal(reloaded.providerPolicyAuto, true, 'the marker survives a save and load');
+  assert.deepEqual(normalizeProfile({ ...kimi, providerPolicy: null, providerPolicyAuto: undefined }, kimi).providerPolicyAuto, true);
+  // Leaving Kimi drops the policy it brought, so Antigravity does not turn into its hosted ACP target
+  // and Grok or Muse do not gain native tools nobody chose (2026-11-16 review).
+  for (const provider of ['antigravity', 'grok', 'muse', 'codex', 'claude']) {
+    const left = leave(kimi, provider);
+    assert.equal(left.providerPolicy, null, provider);
+    assert.equal(left.providerPolicyAuto, undefined, provider);
+    assert.equal(usesHostedProvider(provider, left.providerPolicy), false, provider);
+  }
+  // A legacy bot that tries Kimi and comes back is legacy again.
   const legacy = createProfile({ name: 'Mochi', provider: 'codex', cwd: '/tmp/codex', now });
-  const toKimi = applyProfilePatch(legacy, { executionTarget: { provider: 'kimi', model: null } }, now).profile;
+  const toKimi = leave(legacy, 'kimi');
   assert.deepEqual(toKimi.providerPolicy, HOSTED_PROVIDER_POLICY);
-  // Leaving Kimi keeps the policy, so the bot never drops back to a legacy mode such as skip.
-  assert.deepEqual(applyProfilePatch(toKimi, { executionTarget: { provider: 'codex', model: null } }, now).profile.providerPolicy,
-    HOSTED_PROVIDER_POLICY);
-  // A Grok bot with native tools keeps them through a Kimi round trip (2026-11-16 review).
+  assert.equal(leave(toKimi, 'codex').providerPolicy, null);
+  // A Grok bot with native tools the owner chose keeps them through a Kimi round trip.
   const grok = applyProfilePatch(createProfile({ name: 'Sora', provider: 'grok', cwd: '/tmp/grok', now }), { providerPolicy: policy }, now).profile;
-  const back = applyProfilePatch(applyProfilePatch(grok, { executionTarget: { provider: 'kimi', model: null } }, now).profile,
-    { executionTarget: { provider: 'grok', model: null } }, now).profile;
+  assert.equal(grok.providerPolicyAuto, undefined);
+  const back = leave(leave(grok, 'kimi'), 'grok');
   assert.deepEqual(back.providerPolicy, policy);
   assert.equal(usesHostedProvider('grok', back.providerPolicy), true);
-  // The owner may clear it in the same change that leaves Kimi.
-  assert.equal(applyProfilePatch(kimi, { executionTarget: { provider: 'codex', model: null }, providerPolicy: null }, now).profile.providerPolicy, null);
+  // A policy the owner saves while on Kimi is theirs, and stays when they leave.
+  const saved = applyProfilePatch(kimi, { providerPolicy: policy }, now).profile;
+  assert.equal(saved.providerPolicyAuto, undefined);
+  assert.deepEqual(leave(saved, 'grok').providerPolicy, policy);
   // Full machine access cannot go with a read-only filespace or an allowlist: refused, never written.
   assert.throws(() => applyProfilePatch(createProfile({ name: 'Ro', provider: 'codex', cwd: '/tmp/ro', workspaceAccess: 'read_only', now }),
     { executionTarget: { provider: 'kimi', model: null } }, now), /read-only workspace/u);

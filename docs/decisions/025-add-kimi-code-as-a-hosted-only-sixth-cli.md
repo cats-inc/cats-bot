@@ -46,10 +46,12 @@ Plan: [PLAN-015](../plans/PLAN-015-kimi-code-sixth-cli.md). Runtime decision:
   policy with full machine and network access.
   - Creating, loading or retargeting a profile to Kimi fills it in.
   - Clearing it while Kimi stays the provider has no effect.
-  - Leaving Kimi keeps the policy unless the owner changes it in the same change or later in
-    Settings. The next provider then follows its own native approvals. Dropping the policy
-    instead would put the bot back on whatever legacy permission mode it had before, which may
-    be `skip`, and would also discard a policy the owner chose for Grok or Muse before trying Kimi.
+  - Leaving Kimi drops only a policy Cats filled in, which the profile marks with the optional
+    `providerPolicyAuto: true` (absent means the owner chose it). The bot then returns to its
+    earlier mode. A policy the owner chose stays: for example, Grok's native tools survive a round
+    trip through Kimi. Without the marker, leaving Kimi would either discard such a choice or
+    leave a policy nobody chose: that would turn Antigravity into its hosted ACP target and give
+    Grok or Muse full-access native tools.
   - Creating a Kimi bot with a read-only filespace or a tool allowlist is refused. Those cannot
     hold full machine access, and such a profile could not be loaded again.
   - Settings does not offer the legacy choice for Kimi and explains how to add computer use.
@@ -76,8 +78,9 @@ Plan: [PLAN-015](../plans/PLAN-015-kimi-code-sixth-cli.md). Runtime decision:
 
 ### Neutral
 
-- No profile, journal or conversation format changes. An older Bot cannot select Kimi, and one
-  that rewrites a Kimi profile keeps the policy it read.
+- One optional profile field, `providerPolicyAuto`, with no schema bump or upgrade step. An older
+  Bot cannot select Kimi; one that rewrites a Kimi profile drops the field and keeps the policy,
+  which never widens access. Journal and conversation formats are unchanged.
 - The plugin and its runtime remain the owner's to install.
   - The Bot's capability view reports whether Kimi loaded the plugin, whether its runtime is
     installed and whether Node.js is new enough.

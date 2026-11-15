@@ -25,8 +25,9 @@
 4. **Hosted only.**
    - `HOSTED_ONLY_PROVIDERS`, `HOSTED_PROVIDER_POLICY` and `requiredProviderPolicy` in
      `src/shared/providerTools.ts`.
-   - Applied in `createProfile`, `normalizeProfile` and `applyProfilePatch`. Leaving Kimi keeps the
-     policy, and `createProfile` refuses Kimi with a read-only filespace or an allowlist.
+   - Applied in `createProfile`, `normalizeProfile` and `applyProfilePatch`. The optional
+     `providerPolicyAuto` marks a filled-in policy; leaving Kimi drops only that one.
+     `createProfile` refuses Kimi with a read-only filespace or an allowlist.
    - Settings hides the legacy choice for Kimi and shows the computer-use setup hint.
 5. **Strings.** zh-TW for the hint and for the helper's sign-in and Git Bash messages.
 6. **Docs.** ADR-025, this plan, [provider interactions](../provider-interactions.md), the setup
@@ -53,6 +54,11 @@
     output.
   - Declined owner message: no tool ran, and the bot said it was declined.
   - Kimi's session was deleted afterwards. No desktop input was sent.
+  - A second run on merged main (`f21836d`) approved a real `@kimi/cu` observation cell,
+    `kimiCU.list_windows()`, which returned 14 windows. A Runtime-started Kimi therefore
+    reaches the Kimi Computer Use runtime. The declined card again ran nothing.
+  - A print-mode `kimi -p` turn outside Cats ran the plugin's `js` tool with no approval.
+    This is why a Kimi bot is hosted only.
 - Still to do on a real desktop:
   - The same cards in the note window.
   - A screenshot of a test window.
