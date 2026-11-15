@@ -13,6 +13,12 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const params = new URLSearchParams(globalThis.location.search);
 
+// SPEC-003 FR-11: the root element names the platform, so CSS can keep macOS on the system pointing hand
+// (src/renderer/paw.css). A document whose root is not parsed yet is marked once it is.
+const markPlatform = () => document.documentElement?.setAttribute('data-platform', process.platform);
+if (document.documentElement) markPlatform();
+else document.addEventListener('readystatechange', markPlatform, { once: true });
+
 // SPEC-003 FR-10: dictation, where a native speech helper exists.
 const voice = process.platform === 'darwin' || process.platform === 'win32'
   ? {
