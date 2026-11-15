@@ -75,7 +75,7 @@ or releases.
 9. FR-9: Like Cats Desktop's, the Windows uninstaller has a page with an
    unchecked "Remove all user data" box. When it is checked, the uninstaller
    deletes three roots: `%USERPROFILE%\.catsbot` (every bot, archived bot and
-   hub file, default workspaces included), `%APPDATA%\Cats Bot` (Electron user
+   hub file, default filespaces included), `%APPDATA%\Cats Bot` (Electron user
    data and installation gates) and `%LOCALAPPDATA%\cats-bot-updater`
    (downloaded updates; electron-builder names the cache after
    `build.extraMetadata.name`, `cats-bot`).
@@ -117,7 +117,8 @@ or releases.
     <botId>/                     SPEC-001 FR-2 layout
       profile.json  conversations/  transcripts/  journal.jsonl
       runtime/                   this bot's CATS_RUNTIME_DIR
-      workspace/                 default CLI working directory
+      filespace/                 default CLI working directory (workspace/ in bots made
+                                 before 2026-11-16, which keep it; nothing moves)
   archive/
     <botId>/                     an archived bot, same layout (SPEC-008 FR-5)
   trash/                         confirmed deletes finishing (SPEC-008 FR-5)

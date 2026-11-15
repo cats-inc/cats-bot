@@ -124,7 +124,7 @@ test('the bot drives the real runtime with the fixture CLI: create, stream, canc
       },
     },
   });
-  const discovered = writeDiscoveredClaudeSession(join(root, 'workspace'));
+  const discovered = writeDiscoveredClaudeSession(join(root, 'filespace'));
   const statuses: string[] = [];
   core.subscribe((event) => {
     if (event.type === 'runtime.status') statuses.push(event.state);
