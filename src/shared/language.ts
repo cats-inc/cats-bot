@@ -810,7 +810,7 @@ export const zhTW: Record<string, string> = {
   'Owner chat': '擁有者聊天',
   'Last error': '最近錯誤',
   'Cat bot id': '機器貓 ID',
-  'Data folder': '資料資料夾',
+  'Data folder': '資料位置',
   'Check for a newer version of Cats Bot.': '檢查是否有新版 Cats Bot。',
   'You are up to date.': '目前已是最新版本。',
   'A new version is available.': '有新版本可以使用。',
