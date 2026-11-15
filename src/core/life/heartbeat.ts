@@ -1,4 +1,5 @@
 import { oneLine } from '../../shared/botText.ts';
+import { HEARTBEAT_PROMPT_PREFIX } from '../../shared/heartbeatTurn.ts';
 import type { EffectiveHeartbeatMode, HeartbeatKind, HeartbeatPolicy } from '../types.ts';
 
 /**
@@ -14,7 +15,7 @@ import type { EffectiveHeartbeatMode, HeartbeatKind, HeartbeatPolicy } from '../
  */
 
 export const HEARTBEAT_QUIET_TOKEN = '[quiet]';
-export const HEARTBEAT_PROMPT_PREFIX = '[Cats heartbeat.';
+export { HEARTBEAT_PROMPT_PREFIX, isHeartbeatPrompt } from '../../shared/heartbeatTurn.ts';
 /** FR-25: an owner message this recent defers the heartbeat. */
 export const HEARTBEAT_QUIET_AFTER_OWNER_MS = 10 * 60_000;
 export const HEARTBEAT_BUSY_RETRY_MS = 4 * 60_000;
@@ -136,10 +137,6 @@ export function buildHeartbeatPrompt(input: HeartbeatPromptInput): string {
     'Do not repeat what you already said in an earlier unprompted message.',
     ...closing,
   ].join('\n');
-}
-
-export function isHeartbeatPrompt(prompt: string): boolean {
-  return prompt.startsWith(HEARTBEAT_PROMPT_PREFIX);
 }
 
 export function parseHeartbeatReply(text: string): { quiet: true } | { quiet: false; body: string } {
