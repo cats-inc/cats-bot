@@ -163,7 +163,7 @@ test('a fresh GUI startup rediscovers nvm/custom npm directories without install
 });
 
 test('provider-first setup checks native providers without probing Node/npm or another CLI', async () => {
-  for (const provider of ['claude', 'antigravity', 'grok', 'muse']) {
+  for (const provider of ['claude', 'antigravity', 'grok', 'muse', 'kimi']) {
     const calls: string[] = [];
     const setup = new ProviderSetup(async (helper, apply) => {
       calls.push(`${helper}:${apply}`);
@@ -555,7 +555,7 @@ test('closing one page cannot cancel a check owned by another page', async () =>
 
 test('packaged helper invocations accept no renderer-supplied command, path or extra flags', () => {
   for (const platform of ['win32', 'darwin', 'linux'] as const) {
-    for (const helper of ['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse']) {
+    for (const helper of ['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi']) {
       const invocation = helperInvocation(assets, platform, helper, false);
       const script =
         platform === 'win32'

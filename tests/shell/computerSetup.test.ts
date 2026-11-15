@@ -40,7 +40,7 @@ test('an update runs -Upgrade on every platform, and only where a helper has one
   assert.deepEqual(helperInvocation(assets, 'win32', 'claude', 'upgrade').args.slice(-3), ['-Helper', 'claude', '-Upgrade']);
   assert.deepEqual(helperInvocation(assets, 'win32', 'node', 'upgrade').args.slice(-3), ['-Helper', 'node', '-Upgrade']);
   for (const platform of ['darwin', 'linux'] as const) {
-    for (const helper of ['node', 'codex', 'claude', 'antigravity', 'grok', 'muse']) {
+    for (const helper of ['node', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi']) {
       assert.deepEqual(helperInvocation(assets, platform, helper, 'upgrade').args.slice(1), ['-Upgrade', '-Json'], `${platform}/${helper}`);
     }
   }
@@ -65,7 +65,7 @@ test('looking at the tab starts no process: every row reads not checked yet (FR-
   const state = setup.computer();
   assert.deepEqual(calls, []);
   assert.equal(state.checkedAt, null);
-  assert.deepEqual(state.steps.map((step) => step.id), ['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'shell']);
+  assert.deepEqual(state.steps.map((step) => step.id), ['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi', 'shell']);
   assert.ok(state.steps.every((step) => step.status === 'not_checked'));
   assert.equal(state.steps.find((step) => step.id === 'shell')?.optional, true);
   // FR-8: only helpers with an update get its command.
@@ -113,7 +113,7 @@ test('a row whose check cannot run says so and does not stop the others (FR-5)',
   assert.equal(grok.checkError, 'The provider check timed out.');
   assert.ok(state.steps.filter((step) => step.id !== 'grok').every((step) => step.status === 'ready'));
   // FR-10: only working CLIs get a sign-in row, Claude says either way, the rest cannot tell.
-  assert.deepEqual(Object.keys(state.signIn), ['codex', 'claude', 'antigravity', 'muse']);
+  assert.deepEqual(Object.keys(state.signIn), ['codex', 'claude', 'antigravity', 'muse', 'kimi']);
   assert.deepEqual(state.signIn.claude, { state: 'signed_in', command: 'claude' });
   assert.equal(state.signIn.codex?.state, 'unknown');
 });

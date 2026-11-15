@@ -270,7 +270,7 @@ const server = createServer(async (req, res) => {
     if (process.env.FAKE_HOSTED_INTERACTIONS_ONLY === '1' && !readFileSync(join(process.env.CATS_RUNTIME_DIR, 'config', 'providers.yaml'), 'utf8').includes('protocol: \"hosted\"')) {
       return json(res, 200, { providers: {} });
     }
-    return json(res, 200, { providers: Object.fromEntries(['claude', 'codex', 'muse', 'grok', 'antigravity'].map(provider => [provider, {
+    return json(res, 200, { providers: Object.fromEntries(['claude', 'codex', 'muse', 'grok', 'antigravity', 'kimi'].map(provider => [provider, {
       defaultInstance: 'native', defaultBackend: 'cli', instances: [{ id: 'native', backend: 'cli', continuity: {
         interactions: { version: 1, kinds: ['user_input'] }, sessionCapabilities: { version: 1, executionPolicy: true, inventory: true },
       } }],

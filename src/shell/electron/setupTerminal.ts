@@ -17,6 +17,7 @@ const SIGN_IN: Readonly<Record<string, string>> = {
   antigravity: 'agy',
   grok: 'grok login',
   muse: 'muse login',
+  kimi: 'kimi login',
 };
 
 export function signInCommand(provider: unknown): string | null {

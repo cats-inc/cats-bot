@@ -1,12 +1,30 @@
 import type { SessionExecutionPolicy } from '../core/types.ts';
 
-export const HOSTED_TOOL_PROVIDERS: readonly string[] = ['antigravity', 'grok', 'muse'];
+export const HOSTED_TOOL_PROVIDERS: readonly string[] = ['antigravity', 'grok', 'muse', 'kimi'];
+/**
+ * ADR-025: providers a bot runs only through their hosted target. Kimi's print mode approves every
+ * tool without asking, including its computer-use plugin; its hosted `kimi acp` target asks.
+ */
+export const HOSTED_ONLY_PROVIDERS: readonly string[] = ['kimi'];
+/** The one policy a hosted target admits (Runtime ADR-049): full machine and network access, approvals native. */
+export const HOSTED_PROVIDER_POLICY: SessionExecutionPolicy = Object.freeze({ version: 1, mode: 'provider',
+  constraints: Object.freeze({ maxAccess: 'full-access', network: true }) }) as SessionExecutionPolicy;
+
 export function usesHostedProvider(provider: string, policy: SessionExecutionPolicy | null): boolean {
   return policy !== null && HOSTED_TOOL_PROVIDERS.includes(provider);
 }
 export function providerCanOfferSessionTools(provider: string, policy: SessionExecutionPolicy | null): boolean {
   // Google's ACP credential persistence is not yet verified. Native tools still work.
   return provider !== 'antigravity' && (!HOSTED_TOOL_PROVIDERS.includes(provider) || usesHostedProvider(provider, policy));
+}
+
+/**
+ * ADR-025: the policy a profile runs with. A hosted-only provider without a policy gets the hosted
+ * policy. Leaving it keeps that policy: the next provider then follows its own native approvals,
+ * and a bot never falls back to a legacy mode (which may be `skip`) the owner left behind.
+ */
+export function requiredProviderPolicy(provider: string, policy: SessionExecutionPolicy | null): SessionExecutionPolicy | null {
+  return HOSTED_ONLY_PROVIDERS.includes(provider) ? policy ?? structuredClone(HOSTED_PROVIDER_POLICY) : policy;
 }
 
 /**

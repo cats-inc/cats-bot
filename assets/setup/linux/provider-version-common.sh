@@ -157,6 +157,26 @@ cats_grok_latest_version() {
     printf ''
 }
 
+# cats_kimi_code_latest_version
+# Without KIMI_VERSION, Kimi Code's official install.sh (and install.ps1) installs
+# whatever the plain-text endpoint <download site>/kimi-code/latest names (2.5.3,
+# redirected to a CDN, hence -L). Asking it here, in the installer's own order,
+# returns the version the installer is about to fetch without starting kimi.
+# Packaged setup uses the global mirror code.kimi.ai. Anything other than X.Y.Z
+# (optionally -prerelease) counts as unknown; failures print nothing.
+cats_kimi_code_latest_version() {
+    local v
+    if [ -n "${KIMI_VERSION:-}" ]; then
+        printf '%s' "$KIMI_VERSION"
+        return 0
+    fi
+    v="$(curl -fsSL --connect-timeout 5 --max-time 20 'https://code.kimi.ai/kimi-code/latest' 2>/dev/null | tr -d '\r' | head -n 1 | tr -d '[:space:]' || true)"
+    if printf '%s' "$v" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9._]+)?$'; then
+        printf '%s' "$v"
+        return 0
+    fi
+    printf ''
+}
 
 cats_native_latest_version() {
   local script
@@ -171,6 +191,7 @@ cats_native_latest_version() {
     kiro) cats_kiro_latest_version ;;
     devin) cats_devin_latest_version ;;
     grok) cats_grok_latest_version ;;
+    kimi) cats_kimi_code_latest_version ;;
     *) return 0 ;;
   esac
 }
@@ -202,6 +223,18 @@ cats_cleanup_native_versions() {
   local provider="$1" version="$2" root='' data='' keep='' actual='' directory='' name='' ancestor=''
   keep="$(cats_native_version_token "$provider" "$version")"
   [ -n "$keep" ] || return 0
+  # Kimi has no version tree: its installer keeps the previous 160 MB binary
+  # as kimi.bak beside the new one. Remove it once the new one has answered.
+  if [ "$provider" = kimi ]; then
+    root="${KIMI_INSTALL_DIR:-$HOME/.kimi-code}/bin"
+    [ -d "$root" ] || return 0
+    actual="$(cd -P -- "$HOME" && pwd -P)" || return 0
+    root="$(cd -P -- "$root" && pwd -P)" || return 0
+    case "$root" in "$actual"/*) ;; *) return 0 ;; esac
+    [ -f "$root/kimi.bak" ] && [ ! -L "$root/kimi.bak" ] || return 0
+    rm -f -- "$root/kimi.bak" || printf 'Could not remove the previous kimi build.\n' >&2
+    return 0
+  fi
   case "$provider" in
     cursor)
       root="$HOME/.local/share/cursor-agent/versions"

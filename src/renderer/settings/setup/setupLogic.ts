@@ -228,7 +228,7 @@ export function computerGroups(state: ComputerSetupState): ComputerGroup[] {
     ids.map((id) => state.steps.find((step) => step.id === id)).filter((step): step is ComputerStep => step !== undefined);
   const groups: ComputerGroup[] = [
     { key: 'node', title: 'Installed through Node.js', rows: of(['node', 'npm', 'codex']), stem: true },
-    { key: 'native', title: 'With their own installer', rows: of(['claude', 'antigravity', 'grok', 'muse']), stem: false },
+    { key: 'native', title: 'With their own installer', rows: of(['claude', 'antigravity', 'grok', 'muse', 'kimi']), stem: false },
     { key: 'optional', title: 'Optional, and fine to leave for later', rows: of(['shell']), stem: false },
   ];
   return groups.filter((group) => group.rows.length > 0);

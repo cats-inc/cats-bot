@@ -9,10 +9,10 @@ export type SetupStepId = 'node' | 'npm' | 'provider' | 'shell';
  * Settings' Agent CLIs tab. A provider's row is its own id there, and `provider` in a
  * bot's chain (SPEC-010).
  */
-export type SetupHelperId = 'node' | 'npm' | 'shell' | 'codex' | 'claude' | 'antigravity' | 'grok' | 'muse';
+export type SetupHelperId = 'node' | 'npm' | 'shell' | 'codex' | 'claude' | 'antigravity' | 'grok' | 'muse' | 'kimi';
 
-/** The five provider CLIs, in the order every list shows them. */
-export const SETUP_PROVIDER_IDS = ['codex', 'claude', 'antigravity', 'grok', 'muse'] as const;
+/** The six provider CLIs, in the order every list shows them. */
+export const SETUP_PROVIDER_IDS = ['codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi'] as const;
 
 /**
  * SPEC-013 FR-8: helpers whose `-Upgrade` installs a newer release. The npm folder only

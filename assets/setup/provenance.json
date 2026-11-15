@@ -1,6 +1,6 @@
 {
   "repository": "https://github.com/cats-inc/cats-platform",
-  "commit": "190a65e1407c1eb5d3bf5b74ebd7463c7e4e1115",
+  "commit": "d808080cf9c4a5f130112d6b2e76e1582170f73e",
   "files": [
     {
       "source": "scripts/windows/Install-Node.ps1",
@@ -45,6 +45,12 @@
       "executable": false
     },
     {
+      "source": "scripts/windows/Install-KimiCode.ps1",
+      "sha256": "2050e764d2bf52a6c97ff31a4a884d15e9228d57fa88f2fd797013123e097e77",
+      "path": "windows/Install-KimiCode.ps1",
+      "executable": false
+    },
+    {
       "source": "scripts/windows/_HiddenProcess.ps1",
       "sha256": "060de34eb631ffa953e2c186a4ece4fcf56b0aa0f67bb43c07beee66cb7b8dd5",
       "path": "windows/_HiddenProcess.ps1",
@@ -52,7 +58,7 @@
     },
     {
       "source": "scripts/windows/_NativeInstallerSupport.ps1",
-      "sha256": "6e5f6908484dab9868acb3c74912467eb9db74e69b613215c93fdba4f3be2f3f",
+      "sha256": "fb6032b8e2dd05fb66bd9deb77fe1776500b0067afaa96dab4ad62c4e084b08b",
       "path": "windows/_NativeInstallerSupport.ps1",
       "executable": false
     },
@@ -123,6 +129,12 @@
       "executable": true
     },
     {
+      "source": "scripts/macos/install-kimi-code.sh",
+      "sha256": "53c86b1ce3f44197673a20821c5d053e88bfd3f2f1d009718eefe1ab1ceb73ad",
+      "path": "macos/install-kimi-code.sh",
+      "executable": true
+    },
+    {
       "source": "scripts/macos/node-cli-common.sh",
       "sha256": "bee188e23efe99cbdba673a5c4bf4bb6d42dfab06cc3830e4e3dc9ce5e610748",
       "path": "macos/node-cli-common.sh",
@@ -130,13 +142,13 @@
     },
     {
       "source": "scripts/macos/provider-cli-common.sh",
-      "sha256": "3a8d3de1f574569e4e9b6e7aab32ae2616d9547a089eabe9330c3383a4f8f89e",
+      "sha256": "40bc4a3df179dabbd4a6a2f1054842f371c232a278ff6246d2fcb2d29c77d763",
       "path": "macos/provider-cli-common.sh",
       "executable": true
     },
     {
       "source": "scripts/macos/provider-version-common.sh",
-      "sha256": "0f4022b12eee0fa51f688cd1f162aab235cf17ebed36286c5ea203d953e49c42",
+      "sha256": "424789375eb54c16d9832eba3a76f52f45f6682e8a56f1fa6cee35b4e6409e45",
       "path": "macos/provider-version-common.sh",
       "executable": false
     },
@@ -189,6 +201,12 @@
       "executable": true
     },
     {
+      "source": "scripts/linux/install-kimi-code.sh",
+      "sha256": "2408f216ea1185ebef08aeb6296bbc1b88880f3dd1b08ca1ff54d984997955ad",
+      "path": "linux/install-kimi-code.sh",
+      "executable": true
+    },
+    {
       "source": "scripts/linux/node-cli-common.sh",
       "sha256": "bee188e23efe99cbdba673a5c4bf4bb6d42dfab06cc3830e4e3dc9ce5e610748",
       "path": "linux/node-cli-common.sh",
@@ -196,13 +214,13 @@
     },
     {
       "source": "scripts/linux/provider-cli-common.sh",
-      "sha256": "3a8d3de1f574569e4e9b6e7aab32ae2616d9547a089eabe9330c3383a4f8f89e",
+      "sha256": "40bc4a3df179dabbd4a6a2f1054842f371c232a278ff6246d2fcb2d29c77d763",
       "path": "linux/provider-cli-common.sh",
       "executable": true
     },
     {
       "source": "scripts/linux/provider-version-common.sh",
-      "sha256": "0f4022b12eee0fa51f688cd1f162aab235cf17ebed36286c5ea203d953e49c42",
+      "sha256": "424789375eb54c16d9832eba3a76f52f45f6682e8a56f1fa6cee35b4e6409e45",
       "path": "linux/provider-version-common.sh",
       "executable": false
     },

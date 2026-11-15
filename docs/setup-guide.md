@@ -112,7 +112,7 @@ running. Quit cancels read-only provider checks. An explicitly requested install
 and the brief bot-creation step finish before setup closes.
 
 The model and effort lists use Runtime's catalog, matching Desktop. Model controls
-are saved for new sessions. The five supported provider names follow Desktop;
+are saved for new sessions. The six supported provider names follow Desktop;
 choosing Claude runs the Claude Code CLI. Catalog data comes from the pinned
 Runtime package or the bot's running Runtime, rather than Desktop's profile.
 Cats Bot Settings > General offers Follow system, English and
@@ -343,7 +343,7 @@ That is intentional: Node resolves the file that exists on disk, and
 _Last updated: 2026-10-27_
 
 
-For Muse, Grok and Antigravity work tools, see
-[native provider setup and limitations](provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
+For Muse, Grok, Kimi and Antigravity work tools, see
+[native provider setup and limitations](provider-interactions.md#muse-grok-kimi-and-antigravity-native-work-tools).
 The provider-access switch is opt-in; no existing profile gains broader access
 merely by upgrading Bot.
