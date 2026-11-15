@@ -387,7 +387,8 @@ hot-plug and installed-app acceptance were not performed.
 - **Manual, the holder's tools (SPEC-009 FR-11)**: with Settings → Cat bots open, assign the role to a running
   bot with an existing direct message. The row says the tools come at its next reply, in plain text, not
   red. Send one message without restarting anything: the row turns to "connected" without refocusing the
-  window. A Grok bot without provider access, or an Antigravity bot, shows the reason in red.
+  window. A stopped holder says it gets them after it starts, in plain text. A Grok bot without provider
+  access, an Antigravity bot, or a holder another program runs shows the reason in red.
 - **Manual, first run through the setup page**: launch without `--provider`,
   with an isolated home whose `.npmrc` names an existing global npm prefix, so
   the page's provider check runs the packaged setup helper as an owner's first

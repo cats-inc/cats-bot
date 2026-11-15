@@ -135,10 +135,12 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
     Settings → Bots says where the holder's tools stand (2026-11-16). They are connected once its provider
     has fetched them in one of its sessions. Before that, as after every assignment or restart of the bot,
     they wait for its next reply: the owner's next message or its own next activity. The existing
-    conversations carry on, and nothing needs restarting (FR-3). Only a provider that cannot give them is a
-    warning: Antigravity, which never can, and Grok or Muse until their provider access is set. The page reads
-    them again after each of the holder's turns and Runtime changes. It used to show every state but
-    "connected" as a warning to check provider access or start a conversation.
+    conversations carry on, and nothing needs restarting (FR-3). A holder that is not running gets them at
+    its next reply after it starts. Only a holder that cannot get them is a warning. That is a holder on
+    Antigravity, which never can, or on Grok or Muse until their provider access is set. It is also one that
+    another program runs (SPEC-008 FR-11), which is not told it holds the role. The page reads them again
+    after each of the holder's turns and Runtime changes. Until then, a running holder's row warned in red,
+    until its tools connected, to check provider access or start a conversation.
 12. FR-12: A crash on either side neither loses nor repeats a delivery. When
     the hub accepts a `hub_message_bot` it gives it a delivery id and records it
     in a delivery log under `<CATS_BOT_HOME>` before sending it. The target

@@ -549,6 +549,10 @@ export function bossCatToolsHint(holder: Pick<BotRow, 'name' | 'provider' | 'pro
       return { text: t('The Boss Cat tools are connected.'), warn: false };
     case 'pending':
       return { text: t('{name} gets the Boss Cat tools at its next reply: your next message or its own next activity. Its conversations stay as they are, and nothing needs restarting.', { name: holder.name }), warn: false };
+    case 'notRunning':
+      return { text: t('{name} is not running. It gets the Boss Cat tools at its next reply after it starts.', { name: holder.name }), warn: false };
+    case 'external':
+      return { text: t('{name} runs in another program, so it does not get the Boss Cat tools. They come once Cats Bot runs it.', { name: holder.name }), warn: true };
     case 'needsAccess':
       return { text: t('{provider} gives the Boss Cat tools once its access is set: {name}\'s Settings → Cat bot → Provider access and tools.', { provider, name: holder.name }), warn: true };
     case 'unsupported':

@@ -540,9 +540,11 @@ async function main(): Promise<void> {
         startAutomatically: bot.startAutomatically,
         bossCat: registry.bossCat.holder === bot.id,
         // SPEC-009 FR-11: a holder whose provider takes no session MCP servers keeps the role without tools;
-        // otherwise they wait for its next send until its running core reports them fetched.
+        // otherwise they wait for its next send until its running core reports them fetched. Only a core this
+        // hub runs is told it holds the role.
         bossCatTools: registry.bossCat.holder === bot.id && profile !== null
-          ? bossCatToolsState(profile.executionTarget.provider, profile.providerPolicy, false)
+          ? bossCatToolsState(profile.executionTarget.provider, profile.providerPolicy,
+            state === 'external' ? 'external' : runner?.handle?.core ? 'hub' : 'none', false)
           : null,
         bossCatSees: bot.bossCatSees,
       };

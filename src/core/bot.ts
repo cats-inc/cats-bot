@@ -1594,8 +1594,8 @@ export class BotCore implements BotHostApi {
     }
     const desktopWas = this.profile.desktopControl.enabled;
     const heartbeatWas = this.profile.heartbeat.enabled;
-    // Anything a window draws from the profile: the Cat's name and look, the note header's (i) of the
-    // execution target (SPEC-003 FR-11), whether replies show their steps (FR-12) and system lines (FR-14),
+    // Anything a window draws from the profile: the Cat's name and look, the execution target on the note
+    // header face's tooltip (SPEC-003 FR-11), whether replies show their steps (FR-12) and system lines (FR-14),
     // and whether the direct message's send button is Telegram's paper plane (FR-15).
     const presentationChanged = result.profile.name !== this.profile.name || result.profile.avatar !== this.profile.avatar
       || result.targetChanged || result.profile.showProgressDetails !== this.profile.showProgressDetails
