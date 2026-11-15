@@ -539,6 +539,26 @@ export function botStateLine(bot: Pick<BotRow, 'state' | 'pid' | 'provider' | 'p
 }
 
 /**
+ * SPEC-009 FR-11: what the Boss Cat row says about the holder's tools. Waiting for its next reply is the normal
+ * state after the role moves, said plainly; only a provider that cannot give the tools is a warning.
+ */
+export function bossCatToolsHint(holder: Pick<BotRow, 'name' | 'provider' | 'providerLabel' | 'bossCatTools'>): { text: string; warn: boolean } | null {
+  const provider = holder.providerLabel ?? holder.provider ?? '';
+  switch (holder.bossCatTools) {
+    case 'connected':
+      return { text: t('The Boss Cat tools are connected.'), warn: false };
+    case 'pending':
+      return { text: t('{name} gets the Boss Cat tools at its next reply: your next message or its own next activity. Its conversations stay as they are, and nothing needs restarting.', { name: holder.name }), warn: false };
+    case 'needsAccess':
+      return { text: t('{provider} gives the Boss Cat tools once its access is set: {name}\'s Settings → Cat bot → Provider access and tools.', { provider, name: holder.name }), warn: true };
+    case 'unsupported':
+      return { text: t('{provider} does not support the Boss Cat tools. {name} keeps the role and gets them at its next reply after moving to another provider.', { provider, name: holder.name }), warn: true };
+    default:
+      return null;
+  }
+}
+
+/**
  * SPEC-009 FR-2: the Boss Cat menu assigns, moves or clears the role. An empty
  * choice clears it from the holder; choosing the holder again changes nothing.
  */

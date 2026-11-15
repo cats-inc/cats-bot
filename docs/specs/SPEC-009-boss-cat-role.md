@@ -119,8 +119,9 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    records keep ids only; arguments that are not valid ids are left out.
 10. FR-10: Settings → Bots shows the holder. The holder's note shows its role,
     and messages from another bot render with that bot's name. In the note header the role is a gold ring
-    around the bot's face, before its name, named on the face's tooltip: "Mochi · Direct message" with a
-    ringed face (2026-11-14, SPEC-003 FR-11; it replaced "Mochi · Boss Cat · Direct message"). Another bot's
+    around the bot's face, before its name, named on the face's tooltip above the bot's model: "Mochi · Direct
+    message" with a ringed face (2026-11-14, SPEC-003 FR-11; it replaced "Mochi · Boss Cat · Direct message").
+    A bot without the role has the same face without the ring. Another bot's
     messages carry its face and name over the bubble (SPEC-003 FR-16).
 11. FR-11: A holder that is not bound to the native environment (ADR-010), or
     whose provider's sessions do not support session MCP servers (FR-3; in the
@@ -131,6 +132,13 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
     confirmed transfer all succeed, and the tools return at the next send after
     the holder moves to a provider that supports them. With only one bot, the
     tools that target another bot report that none exists.
+    Settings → Bots says where the holder's tools stand (2026-11-16). They are connected once its provider
+    has fetched them in one of its sessions. Before that, as after every assignment or restart of the bot,
+    they wait for its next reply: the owner's next message or its own next activity. The existing
+    conversations carry on, and nothing needs restarting (FR-3). Only a provider that cannot give them is a
+    warning: Antigravity, which never can, and Grok or Muse until their provider access is set. The page reads
+    them again after each of the holder's turns and Runtime changes. It used to show every state but
+    "connected" as a warning to check provider access or start a conversation.
 12. FR-12: A crash on either side neither loses nor repeats a delivery. When
     the hub accepts a `hub_message_bot` it gives it a delivery id and records it
     in a delivery log under `<CATS_BOT_HOME>` before sending it. The target

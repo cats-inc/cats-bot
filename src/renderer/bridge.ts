@@ -22,6 +22,7 @@ import type { BotUpdateAction, BotUpdateState } from '../shared/shellUpdate.ts';
 import type { VoiceCaptureEvent, VoiceCaptureStartOptions } from '../shared/voice.ts';
 import type { SystemSettingsPane } from '../shared/systemSettings.ts';
 import type { BotAvatar } from '../shared/avatars.ts';
+import type { BossCatToolsState } from '../shared/providerTools.ts';
 
 /**
  * ADR-003: the type of `window.catsBot`, which `assets/preload.cjs` exposes.
@@ -154,8 +155,8 @@ export interface BotRow {
   pid: number | null;
   startAutomatically: boolean;
   bossCat: boolean;
-  /** SPEC-009 FR-11: for the holder, whether its provider gives it the Boss Cat tools. */
-  bossCatTools: boolean | null;
+  /** SPEC-009 FR-11: for the holder, whether its tools are connected, wait for its next reply, or cannot come. */
+  bossCatTools: BossCatToolsState | null;
   /** SPEC-012 FR-12: whether the Boss Cat may see this bot's status. */
   bossCatSees: boolean;
 }

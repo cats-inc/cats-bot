@@ -8,6 +8,7 @@ import {
   ago,
   appFacts,
   bossCatChoice,
+  bossCatToolsHint,
   botForm,
   botStateLine,
   botPatch,
@@ -307,6 +308,24 @@ test('a Bots row names the provider and state, and a pid only for another progra
   acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
   assert.equal(botStateLine({ state: 'running', pid: 1, provider: 'codex', providerLabel: 'Codex' }), 'Codex · 執行中');
   acceptLanguage({ preference: 'en', locale: 'en' });
+});
+
+test('the Boss Cat row says when its tools come, and in red only why they cannot (SPEC-009 FR-11)', () => {
+  const qq = { name: 'QQ', provider: 'claude', providerLabel: 'Claude' };
+  assert.equal(bossCatToolsHint({ ...qq, bossCatTools: null }), null);
+  const pending = bossCatToolsHint({ ...qq, bossCatTools: 'pending' });
+  assert.equal(pending?.warn, false);
+  assert.match(pending!.text, /QQ gets the Boss Cat tools at its next reply/u);
+  assert.match(pending!.text, /nothing needs restarting/u);
+  assert.doesNotMatch(pending!.text, /start a conversation/iu);
+  assert.deepEqual(bossCatToolsHint({ ...qq, bossCatTools: 'connected' }), { text: 'The Boss Cat tools are connected.', warn: false });
+  const access = bossCatToolsHint({ name: 'QQ', provider: 'grok', providerLabel: 'Grok', bossCatTools: 'needsAccess' });
+  assert.equal(access?.warn, true);
+  assert.match(access!.text, /Grok/u);
+  assert.match(access!.text, /Provider access and tools/u);
+  const unsupported = bossCatToolsHint({ name: 'QQ', provider: 'antigravity', providerLabel: null, bossCatTools: 'unsupported' });
+  assert.equal(unsupported?.warn, true);
+  assert.match(unsupported!.text, /antigravity does not support/u);
 });
 
 test('the Boss Cat menu assigns, moves and clears the role, and choosing the holder again does nothing (SPEC-009 FR-2)', () => {

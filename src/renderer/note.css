@@ -62,8 +62,10 @@ html, body {
 }
 
 /* SPEC-009 FR-10: the note's cat by its face, before its name. Smaller than a bubble's face: it sits with the
-   18 px header glyphs. The Boss Cat's face has a gold ring, as in Cats Desktop, a shade deeper here so it
-   reads on the yellow header. */
+   18 px header glyphs. Every face is a picture on a paper disc with a quiet rim, so it reads as the cat's
+   portrait on the yellow header and over a bubble; the Boss Cat's rim is a gold ring, as in Cats Desktop, a
+   shade deeper here so it reads on the yellow header. The header's face names the bot's provider, model and
+   effort on hover and on focus (SPEC-003 FR-11). */
 .note-face {
   display: grid;
   flex: none;
@@ -75,22 +77,27 @@ html, body {
   border-radius: 50%;
 }
 
+.note-face:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 3px;
+}
+
+.note-face,
+.transcriptAvatar {
+  background: #fffdf2;
+  box-shadow: 0 0 0 1px rgba(43, 42, 38, 0.22);
+}
+
 .note-face img,
 .transcriptAvatar img {
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 86%;
+  height: 86%;
   object-fit: contain;
 }
 
 .catFaceBoss {
-  background: #fffdf2;
   box-shadow: 0 0 0 2px #d4a32a;
-}
-
-.catFaceBoss img {
-  width: 86%;
-  height: 86%;
 }
 
 /* A cat this note does not know by look: its initial, as Cats Desktop draws a face without a picture. */
@@ -109,37 +116,6 @@ html, body {
   display: inline-grid;
   place-items: center;
   border-radius: 50%;
-}
-
-/* The (i) after the title, Cats Desktop's model-picker (i): hover or focus shows the bot's provider, model and
-   effort. It stays whole when the title is cut short. */
-.note-info {
-  display: inline-flex;
-  flex: none;
-  width: 14px;
-  height: 14px;
-  align-items: center;
-  justify-content: center;
-  margin-left: -2px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  color: var(--muted);
-  font-size: 9px;
-  font-weight: 600;
-  line-height: 1;
-  /* Not a button and not a help link: the plain arrow, with the tooltip (tooltip.ts) on hover or focus. */
-  cursor: default;
-  -webkit-app-region: no-drag;
-}
-
-.note-info:hover,
-.note-info:focus-visible {
-  color: var(--ink);
-}
-
-.note-info:focus-visible {
-  outline: 2px solid currentColor;
-  outline-offset: 1px;
 }
 
 .note-unread {
@@ -822,7 +798,8 @@ html { font-size: 16px; }
   font-size: 11px;
   font-weight: 500;
   line-height: 1.35;
-  white-space: normal;
+  /* A line break in the text starts a new line: the header face's role, then its model. */
+  white-space: pre-line;
   overflow-wrap: anywhere;
   pointer-events: none;
   opacity: 0;

@@ -77,6 +77,14 @@ export function headerCat(cast: NoteCast): NoteCat {
   return selfOnRight(cast) ? contactCat(cast) ?? cast.self : cast.self;
 }
 
+/**
+ * SPEC-003 FR-11: whether the header's face is this note's own cat, so its tooltip can carry the bot's provider,
+ * model and effort. On the Boss Cat's contact note it is the cat looked after, whose model the note does not know.
+ */
+export function headerShowsSelf(cast: NoteCast): boolean {
+  return !selfOnRight(cast) || contactCat(cast) === null;
+}
+
 /** SPEC-003 FR-15: the direct message reaches Telegram once Telegram is on, its token stored and the owner's chat bound. */
 export function reachesTelegram(policy: { enabled: boolean; ownerChatId: number | null }, tokenStored: boolean): boolean {
   return policy.enabled && tokenStored && policy.ownerChatId !== null;

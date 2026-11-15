@@ -384,6 +384,10 @@ hot-plug and installed-app acceptance were not performed.
   crash and reattach, two bots with a killed core, `cats-bot quit` per bot, and
   `cats-bot hub boss-cat`. Compare `~/.catsbot`, `%APPDATA%\Cats Bot`, the
   provider folders and the login items before and after; nothing may change.
+- **Manual, the holder's tools (SPEC-009 FR-11)**: with Settings → Cat bots open, assign the role to a running
+  bot with an existing direct message. The row says the tools come at its next reply, in plain text, not
+  red. Send one message without restarting anything: the row turns to "connected" without refocusing the
+  window. A Grok bot without provider access, or an Antigravity bot, shows the reason in red.
 - **Manual, first run through the setup page**: launch without `--provider`,
   with an isolated home whose `.npmrc` names an existing global npm prefix, so
   the page's provider check runs the packaged setup helper as an owner's first
@@ -516,10 +520,11 @@ GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),
   created" line is hidden, and it appears at once when the switch is turned on. Decisions and errors show
   either way.
 - Note header, faces and tooltips (SPEC-003 FR-11, FR-15 to FR-17): on a note shown without focus, hover each
-  header and composer button, the (i) and a time: the note's own tooltip shows (a native one does not, which
-  is the point). Clickable controls show the paw cursor on Linux, the system's pointing hand on macOS and an
-  ordinary cursor on Windows; the (i) shows the plain arrow. The Boss Cat's header face has the gold ring and
-  its tooltip names the role; replies carry no face, and the time sits inside each bubble. A contact note puts
+  header and composer button, the header's face and a time: the note's own tooltip shows (a native one does
+  not, which is the point). Clickable controls show the paw cursor on Linux, the system's pointing hand on
+  macOS and an ordinary cursor on Windows; the face shows the plain arrow. Every face sits on a paper disc;
+  the Boss Cat's has the gold ring. The header face's tooltip names the role, if any, above the provider,
+  model and effort, and Tab reaches it. Replies carry no face, and the time sits inside each bubble. A contact note puts
   the Boss Cat on the right and the other cat on the left, both with face and name, and the header shows the
   other cat. The direct message's send button is a paper plane only
   with Telegram on, a token stored and the owner's chat bound. Scroll up: the scroll-to-latest button shows
