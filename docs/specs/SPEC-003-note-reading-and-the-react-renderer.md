@@ -112,6 +112,9 @@ for the current-versus-pending boundary.
     page above or below what it explains and kept inside the window; keyboard focus shows it too. A note
     opens without taking focus, and macOS shows a native `title` tooltip only for the active app. What can
     be clicked in a Cats Bot window shows a cat's paw cursor, plain CSS with the pointing hand as fallback.
+    macOS shows the system's pointing hand instead (2026-11-16): on a Retina screen it showed only the paw's
+    top-left quarter, and a paw drawn at single size would be blurred. Windows is given the paw too but shows
+    an ordinary cursor; that is accepted and its cause not investigated.
 12. FR-12 (2026-11-14): "Show live progress details" is one switch per bot, at the top of its Settings →
     Conversations, saved as it changes and off by default, like Cats Desktop's per-product setting of that
     name. It is stored as the profile's `showProgressDetails`; absent reads as off, and it is not a session
