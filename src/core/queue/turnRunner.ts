@@ -1,6 +1,7 @@
 import type { SessionBinder } from '../conversations/binder.ts';
 import type { ConversationStore } from '../conversations/store.ts';
-import { isHeartbeatPrompt, parseHeartbeatReply } from '../life/heartbeat.ts';
+import { parseHeartbeatReply } from '../life/heartbeat.ts';
+import { isHeartbeatTurn } from '../../shared/heartbeatTurn.ts';
 import { desktopToolInputSummary, desktopToolResultSummary, isDesktopControlToolName } from '../desktopControl/tools.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeStreamEvent, type SendMessageRequest } from '../runtime/client.ts';
 import { isProviderSessionUnavailable } from '../runtime/providerSession.ts';
@@ -346,7 +347,7 @@ export class TurnRunner {
     const { conversationId } = item;
     const origin = originForKind(item.kind);
     const textParts: string[] = [];
-    const heartbeat = item.kind === 'heartbeat' || isHeartbeatPrompt(item.prompt);
+    const heartbeat = isHeartbeatTurn(item);
     // Whether the provider did anything this turn; a turn that did is never re-sent.
     let produced = false;
     // Errors before any output wait: a turn sent again in a rebuilt session leaves them out.
