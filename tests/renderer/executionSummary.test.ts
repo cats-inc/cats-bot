@@ -5,7 +5,7 @@ import type { ModelCatalog, ModelControl } from '../../src/core/types.ts';
 import { acceptLanguage } from '../../src/renderer/localeStore.ts';
 import { executionSummary } from '../../src/renderer/note/executionSummary.ts';
 
-/** The note header's (i): provider, model and effort, named as the model catalog names them. */
+/** SPEC-003 FR-11: the note header face's model line, composed as Cats Desktop's audience chip composes a cat's tooltip. */
 
 const effort = (defaultValue: string): ModelControl => ({
   key: 'claude.reasoning_effort',
@@ -29,30 +29,36 @@ const catalog: ModelCatalog = {
   defaultSelection: { entryMode: 'explicit', entryId: 'opus', controls: { 'claude.reasoning_effort': 'medium' } },
 };
 
-test('a bot on the provider default reads the catalog default, without the "(default)" mark', () => {
-  assert.equal(executionSummary({ provider: 'claude', model: null }, catalog, 'Claude'), 'Claude · Opus 5.5 · Medium effort');
+test('a bot on the provider default is named by the catalog default, as Cats Desktop\'s audience chip names a cat', () => {
+  assert.equal(executionSummary('QQ', { provider: 'claude', model: null }, catalog), 'QQ · Claude-CLI · Opus 5.5 · Medium');
 });
 
-test('a chosen model and effort are named by their catalog labels', () => {
-  assert.equal(executionSummary({
+test('a chosen model and its chosen controls are named by their catalog labels, and nothing else', () => {
+  assert.equal(executionSummary('QQ', {
     provider: 'claude', model: 'fable',
     modelSelection: { entryMode: 'explicit', entryId: 'fable', controls: { 'claude.reasoning_effort': 'xhigh' } },
-  }, catalog, 'Claude'), 'Claude · Fable 5.1 · xHigh effort');
-  // The model's own default effort when only the model was chosen.
-  assert.equal(executionSummary({ provider: 'claude', model: 'fable' }, catalog, 'Claude'), 'Claude · Fable 5.1 · High effort');
-  // A model without an effort control has no effort part.
-  assert.equal(executionSummary({ provider: 'claude', model: 'claude-haiku-4-5-20251001' }, catalog, 'Claude'), 'Claude · Haiku 4.5');
+  }, catalog), 'QQ · Claude-CLI · Fable 5.1 · xHigh');
+  // Like the chip, a control the target does not choose is not named, and neither is an empty or false one.
+  assert.equal(executionSummary('QQ', { provider: 'claude', model: 'fable' }, catalog), 'QQ · Claude-CLI · Fable 5.1');
+  assert.equal(executionSummary('QQ', {
+    provider: 'claude', model: 'opus',
+    modelSelection: { entryMode: 'explicit', entryId: 'opus', controls: { 'claude.reasoning_effort': 'high', 'claude.fast': false, 'claude.note': '' } },
+  }, catalog), 'QQ · Claude-CLI · Opus 5.5 · High');
+  assert.equal(executionSummary('QQ', { provider: 'claude', model: 'claude-haiku-4-5-20251001' }, catalog), 'QQ · Claude-CLI · Haiku 4.5');
 });
 
-test('without a catalog the summary falls back to the ids it has', () => {
-  assert.equal(executionSummary({ provider: 'codex', model: 'gpt-5.5-codex' }, null, null), 'codex · gpt-5.5-codex');
-  assert.equal(executionSummary({ provider: 'codex', model: null }, null, 'Codex'), 'Codex');
+test('without a catalog the label falls back to the ids it has', () => {
+  assert.equal(executionSummary('Mochi', { provider: 'codex', model: 'gpt-5.5-codex' }, null), 'Mochi · Codex-CLI · gpt-5.5-codex');
+  assert.equal(executionSummary('Mochi', { provider: 'codex', model: null }, null), 'Mochi · Codex-CLI');
 });
 
-test('the effort part is translated', () => {
+test('nothing in the label is translated', () => {
   acceptLanguage({ preference: 'zh-TW', locale: 'zh-TW' });
   try {
-    assert.equal(executionSummary({ provider: 'claude', model: null }, catalog, 'Claude'), 'Claude · Opus 5.5 · 推理強度 Medium');
+    assert.equal(executionSummary('QQ', {
+      provider: 'claude', model: 'opus',
+      modelSelection: { entryMode: 'explicit', entryId: 'opus', controls: { 'claude.reasoning_effort': 'xhigh' } },
+    }, catalog), 'QQ · Claude-CLI · Opus 5.5 · xHigh');
   } finally {
     acceptLanguage({ preference: 'en', locale: 'en' });
   }

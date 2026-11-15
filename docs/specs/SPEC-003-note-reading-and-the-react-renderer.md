@@ -105,9 +105,12 @@ for the current-versus-pending boundary.
     Every face, in the header and over a bubble, is the cat's picture on a paper disc with a quiet rim, and
     the Boss Cat's rim is a gold ring (SPEC-009 FR-10). Until 2026-11-16 only the Boss Cat's face had the
     disc, so another cat's face did not read as its portrait. Hovering or focusing the header's face shows,
-    on separate lines, the role when it has one and, when the face is the note's own cat, the bot's provider,
-    model and reasoning effort as the model catalog names them ("Claude · Opus 5.5 · Medium effort"),
-    falling back to the ids without a catalog. Assistive technology hears the same. The face is not a button
+    on separate lines, the role when it has one and, when the face is the note's own cat, its model line.
+    That line is composed as Cats Desktop's audience chip composes a cat's tooltip, with nothing translated
+    (2026-11-16; it read "Claude · Opus 5.5 · 推理強度 xHigh" before). It reads "QQ · Claude-CLI · Opus 5.5 ·
+    xHigh": the cat's name, the provider with its CLI backend, the model's catalog label, and the label of
+    each control the target chooses. A bot on the provider default is named by the catalog's default
+    selection, and without a catalog the line falls back to the ids. Assistive technology hears the same. The face is not a button
     and keeps the plain arrow cursor. It replaced an (i) after the title (owner's request, 2026-11-16). The
     Boss Cat's contact note, whose header shows the other cat, names no model. When the header is short of
     room the title is cut; the face and the status stay whole and on one line.

@@ -142,10 +142,8 @@ function CatFace({ cat, className, execution = '' }: { cat: NoteCat; className: 
   // `data-tooltip`, not `title`: the tooltip takes a title over for good, and this one must follow the role
   // and the model. A face that names its model takes keyboard focus, which shows the tooltip too.
   const shown = [cat.bossCat ? t('Boss Cat') : '', execution].filter(Boolean);
-  const spoken = [cat.bossCat ? t('Boss Cat') : '', execution ? t('Provider and model: {summary}', { summary: execution }) : '']
-    .filter(Boolean);
   const role = shown.length > 0
-    ? { role: 'img', 'aria-label': spoken.join('\n'), 'data-tooltip': shown.join('\n'), ...(execution ? { tabIndex: 0 } : {}) }
+    ? { role: 'img', 'aria-label': shown.join('\n'), 'data-tooltip': shown.join('\n'), ...(execution ? { tabIndex: 0 } : {}) }
     : { 'aria-hidden': true };
   return cat.avatar
     ? <span className={classes} {...role}><img src={cat.avatar} alt="" /></span>
@@ -411,7 +409,7 @@ export function NoteApp() {
   // arrow everywhere else. Until both are known it is the arrow.
   const [directMessage, setDirectMessage] = useState(requested === 'home');
   const [telegram, setTelegram] = useState(false);
-  // The header face's tooltip: the bot's provider, model and reasoning effort, read from its model catalog.
+  // The header face's tooltip: the bot's provider, model and controls as Cats Desktop's audience chip names them.
   const [executionInfo, setExecutionInfo] = useState('');
   const executionRequest = useRef(0);
   const executionTarget = useRef('');
@@ -533,15 +531,12 @@ export function NoteApp() {
     // The provider's and model's names change only with the target (and the effort's wording with the language);
     // the header refreshes far more often, and listing providers probes every CLI on the PATH.
     const target = profile.executionTarget;
-    const targetKey = `${locale}|${JSON.stringify(target)}`;
+    const targetKey = `${profile.name}|${JSON.stringify(target)}`;
     if (targetKey !== executionTarget.current) {
       const request = ++executionRequest.current;
-      void Promise.all([
-        api.invoke('listModels', target.provider).catch(() => null),
-        api.invoke('listProviders').catch(() => []),
-      ]).then(([catalog, providers]) => {
+      void api.invoke('listModels', target.provider).catch(() => null).then((catalog) => {
         if (request !== executionRequest.current) return;
-        setExecutionInfo(executionSummary(target, catalog, providers.find((item) => item.id === target.provider)?.label ?? null));
+        setExecutionInfo(executionSummary(profile.name, target, catalog));
         // Before Runtime answers, the catalog is missing or the packaged one, which may not name the model yet:
         // only Runtime's own catalog settles the names, so until then the next refresh asks again.
         if (catalog?.source === 'runtime') executionTarget.current = targetKey;
