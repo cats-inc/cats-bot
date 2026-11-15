@@ -34,6 +34,7 @@ a Bot token-setting UI or change Bot profile/conversation/journal formats.
 Bot 0.5.12 selects the same Runtime main, which had nothing after that commit at
 selection; a clean-clone rebuild reproduced the same artifact bytes.
 Bot 0.5.13 again selects that commit, still Runtime main at selection.
+Bot 0.5.14 selects it once more; a clean-clone rebuild again reproduced the same bytes.
 
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed
