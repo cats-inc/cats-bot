@@ -13,7 +13,7 @@ import {
 } from '@cats-inc/platform-ui-web/contracts';
 import '@cats-inc/platform-ui-web/conversation.css';
 import { t, useI18n } from '../i18n.ts';
-import { conversationWorkState } from './workState.ts';
+import { awaitedReplies, conversationWorkState } from './workState.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
@@ -163,11 +163,13 @@ function replyLabels(): ConversationLabels {
  * A reply, as Cats Desktop's transcript item composes it: one bubble per text segment. Its time and its steps
  * link close the last bubble, inside it, like the time under every other message (SPEC-003 FR-13).
  */
-function ReplyBubbles({ response, speaker, showProgressDetails, footer }: {
+function ReplyBubbles({ response, speaker, showProgressDetails, footer, fadeIn = true }: {
   response: ConversationPresentation;
   speaker: BubbleSpeaker;
   showProgressDetails: boolean;
   footer: ReactNode;
+  /** Desktop's `typingIndicator` fade as a bubble comes; not for the reply that takes the waiting bubble's place. */
+  fadeIn?: boolean;
 }) {
   useI18n();
   const parts = splitConversationPresentation(response).filter((part) => part.phase !== 'sealed'
@@ -176,7 +178,7 @@ function ReplyBubbles({ response, speaker, showProgressDetails, footer }: {
   return <>{parts.map((part, index) => {
     const text = conversationPlainText(part.blocks);
     return <ConversationMessage key={part.id} id={part.id} senderKind={speaker.side === 'right' ? 'user' : 'agent'}
-      stackClassName={`transcriptMessageStack transcriptMessageStack${tone} typingIndicator`}
+      stackClassName={`transcriptMessageStack transcriptMessageStack${tone}${fadeIn ? ' typingIndicator' : ''}`}
       speaker={index === 0 && speaker.cat ? <SpeakerTop cat={speaker.cat} /> : null}
       showCopy={part.phase === 'sealed' && !!text.trim()} copyLabel={t('Copy')}
       onCopy={() => { void navigator.clipboard.writeText(text).catch(() => {}); }}>
@@ -185,6 +187,8 @@ function ReplyBubbles({ response, speaker, showProgressDetails, footer }: {
     </ConversationMessage>;
   })}</>;
 }
+
+const WAITING_REPLY: ConversationPresentation = { version: 1, id: 'waiting-reply', phase: 'waiting', blocks: [] };
 
 const FileIcon = ({ size }: { size: number }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -453,6 +457,8 @@ export function NoteApp() {
   const dismissNotice = useCallback(() => setNotice(null), []);
   const [workItems, setWorkItems] = useState<WorkItem[]>([]);
   const [pending, setPending] = useState<PendingReply | null>(null);
+  // Turns the note showed its waiting bubble for (SPEC-003 FR-18).
+  const tookOver = useRef(new Set<string>());
   const [running, setRunningState] = useState(false);
   const [runtimeNote, setRuntimeNote] = useState('');
   const [historyError, setHistoryError] = useState('');
@@ -662,6 +668,11 @@ export function NoteApp() {
   const activeRequests = liveInteractions(interactions);
   const grantRequests = desktop.state?.conversation?.pendingRequests ?? [];
   const activeRequestIds = [...activeRequests.map(i => i.interactionId), ...grantRequests.map(r => r.requestId)].join(',');
+  const awaited = awaitedReplies({ conversationId: conversation.current, workItems, entries, streaming: pending !== null,
+    askingOwner: activeRequests.length > 0 || grantRequests.length > 0 });
+  const awaiting = awaited.length > 0;
+  // SPEC-003 FR-18: the reply that takes the waiting bubble's place does not fade in, or the dots would blink.
+  for (const id of awaited) tookOver.current.add(id);
 
   useLayoutEffect(() => {
     const element = transcriptRef.current;
@@ -669,7 +680,7 @@ export function NoteApp() {
     if (!activeRequestIds && followTranscript.current) element.scrollTop = element.scrollHeight;
     // SPEC-003 FR-17: content that shrank to fit, or grew while the owner reads above, changes it too.
     setAtEnd(element.scrollHeight - element.clientHeight - element.scrollTop < 40);
-  }, [visibleItems, pending, activeRequestIds]);
+  }, [visibleItems, pending, awaiting, activeRequestIds]);
   useLayoutEffect(() => {
     if (activeRequestIds) interactionAnchor.current?.scrollIntoView({ block: 'start' });
   }, [activeRequestIds]);
@@ -743,6 +754,7 @@ export function NoteApp() {
         </button>
         : null;
       return <ReplyBubbles response={response} speaker={selfSpeaker(cast)} showProgressDetails={open}
+        fadeIn={!item.entry.workItemId || !tookOver.current.has(item.entry.workItemId)}
         footer={meta || link ? <span className="entry-meta">
           {meta && <span title={messageTimestamp(entryTime(item.entry)!)}>{meta}</span>}{meta && link ? ' · ' : null}{link}
         </span> : null} />;
@@ -843,6 +855,10 @@ export function NoteApp() {
             <ConversationMarkdown text={pending.text} />
           </ConversationMessage>
         )}
+        {/* SPEC-003 FR-18: Cats Desktop's waiting bubble, its reply composition in the waiting phase: three dots
+            and no face, on the cat's side, until the reply's own bubble comes. */}
+        {awaiting && <ReplyBubbles response={WAITING_REPLY} speaker={{ side: selfSpeaker(cast).side, cat: null }}
+          showProgressDetails={false} footer={null} />}
         <div ref={interactionAnchor}>
 
           {activeRequests.map((i) => (

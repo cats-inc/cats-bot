@@ -191,6 +191,8 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const providerSetup = target === join(srcRoot, 'shared', 'providerSetup.ts');
         // SPEC-011 FR-2: the page checks the daily rhythm with the core's rule.
         const heartbeatRhythm = target === join(srcRoot, 'shared', 'heartbeatRhythm.ts');
+        // SPEC-003 FR-18: the note tells a heartbeat turn by the core's rule, and awaits no reply from it.
+        const heartbeatTurn = target === join(srcRoot, 'shared', 'heartbeatTurn.ts');
         // SPEC-003 FR-8: the attachment block is written by the note and read by both.
         const attachments = target === join(srcRoot, 'shared', 'attachments.ts');
         // SPEC-003 FR-9: the region screenshot's geometry and overlay contracts, shared by the shell and the overlay page.
@@ -201,7 +203,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const systemSettings = target === join(srcRoot, 'shared', 'systemSettings.ts');
         // The reset confirmation and request shape are shared with the host; no platform imports.
         const dataReset = target === join(srcRoot, 'shared', 'dataReset.ts');
-        if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm
+        if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm && !heartbeatTurn
           && !attachments && !screenshot && !voice && !systemSettings && !dataReset && (!typeOnly || !allowed.includes(target)))
           offenders.push(`${where} (only browser-safe contracts and translations)`);
         if (dataReset) assert.deepEqual(importSpecifiers(target), []);
@@ -218,6 +220,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         if (avatars) assert.deepEqual(importSpecifiers(target), [], 'the Cat looks stay plain data');
         if (providerSetup) assert.deepEqual(importSpecifiers(target), [], 'setup readiness stays browser safe');
         if (heartbeatRhythm) assert.deepEqual(importSpecifiers(target), [], 'the daily rhythm stays browser safe');
+        if (heartbeatTurn) assert.deepEqual(importSpecifiers(target), [], 'the heartbeat mark stays browser safe');
         if (attachments) assert.deepEqual(importSpecifiers(target), [], 'the attachment block stays browser safe');
         if (screenshot) {
           for (const specifier of importSpecifiers(target))

@@ -168,6 +168,17 @@ for the current-versus-pending boundary.
 17. FR-17 (2026-11-14): While the end of the transcript is out of sight, Cats Desktop's scroll-to-latest
     button hangs over the top edge of the note's footer, centered; it takes the note to the end and goes.
     A composer notice (ADR-024) is inside the footer, so it pushes the button up rather than covering it.
+18. FR-18 (2026-11-16): From the moment the owner's message shows (a retried one at once; a turn without one,
+    such as a schedule's, from its start) until the turn puts something in the transcript, the note shows Cats
+    Desktop's waiting bubble: its reply composition in the waiting phase, three animated dots on the cat's side
+    with no face or name, as the Cat shows its dots outside. Starting a provider session can take a while, and
+    without it a sent message seemed to get no reaction. The turn's reply then takes the bubble's place in its
+    own bubble, without the fade-in a new bubble has, which keeps the dots until it has text or a step to show;
+    an error ends the wait too. The core seals a reply before it reports the turn done, so a finished reply
+    ends the wait, while what a retried turn's earlier attempts left (`attemptFromSeq`) does not. Heartbeats,
+    which may say nothing, get no waiting bubble, an interrupted one run again included, nor does a turn while
+    it waits for the owner's answer or grant, which the header names, or a reply whose text streams without a
+    presentation. In a contact note, whose bubbles carry faces (FR-16), the waiting bubble has none either.
 
 ## Acceptance
 
@@ -192,6 +203,8 @@ Full final UI-6/package/CI signoff is separate from this implemented cutover.
 - A4c: "Take screenshot" hides the note, shows the frozen screen, and a dragged region comes back as a
   card in the composer of the note, which is open, visible and focused again; Escape adds nothing.
 - A4d: On macOS and Windows, dictating a sentence (also in Chinese) puts it in the composer; Escape cancels.
+- A4e: Sending a message shows three animated dots in a faceless bubble on the cat's side as the message
+  shows; the reply takes their place without a blink, and a heartbeat shows none.
 - A5: The existing acceptance scripts (settings-page model race and saving, raising a desktop-layer
   note, unread of a background note) still pass on the new pages.
 - A6: The packaged installer shows the first-run page the first time it is opened, and after the bot is
