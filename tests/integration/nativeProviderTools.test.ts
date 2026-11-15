@@ -5,7 +5,7 @@ import { test } from 'node:test';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { makeTempHome, openTestBot, sendAndWait, waitForEvent } from '../support/harness.ts';
 
-for (const provider of ['muse', 'grok', 'antigravity']) {
+for (const provider of ['muse', 'grok', 'antigravity', 'kimi']) {
   test(`packed Runtime hosts ${provider} tools and approvals without a desktop`, { timeout: 90_000 }, async () => {
     const home = makeTempHome(`cats-hosted-${provider}-`);
     const log = join(home.root, 'fixture.jsonl');
@@ -17,7 +17,9 @@ for (const provider of ['muse', 'grok', 'antigravity']) {
           APPDATA: join(home.root, 'roaming'), LOCALAPPDATA: join(home.root, 'local'), CATS_HOSTED_FIXTURE_LOG: log } },
     } });
     try {
-      await core.updateProfile({ providerPolicy: { version: 1, mode: 'provider', constraints: { maxAccess: 'full-access', network: true } } });
+      // A Kimi bot brings the hosted policy itself (ADR-025); the others opt in.
+      if (provider === 'kimi') assert.deepEqual((await core.getProfile()).providerPolicy, { version: 1, mode: 'provider', constraints: { maxAccess: 'full-access', network: true } });
+      else await core.updateProfile({ providerPolicy: { version: 1, mode: 'provider', constraints: { maxAccess: 'full-access', network: true } } });
       await core.start(); core.setBossCat(true);
       const first = await sendAndWait(core, 'home', provider === 'antigravity' ? 'fixture:local' : 'fixture:tools', 60_000);
       assert.equal(first.state, 'completed', first.error);

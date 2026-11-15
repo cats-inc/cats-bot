@@ -53,6 +53,7 @@ provider_display_name() {
     antigravity) printf '%s\n' 'Antigravity CLI' ;;
     grok) printf '%s\n' 'Grok CLI' ;;
     devin) printf '%s\n' 'Devin CLI' ;;
+    kimi) printf '%s\n' 'Kimi Code CLI' ;;
     muse) printf '%s\n' 'Meta Muse CLI' ;;
     claude) printf '%s\n' 'Claude Code CLI' ;;
     cursor) printf '%s\n' 'Cursor Agent CLI' ;;
@@ -68,6 +69,7 @@ provider_primary_command() {
     antigravity) printf '%s\n' 'agy' ;;
     grok) printf '%s\n' 'grok' ;;
     devin) printf '%s\n' 'devin' ;;
+    kimi) printf '%s\n' 'kimi' ;;
     muse) printf '%s\n' 'muse' ;;
     claude) printf '%s\n' 'claude' ;;
     cursor) printf '%s\n' 'cursor-agent' ;;
@@ -99,6 +101,7 @@ provider_install_url() {
     antigravity) printf '%s\n' 'https://antigravity.google/cli/install.sh' ;;
     grok) printf '%s\n' 'https://x.ai/cli/install.sh' ;;
     devin) printf '%s\n' 'https://cli.devin.ai/install.sh' ;;
+    kimi) printf '%s\n' 'https://code.kimi.ai/kimi-code/install.sh' ;;
     muse) printf '%s\n' 'https://dev.meta.ai/install.sh' ;;
     claude) printf '%s\n' 'https://claude.ai/install.sh' ;;
     cursor) printf '%s\n' 'https://cursor.com/install' ;;
@@ -112,6 +115,7 @@ provider_install_url() {
 provider_install_dir() {
   case "$1" in
     grok) printf '%s\n' "$HOME/.grok/bin" ;;
+    kimi) printf '%s\n' "$(kimi_install_root)/bin" ;;
     muse) muse_install_dir ;;
     *) printf '%s\n' "$HOME/.local/bin" ;;
   esac
@@ -184,6 +188,10 @@ ensure_provider_bin_path_export() {
   local path_export
 
   install_dir="$(provider_install_dir "$provider")"
+  if [ "$provider" = 'kimi' ]; then
+    ensure_kimi_bin_path_export "$shell_rc"
+    return 0
+  fi
   if [ "$provider" = 'grok' ]; then
     path_export='export PATH="$HOME/.grok/bin:$PATH"'
   else
@@ -251,6 +259,43 @@ ensure_provider_alias() {
   fi
 }
 
+# Kimi Code's official installer puts one binary in
+# ${KIMI_INSTALL_DIR:-$HOME/.kimi-code}/bin and keeps config, credentials and
+# sessions beside it in $HOME/.kimi-code (KIMI_CODE_HOME). Detection, version
+# reads and verification only look at that fixed path: a kimi elsewhere on PATH
+# may be the archived Python kimi-cli (the installer renames it kimi-legacy) or
+# an npm/Homebrew build.
+kimi_install_root() {
+  printf '%s\n' "${KIMI_INSTALL_DIR:-$HOME/.kimi-code}"
+}
+
+# The official installer already writes the bin directory into the rc file it
+# picks from $SHELL, which may not be the one detect_shell_rc picks. Add our own
+# line only when no rc file mentions the directory yet, and honour the
+# installer's KIMI_NO_MODIFY_PATH opt-out.
+ensure_kimi_bin_path_export() {
+  local shell_rc="$1"
+  local bin_dir rc path_export
+  bin_dir="$(kimi_install_root)/bin"
+  prepend_path_if_missing "$bin_dir"
+  [ -z "${KIMI_NO_MODIFY_PATH:-}" ] || return 0
+  for rc in "$shell_rc" "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.bash_profile" "$HOME/.profile" "$HOME/.config/fish/config.fish"; do
+    if grep -qsF "$bin_dir" "$rc"; then
+      return 0
+    fi
+    if [ "$bin_dir" = "$HOME/.kimi-code/bin" ] && grep -qsF '$HOME/.kimi-code/bin' "$rc"; then
+      return 0
+    fi
+  done
+  if [ "$bin_dir" = "$HOME/.kimi-code/bin" ]; then
+    path_export='export PATH="$HOME/.kimi-code/bin:$PATH"'
+  else
+    path_export="export PATH=\"$bin_dir:\$PATH\""
+  fi
+  append_line_if_missing "$shell_rc" '# Added by cats-platform self-hosted provider helpers' '# Added by cats-platform self-hosted provider helpers'
+  append_line_if_missing "$shell_rc" "$path_export" "$path_export"
+}
+
 # muse's install directory holds the launcher, its state files, and one
 # muse-bin-<version> build per version it has downloaded.
 muse_install_dir() {
@@ -304,6 +349,16 @@ detect_provider_command() {
     return 1
   fi
 
+  if [ "$provider" = 'kimi' ]; then
+    candidate="$(kimi_install_root)/bin/kimi"
+    if [ -x "$candidate" ]; then
+      prepend_path_if_missing "$(dirname "$candidate")"
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+    return 1
+  fi
+
   primary_command="$(provider_primary_command "$provider")"
   if command -v "$primary_command" >/dev/null 2>&1; then
     command -v "$primary_command"
@@ -333,7 +388,8 @@ provider_version_line() {
     return 0
   fi
 
-  "$command_path" --version 2>&1 | head -1 || true
+  # Keep stdin away from every probe; `kimi --version` starts a 160 MB binary.
+  "$command_path" --version < /dev/null 2>&1 | head -1 || true
 }
 
 # `curl ... | bash` returns 0 when the download itself fails, because bash reads
@@ -402,6 +458,33 @@ run_devin_installer() {
 
   bash "$patched_path" < /dev/null || status=$?
   rm -f "$installer_path" "$patched_path"
+  return "$status"
+}
+
+# Kimi's official install.sh is staged, checked to be a parseable shell script
+# and run from its own scratch directory: it is meant to be piped from any
+# location and should not drop files into the caller's directory. stdin stays
+# on /dev/null. It keeps the previous binary as kimi.bak, which
+# cats_cleanup_native_versions removes after a verified upgrade.
+run_kimi_installer() {
+  local installer_path='' workdir='' status=0
+
+  installer_path="$(mktemp)"
+  if ! curl -fsSL --connect-timeout 10 --max-time 60 "$(provider_install_url kimi)" -o "$installer_path"; then
+    rm -f "$installer_path"
+    printf 'Failed to download the Kimi Code installer.\n' >&2
+    return 1
+  fi
+  if [ "$(head -c 2 "$installer_path")" != '#!' ] || ! bash -n "$installer_path" 2>/dev/null; then
+    rm -f "$installer_path"
+    printf 'Refusing to run the Kimi Code installer: the download is not a shell script.\n' >&2
+    return 1
+  fi
+
+  workdir="$(mktemp -d)"
+  ( cd "$workdir" && bash "$installer_path" ) < /dev/null || status=$?
+  rm -f "$installer_path"
+  rm -rf "$workdir"
   return "$status"
 }
 
@@ -480,6 +563,9 @@ run_provider_install_action() {
     devin)
       run_devin_installer
       ;;
+    kimi)
+      run_kimi_installer
+      ;;
     muse)
       # The official installer always refreshes the launcher and asks it to pull
       # the newest build, so install, upgrade, and force are the same call.
@@ -543,6 +629,9 @@ provider_manual_steps() {
     devin)
       printf '%s\n' 'Run devin auth login once to authenticate; packaged setup skips the interactive wizard. Check with devin auth status.'
       ;;
+    kimi)
+      printf '%s\n' 'Run kimi login once to sign in (device-code flow). Mainland China accounts use kimi login --region mainland-cn.'
+      ;;
     *)
       :
       ;;
@@ -563,7 +652,8 @@ uninstall_provider_native_paths() {
   local planned_paths=()
 
   primary_command="$(provider_primary_command "$provider")"
-  if [ "$provider" != 'grok' ] && primary_path="$(command -v "$primary_command" 2>/dev/null)"; then
+  # Grok and Kimi own fixed paths; the kimi on PATH may be someone else's.
+  if [ "$provider" != 'grok' ] && [ "$provider" != 'kimi' ] && primary_path="$(command -v "$primary_command" 2>/dev/null)"; then
     case "$primary_path" in
       "$HOME"/*) planned_paths+=("$primary_path") ;;
     esac
@@ -602,6 +692,19 @@ UPNP_EOF
     if [ -e "$extra" ] || [ -L "$extra" ]; then
       planned_paths+=("$extra")
     fi
+  fi
+
+  # The official installer keeps the previous binary as kimi.bak. Config,
+  # credentials and sessions under ~/.kimi-code stay.
+  if [ "$provider" = 'kimi' ]; then
+    extra="$(provider_install_dir "$provider")/kimi.bak"
+    case "$extra" in
+      "$HOME"/*)
+        if [ -e "$extra" ] || [ -L "$extra" ]; then
+          planned_paths+=("$extra")
+        fi
+        ;;
+    esac
   fi
 
   # Devin's shim in ~/.local/bin points at a versioned tree; removing only the

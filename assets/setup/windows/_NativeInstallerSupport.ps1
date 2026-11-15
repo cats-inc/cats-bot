@@ -20,6 +20,7 @@ function Get-CatsNativeLatestVersion {
       junie { return Get-JunieLatestBuild }
       devin { return Get-DevinLatestVersion }
       grok { return Get-GrokLatestVersion }
+      kimi { return Get-KimiCodeLatestVersion }
       kiro { return [string](Invoke-RestMethod 'https://prod.download.cli.kiro.dev/stable/latest/manifest.json' -TimeoutSec 20 -UseBasicParsing).version }
       goose { return [string](Invoke-RestMethod 'https://api.github.com/repos/aaif-goose/goose/releases/latest' -TimeoutSec 20 -UseBasicParsing -Headers @{ 'User-Agent' = 'Cats-Desktop'; Accept = 'application/vnd.github+json' }).tag_name }
       default { return $null }
@@ -310,5 +311,29 @@ function Get-GrokLatestVersion {
         $line = $line.Trim()
         if ($line -match '^\d+\.\d+\.\d+(-[A-Za-z0-9._]+)?$') { return $line }
     }
+    return $null
+}
+
+# Kimi Code: without KIMI_VERSION the official install.ps1 installs whatever the
+# plain-text endpoint <download site>/latest names (for example 2.5.3), so asking
+# it here returns the version the installer is about to fetch, in the same
+# order, without starting the 160 MB kimi.exe. The global mirror code.kimi.ai is
+# the one packaged setup runs. The endpoint is application/octet-stream, so a
+# byte[] reply is decoded too. Anything other than X.Y.Z (optionally
+# -prerelease) counts as unknown.
+function Get-KimiCodeLatestVersion {
+    param([string]$BaseUrl = 'https://code.kimi.ai/kimi-code')
+
+    if (-not [string]::IsNullOrWhiteSpace($env:KIMI_VERSION)) { return $env:KIMI_VERSION.Trim() }
+    try {
+        $text = Invoke-RestMethod -Uri "$BaseUrl/latest" -TimeoutSec 20 -UseBasicParsing -ErrorAction Stop
+    } catch {
+        return $null
+    }
+    if ($text -is [byte[]]) { $text = [System.Text.Encoding]::UTF8.GetString($text) }
+    $line = @("$text" -split "`r?`n")[0]
+    if ($null -eq $line) { return $null }
+    $line = $line.Trim()
+    if ($line -match '^\d+\.\d+\.\d+(-[A-Za-z0-9._]+)?$') { return $line }
     return $null
 }

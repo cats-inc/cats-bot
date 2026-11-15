@@ -45,7 +45,7 @@ export function providerChoices(
   providers: readonly ProviderInfo[],
   current: string | null,
 ): ProviderInfo[] {
-  return ['codex', 'claude', 'antigravity', 'grok', 'muse'].flatMap((id) =>
+  return ['codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi'].flatMap((id) =>
     providers.filter((provider) => provider.id === id),
   );
 }

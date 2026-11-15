@@ -118,7 +118,7 @@ test('opening the page runs nothing: the provider list is fixed and no helper st
   });
   f.window.loaded();
   const list = await ipcMain.invoke(f.window, 'setup:providers') as Array<{ id: string; installed: unknown }>;
-  assert.deepEqual(list.map((item) => item.id), ['codex', 'claude', 'antigravity', 'grok', 'muse']);
+  assert.deepEqual(list.map((item) => item.id), ['codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi']);
   assert.ok(list.every((item) => item.installed === null), 'nothing looked at PATH');
   await ipcMain.invoke(f.window, 'setup:models', 'claude');
   await ipcMain.invoke(f.window, 'setup:environment');

@@ -64,14 +64,14 @@ const CLAUDE: ModelCatalog = {
   source: 'runtime',
 };
 
-test('the five provider menus keep Runtime catalog model and effort order without synthetic options', () => {
+test('the six provider menus keep Runtime catalog model and effort order without synthetic options', () => {
   assert.deepEqual(
     CLI_PROVIDERS.map((provider) => provider.id),
-    ['codex', 'claude', 'antigravity', 'grok', 'muse'],
+    ['codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi'],
   );
   assert.deepEqual(
     CLI_PROVIDERS.map((provider) => provider.label),
-    ['Codex', 'Claude', 'Antigravity', 'Grok', 'Muse'],
+    ['Codex', 'Claude', 'Antigravity', 'Grok', 'Muse', 'Kimi'],
   );
   for (const provider of CLI_PROVIDERS) {
     const catalog = readPackagedModelCatalog(provider.id);

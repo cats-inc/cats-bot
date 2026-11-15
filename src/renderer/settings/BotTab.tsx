@@ -272,7 +272,7 @@ export function BotTab({
           </button>
         </div>
       </form>
-      <ProviderSettings profile={profile} onSaved={onSaved} />
+      <ProviderSettings key={profile.executionTarget.provider} profile={profile} onSaved={onSaved} />
       <DesktopControlSettings onSaved={onSaved} />
     </section>
   );

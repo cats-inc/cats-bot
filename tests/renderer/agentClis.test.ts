@@ -69,18 +69,18 @@ test('ticked rows run top down, installs and updates alike (FR-7)', () => {
 });
 
 test('rows group as the wizard groups them, with Node.js at the root of its stem (FR-2)', () => {
-  const all = (['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'shell'] as const).map((id) => row(id, 'not_checked'));
+  const all = (['node', 'npm', 'codex', 'claude', 'antigravity', 'grok', 'muse', 'kimi', 'shell'] as const).map((id) => row(id, 'not_checked'));
   const groups = computerGroups(computer('win32', ...all));
   assert.deepEqual(groups.map((group) => [group.key, group.rows.map((step) => step.id)]), [
     ['node', ['node', 'npm', 'codex']],
-    ['native', ['claude', 'antigravity', 'grok', 'muse']],
+    ['native', ['claude', 'antigravity', 'grok', 'muse', 'kimi']],
     ['optional', ['shell']],
   ]);
   assert.deepEqual(groups[0]!.rows.map((_step, index) => stemClass(groups[0]!, index)), ['is-dep-root', 'is-dep', 'is-dep is-dep-last']);
   assert.equal(stemClass(groups[1]!, 0), undefined);
   assert.deepEqual(computerGroups(computer('darwin', ...all.filter((step) => step.id !== 'shell'))).map((group) => group.key), ['node', 'native']);
-  assert.equal(computerChecks(computer('win32', ...all)), 9, 'eight rows and Codex first-time setup');
-  assert.equal(computerChecks(computer('darwin', ...all.slice(0, 7))), 7);
+  assert.equal(computerChecks(computer('win32', ...all)), 10, 'nine rows and Codex first-time setup');
+  assert.equal(computerChecks(computer('darwin', ...all.slice(0, 8))), 8);
 });
 
 test('what the cat bots need comes from who uses which CLI; archived cat bots do not count (FR-6)', () => {

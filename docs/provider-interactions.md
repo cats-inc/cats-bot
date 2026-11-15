@@ -96,7 +96,7 @@ not signed or installed. Real Codex Chrome/computer-use acceptance is recorded
 separately when performed; these fixture checks do not establish tool parity.
 
 
-## Muse, Grok and Antigravity native work tools
+## Muse, Grok, Kimi and Antigravity native work tools
 
 In Cat bot settings → Provider access, choose **Enable native tools with provider
 permissions** and save. Existing bots retain legacy behavior until this selection.
@@ -115,6 +115,7 @@ workspace or allowlist settings must be removed deliberately before enabling it.
 | --- | --- | --- | --- |
 | Muse | `muse serve` MSP | Private session HTTP MCP; inventory is unobserved because MSP does not enumerate tools | Commands, files, network/tool approval, native questions; changing approval stages invalidate old cards |
 | Grok | `grok agent --no-leader stdio` ACP | Private session HTTP MCP; discovery reports actual connection state | One-action tool approvals, questions and implementation plans |
+| Kimi | `kimi acp` ACP, always on for a Kimi bot (ADR-025) | Private session HTTP MCP; inventory is unobserved because Kimi ACP does not enumerate tools | Runtime keeps Kimi in Default mode; one-action approvals show the arguments Kimi streamed, so a computer-use card shows its JavaScript cell |
 | Antigravity | Google's official `agy_acp_server.par` / `.exe` ACP | Unavailable until native credential persistence and name isolation are verified | Standard ACP one-action approvals; native IO belongs to Google ACP |
 
 Antigravity requires the separate official ACP distribution and its authentication,
@@ -125,6 +126,24 @@ executable on the Bot process PATH, then complete the official client's sign-in.
 The checked Linux ARM64 1.4.5 build requires 4 KiB system pages and aborts on this
 machine's 16 KiB kernel; this is an upstream binary limitation, independent of X.
 No native Google authentication/tool success is claimed here.
+
+### Kimi computer use
+
+A Kimi bot has no legacy mode. Choosing Kimi fills in the native-tools policy above,
+because Kimi's print mode would run every plugin, its computer use included, without
+asking. Kimi's computer use is its own plugin, set up by the owner:
+
+1. Install the Kimi Computer Use runtime
+   (`https://cdn.kimi.com/kimi-computer-use-windows/latest/setup_windows.cmd`) and Node.js
+   24.15 or later. The Kimi desktop app keeps its own copy and does not set this up for the CLI.
+2. Run `kimi` in a terminal, type `/plugins` and install Kimi Computer Use for Windows.
+3. Start a new conversation in the bot, since Kimi loads plugins when a session starts.
+
+Each computer-use call then waits for Approve once in the conversation. Settings → Provider
+access → Current session shows whether Kimi loaded the plugin and whether its runtime and
+Node.js are ready. Background turns wait for the owner like any other approval, and Telegram
+can only notify. Cats desktop control is not offered for Kimi: it needs an explicit
+interactive policy, which a hosted provider does not have.
 
 Boss Cat tool status becomes connected only after the authenticated provider
 fetches the tool list for a current live conversation. A configured policy or

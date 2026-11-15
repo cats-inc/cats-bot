@@ -2,7 +2,7 @@ import { t, useI18n } from '../i18n.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { useEffect, useRef, useState } from 'react';
 import type { BotProfile, ConversationRecord, ExecutionAccess, ExecutionApproval, SessionCapabilitiesSnapshot, SessionExecutionPolicy } from '../../core/types.ts';
-import { HOSTED_TOOL_PROVIDERS } from '../../shared/providerTools.ts';
+import { HOSTED_ONLY_PROVIDERS, HOSTED_TOOL_PROVIDERS } from '../../shared/providerTools.ts';
 
 const api = window.catsBot;
 export function ProviderSettings({
@@ -15,6 +15,8 @@ export function ProviderSettings({
   useI18n();
   const saved = profile.providerPolicy;
   const nativeTools = HOSTED_TOOL_PROVIDERS.includes(profile.executionTarget.provider);
+  // ADR-025: Kimi runs only with its native tools, so the legacy choice is not offered.
+  const hostedOnly = HOSTED_ONLY_PROVIDERS.includes(profile.executionTarget.provider);
   const [mode, setMode] = useState<'legacy' | 'provider' | 'explicit'>(saved?.mode ?? 'legacy');
   const [access, setAccess] = useState<ExecutionAccess>(
     saved?.mode === 'explicit' ? saved.access : (saved?.constraints.maxAccess ?? (nativeTools ? 'full-access' : 'workspace-write')),
@@ -83,7 +85,7 @@ export function ProviderSettings({
             setMode(e.target.value as typeof mode);
             if (nativeTools) { setAccess('full-access'); setNetwork(true); }
           }}>
-            <option value="legacy">{t('Keep existing tool permission settings')}</option>
+            {!hostedOnly && <option value="legacy">{t('Keep existing tool permission settings')}</option>}
             <option value="provider">{nativeTools ? t('Enable native tools with provider permissions') : t('Use provider configuration within a limit')}</option>
             {!nativeTools && <option value="explicit">{t('Choose access and approval separately')}</option>}
           </select>
@@ -138,6 +140,9 @@ export function ProviderSettings({
             </p>}
             {nativeTools && profile.executionTarget.provider === 'antigravity' && <p className="hint">
               {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}
+            </p>}
+            {profile.executionTarget.provider === 'kimi' && <p className="hint">
+              {t('Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so each command, file change and tool call that Kimi does not consider safe, including every computer-use action, waits for your approval in the conversation. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.')}
             </p>}
             {profile.executionTarget.provider === 'claude' && (
               <p className="hint warn">

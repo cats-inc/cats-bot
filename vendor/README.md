@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `512c074713cbe563124f21c4ed9218e0b408c33f`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-512c0747.tgz`; 1,846,266 bytes.
-SHA-256: `41e4fa3b29ad55cca6b2c304e9e701b87cfb351322b668d03eedaa4424683544`.
+Source `b9819a6c1213aa6954babaf086d50dedbaf9ea1c`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-b9819a6c.tgz`; 1,880,119 bytes.
+SHA-256: `8d1651a8c1ddd0ae78ba5af697150a9c333c51ca5774bb2918c2fe9f9b03cc21`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -30,6 +30,18 @@ capabilities do not add a Bot media UI, a provider or a new Bot storage format.
 Bot 0.5.11 selects Runtime main at `512c074713cbe563124f21c4ed9218e0b408c33f`,
 including #223 write-only OpenClaw gateway token storage. This pin does not add
 a Bot token-setting UI or change Bot profile/conversation/journal formats.
+
+The Kimi Code selection (ADR-025) moves the pin to Runtime main at
+`b9819a6c1213aa6954babaf086d50dedbaf9ea1c`. It adds three Runtime changes:
+- #224: the Kimi Code provider, its catalog and native session management.
+- #225: the hosted `kimi acp` target. It keeps Kimi in Default mode, so every
+  computer-use, shell and file call waits for an approval card, and it reports
+  Kimi's computer-use plugin in the session capabilities.
+- #226: a 45-second hosted start-up, command and file approval cards, and Kimi's
+  own plan errors.
+
+A Kimi bot always runs on that hosted target; print mode is never selected for it.
+The pin adds no Bot profile, journal or conversation format change.
 
 Bot 0.5.12 selects the same Runtime main, which had nothing after that commit at
 selection; a clean-clone rebuild reproduced the same artifact bytes.
@@ -59,7 +71,7 @@ It retains explicitly selected native Muse MSP and Grok/official Google
 ACP execution. Existing targets keep their legacy invocation. Muse/Grok support
 private session MCP and live native interactions; Google ACP supports local
 work/approvals while its session MCP is gated pending verified native credential
-persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-and-antigravity-native-work-tools).
+persistence. See [setup and limits](../docs/provider-interactions.md#muse-grok-kimi-and-antigravity-native-work-tools).
 
 Reproduce an artifact from its exact source with its lockfile: `npm ci`, `npm run
 build`, then `npm pack --ignore-scripts`. `node scripts/refresh-runtime-pin.mjs` does

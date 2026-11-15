@@ -44,7 +44,7 @@ anything. Each cat bot's Cat bot tab shows its own CLI in the same rows.
 2. FR-2: Rows are grouped as the wizard groups them.
    - "Installed through Node.js": Node.js and npm, the npm folder, then Codex. They are drawn as a
      stem from Node.js, solid once Node.js is ready.
-   - "With their own installer": Claude, Antigravity, Grok, Muse.
+   - "With their own installer": Claude, Antigravity, Grok, Muse, Kimi (ADR-025).
    - "Optional, and fine to leave for later": PowerShell scripts, on Windows only.
 3. FR-3: Opening the tab runs nothing.
    - Before the first check in this hub session, every row reads "Not checked yet".
@@ -77,7 +77,7 @@ anything. Each cat bot's Cat bot tab shows its own CLI in the same rows.
    - "Tick all N required" appears from two required rows.
    - Codex waits for Node.js and the npm folder; setting up Node.js also reads what waited on it.
 8. FR-8: A working row whose helper has an update gets an Update tick at its right, after its
-   version. This covers Node.js and the five CLIs, not the npm folder or PowerShell scripts.
+   version. This covers Node.js and the six CLIs, not the npm folder or PowerShell scripts.
    - Rows without one keep the column, so versions line up.
    - Ticking it shows the row's tags and "What it does": it installs the newest release if there
      is one, and if this is already the newest, nothing changes. It shows the update command,
