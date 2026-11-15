@@ -166,6 +166,8 @@ export const zhTW: Record<string, string> = {
   'Enable native tools with provider permissions': '啟用原生工具，沿用供應商權限',
   "Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.": '原生工具可使用檔案、指令和網路。供應商會沿用自身的權限設定，需要你核准的要求會出現在機器貓的對話中。此模式下機器貓無法額外限制檔案或網路存取範圍。',
   'Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.': 'Antigravity 原生工具需要 Google 官方 Antigravity ACP server 並完成登入，僅安裝一般 agy CLI 並不足夠。目前此供應商尚未開放 Cats 工具。',
+  'Kimi runs only with full machine access, so it cannot use a read-only filespace or a tool allowlist.':
+    'Kimi 只能以完整電腦權限執行，所以不能搭配唯讀 Filespace 或工具允許清單。',
   'Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so each command, file change and tool call that Kimi does not consider safe, including every computer-use action, waits for your approval in the conversation. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.':
     'Kimi 只能搭配原生工具使用。Cats 會讓 Kimi 維持在 Default 模式，所以 Kimi 不認為安全的每個指令、檔案修改與工具呼叫（包括每一次電腦操作）都會在對話裡等你核准。要加上電腦操作：在終端機執行 kimi，輸入 /plugins，安裝 Kimi Computer Use 與它的 Windows runtime，然後開一個新對話。',
   'Hops per chain': '每條對話鏈的轉送次數',

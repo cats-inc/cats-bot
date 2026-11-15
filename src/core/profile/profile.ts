@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants, copyFileSync, existsSync, readFileSync } from 'node:fs';
 import { assertPolicyBoundary, parseProviderPolicy } from '../runtime/providerPolicy.ts';
-import { requiredProviderPolicy } from '../../shared/providerTools.ts';
+import { HOSTED_ONLY_PROVIDERS, requiredProviderPolicy } from '../../shared/providerTools.ts';
 import { parseModelSelection } from '../providers/selection.ts';
 
 import { DEFAULT_BOT_AVATAR, isBotAvatar, resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
@@ -69,7 +69,7 @@ export interface CreateProfileInput {
 
 export function createProfile(input: CreateProfileInput): BotProfile {
   const now = (input.now ?? new Date()).toISOString();
-  return {
+  const profile: BotProfile = {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
     name: checkedBotName(input.name),
@@ -101,6 +101,13 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     showVerboseMessages: false,
     updatedAt: now,
   };
+  // ADR-025: a hosted-only provider brings full machine access, which a read-only filespace or a tool
+  // allowlist cannot hold. Refuse here rather than write a profile that would never load again.
+  if (profile.providerPolicy && HOSTED_ONLY_PROVIDERS.includes(profile.executionTarget.provider)) {
+    try { assertPolicyBoundary(profile.providerPolicy, profile.permissions); }
+    catch { throw new Error('Kimi runs only with full machine access, so it cannot use a read-only filespace or a tool allowlist.'); }
+  }
+  return profile;
 }
 
 /**
@@ -394,8 +401,7 @@ export function applyProfilePatch(
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
   const nextProviderPolicy = requiredProviderPolicy(nextTarget.provider,
-    patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy),
-    profile.executionTarget.provider, patch.providerPolicy !== undefined);
+    patch.providerPolicy === undefined ? profile.providerPolicy : parseProviderPolicy(patch.providerPolicy));
   assertPolicyBoundary(nextProviderPolicy, nextPermissions);
   if (patch.replyLanguage !== undefined && !isBotReplyLanguage(patch.replyLanguage)) {
     throw new Error('replyLanguage must be hub, display, unspecified or a supported language code');

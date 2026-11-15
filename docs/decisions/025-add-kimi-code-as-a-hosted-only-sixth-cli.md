@@ -46,7 +46,12 @@ Plan: [PLAN-015](../plans/PLAN-015-kimi-code-sixth-cli.md). Runtime decision:
   policy with full machine and network access.
   - Creating, loading or retargeting a profile to Kimi fills it in.
   - Clearing it while Kimi stays the provider has no effect.
-  - Leaving Kimi drops the policy again, unless the owner sets a policy in the same change.
+  - Leaving Kimi keeps the policy unless the owner changes it in the same change or later in
+    Settings. The next provider then follows its own native approvals. Dropping the policy
+    instead would put the bot back on whatever legacy permission mode it had before, which may
+    be `skip`, and would also discard a policy the owner chose for Grok or Muse before trying Kimi.
+  - Creating a Kimi bot with a read-only filespace or a tool allowlist is refused. Those cannot
+    hold full machine access, and such a profile could not be loaded again.
   - Settings does not offer the legacy choice for Kimi and explains how to add computer use.
 - **Approvals.** Kimi's approval cards use SPEC-004's existing path, so nothing new is needed.
   - In background work they wait for the owner like any other provider interaction (SPEC-004 B2).

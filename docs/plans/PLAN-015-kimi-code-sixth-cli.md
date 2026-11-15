@@ -25,7 +25,8 @@
 4. **Hosted only.**
    - `HOSTED_ONLY_PROVIDERS`, `HOSTED_PROVIDER_POLICY` and `requiredProviderPolicy` in
      `src/shared/providerTools.ts`.
-   - Applied in `createProfile`, `normalizeProfile` and `applyProfilePatch`.
+   - Applied in `createProfile`, `normalizeProfile` and `applyProfilePatch`. Leaving Kimi keeps the
+     policy, and `createProfile` refuses Kimi with a read-only filespace or an allowlist.
    - Settings hides the legacy choice for Kimi and shows the computer-use setup hint.
 5. **Strings.** zh-TW for the hint and for the helper's sign-in and Git Bash messages.
 6. **Docs.** ADR-025, this plan, [provider interactions](../provider-interactions.md), the setup

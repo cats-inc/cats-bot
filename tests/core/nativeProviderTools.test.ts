@@ -127,28 +127,37 @@ test('Boss Cat tool status requires authenticated discovery and expires when the
   } finally { await core.stop(); home.cleanup(); }
 });
 
-test('Kimi runs only on its hosted target: choosing it brings the hosted policy and leaving drops it (ADR-025)', async () => {
+test('Kimi runs only on its hosted target: choosing it brings the hosted policy, and leaving keeps every policy (ADR-025)', async () => {
   const { applyProfilePatch, createProfile, normalizeProfile } = await import('../../src/core/profile/profile.ts');
-  const { HOSTED_PROVIDER_POLICY, requiredProviderPolicy, usesHostedProvider } = await import('../../src/shared/providerTools.ts');
+  const { HOSTED_PROVIDER_POLICY, usesHostedProvider } = await import('../../src/shared/providerTools.ts');
   const now = new Date('2026-11-16T00:00:00.000Z');
   const kimi = createProfile({ name: 'Nori', provider: 'kimi', cwd: '/tmp/kimi', now });
   assert.deepEqual(kimi.providerPolicy, HOSTED_PROVIDER_POLICY);
   assert.equal(usesHostedProvider('kimi', kimi.providerPolicy), true);
-  assert.match(renderProvidersConfig({ provider: 'kimi', protocol: 'hosted' }), /command: "kimi"[\s\S]*protocol: "hosted"/u);
   // The owner cannot clear it while Kimi is the provider; print mode would approve computer use unasked.
   assert.deepEqual(applyProfilePatch(kimi, { providerPolicy: null }, now).profile.providerPolicy, HOSTED_PROVIDER_POLICY);
   assert.deepEqual(normalizeProfile({ ...kimi, providerPolicy: null }, kimi).providerPolicy, HOSTED_PROVIDER_POLICY);
-  // Leaving Kimi drops the policy it brought, but keeps one the owner set in the same change.
-  const codex = applyProfilePatch(kimi, { executionTarget: { provider: 'codex', model: null } }, now).profile;
-  assert.equal(codex.providerPolicy, null);
-  assert.deepEqual(applyProfilePatch(kimi, { executionTarget: { provider: 'grok', model: null }, providerPolicy: policy }, now)
-    .profile.providerPolicy, policy);
-  // Switching to Kimi from a legacy bot brings the policy too, and the wider check still applies to it.
+  // A legacy bot switched to Kimi gets the policy too.
   const legacy = createProfile({ name: 'Mochi', provider: 'codex', cwd: '/tmp/codex', now });
-  assert.deepEqual(applyProfilePatch(legacy, { executionTarget: { provider: 'kimi', model: null } }, now).profile.providerPolicy,
+  const toKimi = applyProfilePatch(legacy, { executionTarget: { provider: 'kimi', model: null } }, now).profile;
+  assert.deepEqual(toKimi.providerPolicy, HOSTED_PROVIDER_POLICY);
+  // Leaving Kimi keeps the policy, so the bot never drops back to a legacy mode such as skip.
+  assert.deepEqual(applyProfilePatch(toKimi, { executionTarget: { provider: 'codex', model: null } }, now).profile.providerPolicy,
     HOSTED_PROVIDER_POLICY);
+  // A Grok bot with native tools keeps them through a Kimi round trip (2026-11-16 review).
+  const grok = applyProfilePatch(createProfile({ name: 'Sora', provider: 'grok', cwd: '/tmp/grok', now }), { providerPolicy: policy }, now).profile;
+  const back = applyProfilePatch(applyProfilePatch(grok, { executionTarget: { provider: 'kimi', model: null } }, now).profile,
+    { executionTarget: { provider: 'grok', model: null } }, now).profile;
+  assert.deepEqual(back.providerPolicy, policy);
+  assert.equal(usesHostedProvider('grok', back.providerPolicy), true);
+  // The owner may clear it in the same change that leaves Kimi.
+  assert.equal(applyProfilePatch(kimi, { executionTarget: { provider: 'codex', model: null }, providerPolicy: null }, now).profile.providerPolicy, null);
+  // Full machine access cannot go with a read-only filespace or an allowlist: refused, never written.
   assert.throws(() => applyProfilePatch(createProfile({ name: 'Ro', provider: 'codex', cwd: '/tmp/ro', workspaceAccess: 'read_only', now }),
-    { executionTarget: { provider: 'kimi', model: null } }, now));
-  assert.equal(requiredProviderPolicy('codex', null, 'kimi'), null);
+    { executionTarget: { provider: 'kimi', model: null } }, now), /read-only workspace/u);
+  for (const input of [{ permissionMode: 'whitelist' as const, allowedTools: ['Read'] }, { workspaceAccess: 'read_only' as const }]) {
+    assert.throws(() => createProfile({ name: 'Kai', provider: 'kimi', cwd: '/tmp/kai', now, ...input }),
+      /Kimi runs only with full machine access/u);
+  }
   assert.doesNotThrow(() => assertHostedProviderPolicy('kimi', HOSTED_PROVIDER_POLICY));
 });
