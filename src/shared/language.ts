@@ -155,6 +155,10 @@ export const zhTW: Record<string, string> = {
   'The Boss Cat tools are connected.': '主控貓的工具已連上。',
   '{name} gets the Boss Cat tools at its next reply: your next message or its own next activity. Its conversations stay as they are, and nothing needs restarting.':
     '{name} 下一次回覆時會接上主控貓的工具：你的下一則訊息，或它下一次自主活動。對話照常使用，不必重新啟動。',
+  '{name} is not running. It gets the Boss Cat tools at its next reply after it starts.':
+    '{name} 沒有在執行。啟動後，下一次回覆時會接上主控貓的工具。',
+  '{name} runs in another program, so it does not get the Boss Cat tools. They come once Cats Bot runs it.':
+    '{name} 在其他程式中執行，所以拿不到主控貓的工具；改由 Cats Bot 啟動後就會接上。',
   "{provider} gives the Boss Cat tools once its access is set: {name}'s Settings → Cat bot → Provider access and tools.":
     '{provider} 要先設定存取方式，才能使用主控貓的工具：到 {name} 的設定 →「機器貓」→「Provider 存取與工具」。',
   '{provider} does not support the Boss Cat tools. {name} keeps the role and gets them at its next reply after moving to another provider.':

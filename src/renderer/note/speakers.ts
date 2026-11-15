@@ -82,7 +82,7 @@ export function headerCat(cast: NoteCast): NoteCat {
  * model and effort. On the Boss Cat's contact note it is the cat looked after, whose model the note does not know.
  */
 export function headerShowsSelf(cast: NoteCast): boolean {
-  return !selfOnRight(cast) || contactCat(cast) === null;
+  return !selfOnRight(cast);
 }
 
 /** SPEC-003 FR-15: the direct message reaches Telegram once Telegram is on, its token stored and the owner's chat bound. */

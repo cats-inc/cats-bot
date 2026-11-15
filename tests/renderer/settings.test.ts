@@ -326,6 +326,14 @@ test('the Boss Cat row says when its tools come, and in red only why they cannot
   const unsupported = bossCatToolsHint({ name: 'QQ', provider: 'antigravity', providerLabel: null, bossCatTools: 'unsupported' });
   assert.equal(unsupported?.warn, true);
   assert.match(unsupported!.text, /antigravity does not support/u);
+  // A holder that is not running is not promised its tools without a start.
+  const stopped = bossCatToolsHint({ ...qq, bossCatTools: 'notRunning' });
+  assert.equal(stopped?.warn, false);
+  assert.match(stopped!.text, /QQ is not running\. It gets the Boss Cat tools at its next reply after it starts\./u);
+  assert.doesNotMatch(stopped!.text, /nothing needs restarting/u);
+  const external = bossCatToolsHint({ ...qq, bossCatTools: 'external' });
+  assert.equal(external?.warn, true);
+  assert.match(external!.text, /QQ runs in another program, so it does not get the Boss Cat tools/u);
 });
 
 test('the Boss Cat menu assigns, moves and clears the role, and choosing the holder again does nothing (SPEC-009 FR-2)', () => {

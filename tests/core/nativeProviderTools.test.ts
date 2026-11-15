@@ -24,13 +24,19 @@ test('hosted targets enable session tools without changing legacy defaults', () 
 });
 
 test('the Boss Cat tools state says why a holder has none, or that they come at its next send (SPEC-009 FR-11)', () => {
-  assert.equal(bossCatToolsState('claude', null, false), 'pending');
-  assert.equal(bossCatToolsState('claude', null, true), 'connected');
-  assert.equal(bossCatToolsState('grok', null, false), 'needsAccess');
-  assert.equal(bossCatToolsState('muse', null, true), 'needsAccess');
-  assert.equal(bossCatToolsState('grok', policy, false), 'pending');
-  assert.equal(bossCatToolsState('antigravity', null, false), 'unsupported');
-  assert.equal(bossCatToolsState('antigravity', policy, true), 'unsupported');
+  assert.equal(bossCatToolsState('claude', null, 'hub', false), 'pending');
+  assert.equal(bossCatToolsState('claude', null, 'hub', true), 'connected');
+  assert.equal(bossCatToolsState('grok', null, 'hub', false), 'needsAccess');
+  assert.equal(bossCatToolsState('muse', null, 'hub', true), 'needsAccess');
+  assert.equal(bossCatToolsState('grok', policy, 'hub', false), 'pending');
+  assert.equal(bossCatToolsState('antigravity', null, 'hub', false), 'unsupported');
+  assert.equal(bossCatToolsState('antigravity', policy, 'hub', true), 'unsupported');
+  // Only a core the hub runs hears it holds the role: a stopped holder waits for its start, and one another
+  // program runs never gets the tools there. A provider that cannot give them says so first.
+  assert.equal(bossCatToolsState('claude', null, 'none', false), 'notRunning');
+  assert.equal(bossCatToolsState('claude', null, 'external', false), 'external');
+  assert.equal(bossCatToolsState('grok', null, 'none', false), 'needsAccess');
+  assert.equal(bossCatToolsState('antigravity', null, 'external', false), 'unsupported');
 });
 
 test('policy-only transport switches wait for the active turn, replace Runtime, and preserve history', async () => {
