@@ -1232,6 +1232,7 @@ export class BotCore implements BotHostApi {
   }
 
   status(): BotStatus {
+    const awaiting = [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner');
     return {
       id: this.profile.id,
       name: this.profile.name,
@@ -1240,7 +1241,8 @@ export class BotCore implements BotHostApi {
       runtime: { state: this.runtimeState(), pid: this.supervisor?.pid ?? null },
       queue: { queued: this.queue.size + this.deferred.size, running: this.running?.item ?? null },
       pendingInteractions: this.interactions.pending(),
-      awaitingOwner: [...this.workItems.values()].filter((item) => item.state === 'awaiting_owner').length,
+      awaitingOwner: awaiting.length,
+      awaitingOwnerConversations: [...new Set(awaiting.map((item) => item.conversationId))],
       bossCat: { holder: this.bossCatRole, tools: this.hubToolsOffered() && this.runtimeState() === 'ready'
         && this.conversations.list().some(conversation => attachmentIsCurrent(conversation, this.profile)
           && ['ready', 'initializing'].includes(conversation.attachment.state) && this.hubTools?.hasDiscovered(conversation.id)) },

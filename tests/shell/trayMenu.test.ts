@@ -108,6 +108,7 @@ const status: BotStatus = {
   queue: { queued: 0, running: null },
   pendingInteractions: 0,
   awaitingOwner: 0,
+  awaitingOwnerConversations: [],
   bossCat: { holder: false, tools: false },
   conversations: 2,
   schedules: 0,

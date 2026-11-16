@@ -33,6 +33,14 @@ function draw(view: QuickMenuView): HTMLButtonElement[] {
     label.textContent = item.label;
     button.title = item.label;
     button.append(label);
+    // SPEC-002 FR-7a: a question, provider request or grant request waits in it; not an unread count.
+    if (item.waiting) {
+      const waiting = document.createElement('span');
+      waiting.className = 'waiting';
+      // Its visible words are its accessible name, so voice control can say what it reads.
+      waiting.textContent = translate(view.locale, 'Needs you');
+      button.append(waiting);
+    }
     if (item.unread > 0) {
       const unread = document.createElement('span');
       unread.className = 'unread';

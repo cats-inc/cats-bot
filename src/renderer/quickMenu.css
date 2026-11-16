@@ -81,6 +81,24 @@ html, body {
   text-align: center;
 }
 
+/*
+ * Something waits for the owner here: an outlined amber tag, so it reads apart
+ * from the red unread count beside it. It does not move: the menu is brief.
+ */
+.waiting {
+  flex: none;
+  height: 20px;
+  padding: 0 6px;
+  border: 1px solid #c97a10;
+  border-radius: 10px;
+  background: #ffe2a3;
+  color: #7a4300;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
 /* From the head, a little turned, out to its place. */
 @keyframes fan-out {
   from {

@@ -273,9 +273,12 @@ test('ask_owner waits for the owner, a decision continues the conversation, and 
     const waiting = core.askOwner('home', 'May I delete the cache?');
     assert.equal(waiting.state, 'awaiting_owner');
     assert.equal((await core.listConversations())[0]!.unreadCount, 1);
+    // SPEC-002 FR-7a: the status names where the question waits, for the quick menu's tag.
+    assert.deepEqual([core.status().awaitingOwner, core.status().awaitingOwnerConversations], [1, [waiting.conversationId]]);
     const done = waitForEvent(core, (event) => event.type === 'turn.completed' && event.workItem.kind === 'owner_message');
     await core.resolveApproval(waiting.id, 'approve');
     assert.equal(core.getWorkItem(waiting.id)?.state, 'completed');
+    assert.deepEqual(core.status().awaitingOwnerConversations, []);
     const followUp = await done;
     assert.match(followUp.type === 'turn.completed' ? followUp.workItem.prompt : '', /Decision on your question "May I delete the cache\?": approved/u);
     // ADR-028: the decision continues whatever turn asked, so it is never marked to use standing grants.

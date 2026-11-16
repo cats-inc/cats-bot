@@ -3,7 +3,15 @@ import { test } from 'node:test';
 
 import type { ConversationRecord } from '../../src/core/types.ts';
 import { FLOATING_CAT, FLOATING_SIZE, placeFloating } from '../../src/shell/electron/floatingPlacement.ts';
-import { FLOATING_HEAD, noteActivity, QUICK_MENU_ITEM, quickMenuItems, quickMenuLayout } from '../../src/shell/electron/quickMenu.ts';
+import {
+  FLOATING_HEAD,
+  noteActivity,
+  QUICK_MENU_ITEM,
+  quickMenuItems,
+  quickMenuLayout,
+  quickMenuNativeLabel,
+  waitingConversations,
+} from '../../src/shell/electron/quickMenu.ts';
 
 function conversation(id: string, role: 'home' | 'note', changes: Partial<ConversationRecord> = {}): ConversationRecord {
   return {
@@ -59,6 +67,87 @@ test('fewer than four notes leaves one New conversation item, and the direct mes
     ['new', null, '新增對話'],
   ]);
   assert.deepEqual(quickMenuItems([], 'zh-TW').map((item) => item.label), ['私訊', '新增對話']);
+});
+
+test('notes waiting for the owner come right after the direct message and are never crowded out (SPEC-002 FR-7a)', () => {
+  const conversations = [
+    conversation('home', 'home', { title: 'Home' }),
+    ...[9, 8, 7, 6, 5].map((day) => conversation(`n${day}`, 'note', { lastOwnerMessageAt: at(day) })),
+    conversation('asked', 'note', { lastOwnerMessageAt: at(1), unreadCount: 1 }),
+    conversation('contact', 'note', { lastBotMessageAt: at(14), contactOf: 'ada' }),
+  ];
+  const items = quickMenuItems(conversations, 'en', new Set(['asked', 'home', 'contact']));
+  assert.deepEqual(items.map((item) => [item.conversationId, item.waiting]), [
+    ['home', true],
+    ['asked', true],
+    ['n9', false],
+    ['n8', false],
+    ['n7', false],
+  ], 'still four notes; a waiting contact note stays out');
+  assert.equal(quickMenuNativeLabel(items[1]!, 'zh-TW'), 'asked (1) · 等你');
+  assert.equal(quickMenuNativeLabel(items[2]!, 'zh-TW'), 'n9');
+  assert.equal(quickMenuItems(conversations, 'en').some((item) => item.waiting), false, 'nothing waits unless told');
+});
+
+test('with more than four notes waiting, the four latest of them are listed, latest first', () => {
+  const notes = [1, 2, 3, 4, 5, 6].map((day) => conversation(`w${day}`, 'note', { lastOwnerMessageAt: at(day) }));
+  const items = quickMenuItems([...notes, conversation('fresh', 'note', { lastOwnerMessageAt: at(20) })], 'en',
+    new Set(notes.map((note) => note.id)));
+  assert.deepEqual(items.map((item) => item.conversationId), ['home', 'w6', 'w5', 'w4', 'w3']);
+});
+
+/** A core that answers what `waitingConversations` reads, and records what it was asked. */
+function waitingCore(options: {
+  pendingInteractions?: number;
+  running?: string;
+  /** Leave out to answer as a core from before `awaitingOwnerConversations`. */
+  awaitingOwner?: string[];
+  desktop?: Record<string, number>;
+}) {
+  const calls: string[] = [];
+  const desktop = options.desktop ?? {};
+  const core = {
+    status: async () => {
+      calls.push('status');
+      return {
+        pendingInteractions: options.pendingInteractions ?? 0,
+        queue: { queued: 0, running: options.running ? { conversationId: options.running } : null },
+        awaitingOwner: options.awaitingOwner?.length ?? 1,
+        ...(options.awaitingOwner ? { awaitingOwnerConversations: options.awaitingOwner } : {}),
+      };
+    },
+    desktopControlState: async (conversationId?: string) => {
+      calls.push(conversationId ? `desktop:${conversationId}` : 'desktop');
+      if (conversationId === 'broken') throw new Error('gone');
+      const pending = Object.values(desktop).reduce((sum, count) => sum + count, 0);
+      return conversationId
+        ? { conversations: [], pendingRequests: desktop[conversationId] ?? 0, conversation: { pendingRequests: Array.from({ length: desktop[conversationId] ?? 0 }) } }
+        : { conversations: Object.keys(desktop), pendingRequests: pending };
+    },
+  } as unknown as Parameters<typeof waitingConversations>[0];
+  return { core, calls };
+}
+
+test('what waits for the owner: questions and approvals, provider requests and desktop-control grants', async () => {
+  const quiet = waitingCore({ running: 'n1', awaitingOwner: [] });
+  assert.deepEqual([...await waitingConversations(quiet.core)], []);
+  assert.deepEqual(quiet.calls.sort(), ['desktop', 'status'], 'two light reads when nothing waits');
+  const asked = waitingCore({ awaitingOwner: ['asked', 'home'] });
+  assert.deepEqual([...await waitingConversations(asked.core)].sort(), ['asked', 'home']);
+  assert.deepEqual(asked.calls.sort(), ['desktop', 'status'], 'a question waiting costs no further read');
+  const busy = waitingCore({
+    pendingInteractions: 1,
+    running: 'provider',
+    awaitingOwner: ['asked'],
+    desktop: { grant: 1, quiet: 0, broken: 1 },
+  });
+  assert.deepEqual([...await waitingConversations(busy.core)].sort(), ['asked', 'grant', 'provider'],
+    'a conversation whose grant state cannot be read is left unmarked');
+});
+
+test('a provider request with no running turn, or a core older than the field, marks nothing it cannot place', async () => {
+  assert.deepEqual([...await waitingConversations(waitingCore({ pendingInteractions: 2, awaitingOwner: [] }).core)], []);
+  assert.deepEqual([...await waitingConversations(waitingCore({}).core)], [], 'an older core counts questions without naming them');
 });
 
 test('a note with no messages counts from when it was made', () => {
