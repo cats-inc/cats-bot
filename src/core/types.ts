@@ -18,13 +18,13 @@ export interface ExecutionTarget {
 }
 
 export type WorkspaceAccess = 'read_write' | 'read_only';
-export type PermissionMode = 'skip' | 'whitelist' | 'default';
+/** ADR-030: the tool allowlist (`whitelist`, `allowedTools`) is gone; a profile that had one is upgraded once. */
+export type PermissionMode = 'skip' | 'default';
 
 /** SPEC-001 FR-1 / FR-30: the same permissions for background and interactive turns. */
 export interface BotPermissions {
   workspaceAccess: WorkspaceAccess;
   permissionMode: PermissionMode;
-  allowedTools?: string[];
   cwd: string;
 }
 

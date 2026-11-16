@@ -243,6 +243,27 @@ test('sign-in is what the CLI reports, and unknown when it cannot say (FR-15)', 
   assert.equal((await new ProviderSetup(async () => ready(), { windows: false }).check('codex')).signIn, 'unknown');
 });
 
+test('a cat bot\'s page opens sign-in only for a CLI its last check found working (SPEC-013 FR-10, ADR-030)', async () => {
+  let result: HelperResult = { status: 'not_installed' };
+  const setup = new ProviderSetup(async () => result, { windows: true });
+  assert.equal(setup.providerWorks('grok'), false, 'nothing is known before a check');
+  await setup.check('grok');
+  assert.equal(setup.providerWorks('grok'), false);
+  result = ready();
+  await setup.check('grok');
+  assert.equal(setup.providerWorks('grok'), true);
+  assert.equal(setup.providerWorks('kimi'), false, 'only the CLI that was checked');
+  assert.equal(setup.providerWorks('constructor'), false);
+  result = { status: 'not_installed' };
+  await setup.check('grok');
+  assert.equal(setup.providerWorks('grok'), false, 'removed since: no longer offered');
+  assert.equal(setup.windowsCodexWorks, false);
+  result = ready();
+  await setup.check('codex');
+  assert.equal(setup.windowsCodexWorks, true);
+  assert.equal(new ProviderSetup(async () => ready(), { windows: false }).windowsCodexWorks, false);
+});
+
 test('each run is logged at its start and end, for the page and the hub (FR-14)', async () => {
   const entries: SetupLogEntry[] = [];
   const hub: SetupLogEntry[] = [];

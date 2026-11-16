@@ -321,7 +321,6 @@ export class SessionBinder {
       workspaceKind: 'source',
       workspaceAccess: profile.permissions.workspaceAccess,
       ...(!profile.providerPolicy ? { permissionMode: profile.permissions.permissionMode } : {}),
-      ...(!profile.providerPolicy && profile.permissions.allowedTools ? { allowedTools: profile.permissions.allowedTools } : {}),
       instructions: composeInstructions(
         profile.instructions,
         pack,

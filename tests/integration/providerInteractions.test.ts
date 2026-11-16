@@ -16,7 +16,7 @@ test('packed Runtime maps Codex native input to the headless Bot and resumes the
         XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') } },
   } });
   try {
-    await core.updateProfile({ permissions: { allowedTools: [] }, providerPolicy: {
+    await core.updateProfile({ providerPolicy: {
       version: 1, mode: 'explicit', access: 'workspace-write', network: false, approval: 'on-request',
     } });
     await core.start();

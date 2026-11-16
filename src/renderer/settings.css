@@ -256,72 +256,6 @@ textarea {
   font-weight: 600;
 }
 
-.avatar-field {
-  border: 0;
-  margin: 0;
-  padding: 0;
-  min-width: 0;
-}
-
-.avatar-field legend {
-  padding: 0;
-  margin-bottom: 4px;
-  font-weight: 600;
-}
-
-.avatar-choices {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 6px;
-}
-
-.avatar-choice {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 2px;
-  padding: 8px 2px 6px;
-  border: 1px solid var(--edge);
-  border-radius: 8px;
-  background: var(--panel);
-  font-size: 12px;
-  line-height: 1.25;
-  text-align: center;
-  cursor: var(--paw-cursor);
-}
-
-.avatar-choice:hover {
-  border-color: var(--accent);
-}
-
-/* The radio covers its whole choice, so a click anywhere picks it and the keyboard still reaches it. */
-.avatar-choice input {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  margin: 0;
-  opacity: 0;
-  cursor: var(--paw-cursor);
-}
-
-.avatar-choice:has(input:checked) {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  box-shadow: inset 0 0 0 1px var(--accent);
-}
-
-.avatar-choice:has(input:focus-visible) {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.avatar-field:disabled .avatar-choice {
-  opacity: 0.6;
-  cursor: default;
-}
-
 /* Settings */
 .settings {
   display: flex;
@@ -498,23 +432,6 @@ textarea {
   margin-top: 4px;
 }
 
-/* A bot's provider policy and session sit under its form, folded away until wanted. */
-.panels .provider-settings {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.panels .provider-settings > h3 {
-  margin: 12px 0 0;
-  font-size: 14px;
-}
-
-.panels .provider-settings p {
-  margin: 0;
-}
-
 .set-row-control {
   flex: none;
   max-width: 100%;
@@ -598,24 +515,6 @@ textarea {
 /* A form that follows the panel title directly (the Bot tab) keeps the groups' distance. */
 .panels .panel > h2 + .form {
   margin-top: 14px;
-}
-
-/* At a full-width Settings window the ten looks fit in one row. */
-@media (min-width: 780px) {
-  .panels .avatar-choices {
-    grid-template-columns: repeat(10, minmax(0, 1fr));
-  }
-
-  .panels .avatar-choice {
-    padding: 6px 0 4px;
-    font-size: 11px;
-  }
-
-  .panels .avatar-choice img,
-  .panels .avatar-choice svg {
-    width: 40px;
-    height: 40px;
-  }
 }
 
 /* A checkbox that reads as an on/off switch; it is still a checkbox to the keyboard and screen readers. */
@@ -849,74 +748,23 @@ button.quiet.danger {
   position: relative;
 }
 
-/* SPEC-013 FR-13: a cat bot's own CLI, in the setup wizard's rows, with its own log. */
-.provider-checklist {
-  overflow: hidden;
-  border: 1px solid var(--edge);
-  border-radius: 10px;
-  background: var(--paper);
-}
-
-.provider-checklist-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 12px 8px;
-}
-
-.provider-checklist-head h3 {
-  margin: 0;
-  font-size: 14px;
-}
-
-.provider-checklist > .error {
-  margin: 0 12px 8px;
-}
-
-.provider-checklist > .setup-rows {
-  margin: 0 12px;
-}
-
-.provider-checklist-foot {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-}
-
-/* SPEC-013: Cats Bot Settings' Agent CLIs tab takes the panel the way the wizard takes its window. */
-.panels.is-flush {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden;
-}
-
-.clis-host {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
+/* SPEC-013, ADR-030: Cats Bot Settings' Agent CLIs tab is a settings page like the others, its log opened on demand. */
 .clis-panel {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  max-width: 680px;
 }
 
 .clis-pane {
-  padding: 20px 28px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.clis-pane h2 {
-  margin-bottom: 2px;
+.clis-head {
+  flex-wrap: wrap;
 }
 
-.clis-panel .setup-foot {
-  padding: 8px 28px;
+.panels .clis-pane .lead {
+  margin: -6px 0 0;
 }
 /*
  * SPEC-002 FR-5: one grid for every row, so the same three controls sit in the same columns whatever the row:
@@ -2145,4 +1993,506 @@ button.quiet.danger {
     animation: none !important;
     transition: none !important;
   }
+}
+
+/* ---- ADR-030: a cat bot's three pages, with the setup wizard's controls ---- */
+
+.bot-page .form {
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.bot-page .setup-fieldset {
+  margin: 0;
+}
+
+.bot-page .setup-avatars .setup-choice {
+  padding: 6px 2px 4px;
+}
+
+.bot-page .setup-providers {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bot-page .setup-providers .setup-choice {
+  padding: 6px 10px;
+}
+
+/* The rail: the first three are the wizard's pages; a dot marks one with an edit not saved. */
+.tab {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.tab.is-after-rule {
+  position: relative;
+  margin-top: 11px;
+}
+
+.tab.is-after-rule::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  left: 6px;
+  right: 6px;
+  border-top: 1px solid var(--edge);
+}
+
+.tab-mark {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.tab-mark.is-running {
+  width: 11px;
+  height: 11px;
+  background: transparent;
+  border: 2px solid var(--edge);
+  border-top-color: var(--ink);
+  animation: setup-spin 0.9s linear infinite;
+}
+
+/* The save bar the three pages share (SPEC-002 FR-2): what saving does, said before it is pressed. */
+.savebar {
+  position: sticky;
+  bottom: -20px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 24px -28px -20px;
+  padding: 10px 28px;
+  background: var(--panel);
+  border-top: 1px solid var(--edge);
+  box-shadow: 0 -6px 14px #3c2d0a12;
+}
+
+.savebar p {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  color: var(--muted-text);
+  font-size: 12px;
+}
+
+.savebar button {
+  flex: none;
+}
+
+/* Provider and model: the chosen CLI on this computer. */
+.provider-ops {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.provider-ops-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 6px 12px;
+}
+
+.provider-ops-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.provider-ops-tools,
+.clis-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.provider-ops-tools button:not(.setup-more),
+.clis-tools button:not(.setup-more) {
+  padding: 4px 12px;
+  font-size: 13px;
+}
+
+/* A settings row's one action, and the box under it that says what will run. */
+.setup-row-act {
+  flex: none;
+  min-width: 64px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.setup-act {
+  padding: 3px 12px;
+  font-size: 13px;
+}
+
+.setup-row-text p.setup-row-notice {
+  color: #8a5a10;
+}
+
+.setup-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0 0 26px;
+  padding: 10px 12px;
+  background: var(--paper);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+}
+
+.provider-ops > .setup-confirm,
+.clis-pane > .setup-confirm {
+  margin-left: 0;
+}
+
+.setup-confirm .setup-tags,
+.setup-confirm .setup-details {
+  margin: 0;
+}
+
+.setup-confirm .setup-details {
+  padding: 0;
+  background: none;
+}
+
+.setup-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.setup-confirm-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+
+.setup-confirm-list code {
+  margin-left: 6px;
+}
+
+/* Running something on this computer is ink; amber stays for saving settings. */
+button.run {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--paper);
+  font-weight: 600;
+}
+
+.setup-run-output {
+  margin: 8px 0 0 26px;
+  padding: 8px 10px;
+  background: var(--paper);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  color: var(--ink);
+  font: 11.5px/1.55 'Cascadia Mono', Consolas, ui-monospace, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.setup-row.is-failed .setup-run-output,
+.setup-run-output.is-fail {
+  color: var(--danger);
+}
+
+/* The log, beside the rows and only when asked for. */
+.log-sheet {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: min(460px, 82vw);
+  display: flex;
+  flex-direction: column;
+  background: var(--panel);
+  border-left: 1px solid var(--edge);
+  box-shadow: -14px 0 30px #3c2d0a24;
+}
+
+.log-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.log-sheet-head h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 15px;
+}
+
+.log-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px;
+}
+
+.log-sheet-body .setup-run-output {
+  margin: 0;
+}
+
+.log-run-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+  color: var(--muted-text);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.log-kind {
+  padding: 0 6px;
+  border-radius: 4px;
+  background: var(--rule);
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.log-kind.is-fail {
+  background: #fff0ec;
+  color: var(--danger);
+}
+
+/* Permissions: the result in a sentence, then the two questions. */
+.perm-summary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 12px 0 0;
+  padding: 10px 14px;
+  background: #fff8d6;
+  border: 1px solid #f1e3a6;
+  border-radius: 8px;
+}
+
+.perm-summary img {
+  flex: none;
+}
+
+.perm-summary p {
+  margin: 0;
+  line-height: 1.6;
+}
+
+.perm-asks,
+#bot-reach {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.perm-asks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.perm-asks legend,
+#bot-reach legend {
+  margin-bottom: 6px;
+  padding: 0;
+  font-weight: 600;
+}
+
+.perm-ask {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  border-radius: 8px;
+  cursor: var(--paw-cursor);
+}
+
+.perm-ask input {
+  flex: none;
+  width: auto;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.perm-ask strong {
+  font-weight: 600;
+}
+
+.perm-ask small {
+  display: block;
+  color: var(--muted-text);
+  font-size: 12px;
+}
+
+.perm-ask:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.perm-ask.is-warn strong {
+  color: var(--danger);
+}
+
+.perm-ask.is-warn:has(input:checked) {
+  border-color: var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+}
+
+.perm-ask:has(input:disabled) {
+  cursor: default;
+}
+
+#bot-reach > .hint {
+  margin-top: 6px;
+}
+
+.perm-foot {
+  margin-top: 16px;
+}
+
+/* What it can reach: the whole computer holds the filespace, and the network sits beside both. */
+.reach {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 92px;
+  gap: 8px;
+}
+
+.reach-zone {
+  border: 1.5px solid var(--edge);
+  border-radius: 10px;
+}
+
+.reach-zone.is-in {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.reach-zone.is-out {
+  background: repeating-linear-gradient(135deg, var(--panel) 0 7px, #efe7d3 7px 9px);
+}
+
+.reach-zone.is-edge {
+  border-width: 2.5px;
+  border-color: var(--switch-on);
+}
+
+.reach-machine,
+.reach-space {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.reach-space.is-in {
+  background: var(--panel);
+}
+
+.reach-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.reach-head code {
+  color: var(--muted-text);
+  font: 11.5px 'Cascadia Mono', Consolas, ui-monospace, monospace;
+}
+
+.reach-state {
+  color: var(--muted-text);
+  font-size: 12px;
+}
+
+.reach-pick {
+  padding: 2px 10px;
+  font-weight: 600;
+}
+
+.reach-halves {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.reach-half {
+  padding: 10px 8px;
+  border-radius: 7px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.reach-half small,
+.reach-net .reach-state {
+  display: block;
+  color: var(--muted-text);
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.reach-half.is-out {
+  color: var(--muted-text);
+}
+
+.reach-net {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px 6px;
+  text-align: center;
+}
+
+.reach-net svg {
+  width: 26px;
+  height: 26px;
+}
+
+.reach-net.is-unset {
+  background: var(--panel);
+  border-style: dashed;
+}
+
+.reach button:disabled {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tab-mark.is-running {
+    animation: none;
+    border-style: dotted;
+  }
+}
+
+/* A short page still keeps its save bar at the window's foot. */
+.panels:has(> .savebar) {
+  display: flex;
+  flex-direction: column;
+}
+
+.panels:has(> .savebar) > .savebar {
+  margin-top: auto;
+}
+
+.panels:has(> .savebar) > .panel:not([hidden]) {
+  padding-bottom: 24px;
 }

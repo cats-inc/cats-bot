@@ -64,12 +64,14 @@ export interface CreateProfileInput {
   cwd: string;
   permissionMode?: PermissionMode;
   workspaceAccess?: WorkspaceAccess;
-  allowedTools?: string[];
   now?: Date;
 }
 
 export function createProfile(input: CreateProfileInput): BotProfile {
   const now = (input.now ?? new Date()).toISOString();
+  if (input.permissionMode !== undefined && !PERMISSION_MODES.includes(input.permissionMode)) {
+    throw new Error('permissionMode must be default or skip');
+  }
   const profile: BotProfile = {
     schemaVersion: PROFILE_SCHEMA_VERSION,
     id: input.id ?? `bot-${randomUUID().slice(0, 8)}`,
@@ -88,7 +90,6 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     permissions: {
       workspaceAccess: input.workspaceAccess ?? 'read_write',
       permissionMode: input.permissionMode ?? 'default',
-      ...(input.allowedTools ? { allowedTools: [...input.allowedTools] } : {}),
       cwd: input.cwd,
     },
     providerPolicy: requiredProviderPolicy(input.provider, null),
@@ -103,11 +104,11 @@ export function createProfile(input: CreateProfileInput): BotProfile {
     showVerboseMessages: false,
     updatedAt: now,
   };
-  // ADR-025: a hosted-only provider brings full machine access, which a read-only filespace or a tool
-  // allowlist cannot hold. Refuse here rather than write a profile that would never load again.
+  // ADR-025: a hosted-only provider brings full machine access, which a read-only filespace cannot
+  // hold. Refuse here rather than write a profile that would never load again.
   if (profile.providerPolicy && HOSTED_ONLY_PROVIDERS.includes(profile.executionTarget.provider)) {
     try { assertPolicyBoundary(profile.providerPolicy, profile.permissions); }
-    catch { throw new Error('Kimi runs only with full machine access, so it cannot use a read-only filespace or a tool allowlist.'); }
+    catch { throw new Error('Kimi runs only with full machine access, so it cannot use a read-only filespace.'); }
   }
   return profile;
 }
@@ -147,7 +148,9 @@ function booleanOr(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
-const PERMISSION_MODES: readonly PermissionMode[] = ['skip', 'whitelist', 'default'];
+const PERMISSION_MODES: readonly PermissionMode[] = ['skip', 'default'];
+/** Read once more, only to upgrade a profile written before ADR-030. */
+const READABLE_PERMISSION_MODES: readonly string[] = [...PERMISSION_MODES, 'whitelist'];
 const WORKSPACE_ACCESS: readonly WorkspaceAccess[] = ['read_write', 'read_only'];
 
 function normalizeExecutionTarget(value: unknown, fallback: ExecutionTarget): ExecutionTarget {
@@ -180,13 +183,9 @@ function normalizePermissions(value: unknown, fallback: BotPermissions): BotPerm
   const workspaceAccess = WORKSPACE_ACCESS.includes(value.workspaceAccess as WorkspaceAccess)
     ? (value.workspaceAccess as WorkspaceAccess)
     : fallback.workspaceAccess;
-  const allowedTools = Array.isArray(value.allowedTools)
-    ? value.allowedTools.filter((tool): tool is string => typeof tool === 'string')
-    : fallback.allowedTools;
   return {
     workspaceAccess,
     permissionMode,
-    ...(allowedTools ? { allowedTools } : {}),
     cwd: stringOr(value.cwd, fallback.cwd),
   };
 }
@@ -232,8 +231,35 @@ export function normalizeEnvironment(value: unknown): BotEnvironment {
   throw new Error(`Unsupported execution environment ${JSON.stringify(kind)}; this version runs bots natively only.`);
 }
 
-export function normalizeProfile(raw: unknown, fallback: BotProfile): BotProfile {
-  if (!isRecord(raw)) return { ...fallback };
+/**
+ * ADR-030: the tool allowlist is gone. A profile that still has one moves, once, to the choice
+ * that asks first: an explicit policy with full access that asks for each action (Claude Code,
+ * Codex). A read-only filespace stays read-only, and the other CLIs keep their own default. A
+ * list left beside another mode never reached a session, so it is only dropped. Sessions made
+ * with the list are replaced, with a handoff.
+ */
+export function withoutAllowlist(raw: Record<string, unknown>): { raw: Record<string, unknown>; changed: boolean } {
+  const permissions = isRecord(raw.permissions) ? raw.permissions : null;
+  if (!permissions) return { raw, changed: false };
+  const allowlist = permissions.permissionMode === 'whitelist';
+  if (!allowlist && !Object.hasOwn(permissions, 'allowedTools')) return { raw, changed: false };
+  const { allowedTools: _dropped, ...rest } = permissions;
+  const next: Record<string, unknown> = { ...raw, permissions: allowlist ? { ...rest, permissionMode: 'default' } : rest };
+  if (!allowlist) return { raw: next, changed: true };
+  const provider = isRecord(raw.executionTarget) ? raw.executionTarget.provider : undefined;
+  if (permissions.workspaceAccess !== 'read_only' && (provider === 'claude' || provider === 'codex')) {
+    next.schemaVersion = PROFILE_SCHEMA_VERSION;
+    next.providerPolicy = {
+      version: 1, mode: 'explicit', access: 'full-access', network: true, approval: provider === 'claude' ? 'on-request' : 'untrusted',
+    } satisfies SessionExecutionPolicy;
+  }
+  next.configRevision = Math.max(1, Math.floor(positiveNumberOr(raw.configRevision, 1))) + 1;
+  return { raw: next, changed: true };
+}
+
+export function normalizeProfile(stored: unknown, fallback: BotProfile): BotProfile {
+  if (!isRecord(stored)) return { ...fallback };
+  const raw = withoutAllowlist(stored).raw;
   const configRevision = positiveNumberOr(raw.configRevision, fallback.configRevision);
   const executionTarget = normalizeExecutionTarget(raw.executionTarget, fallback.executionTarget);
   const storedPolicy = raw.schemaVersion === 1 || raw.providerPolicy === undefined ? null : parseProviderPolicy(raw.providerPolicy);
@@ -301,7 +327,7 @@ export function loadProfile(
     if (
       !isRecord(raw.permissions) ||
       typeof raw.permissions.cwd !== 'string' ||
-      !PERMISSION_MODES.includes(raw.permissions.permissionMode as PermissionMode) ||
+      !READABLE_PERMISSION_MODES.includes(raw.permissions.permissionMode as string) ||
       !WORKSPACE_ACCESS.includes(raw.permissions.workspaceAccess as WorkspaceAccess) ||
       (raw.permissions.allowedTools !== undefined &&
         (!Array.isArray(raw.permissions.allowedTools) ||
@@ -311,11 +337,21 @@ export function loadProfile(
     }
     const profile = normalizeProfile(raw, fallback);
     assertPolicyBoundary(profile.providerPolicy, profile.permissions);
-    if (raw.schemaVersion === 1 && migrate) {
-      const backup = `${paths.profile}.v1.bak`;
-      if (existsSync(backup)) {
-        if (!readFileSync(backup).equals(readFileSync(paths.profile))) throw new Error('Profile upgrade backup differs; manual recovery required.');
-      } else copyFileSync(paths.profile, backup, constants.COPYFILE_EXCL);
+    const allowlistGone = withoutAllowlist(raw).changed;
+    if (migrate && (raw.schemaVersion === 1 || allowlistGone)) {
+      if (raw.schemaVersion === 1) {
+        const backup = `${paths.profile}.v1.bak`;
+        if (existsSync(backup)) {
+          if (!readFileSync(backup).equals(readFileSync(paths.profile))) throw new Error('Profile upgrade backup differs; manual recovery required.');
+        } else copyFileSync(paths.profile, backup, constants.COPYFILE_EXCL);
+      } else {
+        // ADR-030: an older Bot run in between may write a list again; each one keeps its own copy.
+        const backup = `${paths.profile}.allowlist.bak`;
+        if (!existsSync(backup)) copyFileSync(paths.profile, backup, constants.COPYFILE_EXCL);
+        else if (!readFileSync(backup).equals(readFileSync(paths.profile))) {
+          copyFileSync(paths.profile, `${paths.profile}.allowlist.${Date.now()}.bak`, constants.COPYFILE_EXCL);
+        }
+      }
       writeJsonAtomic(paths.profile, profile);
     }
     return { ok: true, profile };
@@ -351,7 +387,6 @@ function samePermissions(a: BotPermissions, b: BotPermissions): boolean {
     a.workspaceAccess === b.workspaceAccess
     && a.permissionMode === b.permissionMode
     && a.cwd === b.cwd
-    && JSON.stringify(a.allowedTools ?? null) === JSON.stringify(b.allowedTools ?? null)
   );
 }
 
@@ -412,6 +447,16 @@ export function applyProfilePatch(
   const nextInstructions = patch.instructions == null || sameText(patch.instructions, profile.instructions, normalizeBotPersona)
     ? profile.instructions
     : checkedBotPersona(patch.instructions);
+  if (patch.permissions) {
+    const asked = patch.permissions as Record<string, unknown>;
+    if (Object.hasOwn(asked, 'allowedTools')) throw new Error('Tool allowlists are no longer supported; choose how the cat bot asks instead');
+    if (asked.permissionMode !== undefined && !PERMISSION_MODES.includes(asked.permissionMode as PermissionMode)) {
+      throw new Error('permissionMode must be default or skip');
+    }
+    if (asked.workspaceAccess !== undefined && !WORKSPACE_ACCESS.includes(asked.workspaceAccess as WorkspaceAccess)) {
+      throw new Error('workspaceAccess must be read_write or read_only');
+    }
+  }
   const nextPermissions = patch.permissions
     ? normalizePermissions({ ...profile.permissions, ...patch.permissions }, profile.permissions)
     : profile.permissions;
