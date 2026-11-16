@@ -295,6 +295,44 @@ test('an allowlist written again by an older Bot is upgraded again, keeping both
   assert.equal(readFileSync(join(paths.root, copies[0]!), 'utf8'), second);
 });
 
+test('a malformed allowlist profile is left as it was, with no copy (ADR-030)', () => {
+  const base = createProfile({ id: 'bad-list', name: 'Bad', provider: 'claude', cwd: 'C:/work', now });
+  const cases: Array<[string, Record<string, unknown>]> = [
+    ['tools not a list', { allowedTools: 'Read' }],
+    ['a tool not a string', { allowedTools: [1] }],
+    ['no working directory', { cwd: undefined }],
+    ['an unknown filespace', { workspaceAccess: 'everywhere' }],
+  ];
+  for (const [name, permissions] of cases) {
+    const paths = botPathsFor(`${home.botsHome}/bad-list-${name.replaceAll(' ', '-')}`);
+    mkdirSync(paths.root, { recursive: true });
+    const original = JSON.stringify({ ...base, permissions: { workspaceAccess: 'read_write', permissionMode: 'whitelist',
+      allowedTools: ['Read'], cwd: 'C:/work', ...permissions } });
+    writeFileSync(paths.profile, original);
+    const loaded = loadProfile(paths, base, true);
+    assert.equal(loaded.ok, false, name);
+    assert.equal(loaded.ok ? null : loaded.reason, 'corrupt', name);
+    assert.equal(readFileSync(paths.profile, 'utf8'), original, `${name}: the original stays`);
+    assert.deepEqual(readdirSync(paths.root).filter((file) => file.endsWith('.bak')), [], `${name}: no copy is made`);
+  }
+});
+
+test('an allowlist upgrade stopped after its copy finishes on the next start, with no second copy (ADR-030)', () => {
+  const paths = botPathsFor(`${home.botsHome}/allowlist-interrupted`);
+  mkdirSync(paths.root, { recursive: true });
+  const base = createProfile({ id: 'stopped', name: 'Stopped', provider: 'claude', cwd: 'C:/work', now });
+  const original = JSON.stringify({ ...base, permissions: { ...base.permissions, permissionMode: 'whitelist', allowedTools: ['Read'] } });
+  writeFileSync(paths.profile, original);
+  // The copy was made and the profile not yet replaced.
+  writeFileSync(`${paths.profile}.allowlist.bak`, original);
+  const loaded = loadProfile(paths, base, true);
+  assert.ok(loaded.ok);
+  assert.equal(loaded.profile.permissions.permissionMode, 'default');
+  assert.equal(JSON.parse(readFileSync(paths.profile, 'utf8')).permissions.permissionMode, 'default');
+  assert.equal(readFileSync(`${paths.profile}.allowlist.bak`, 'utf8'), original);
+  assert.deepEqual(readdirSync(paths.root).filter((file) => file.endsWith('.bak')), ['profile.json.allowlist.bak']);
+});
+
 test('nothing writes an allowlist any more (ADR-030)', () => {
   const profile = createProfile({ id: 'w', name: 'W', provider: 'claude', cwd: 'C:/work', now });
   assert.throws(() => applyProfilePatch(profile, { permissions: { permissionMode: 'whitelist' as never } }, now), /default or skip/u);
