@@ -199,6 +199,9 @@ alone would protect the direct message and the Boss Cat's tools.
 #### The owner's control
 
 12. FR-12: Settings → Bots has a per-bot switch, 「讓主控貓看到這隻貓的狀態」, on by default.
+    - Since ADR-031 (2026-11-16) the switches are listed under the Boss Cat, as 「主控貓看得到誰的狀態」, with
+      what the Boss Cat sees on the page. They show only while a Boss Cat is assigned and keep their values
+      otherwise.
     - When it is off, `hub_bot_status` returns only that bot's id, name and hub state, and the
       peer section leaves it out.
     - The hub applies it, and pushes fresh peer boards as soon as it changes.

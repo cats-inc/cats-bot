@@ -75,6 +75,8 @@ instead of opening the alert.
    heartbeat switch, its mode and Cats Desktop's daily rhythm (SPEC-011 FR-12). Cats Bot Settings,
    the hub's own window (tray "Settings…"), has General (display language, reply language, start at
    login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
+   - Amended by ADR-031 (2026-11-16): General groups Language, Start-up and floating Cats, and Updates. The data
+     folder moves to Data, beside the reset, which lists what it erases and what it keeps.
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).

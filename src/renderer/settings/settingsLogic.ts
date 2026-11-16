@@ -660,6 +660,13 @@ export function botStateLine(bot: Pick<BotRow, 'state' | 'pid' | 'provider' | 'p
   return provider ? `${provider} · ${state}${detail}` : `${state}${detail}`;
 }
 
+/** SPEC-009 FR-8: what a limit field saves: a whole number, the nearest the hub accepts, or the value it had. */
+export function clampLimit(text: string, current: number, range: readonly [number, number]): number {
+  const value = Number(text);
+  if (text.trim() === '' || !Number.isFinite(value)) return current;
+  return Math.min(range[1], Math.max(range[0], Math.round(value)));
+}
+
 /**
  * SPEC-009 FR-11: what the Boss Cat row says about the holder's tools. Waiting for its next reply is the normal
  * state after the role moves, said plainly; only a provider that cannot give the tools is a warning.
