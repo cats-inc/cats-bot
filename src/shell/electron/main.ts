@@ -692,7 +692,8 @@ async function main(): Promise<void> {
    * are cancelled. The hotkey is registered only while some bot holds grants, so it never takes the
    * chord from other apps the rest of the time.
    */
-  const STOP_HOTKEY = 'CommandOrControl+Alt+Shift+S';
+  // Ctrl, not CommandOrControl: the labels say Ctrl+Alt+Shift+S on every platform (on macOS: Control+Option+Shift+S).
+  const STOP_HOTKEY = 'Ctrl+Alt+Shift+S';
   let stopHotkeyRegistered = false;
   const stopAllStandingGrants = (from: 'tray' | 'hotkey') => {
     log(`standing grants: stop from the ${from}`);
