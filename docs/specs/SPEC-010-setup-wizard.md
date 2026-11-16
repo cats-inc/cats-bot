@@ -181,8 +181,10 @@ persona get one rule wherever they enter.
       "Check again" does. Runtime still validates the actual session permissions.
     - ADR-032: sign-in, Windows Codex's first-time setup and the model are on page 2, under the
       rows, once the CLI works. Nothing a check finds disables Next or Create, and neither
-      creation entry point checks again. Create waits only while a check or a step runs. A cat
-      bot whose CLI is missing says so when the owner sends it a message (ADR-032 §4).
+      creation entry point refuses: each waits for a step still running, then looks, read-only,
+      where the chosen CLI is, so the new core's PATH has its folder. Create waits only while a
+      check or a step runs. A ready row offers no Update here. A cat bot whose CLI is missing
+      says so when the owner sends it a message (ADR-032 §4).
 16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, on a cat bot's Provider and model page too:
     every catalog entry; the selected entry's controls except `request` scope; `(default)`
     on default entries and values; the first listed value when a catalog names no default;

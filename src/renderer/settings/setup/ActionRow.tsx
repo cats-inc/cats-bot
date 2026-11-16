@@ -41,6 +41,7 @@ export function ActionRow({
   onRun,
   onCheckAgain,
   onRestart,
+  updates = true,
 }: {
   step: SetupStep<string>;
   provider: string;
@@ -69,6 +70,8 @@ export function ActionRow({
   onCheckAgain?: () => void;
   /** A row Cats Bot cannot find yet: restart Cats Bot, keeping what the wizard holds. */
   onRestart?: () => void;
+  /** The setup wizard only installs (SPEC-013 FR-13), so it offers no Update. */
+  updates?: boolean;
 }) {
   const { t } = useI18n();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -116,7 +119,7 @@ export function ActionRow({
 
   if (kind === 'ready') {
     const note = updateNote(step);
-    const update = canUpdate(step);
+    const update = updates && canUpdate(step);
     return (
       <li className={rowClass('setup-row is-ready')} data-row={step.id}>
         <div className="setup-row-top">

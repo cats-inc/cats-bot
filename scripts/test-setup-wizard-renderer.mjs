@@ -250,6 +250,7 @@ app.whenReady().then(async () => {
   await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready') && !document.querySelector('.provider-ops').getAttribute('aria-busy').includes('true')", 'applied');
   check('only what was confirmed changed anything', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true node:true npm:true codex:true', w.calls.filter((call) => call.endsWith(':true')).join(' '));
   check('the optional step did not run', world.state.shell !== 'ready');
+  check('the wizard offers no Update, since its windows only install', await w.js("!document.querySelector('.setup-row.is-ready .setup-act')"));
   const signIn = await w.js("document.querySelector('.setup-row[data-row=sign-in]')?.textContent ?? ''");
   check('sign-in is on page 2 once Codex works, with its fixed command', /codex login/u.test(signIn), signIn.slice(0, 80));
   const models = await w.js("[...document.querySelectorAll('#setup-model option')].map((o) => o.textContent)");
@@ -292,7 +293,7 @@ app.whenReady().then(async () => {
   await w.wait("!document.querySelector('#setup-submit').disabled", 'create with a missing CLI');
   await w.submit();
   check('a missing CLI still creates the cat bot', w.created[0]?.provider === 'grok', JSON.stringify(w.created[0]));
-  check('creation ran no check of its own', w.calls.filter((call) => call === 'grok:false').length === 1, w.calls.join(' '));
+  check('creation only looked where the CLI is, and changed nothing', !w.calls.some((call) => call.endsWith(':true')), w.calls.join(' '));
   check('no page error, missing CLI path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
@@ -387,6 +388,39 @@ app.whenReady().then(async () => {
   check('no page error, Claude path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
+/* ---- Windows only (the shell records a machine restart there): a real Windows restart is distinct from a
+   Cats Bot/PATH relaunch ---- */
+if (process.platform === 'win32') {
+  const world = {
+    state: { node: 'changes_required', npm: 'ready', codex: 'ready', shell: 'ready' },
+    applies: { node: [{ status: 'restart_required', installed: true, restartRequired: true,
+      appliedChanges: ['fixture_msi_install'], warnings: ['Windows requires a system restart.'],
+      interruptions: [{ kind: 'restart_required', requiresRestart: true }] }] },
+  };
+  const w = await open(world);
+  await w.click('#setup-to-provider');
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('#setup-act-node')", 'Node plan');
+  await w.runRow('node');
+  await w.wait("document.querySelector('.setup-system-restart') && !document.querySelector('.provider-ops').getAttribute('aria-busy').includes('true')", 'Windows restart advice');
+  check('a Windows reboot is not offered as a Cats Bot restart', await w.js("!document.querySelector('#setup-restart') && /Restart Windows/.test(document.querySelector('.setup-pane:not([hidden])').textContent)"));
+  await w.click('#provider-check');
+  await w.wait("!document.querySelector('.provider-ops').getAttribute('aria-busy').includes('true') && !!document.querySelector('.setup-system-restart')", 'unavailable Node keeps reboot advice');
+  check('a missing Node offers no reinstall or app restart while a Windows reboot is pending', await w.js("!document.querySelector('#setup-act-node') && !document.querySelector('#setup-restart')"));
+  world.state.node = 'ready';
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-ready')", 'Node usable after probe');
+  check('a ready Node keeps the Windows restart advice visible', await w.js("!!document.querySelector('.setup-row[data-row=node] .setup-system-restart')"));
+  check('the Windows restart advice has visible layout', await w.js("(() => { const node = document.querySelector('.setup-system-restart'); const box = node.getBoundingClientRect(); const style = getComputedStyle(node); return box.width > 0 && box.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'; })()"));
+  check('a usable Node can continue without hiding reboot advice', await w.js("!document.querySelector('#setup-next').disabled"));
+  check('the log still counts the change', /changed 1 item/u.test(await w.js("document.querySelector('.setup-log-last').textContent")), await w.js("document.querySelector('.setup-log-last').textContent"));
+  await w.shot('8-windows-system-restart');
+  w.window.destroy();
+  await w.done;
+  check('no page error, Windows restart path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+}
+
 /* ---- Windows only: Codex first-time setup sits under sign-in on page 2, and never holds Create ---- */
 if (process.platform === 'win32') {
   const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
@@ -396,6 +430,7 @@ if (process.platform === 'win32') {
   await w.click('#provider-check');
   await w.wait("document.querySelector('#setup-open-codex')", 'initialization action');
   check('first-time setup follows the sign-in row', await w.js("!!document.querySelector('[data-row=sign-in] + [data-row=codex-initialization]')"));
+  check('sign-in opens in Command Prompt while PowerShell scripts is not set up', /Command Prompt/u.test(await w.js("document.querySelector('.setup-row[data-row=sign-in]').textContent")));
   await w.click('#setup-open-codex');
   await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Terminal opened.')", 'terminal result');
   check('first-time setup opens the fixed terminal action', w.calls.includes('open-codex-terminal'));

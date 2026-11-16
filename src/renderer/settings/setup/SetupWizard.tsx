@@ -291,7 +291,7 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
         </div>
       </fieldset>
       {provider && (
-        <ProviderOps provider={provider} label={label} who={displayName} onBusy={setOpsBusy} dock={dock}
+        <ProviderOps provider={provider} label={label} who={displayName} onBusy={setOpsBusy} dock={dock} updates={false}
           onRestart={() => void api.setup.restart(draft())} />
       )}
       {provider && <div className="setup-fields"><ModelField idPrefix="setup" menu={menu} onChange={setMenu} /></div>}

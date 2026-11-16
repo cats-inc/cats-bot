@@ -46,12 +46,18 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
    - The log stays across the window's foot, as SPEC-010 FR-14 has it. It is told when a check or a step starts
      and ends, so it opens for a run, closes after success, and stays open after a failure.
    - A row Cats Bot cannot find yet offers "Restart Cats Bot", keeping what the wizard holds (SPEC-010 FR-13).
+   - A ready row offers no Update, because the wizard's windows only install (SPEC-013 FR-13).
+   - On Windows, while PowerShell scripts is not set up, the sign-in row says it opens in Command Prompt
+     (SPEC-010 FR-12), on a cat bot's own page too.
    - Page 2 has no link to Cats Bot Settings and no log sheet.
    - The six agent CLIs sit three to a row, as in settings.
 3. **No check stops the wizard.**
    - Next needs only a valid name and persona on page 1 and a chosen provider on page 2.
    - Create needs a model and waits only while a check or a step is running.
-   - Neither creation entry point checks again (`checkForCreation` is removed).
+   - Neither creation entry point refuses (`checkForCreation` is removed). Each waits for a step that is still
+     running, then looks, read-only, where the chosen CLI is (`prepareEnvironment`). That puts its folder on the PATH
+     the new core inherits, as a check on page 2 would have, because the Runtime can find a CLI outside PATH where
+     its installer puts it.
 4. **A missing CLI is said where it matters, when the owner sends a message.**
    - When an owner's message fails, the core looks for the provider's command on the PATH it gives the Runtime, as
      `listProviders` does. If the command is not there, the conversation gets one error saying so, with

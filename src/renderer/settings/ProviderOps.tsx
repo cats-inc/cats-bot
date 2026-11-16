@@ -40,6 +40,7 @@ export function ProviderOps({
   onBusy,
   dock,
   onRestart,
+  updates = true,
 }: {
   provider: string;
   label: string;
@@ -50,6 +51,8 @@ export function ProviderOps({
   dock?: DockedLog;
   /** The wizard can restart Cats Bot and keep what was typed (SPEC-010 FR-13). */
   onRestart?(): void;
+  /** Whether a ready row may offer Update: not in the setup wizard, whose windows only install. */
+  updates?: boolean;
 }) {
   const { t } = useI18n();
   const [platform, setPlatform] = useState('');
@@ -238,11 +241,13 @@ export function ProviderOps({
             onRun={(change) => void apply([{ id: step.id, change }])}
             onCheckAgain={() => void check()}
             {...(onRestart ? { onRestart } : {})}
+            updates={updates}
           />
         );
       });
 
   const mainReady = steps.some((step) => (step.id === provider || step.id === 'provider') && rowKind(step) === 'ready');
+  const powerShellLeft = provider === 'codex' && windows && steps.some((step) => step.id === 'shell' && rowKind(step) !== 'ready');
   const elsewhere = running && running.provider !== provider
     ? states[running.provider]?.steps.find((step) => step.id === running.id)?.label ?? running.id
     : null;
@@ -288,7 +293,7 @@ export function ProviderOps({
         {rows}
         {state && mainReady && (
           <SignInRow id="provider" label={label} signIn={state.signIn} command={state.signInCommand} who={who}
-            busy={busy || opening} terminal={terminal} powerShellLeft={false} changedPath={applied.size > 0}
+            busy={busy || opening} terminal={terminal} powerShellLeft={powerShellLeft} changedPath={applied.size > 0}
             onOpen={() => void openTerminal()} />
         )}
         {state && mainReady && provider === 'codex' && windows && (

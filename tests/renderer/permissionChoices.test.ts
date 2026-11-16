@@ -96,6 +96,9 @@ test('a new cat bot reads as its provider\'s default, so the default is not chan
   for (const provider of PROVIDERS) {
     const profile = createProfile({ name: 'N', provider, cwd: '/w', now });
     assert.deepEqual(currentChoice(storedOf(profile)), defaultChoice(provider), provider);
+    // The wizard's page 3 says this sentence for every provider, in both languages.
+    const said = permissionSummary('Mochi', provider, provider, 'filespace', defaultChoice(provider));
+    assert.match(said, /Mochi/u, `${provider}: ${said}`);
   }
 });
 

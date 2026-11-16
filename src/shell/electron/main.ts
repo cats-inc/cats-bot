@@ -1278,7 +1278,10 @@ async function main(): Promise<void> {
     const input = validateSetupInput(raw);
     finishing = true;
     try {
-      // ADR-032: what the last check found never stops creation; the cat bot says so if its CLI is missing.
+      // ADR-032: what a check finds never stops creation. This read-only look puts the chosen CLI's folder on the
+      // PATH the new core inherits, as a check on page 2 would have, and waits for a step that is still running.
+      await providerSetup.whenIdle();
+      await providerSetup.prepareEnvironment(input.provider).catch(() => {});
       checks.signal.throwIfAborted();
       if (quitting) throw new Error('Cats Bot is stopping');
       creating = true;
