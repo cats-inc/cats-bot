@@ -112,6 +112,10 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    why. The owner can change both limits in Settings → Bots. A delivery the hub
    sends again (FR-12) is not a new hop and does not count toward the hourly
    limit.
+   - The reply returns to the conversation that asked. When the owner deleted that conversation, or cleared
+     it after the message was sent (SPEC-002 FR-5b, 2026-11-16), the reply goes to the holder's contact note
+     for that bot instead, never to the direct message. The hub's reply carries `askedAt`, its message's time;
+     a reply without it, from an older hub, returns to the conversation that asked, as before.
 9. FR-9: Every Boss Cat call (tool, target, chain, outcome) goes to the hub
    log and to the journals of the holder and the target. Delivered text appears
    in the target's transcript, attributed to the holder bot, and a later

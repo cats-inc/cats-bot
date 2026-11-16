@@ -346,6 +346,15 @@ textarea {
   padding: 0 6px 14px;
 }
 
+/* The provider, model and effort under the face and name, on a line of their own that wraps rather than cut. */
+.brand-target {
+  margin: -8px 6px 14px;
+  color: var(--muted-text);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
 .tabs .brand > div {
   min-width: 0;
 }
@@ -909,6 +918,11 @@ button.quiet.danger {
 .clis-panel .setup-foot {
   padding: 8px 28px;
 }
+/*
+ * SPEC-002 FR-5: one grid for every row, so the same three controls sit in the same columns whatever the row:
+ * where the note lives, Open, and Delete (Clear on the direct message). Nothing in a row changes width when it is
+ * used; menus and confirmations open over the list. A list too narrow for the layer's name keeps its glyph.
+ */
 .notes {
   list-style: none;
   margin: 0;
@@ -917,6 +931,7 @@ button.quiet.danger {
   flex-direction: column;
   gap: 8px;
   max-width: 640px;
+  container: notes / inline-size;
 }
 
 .panels .notes {
@@ -925,51 +940,237 @@ button.quiet.danger {
 
 /* A conversation is a sticky note, so its row keeps the note's yellow. */
 .note-row {
-  display: flex;
-  flex-wrap: wrap;
+  --note-layer-width: 124px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--note-layer-width) 60px 68px;
   align-items: center;
-  gap: 8px 10px;
+  column-gap: 6px;
   background: #fff8d6;
   border: 1px solid #f1e3a6;
   border-radius: 8px;
-  padding: 8px 10px 8px 12px;
+  padding: 8px 8px 8px 14px;
 }
 
-.note-row .main {
-  flex: 1 1 160px;
+.note-main {
   min-width: 0;
+  padding-right: 6px;
 }
 
-.note-actions {
-  flex: none;
+.note-title {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-left: auto;
-  white-space: nowrap;
+  min-width: 0;
+  height: 24px;
+  font-weight: 600;
 }
 
-.note-row .title {
-  font-weight: 600;
+.note-title-text {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.note-row .meta {
+.note-title .badge {
+  flex: none;
+  margin-left: 0;
+  line-height: 17px;
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.note-title .badge.home {
+  background: var(--edge);
+  color: var(--muted-text);
+}
+
+.note-meta {
+  color: var(--muted-text);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-row .note-rename-field {
+  height: 24px;
+  max-width: 320px;
+  padding: 0 6px;
+  font-weight: 600;
+}
+
+.note-rename {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
   color: var(--muted);
+}
+
+.note-rename:hover {
+  background: #f6ecbf;
+  color: var(--ink);
+}
+
+.note-control {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.note-layer {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.note-layer-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.note-layer-chevron {
+  flex: none;
+  color: var(--muted);
+}
+
+.note-layer[aria-expanded='true'] {
+  border-color: var(--accent);
+}
+
+.note-layer-glyph {
+  flex: none;
+  display: block;
+}
+
+.note-layer-glyph rect {
+  fill: #d6ccb2;
+}
+
+.note-layer-glyph rect.is-here {
+  fill: var(--accent);
+}
+
+.note-remove {
+  border-color: transparent;
+  background: transparent;
+  color: var(--danger);
+}
+
+.note-remove:hover,
+.note-remove[aria-expanded='true'] {
+  border-color: #efc9c3;
+  background: #fbeae7;
+}
+
+@container notes (max-width: 460px) {
+  .note-row {
+    --note-layer-width: 34px;
+  }
+
+  .note-layer {
+    justify-content: center;
+    padding: 0;
+  }
+
+  .note-layer-name,
+  .note-layer-chevron {
+    display: none;
+  }
+}
+
+.note-pop {
+  position: fixed;
+  z-index: 20;
+  padding: 6px;
+  border: 1px solid var(--edge);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 28px #50381426;
+  animation: note-pop-in 0.12s ease-out;
+}
+
+@keyframes note-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.note-menu {
+  width: 272px;
+  display: grid;
+  gap: 2px;
+}
+
+.note-menu-item {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  text-align: left;
+}
+
+.note-menu-item:hover {
+  background: var(--paper);
+}
+
+.note-menu-item[aria-checked='true'] {
+  background: var(--accent-soft);
+}
+
+.note-menu-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.note-menu-detail {
+  grid-column: 2;
+  color: var(--muted-text);
   font-size: 12px;
 }
 
-.note-row input {
-  max-width: 260px;
+.note-confirm {
+  width: 300px;
+  padding: 6px 8px 8px;
 }
 
-.note-row select.layer {
-  width: 150px;
-  max-width: 200px;
-  font-size: 12px;
-  padding: 4px 6px;
+.note-confirm h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.note-confirm p {
+  margin: 4px 0 0;
+  color: var(--muted-text);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.note-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 12px;
 }
 
 .badge {
@@ -1934,6 +2135,10 @@ button.quiet.danger {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .note-pop {
+    animation: none;
+  }
+
   .setup-wizard *,
   .setup-wizard *::before,
   .setup-wizard *::after {
