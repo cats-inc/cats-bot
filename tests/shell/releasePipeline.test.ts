@@ -78,20 +78,33 @@ test('release guard only resumes its own draft and rejects reused tags, publicat
 
 test('the preview requires CI at its frozen source and does not rerun the tests', async () => {
   let runs: object[] = [];
+  let jobs: object[] = [];
   const asked: Record<string, unknown>[] = [];
-  const github = { rest: { actions: { listWorkflowRuns: async (params: Record<string, unknown>) => {
-    asked.push(params); return { data: { workflow_runs: runs } };
-  } } } };
+  const github = { rest: { actions: {
+    listWorkflowRuns: async (params: Record<string, unknown>) => { asked.push(params); return { data: { workflow_runs: runs } }; },
+    listJobsForWorkflowRun: async () => ({ data: { jobs } }),
+  } } };
   const check = (sourceRef = 'refs/heads/release/v0.3.0') => requireTestedSource({ github, owner: 'cats-inc', repo: 'cats-bot', sourceCommit, sourceRef, tag: 'v0.3.0' });
   await assert.rejects(check(), /CI has not passed/u);
   assert.deepEqual(asked.map(item => [item.workflow_id, item.head_sha, item.event, item.branch]), [
     ['ci.yaml', sourceCommit, 'push', 'main'], ['ci.yaml', sourceCommit, 'workflow_dispatch', 'release/v0.3.0'],
   ]);
-  const passed = { head_sha: sourceCommit, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', head_repository: { full_name: 'cats-inc/cats-bot' } };
+  const passed = { id: 1, head_sha: sourceCommit, head_branch: 'main', event: 'push', status: 'completed', conclusion: 'success', head_repository: { full_name: 'cats-inc/cats-bot' } };
   runs = [{ ...passed, conclusion: 'failure' }]; await assert.rejects(check(), /CI has not passed/u);
   runs = [{ ...passed, head_sha: 'c'.repeat(40) }]; await assert.rejects(check(), /CI has not passed/u);
   runs = [passed]; await check('refs/heads/main');
-  runs = [{ ...passed, event: 'workflow_dispatch', head_branch: 'release/v0.3.0' }]; await check();
+  // A main push that skipped the tests as documentation proves nothing; one that reused an earlier green run does.
+  const leg = (documentation: string, tested: string) => ({ name: 'node (ubuntu-latest)', steps: [
+    { name: 'Documentation-only change', conclusion: documentation }, { name: 'Already tested', conclusion: tested }] });
+  jobs = [leg('success', 'skipped')]; await assert.rejects(check('refs/heads/main'), /changed only documentation/u);
+  jobs = [leg('skipped', 'success')]; await check('refs/heads/main');
+  // A release-branch dispatch runs every test, so its jobs are never consulted.
+  jobs = [leg('success', 'skipped')];
+  const dispatched = { ...passed, event: 'workflow_dispatch', head_branch: 'release/v0.3.0' };
+  runs = [dispatched]; await check();
+  // The remedy the refusal names: a documentation-only main push plus a dispatch on the release branch passes.
+  runs = [passed, dispatched]; await check(); await check('refs/heads/main');
+  jobs = [];
   await assert.rejects(check('refs/heads/feature/test'), /ordinary feature branches/u);
   runs = [{ ...passed, event: 'pull_request' }]; await assert.rejects(check(), /CI has not passed/u);
   runs = [{ ...passed, head_repository: { full_name: 'fork/cats-bot' } }]; await assert.rejects(check(), /CI has not passed/u);
@@ -103,6 +116,8 @@ test('the preview requires CI at its frozen source and does not rerun the tests'
   assert.ok(!commands.some((run: string) => /npm (test|run typecheck)/u.test(run)));
   const ci = parse(await readFile(new URL('../../.github/workflows/ci.yaml', import.meta.url), 'utf8'));
   assert.ok(Object.hasOwn(ci.on, 'workflow_dispatch'));
+  // The guard recognises the documentation-only path by this exact step name.
+  assert.ok(ci.jobs.node.steps.some((step: { name?: string }) => step.name === 'Documentation-only change'));
 });
 
 test('the preview refuses a Runtime pin off main, or one leaving out changes its notes do not list', async t => {

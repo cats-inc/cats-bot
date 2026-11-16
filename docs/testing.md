@@ -757,7 +757,10 @@ limits reuse: a pull request sees its own markers and those from `main`, and a
 push to `main` sees only `main`'s. Manual runs never look up a marker, so the
 release branch's exact-source run is always full. A skipped push run still
 concludes as a success for its commit, so the release guard accepts it; the
-same code passed every check in the run it reused.
+same code passed every check in the run it reused. A documentation-only push
+run also concludes as a success, but the release guard (the vendored
+`scripts/shared/source-selection.mjs`) rejects it when any job's
+`Documentation-only change` step succeeded, because its tests never ran.
 
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and
