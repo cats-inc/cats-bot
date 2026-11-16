@@ -120,8 +120,9 @@ instead of opening the alert.
    (one per running bot under the hub, each bound to its bot, drawn in that bot's look, SPEC-008 FR-29);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
    opens the home note, or, with the quick menu on (FR-7a), a double click does and a single click opens
-   the quick menu; right-click opens only that Cat’s conversations, heartbeat, desktop-control
-   Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.
+   the quick menu; right-click opens only that Cat’s menu (FR-7b): its conversations, arranging its
+   notes, hiding it, heartbeat, desktop-control Stop and bot settings. It never offers hub settings,
+   updates, start at login or Quit.
    On Windows/macOS the Cat takes focus only while its native menu is open, so an
    outside click can dismiss it; closing the menu restores the unfocusable avatar.
    A short bubble is shown on a new reply; it can be hidden from its own menu and from settings.
@@ -150,6 +151,28 @@ instead of opening the alert.
        off, or after 60 seconds. The Cat's own window stays unfocusable.
      - On Linux the same items are a native menu at the pointer, with no animation.
      - Opening the menu puts the reply bubble away; a bubble that arrives while it is open waits under it.
+   - FR-7b (2026-11-16): The right-click menu, in groups separated by lines:
+     - Stop desktop control first while the Cat holds it (SPEC-006 BDC-10). Then the status, with
+       the provider and desktop-control requests waiting for the owner right under it.
+     - Open direct message, the Conversations submenu, New conversation and Manage conversations….
+     - Stack conversation windows, Spread conversation windows, Undo arrangement (only after an
+       arrangement) and Hide this cat. The hub tray's Show floating cats brings the Cat back.
+     - Pause or Resume own initiative, Stop desktop control while it is on, and Cat bot settings….
+   - Stack and Spread arrange this Cat's open notes on the `normal` or `top` layer that are not
+     minimized, maximized or full screen. With none they are greyed out. Desktop and wallpaper notes,
+     and closed notes, stay as they are. The order is the quick menu's (FR-7a): the direct message,
+     then the latest message first, contact notes included.
+     - Stack puts them beside the Cat (left first, as the quick menu), centred on it and kept inside
+       the work area of its display. Each note behind sits one title bar (36 px) higher, so every
+       title shows and the front note shows whole. Top-layer notes stay in front of the others. A
+       stack too tall for the display closes up.
+     - Spread puts them in rows across the Cat's display, centred and apart. Rows that do not fit
+       overlap evenly, a later row in front, with each row's titles showing.
+     - Neither resizes a note, takes the focus or marks anything read. The notes are raised without
+       activation and their new places are remembered; the front-to-back order is not, so the next
+       click on a note changes it.
+     - Undo arrangement puts the last arrangement's notes back, closed ones included, until any of
+       them is moved or resized. It undoes one arrangement and does not survive a restart.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 import type { BotCore } from '../../src/core/bot.ts';
+import type { ConversationRecord } from '../../src/core/types.ts';
 import type { DesktopHost } from '../../src/shell/electron/win32Desktop.ts';
 import { createMacDesktopHost } from '../../src/shell/electron/macDesktop.ts';
 import { FakeMacWindows, LEVELS, NOTE_BEHAVIOR } from '../support/fake-mac-windows.ts';
@@ -279,6 +280,71 @@ test('ADR-016: a full-screen note stays an ordinary window until it leaves full 
   window.emit('blur');
   t.mock.timers.tick(400);
   assert.equal(mac.level(view), LEVELS.desktop);
+});
+
+/** A conversation as the core lists it; only the role and the last message matter for arranging. */
+function listed(id: string, role: 'home' | 'note', at: string) {
+  return { id, role, title: id, createdAt: at, lastOwnerMessageAt: at, lastBotMessageAt: null } as unknown as ConversationRecord;
+}
+
+const CAT = { x: 1796, y: 920, width: 96, height: 96 };
+
+async function arrangeFixture(t: TestContext) {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  const { windows } = fixture(t, {
+    isAttached: () => true, attachedLayer: () => 'wallpaper', attach: () => true, detach() {}, released() {},
+    bringToFront: () => true, hostAlive: () => true, refresh: () => false,
+  });
+  const home = await shownNote(windows, 'home');
+  windows.setLayer('pinned', 'top');
+  const pinned = await shownNote(windows, 'pinned');
+  pinned.setBounds({ x: 700, y: 50, width: 360, height: 480 });
+  pinned.emit('move');
+  const wallpaper = await restoredNote(windows, 'wall', 'wallpaper');
+  const closed = await shownNote(windows, 'closed');
+  windows.hide('closed');
+  const conversations = [listed('home', 'home', '2026-11-01T00:00:00.000Z'), listed('pinned', 'note', '2026-11-02T00:00:00.000Z'),
+    listed('wall', 'note', '2026-11-03T00:00:00.000Z'), listed('closed', 'note', '2026-11-04T00:00:00.000Z')];
+  return { windows, home, pinned, wallpaper, closed, conversations };
+}
+
+test('SPEC-002 FR-7b: only open ordinary and top-layer notes are arranged, without the focus', async t => {
+  const { windows, home, pinned, wallpaper, closed, conversations } = await arrangeFixture(t);
+  const wallpaperBounds = { ...wallpaper.getBounds() };
+  assert.deepEqual(windows.arrangeable().map((note) => note.id).sort(), ['home', 'pinned']);
+  const focus = BrowserWindow.instances.map((window) => window.focusCalls);
+  BrowserWindow.raised = [];
+  assert.equal(windows.arrange('stack', CAT, conversations), 2);
+  assert.deepEqual(BrowserWindow.instances.map((window) => window.focusCalls), focus, 'arranging focuses nothing');
+  assert.deepEqual(BrowserWindow.raised, [home.webContents.id, pinned.webContents.id], 'the top-layer note is raised last');
+  // Kept inside the 1080-pixel test display: the front note ends 8 pixels above its bottom, one title bar lower.
+  assert.deepEqual(home.getBounds(), { x: 1796 - 14 - 400, y: 1080 - 8 - 480 - 36, width: 400, height: 500 }, 'beside the cat, same size');
+  assert.deepEqual(pinned.getBounds(), { x: 1796 - 14 - 360, y: 1080 - 8 - 480, width: 360, height: 480 });
+  assert.deepEqual(wallpaper.getBounds(), wallpaperBounds, 'a wallpaper note stays where the owner put it');
+  assert.equal(closed.isVisible(), false, 'a closed note is not opened');
+  assert.deepEqual(pick(windows.shellState.views.home!), home.getBounds(), 'the new place is remembered');
+});
+
+test('SPEC-002 FR-7b: Undo arrangement puts the notes back until one of them is moved', async t => {
+  const { windows, home, pinned, conversations } = await arrangeFixture(t);
+  assert.equal(windows.canUndoArrangement(), false, 'nothing arranged yet');
+  windows.arrange('spread', CAT, conversations);
+  t.mock.timers.tick(400);
+  assert.equal(windows.canUndoArrangement(), true);
+  windows.hide('pinned');
+  assert.equal(windows.undoArrangement(), true);
+  assert.deepEqual(home.getBounds(), { x: 100, y: 120, width: 400, height: 500 });
+  assert.equal(pinned.isVisible(), false);
+  assert.equal(windows.canUndoArrangement(), false, 'one level only');
+  await windows.open('pinned');
+  assert.deepEqual(pinned.getBounds(), { x: 700, y: 50, width: 360, height: 480 }, 'a note closed since opens where it was');
+
+  windows.arrange('stack', CAT, conversations);
+  home.setBounds({ ...home.getBounds(), x: 10 });
+  home.emit('move');
+  assert.equal(windows.canUndoArrangement(), false, 'a note moved by hand makes the arrangement the owner\'s');
+  assert.equal(windows.undoArrangement(), false);
+  assert.equal(home.getBounds().x, 10);
 });
 
 test('SPEC-003 FR-9: a lifted desktop note hidden for a screenshot stays lifted, and settles once it is back without the focus', async t => {

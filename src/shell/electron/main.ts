@@ -1102,7 +1102,15 @@ async function main(): Promise<void> {
     onToggleHeartbeat: (enabled) => {
       void target()?.core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
-    onToggleFloating: (visible) => target()?.setFloatingVisible(visible),
+    // SPEC-002 FR-7b: only this Cat's notes, beside this Cat.
+    onArrangeNotes: (kind) => {
+      void target()?.arrangeNotes(kind)
+        .catch((error: unknown) => log(`arrange conversations failed: ${diagnosticError(error)}`, 'error'));
+    },
+    onUndoArrangement: () => {
+      target()?.windows.undoArrangement();
+    },
+    onHideFloating: () => target()?.setFloatingVisible(false),
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
       void target()?.core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {

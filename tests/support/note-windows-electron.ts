@@ -3,6 +3,10 @@ import { EventEmitter } from 'node:events';
 /** A controllable page load; lifecycle tests use the real NoteWindows manager. */
 export class BrowserWindow extends EventEmitter {
   static instances: BrowserWindow[] = [];
+  /** Window ids in the order moveTop() raised them. */
+  static raised: number[] = [];
+  /** How often focus() was called on this window. */
+  focusCalls = 0;
   readonly webContents = Object.assign(new EventEmitter(), {
     id: BrowserWindow.instances.length + 1,
     mainFrame: {},
@@ -68,7 +72,8 @@ export class BrowserWindow extends EventEmitter {
   }
   setAlwaysOnTop(): void {}
   removeMenu(): void {}
-  focus(): void {}
+  focus(): void { this.focusCalls++; }
+  moveTop(): void { BrowserWindow.raised.push(this.webContents.id); }
   show(): void { this.visible = true; this.emit('show'); }
   showInactive(): void { this.show(); }
   hide(): void { this.visible = false; this.emit('hide'); }

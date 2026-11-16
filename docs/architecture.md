@@ -283,8 +283,9 @@ does not establish browser/desktop helper availability or successful invocation.
   id, and routes `bot:invoke` IPC calls to `ipc.ts`, which maps command
   names to `BotHostApi`; events are broadcast to every note. `windows.ts`
   owns the frameless sticky-note windows (close hides, bounds and
-  always-on-top persist in `shell-state.json`); `tray.ts` and `trayMenu.ts`
-  the tray and its menu. `assets/preload.cjs` is the sandboxed contextBridge.
+  always-on-top persist in `shell-state.json`) and arranges a Cat's notes with
+  the plain planner in `noteArrangement.ts` (SPEC-002 FR-7b); `tray.ts` and
+  `trayMenu.ts` the tray and the menus. `assets/preload.cjs` is the sandboxed contextBridge.
   The pages (notes, settings and first run, the floating cat and its quick
   menu, ADR-027) live in
   `src/renderer/` and are built by Vite into `dist/renderer/` (ADR-003); they

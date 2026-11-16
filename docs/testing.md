@@ -274,6 +274,25 @@ macOS, Linux's native-menu path, several displays and the packaged app were not
 run. The [quick menu findings](research/2026-11-16-avatar-quick-menu.md) record
 the fixture's guards.
 
+Arranging a Cat's notes from its right-click menu (SPEC-002 FR-7b) has these
+unit tests:
+
+- `tests/shell/noteArrangement.test.ts`:
+  - The order: the direct message, then the latest message first.
+  - A stack beside the Cat on either side, every title showing, top-layer notes
+    in front, and a stack too tall for the display.
+  - Spread in one row, in rows, and in overlapping rows.
+  - No note is resized, and every note stays inside the work area.
+- `tests/shell/noteWindows.test.ts`, with a fake `BrowserWindow`:
+  - Only open normal and top-layer notes are arranged, without the focus,
+    raised back to front, and their places are remembered.
+  - Undo puts them back, a closed note included, until one is moved.
+- `tests/shell/trayMenu.test.ts`: the menu's groups and order, the greyed-out
+  items, Undo only after an arrangement, and the zh-TW labels.
+
+Not run natively: `moveTop()` raising without activation, `setBounds()` across
+displays with different scaling, the `main.ts` actions, macOS and Linux.
+
 After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
 for the real renderer's waiting/polling/cancellation checks, including recovery
 with completion notifications deliberately suppressed. The helper creates a temporary

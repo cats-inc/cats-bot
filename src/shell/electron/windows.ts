@@ -4,9 +4,10 @@ import { pathToFileURL } from 'node:url';
 import { BrowserWindow, screen } from 'electron';
 
 import type { RemoteBotCore } from '../../core/host-api/remote.ts';
-import type { BotHostEvent } from '../../core/types.ts';
+import type { BotHostEvent, ConversationRecord } from '../../core/types.ts';
 import { applyWindowIdentity, type WindowIdentity } from './windowIdentity.ts';
 import type { LanguageState } from '../../shared/language.ts';
+import { arrangementOrder, spreadNotes, stackNotes, type ArrangeableNote, type ArrangeKind } from './noteArrangement.ts';
 import {
   DEFAULT_NOTE_SIZE,
   readShellState,
@@ -68,6 +69,12 @@ function handleOf(window: BrowserWindow): number {
   return buffer.length >= 8 ? Number(buffer.readBigUInt64LE(0)) : buffer.readUInt32LE(0);
 }
 
+type Rect = { x: number; y: number; width: number; height: number };
+
+function sameRect(a: Partial<Rect>, b: Rect): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
+
 function clampToScreen(bounds: { x: number; y: number; width: number; height: number }) {
   const display = screen.getDisplayMatching(bounds);
   const area = display.workArea;
@@ -89,6 +96,8 @@ export class NoteWindows {
   /** SPEC-003 FR-9: notes hidden while a region screenshot is taken; they keep their lifted state. */
   private readonly hiddenForScreenshot = new Set<string>();
   private healthTimer: NodeJS.Timeout | null = null;
+  /** SPEC-002 FR-7b: where the last arrangement found its notes and left them, until one of them is moved. */
+  private arrangement: { before: Map<string, Rect>; after: Map<string, Rect> } | null = null;
 
   constructor(options: NoteWindowsOptions) {
     this.options = options;
@@ -455,6 +464,100 @@ export class NoteWindows {
       // no later blur would return a lifted note to its layer.
       if (this.lifted.has(conversationId)) this.settle(conversationId, window);
     };
+  }
+
+  /**
+   * SPEC-002 FR-7b: the notes the Cat menu may arrange. They are open and shown as ordinary or
+   * top-layer windows, not minimized, maximized or full screen. Desktop and wallpaper notes stay
+   * where the owner put them.
+   */
+  arrangeable(): ArrangeableNote[] {
+    const notes: ArrangeableNote[] = [];
+    for (const [id, window] of this.windows) {
+      const view = this.state.views[id];
+      if (!view || (view.layer !== 'normal' && view.layer !== 'top')) continue;
+      if (window.isDestroyed() || !window.isVisible() || window.isMinimized() || window.isMaximized()
+        || window.isFullScreen()) continue;
+      const { width, height } = window.getBounds();
+      notes.push({ id, width, height, top: view.layer === 'top' });
+    }
+    return notes;
+  }
+
+  /**
+   * Stacks the arrangeable notes beside the Cat at `cat` (screen coordinates) or spreads them over
+   * its display, the direct message in front or first. No note takes the focus, so none is marked
+   * read; their sizes stay. Returns how many notes were arranged.
+   */
+  arrange(kind: ArrangeKind, cat: Rect, conversations: readonly ConversationRecord[]): number {
+    const notes = new Map(this.arrangeable().map((note) => [note.id, note]));
+    const ordered = arrangementOrder(conversations, [...notes.keys()]).map((id) => notes.get(id)!);
+    if (ordered.length === 0) return 0;
+    const area = screen.getDisplayMatching(cat).workArea;
+    const plan = kind === 'stack' ? stackNotes(ordered, cat, area) : spreadNotes(ordered, area);
+    // Raised without activation, back to front; moving them afterwards keeps that order.
+    for (const id of plan.raise) this.windows.get(id)?.moveTop();
+    const before = new Map<string, Rect>();
+    for (const { id, ...bounds } of plan.placed) {
+      const window = this.windows.get(id)!;
+      before.set(id, { ...window.getBounds() });
+      window.setBounds(bounds);
+      // Moved onto a display with another scaling, a window can come out the wrong size; once more fixes it.
+      const now = window.getBounds();
+      if (now.width !== bounds.width || now.height !== bounds.height) window.setBounds(bounds);
+    }
+    const arrangement = { before, after: new Map<string, Rect>() };
+    this.arrangement = arrangement;
+    // What the windows report after any adjustment the system makes is what "not moved since" compares with.
+    const settle = () => {
+      if (this.arrangement !== arrangement) return;
+      for (const id of before.keys()) {
+        const window = this.windows.get(id);
+        if (window && !window.isDestroyed() && window.isVisible()) this.rememberBounds(id, window);
+        const view = this.state.views[id];
+        if (view && view.x !== undefined && view.y !== undefined) {
+          arrangement.after.set(id, { x: view.x, y: view.y, width: view.width, height: view.height });
+        }
+      }
+      this.persist();
+    };
+    settle();
+    setTimeout(settle, SETTLE_MS).unref?.();
+    return ordered.length;
+  }
+
+  /** Whether the last arrangement can be put back: none of its notes has been moved or resized since. */
+  canUndoArrangement(): boolean {
+    const last = this.arrangement;
+    if (!last) return false;
+    const remaining = [...last.after].filter(([id]) => this.state.views[id]);
+    if (remaining.length === 0 || remaining.some(([id, bounds]) => !sameRect(this.state.views[id]!, bounds))) {
+      this.arrangement = null;
+      return false;
+    }
+    return true;
+  }
+
+  /** Puts the notes of the last arrangement back where they were; a closed note opens there next time. */
+  undoArrangement(): boolean {
+    if (!this.canUndoArrangement()) return false;
+    const { before } = this.arrangement!;
+    this.arrangement = null;
+    for (const [id, bounds] of before) {
+      const view = this.state.views[id];
+      if (!view) continue;
+      // A closed note keeps its hidden window, which shows again where it is.
+      const window = this.windows.get(id);
+      if (window && !window.isDestroyed()) {
+        if (window.isMinimized() || window.isMaximized() || window.isFullScreen()) continue;
+        window.setBounds(bounds);
+        this.rememberBounds(id, window);
+      } else {
+        Object.assign(view, bounds);
+      }
+    }
+    this.persist();
+    return true;
   }
 
   hide(conversationId: string): void {
