@@ -1148,7 +1148,10 @@ button.quiet.danger {
   font-weight: 600;
 }
 
+/* Under the product name, on a line of its own: the rail's block layout has no gap between them. */
 .setup-rail .brand small {
+  display: block;
+  margin-top: 2px;
   font-weight: 400;
   color: var(--muted-text);
 }
