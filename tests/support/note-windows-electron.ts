@@ -33,10 +33,19 @@ export class BrowserWindow extends EventEmitter {
   loaded(): void { this.finishLoad?.(); }
   isVisible(): boolean { return this.visible; }
   isDestroyed(): boolean { return this.destroyed; }
-  isMinimized(): boolean { return false; }
+  private minimized = false;
+  isMinimized(): boolean { return this.minimized; }
+  minimize(): void { this.minimized = true; this.emit('minimize'); }
+  restore(): void { this.minimized = false; this.emit('restore'); }
   isFocused(): boolean { return false; }
   getBounds() { return this.bounds; }
-  setBounds(bounds: typeof this.bounds): void { Object.assign(this.bounds, bounds); }
+  /** Like Electron, reports a move and a resize when they happen. */
+  setBounds(bounds: typeof this.bounds): void {
+    const { x, y, width, height } = this.bounds;
+    Object.assign(this.bounds, bounds);
+    if (x !== this.bounds.x || y !== this.bounds.y) this.emit('move');
+    if (width !== this.bounds.width || height !== this.bounds.height) this.emit('resize');
+  }
   isMaximized(): boolean { return this.normal !== null; }
   private fullScreen = false;
   isFullScreen(): boolean { return this.fullScreen; }

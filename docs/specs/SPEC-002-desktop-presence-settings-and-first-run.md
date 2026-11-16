@@ -157,7 +157,8 @@ instead of opening the alert.
      - Open direct message, the Conversations submenu, New conversation and Manage conversations….
      - Stack conversation windows, Spread conversation windows, Undo arrangement (only after an
        arrangement) and Hide this cat. The hub tray's Show floating cats brings the Cat back.
-     - Pause or Resume own initiative, Stop desktop control while it is on, and Cat bot settings….
+     - Pause or Resume own initiative, Stop desktop control while it is on or a request waits, and
+       Cat bot settings….
    - Stack and Spread arrange this Cat's open notes on the `normal` or `top` layer that are not
      minimized, maximized or full screen. With none they are greyed out. Desktop and wallpaper notes,
      and closed notes, stay as they are. The order is the quick menu's (FR-7a): the direct message,
@@ -166,13 +167,16 @@ instead of opening the alert.
        the work area of its display. Each note behind sits one title bar (36 px) higher, so every
        title shows and the front note shows whole. Top-layer notes stay in front of the others. A
        stack too tall for the display closes up.
-     - Spread puts them in rows across the Cat's display, centred and apart. Rows that do not fit
-       overlap evenly, a later row in front, with each row's titles showing.
+     - Spread puts them in rows across the Cat's display, centred and apart, top-layer notes after
+       the others. Rows that do not fit overlap evenly, a later row in front, with each row's titles
+       showing.
      - Neither resizes a note, takes the focus or marks anything read. The notes are raised without
        activation and their new places are remembered; the front-to-back order is not, so the next
-       click on a note changes it.
-     - Undo arrangement puts the last arrangement's notes back, closed ones included, until any of
-       them is moved or resized. It undoes one arrangement and does not survive a restart.
+       click on a note changes it. The Cat is raised again afterwards, so no note covers it.
+     - Undo arrangement puts the last arrangement's notes back, closed ones included, kept on a
+       display. Moving, resizing, maximizing or minimizing any of them, or putting one on the desktop
+       or wallpaper layer, ends it; moves the system makes in the first 400 ms after placing (another
+       display's scaling) do not. It undoes one arrangement and does not survive a restart.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

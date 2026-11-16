@@ -118,6 +118,15 @@ test('spread wraps into rows, and rows that do not fit overlap evenly with their
   inside(crowded);
 });
 
+test('spread puts top-layer notes after the others, so an overlapping row never hides titles under one', () => {
+  const plan = spreadNotes(Array.from({ length: 12 }, (_, index) => note(`n${index}`, 600, 500, index === 0)), AREA);
+  const rows = [...new Set(plan.placed.map((placed) => placed.y))];
+  assert.equal(plan.placed.at(-1)!.id, 'n0');
+  assert.equal(plan.placed.at(-1)!.y, rows.at(-1), 'in the last row, which is in front');
+  assert.equal(plan.raise.at(-1), 'n0');
+  inside(plan);
+});
+
 test('nothing to arrange plans nothing', () => {
   assert.deepEqual(stackNotes([], catAt(), AREA), { placed: [], raise: [] });
   assert.deepEqual(spreadNotes([], AREA), { placed: [], raise: [] });

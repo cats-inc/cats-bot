@@ -122,7 +122,8 @@ visibility/position/layer survive restart, including an entirely hidden desktop.
 Closing a conversation during startup also keeps it hidden: a delayed restore or
 page load cannot reopen it. Open it explicitly from its Cat’s avatar menu or bot settings when needed.
 The avatar's right-click menu can also stack that Cat's open conversations beside
-it or spread them over its display, and undo that until one is moved. Its Hide
+it or spread them over its display, and undo that until one of them is moved,
+resized or put on the desktop. Its Hide
 this cat hides the avatar; the hub tray’s Show floating cats reveals every running
 Cat. Clicking the tray icon opens Cats Bot Settings on its Cat bots tab.
 A Cat has one of ten looks, chosen on the setup page or the Cat bot tab of its

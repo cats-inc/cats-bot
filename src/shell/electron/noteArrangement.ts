@@ -96,12 +96,14 @@ export function stackNotes(notes: readonly ArrangeableNote[], cat: Rect, workAre
 }
 
 /**
- * Rows across the work area in `notes` order, centred and apart. When the rows
- * do not fit, they overlap evenly instead of shrinking a note: a later row in
- * front, each row's title bars still showing.
+ * Rows across the work area in `notes` order, top-layer notes after the
+ * others, centred and apart. When the rows do not fit, they overlap evenly
+ * instead of shrinking a note: a later row in front, each row's title bars
+ * still showing. Top-layer notes come last because they are in front anyway.
  */
-export function spreadNotes(notes: readonly ArrangeableNote[], workArea: Rect): NoteArrangement {
-  if (notes.length === 0) return { placed: [], raise: [] };
+export function spreadNotes(given: readonly ArrangeableNote[], workArea: Rect): NoteArrangement {
+  if (given.length === 0) return { placed: [], raise: [] };
+  const notes = [...given.filter((note) => !note.top), ...given.filter((note) => note.top)];
   const roomWidth = workArea.width - 2 * EDGE;
   const roomHeight = workArea.height - 2 * EDGE;
   const rows: ArrangeableNote[][] = [];

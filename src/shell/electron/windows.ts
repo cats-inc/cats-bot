@@ -71,10 +71,6 @@ function handleOf(window: BrowserWindow): number {
 
 type Rect = { x: number; y: number; width: number; height: number };
 
-function sameRect(a: Partial<Rect>, b: Rect): boolean {
-  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-}
-
 function clampToScreen(bounds: { x: number; y: number; width: number; height: number }) {
   const display = screen.getDisplayMatching(bounds);
   const area = display.workArea;
@@ -96,8 +92,8 @@ export class NoteWindows {
   /** SPEC-003 FR-9: notes hidden while a region screenshot is taken; they keep their lifted state. */
   private readonly hiddenForScreenshot = new Set<string>();
   private healthTimer: NodeJS.Timeout | null = null;
-  /** SPEC-002 FR-7b: where the last arrangement found its notes and left them, until one of them is moved. */
-  private arrangement: { before: Map<string, Rect>; after: Map<string, Rect> } | null = null;
+  /** SPEC-002 FR-7b: where the last arrangement found its notes, until one of them is changed. */
+  private arrangement: { before: Map<string, Rect>; settled: number } | null = null;
 
   constructor(options: NoteWindowsOptions) {
     this.options = options;
@@ -299,6 +295,13 @@ export class NoteWindows {
     };
     window.on('move', remember);
     window.on('resize', remember);
+    // FR-7b: a note the owner changes takes it out of the arrangement Undo would put back.
+    const changed = () => this.arrangedNoteChanged(conversationId);
+    window.on('move', changed);
+    window.on('resize', changed);
+    window.on('maximize', changed);
+    window.on('minimize', changed);
+    window.on('enter-full-screen', changed);
     // macOS reports the zoom animation's frames as not maximized; these come after its last frame.
     window.on('maximize', remember);
     window.on('unmaximize', remember);
@@ -373,6 +376,8 @@ export class NoteWindows {
   setLayer(conversationId: string, layer: NoteLayer): NoteLayer {
     if (!this.availableLayers().includes(layer)) throw new Error(`The ${layer} layer is not available here`);
     const view = this.viewState(conversationId);
+    // FR-7b: Undo never moves a note now attached to the desktop or wallpaper.
+    if (isAttachedLayer(layer)) this.arrangedNoteChanged(conversationId, true);
     view.layer = layer;
     this.lifted.delete(conversationId);
     this.persist();
@@ -495,57 +500,50 @@ export class NoteWindows {
     if (ordered.length === 0) return 0;
     const area = screen.getDisplayMatching(cat).workArea;
     const plan = kind === 'stack' ? stackNotes(ordered, cat, area) : spreadNotes(ordered, area);
+    const before = new Map<string, Rect>();
+    for (const { id } of plan.placed) before.set(id, { ...this.windows.get(id)!.getBounds() });
+    // Moves the system makes while placing them (another display's scaling) are not the owner's.
+    this.arrangement = { before, settled: Date.now() + SETTLE_MS };
     // Raised without activation, back to front; moving them afterwards keeps that order.
     for (const id of plan.raise) this.windows.get(id)?.moveTop();
-    const before = new Map<string, Rect>();
     for (const { id, ...bounds } of plan.placed) {
       const window = this.windows.get(id)!;
-      before.set(id, { ...window.getBounds() });
       window.setBounds(bounds);
       // Moved onto a display with another scaling, a window can come out the wrong size; once more fixes it.
       const now = window.getBounds();
       if (now.width !== bounds.width || now.height !== bounds.height) window.setBounds(bounds);
+      this.rememberBounds(id, window);
     }
-    const arrangement = { before, after: new Map<string, Rect>() };
-    this.arrangement = arrangement;
-    // What the windows report after any adjustment the system makes is what "not moved since" compares with.
-    const settle = () => {
-      if (this.arrangement !== arrangement) return;
-      for (const id of before.keys()) {
-        const window = this.windows.get(id);
-        if (window && !window.isDestroyed() && window.isVisible()) this.rememberBounds(id, window);
-        const view = this.state.views[id];
-        if (view && view.x !== undefined && view.y !== undefined) {
-          arrangement.after.set(id, { x: view.x, y: view.y, width: view.width, height: view.height });
-        }
-      }
-      this.persist();
-    };
-    settle();
-    setTimeout(settle, SETTLE_MS).unref?.();
+    this.persist();
     return ordered.length;
   }
 
-  /** Whether the last arrangement can be put back: none of its notes has been moved or resized since. */
+  /**
+   * A note of the last arrangement was moved, resized, maximized, minimized or put on an attached
+   * layer: the arrangement is the owner's now and cannot be undone. `always` skips the moment after
+   * placing in which the system may still adjust a window.
+   */
+  private arrangedNoteChanged(conversationId: string, always = false): void {
+    const last = this.arrangement;
+    if (last?.before.has(conversationId) && (always || Date.now() >= last.settled)) this.arrangement = null;
+  }
+
+  /** Whether the last arrangement can be put back: none of its notes has changed since, and one still exists. */
   canUndoArrangement(): boolean {
     const last = this.arrangement;
-    if (!last) return false;
-    const remaining = [...last.after].filter(([id]) => this.state.views[id]);
-    if (remaining.length === 0 || remaining.some(([id, bounds]) => !sameRect(this.state.views[id]!, bounds))) {
-      this.arrangement = null;
-      return false;
-    }
-    return true;
+    return last !== null && [...last.before.keys()].some((id) => this.state.views[id]);
   }
 
   /** Puts the notes of the last arrangement back where they were; a closed note opens there next time. */
   undoArrangement(): boolean {
-    if (!this.canUndoArrangement()) return false;
-    const { before } = this.arrangement!;
+    const last = this.arrangement;
+    if (!last || !this.canUndoArrangement()) return false;
     this.arrangement = null;
-    for (const [id, bounds] of before) {
+    for (const [id, saved] of last.before) {
       const view = this.state.views[id];
-      if (!view) continue;
+      if (!view || (view.layer !== 'normal' && view.layer !== 'top')) continue;
+      // A display removed since must not leave the note off screen.
+      const bounds = clampToScreen(saved);
       // A closed note keeps its hidden window, which shows again where it is.
       const window = this.windows.get(id);
       if (window && !window.isDestroyed()) {
@@ -613,6 +611,7 @@ export class NoteWindows {
   }
 
   destroyAll(): void {
+    this.arrangement = null;
     if (this.healthTimer) {
       clearInterval(this.healthTimer);
       this.healthTimer = null;

@@ -290,7 +290,7 @@ function listed(id: string, role: 'home' | 'note', at: string) {
 const CAT = { x: 1796, y: 920, width: 96, height: 96 };
 
 async function arrangeFixture(t: TestContext) {
-  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval', 'Date'] });
   const { windows } = fixture(t, {
     isAttached: () => true, attachedLayer: () => 'wallpaper', attach: () => true, detach() {}, released() {},
     bringToFront: () => true, hostAlive: () => true, refresh: () => false,
@@ -299,7 +299,6 @@ async function arrangeFixture(t: TestContext) {
   windows.setLayer('pinned', 'top');
   const pinned = await shownNote(windows, 'pinned');
   pinned.setBounds({ x: 700, y: 50, width: 360, height: 480 });
-  pinned.emit('move');
   const wallpaper = await restoredNote(windows, 'wall', 'wallpaper');
   const closed = await shownNote(windows, 'closed');
   windows.hide('closed');
@@ -325,26 +324,52 @@ test('SPEC-002 FR-7b: only open ordinary and top-layer notes are arranged, witho
   assert.deepEqual(pick(windows.shellState.views.home!), home.getBounds(), 'the new place is remembered');
 });
 
-test('SPEC-002 FR-7b: Undo arrangement puts the notes back until one of them is moved', async t => {
+test('SPEC-002 FR-7b: a maximized or minimized note is left as it is', async t => {
+  const { windows, home, pinned } = await arrangeFixture(t);
+  home.maximize();
+  pinned.minimize();
+  assert.deepEqual(windows.arrangeable(), []);
+});
+
+test('SPEC-002 FR-7b: Undo arrangement puts the notes back, a closed one included, once', async t => {
   const { windows, home, pinned, conversations } = await arrangeFixture(t);
   assert.equal(windows.canUndoArrangement(), false, 'nothing arranged yet');
   windows.arrange('spread', CAT, conversations);
+  // Placed on a display with another scaling, the system may still nudge a window.
+  home.setBounds({ ...home.getBounds(), y: home.getBounds().y + 1 });
   t.mock.timers.tick(400);
-  assert.equal(windows.canUndoArrangement(), true);
+  assert.equal(windows.canUndoArrangement(), true, 'the system adjusting a note just placed is not the owner moving it');
   windows.hide('pinned');
+  // Hub tray refreshes read the menu state; reading it changes nothing.
+  assert.equal(windows.canUndoArrangement(), true);
   assert.equal(windows.undoArrangement(), true);
   assert.deepEqual(home.getBounds(), { x: 100, y: 120, width: 400, height: 500 });
   assert.equal(pinned.isVisible(), false);
   assert.equal(windows.canUndoArrangement(), false, 'one level only');
   await windows.open('pinned');
   assert.deepEqual(pinned.getBounds(), { x: 700, y: 50, width: 360, height: 480 }, 'a note closed since opens where it was');
+});
 
-  windows.arrange('stack', CAT, conversations);
-  home.setBounds({ ...home.getBounds(), x: 10 });
-  home.emit('move');
-  assert.equal(windows.canUndoArrangement(), false, 'a note moved by hand makes the arrangement the owner\'s');
-  assert.equal(windows.undoArrangement(), false);
-  assert.equal(home.getBounds().x, 10);
+test('SPEC-002 FR-7b: moving, resizing, maximizing, minimizing or attaching an arranged note ends Undo', async t => {
+  const { windows, home, pinned, conversations } = await arrangeFixture(t);
+  const changes: Array<[string, () => void, () => void]> = [
+    ['moved', () => home.setBounds({ ...home.getBounds(), x: 10 }), () => {}],
+    ['resized', () => pinned.setBounds({ ...pinned.getBounds(), width: 500 }), () => {}],
+    ['maximized', () => home.maximize(), () => home.unmaximize()],
+    ['minimized', () => pinned.minimize(), () => pinned.restore()],
+    ['put on the wallpaper', () => windows.setLayer('home', 'wallpaper'), () => {}],
+  ];
+  for (const [what, change, back] of changes) {
+    assert.equal(windows.arrange('stack', CAT, conversations), 2, what);
+    t.mock.timers.tick(400);
+    assert.equal(windows.canUndoArrangement(), true, what);
+    change();
+    const bounds = { ...home.getBounds() };
+    assert.equal(windows.canUndoArrangement(), false, `${what}: the arrangement is the owner's now`);
+    assert.equal(windows.undoArrangement(), false, what);
+    assert.deepEqual(home.getBounds(), bounds, `${what}: nothing is put back`);
+    back();
+  }
 });
 
 test('SPEC-003 FR-9: a lifted desktop note hidden for a screenshot stays lifted, and settles once it is back without the focus', async t => {
