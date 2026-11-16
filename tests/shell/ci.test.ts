@@ -132,6 +132,13 @@ test('root agent instruction files count as documentation only while they exist 
   f.git('merge', '--no-ff', 'agents-change', '-m', 'synthetic agent-file PR merge');
   assert.equal(f.detect('pull_request'), 'code=false', 'a pull request editing only AGENTS.md is documentation');
   assert.equal(f.detect('workflow_dispatch', previous), 'code=true', 'a manual run still runs everything');
+
+  // Commit the index directly: `git add .` would turn the symlink back into a file.
+  const regular = f.git('rev-parse', 'HEAD');
+  f.git('update-index', '--cacheinfo', `120000,${f.git('rev-parse', 'HEAD:src/code.ts')},AGENTS.md`);
+  f.git('commit', '--quiet', '-m', 'retype AGENTS.md');
+  assert.equal(f.git('diff', '--no-renames', '--name-status', regular, 'HEAD'), 'T\tAGENTS.md');
+  assert.equal(f.detect('push', regular), 'code=true', 'retyping a root agent file is code');
 });
 
 test('the fingerprint covers code and the agent files\' presence, not docs or agent file content', t => {
