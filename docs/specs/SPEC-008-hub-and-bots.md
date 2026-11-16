@@ -76,7 +76,9 @@ descriptions for the model and this documentation say "bot".
    version, updates and the data folder; PLAN-010, and its Agent CLIs tab, which
    installs, updates and signs in to the CLIs every bot shares; SPEC-013), lists every bot that is not archived, with
    its state (starting, running, stopped, failed, externally hosted), and offers
-   create, start, stop, start automatically and order. Archived bots are listed
+   create, start, stop, start automatically and order (ADR-031, 2026-11-16: one grid, the same columns in
+   every row; a running or starting bot also opens its own settings from its row; order is changed in its own
+   mode). Archived bots are listed
    separately. Removing a bot takes two separate steps, each with its own
    confirmation, and nothing skips the first:
    - **Archive** a bot that is not archived: the hub stops its core (FR-10),

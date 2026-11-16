@@ -109,7 +109,8 @@ the hub's API, not a sandbox around the holder's provider CLI (FR-6).
    its way counts already. The hub refuses a
    message beyond the hop limit (default 4 per chain, at most 100) or beyond the holder's
    per-hour limit (default 10 `hub_message_bot` calls), and tells the holder
-   why. The owner can change both limits in Settings → Bots. A delivery the hub
+   why. The owner can change both limits in Settings → Bots, where they show only while a Boss Cat is
+   assigned; a value out of range becomes the nearest one the hub accepts (ADR-031). A delivery the hub
    sends again (FR-12) is not a new hop and does not count toward the hourly
    limit.
    - The reply returns to the conversation that asked. When the owner deleted that conversation, or cleared

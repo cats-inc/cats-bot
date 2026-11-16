@@ -177,10 +177,12 @@ export interface BotListing {
   active: number;
   /** SPEC-009 FR-8: the owner's limits on Boss Cat messages. */
   limits: { hopsPerChain: number; messagesPerHour: number };
+  /** The values the hub accepts for each limit, smallest and largest. */
+  limitRanges: { hopsPerChain: readonly [number, number]; messagesPerHour: readonly [number, number] };
 }
 
 export type BotAction = 'start' | 'stop' | 'startAutomatically' | 'moveUp' | 'moveDown' | 'register' | 'archive' | 'restore' | 'delete'
-  | 'makeBossCat' | 'clearBossCat' | 'bossCatSees';
+  | 'makeBossCat' | 'clearBossCat' | 'bossCatSees' | 'openSettings';
 
 export interface SetupInput {
   name: string;

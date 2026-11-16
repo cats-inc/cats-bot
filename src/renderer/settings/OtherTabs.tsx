@@ -239,9 +239,12 @@ export function GeneralTab() {
   return (
     <section className="panel" data-panel="general">
       <h2>{t('General')}</h2>
-      <Group>
+      {/* ADR-031: what applies to every cat bot; a cat bot's own choices are in its own window. */}
+      <Group title={t('Language')}>
         <LanguageField />
         <ReplyLanguageField />
+      </Group>
+      <Group title={t('Start-up and floating Cats')}>
         <Row label={t('Start Cats Bot when I sign in')} htmlFor="app-login" id="app-login-row" hidden={!shell?.openAtLoginAvailable}>
           <input
             type="checkbox"
@@ -283,13 +286,6 @@ export function GeneralTab() {
         </Row>
       </Group>
       <Updates />
-      <Group id="general-facts">
-        <Row label={t('Data folder')} hint={shell?.root ?? '…'}>
-          <button type="button" id="general-open-data" onClick={() => void api.shell.openDataFolder()}>
-            {t('Open')}
-          </button>
-        </Row>
-      </Group>
     </section>
   );
 }

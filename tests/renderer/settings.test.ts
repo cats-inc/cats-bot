@@ -9,6 +9,7 @@ import {
   appFacts,
   bossCatChoice,
   bossCatToolsHint,
+  clampLimit,
   botSettings,
   editedPages,
   pendingNotice,
@@ -410,4 +411,14 @@ test('the Boss Cat menu assigns, moves and clears the role, and choosing the hol
   assert.deepEqual(bossCatChoice('qq', ''), { id: 'qq', action: 'clearBossCat' });
   assert.equal(bossCatChoice('qq', 'qq'), null);
   assert.equal(bossCatChoice(null, ''), null);
+});
+
+test('a Boss Cat limit saves a whole number the hub accepts, or keeps the value it had (SPEC-009 FR-8, ADR-031)', () => {
+  const hops = [2, 100] as const;
+  assert.equal(clampLimit('6', 4, hops), 6);
+  assert.equal(clampLimit('1', 4, hops), 2, 'below the range: the smallest');
+  assert.equal(clampLimit('250', 4, hops), 100, 'above the range: the largest');
+  assert.equal(clampLimit('7.6', 4, hops), 8, 'a whole number');
+  assert.equal(clampLimit('', 4, hops), 4, 'emptied: what it was');
+  assert.equal(clampLimit('abc', 4, hops), 4);
 });

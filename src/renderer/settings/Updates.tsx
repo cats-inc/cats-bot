@@ -56,11 +56,11 @@ export function Updates() {
                 </button>
               )}
               {state.phase === 'available' && state.canInstall ? (
-                <button type="button" className="primary" disabled={busy} onClick={() => void action('download')}>
+                <button type="button" className="run" disabled={busy} onClick={() => void action('download')}>
                   {t('Download update')}
                 </button>
               ) : state.phase === 'downloaded' && state.canInstall ? (
-                <button type="button" className="primary" disabled={busy} onClick={() => void action('install')}>
+                <button type="button" className="run" disabled={busy} onClick={() => void action('install')}>
                   {t('Restart and install')}
                 </button>
               ) : (

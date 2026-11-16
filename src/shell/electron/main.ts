@@ -46,8 +46,8 @@ import { PeerBoardsPusher } from './hub/peerBoards.ts';
 import { CoreRunner } from './hub/coreRunner.ts';
 import { acquireHubLock, readHubState, readOrCreateInstallationId, startAtLoginByDefault, writeHubState, type HubState } from './hub/hubState.ts';
 import {
-  addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, listBotDirectories, readRegistry, withHolder, writeRegistry, type BotRegistry,
-  type BossCatLimits, type RegistryBot,
+  addBot, adoptionOrder, DEFAULT_MAX_BOTS, emptyRegistry, LIMIT_RANGES, listBotDirectories, readRegistry, withHolder, writeRegistry,
+  type BotRegistry, type BossCatLimits, type RegistryBot,
 } from './hub/registry.ts';
 import { HOST_COMMANDS, runHostCommand, senderMayInvoke } from './ipc.ts';
 import { RegionScreenshots } from './screenshot/regionScreenshot.ts';
@@ -516,7 +516,8 @@ async function main(): Promise<void> {
     placement: { file: join(home, 'window-state.json'), key: 'hub-settings', log } }, { scope: 'hub' });
   let tray: BotTray | null = null;
 
-  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: BossCatLimits } => {
+  const listBots = (): { bots: BotRow[]; unregistered: string[]; maxBots: number; active: number; limits: BossCatLimits;
+    limitRanges: typeof LIMIT_RANGES } => {
     const registry = manager.registry;
     const rows = registry.bots.map((bot): BotRow => {
       const archived = bot.archivedAt !== null;
@@ -559,6 +560,7 @@ async function main(): Promise<void> {
       maxBots: registry.maxBots,
       active: manager.activeCount(),
       limits: registry.limits,
+      limitRanges: LIMIT_RANGES,
     };
   };
   const listBotsWithStatus = async () => {
@@ -1386,6 +1388,13 @@ async function main(): Promise<void> {
     if (typeof id !== 'string' || !isValidBotId(id)) throw new Error('Unknown bot');
     const owner = hubSettings.browserWindow;
     const name = listBots().bots.find((bot) => bot.id === id)?.name ?? id;
+    // ADR-031: a running cat's own settings window, from its row. A cat that is not running has none.
+    if (action === 'openSettings') {
+      const presenter = presented().find((item) => item.botId === id);
+      if (!presenter) throw new Error(t('{name} is not running.', { name }));
+      presenter.openSettings();
+      return listBotsWithStatus();
+    }
     try {
       switch (action) {
         case 'start':

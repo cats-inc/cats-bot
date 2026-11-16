@@ -69,6 +69,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [028](./028-let-the-owner-grant-a-conversations-actions-once.md) | Let the Owner Grant a Conversation's Actions Once | Accepted | 2026-11-16 |
 | [029](./029-dictate-on-linux-with-the-linux-stt-pack-and-choose-the-dictation-language.md) | Dictate on Linux with the linux-stt Pack and Choose the Dictation Language | Proposed | 2026-11-16 |
 | [030](./030-split-a-cat-bots-settings-into-the-wizards-pages-and-ask-two-questions-about-permissions.md) | Split a Cat Bot's Settings into the Wizard's Pages and Ask Two Questions About Permissions | Accepted | 2026-11-16 |
+| [031](./031-give-the-cat-bots-list-one-grid-and-the-boss-cat-one-place.md) | Give the Cat Bots List One Grid and the Boss Cat One Place | Accepted | 2026-11-16 |
 
 <!-- Add new ADRs above this line -->
 
