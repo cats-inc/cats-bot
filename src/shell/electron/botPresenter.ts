@@ -135,7 +135,8 @@ export class BotPresenter {
     const { x, y } = floating.getBounds();
     this.windows.arrange(kind, { ...FLOATING_CAT, x: x + FLOATING_CAT.x, y: y + FLOATING_CAT.y }, conversations);
     // On Windows a raised top-layer note is as topmost as the Cat; the Cat stays in front of it.
-    floating.moveTop();
+    // moveTop() also shows a window, and the Cat may have been hidden while the list was read.
+    if (floating.isVisible()) floating.moveTop();
   }
 
   /** SPEC-006 BDC-10: whether desktop control is on, which note has a grant request waiting, and what is held. */

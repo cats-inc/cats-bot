@@ -370,6 +370,9 @@ test('SPEC-002 FR-7b: moving, resizing, maximizing, minimizing or attaching an a
     assert.deepEqual(home.getBounds(), bounds, `${what}: nothing is put back`);
     back();
   }
+  assert.equal(windows.arrange('stack', CAT, conversations), 1, 'the wallpaper note is left out now');
+  windows.setLayer('pinned', 'desktop');
+  assert.equal(windows.canUndoArrangement(), false, 'attaching ends Undo even right after placing');
 });
 
 test('SPEC-003 FR-9: a lifted desktop note hidden for a screenshot stays lifted, and settles once it is back without the focus', async t => {

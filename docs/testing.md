@@ -297,7 +297,8 @@ unit tests:
   items, Undo only after an arrangement, and the zh-TW labels.
 
 Not run natively:
-- `moveTop()` raising without activation, and the Cat staying in front of a
+- `moveTop()` raising without activation (Electron 41.2.0's Windows source
+  uses `SWP_NOACTIVATE`; read, not run), and the Cat staying in front of a
   raised top-layer note.
 - `setBounds()` across displays with different scaling.
 - Whether the next right-click menu's close focuses the front arranged note:
