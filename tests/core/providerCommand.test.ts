@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { canFindProviderCommand, loadInstallKnowledge, runsOnNode } from '../../src/core/providers/providerCommand.ts';
+import { canFindProviderCommand, codexCanStart, loadInstallKnowledge, nodeInterpreter } from '../../src/core/providers/providerCommand.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { fakeRuntimeEntry, makeTempHome } from '../support/harness.ts';
 
@@ -70,16 +70,48 @@ test('on Windows the Runtime\'s own lookups count whatever PATHEXT says, and PAT
   assert.equal(canFindProviderCommand(knowledge, 'kimi', 'kimi', { ...env, PATHEXT: '', Path: `${join(home, 'no-clis')}; ${shims} ` }, 'win32'), true);
 });
 
-test('a script whose first line starts Node runs on Node; a shell script or a native binary does not', () => {
-  const dir = makeTempHome('cats-bot-runs-on-node-').botsHome;
+test('a script\'s first line says how it starts Node: through PATH, from a named file, or not at all', () => {
+  const dir = makeTempHome('cats-bot-node-interpreter-').botsHome;
   const file = (name: string, content: string | Buffer) => {
     writeFileSync(join(dir, name), content);
     return join(dir, name);
   };
-  assert.equal(runsOnNode(file('npm-codex', '#!/usr/bin/env node\nrequire("./bin")\n')), true);
-  assert.equal(runsOnNode(file('pinned', '#!/usr/local/bin/node --no-warnings\n')), true);
-  assert.equal(runsOnNode(file('shell', '#!/bin/sh\nexec codex-native "$@"\n')), false);
-  assert.equal(runsOnNode(file('nodemon-like', '#!/usr/bin/env nodemon\n')), false);
-  assert.equal(runsOnNode(file('native', Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00]))), false);
-  assert.equal(runsOnNode(join(dir, 'absent')), false);
+  assert.deepEqual(nodeInterpreter(file('npm-codex', '#!/usr/bin/env node\nrequire("./bin")\n')), { onPath: true });
+  assert.deepEqual(nodeInterpreter(file('env-s', '#!/usr/bin/env -S node --no-warnings\n')), { onPath: true });
+  assert.deepEqual(nodeInterpreter(file('homebrew', '#!/opt/homebrew/opt/node/bin/node\n')), { onPath: false, file: '/opt/homebrew/opt/node/bin/node' });
+  assert.equal(nodeInterpreter(file('shell', '#!/bin/sh\nexec codex-native "$@"\n')), null);
+  assert.equal(nodeInterpreter(file('nodemon-like', '#!/usr/bin/env nodemon\n')), null);
+  assert.equal(nodeInterpreter(file('native', Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00]))), null);
+  assert.equal(nodeInterpreter(join(dir, 'absent')), null);
+});
+
+test('npm\'s Codex can start only with the Node it runs on; a native Codex needs none', () => {
+  const dir = makeTempHome('cats-bot-codex-node-').botsHome;
+  const noNode = { PATH: join(dir, 'no-node'), Path: join(dir, 'no-node') };
+  const nodeDir = join(dir, 'node-bin');
+  mkdirSync(nodeDir, { recursive: true });
+  writeFileSync(join(nodeDir, 'node'), '');
+  writeFileSync(join(nodeDir, 'node.exe'), '');
+  const withNode = { PATH: nodeDir, Path: nodeDir };
+  writeFileSync(join(dir, 'codex'), '#!/usr/bin/env node\n');
+  assert.equal(codexCanStart(join(dir, 'codex'), noNode, 'darwin'), false);
+  assert.equal(codexCanStart(join(dir, 'codex'), withNode, 'darwin'), true);
+  // A named interpreter is run without PATH.
+  writeFileSync(join(dir, 'brew-codex'), `#!${join(nodeDir, 'node')}\n`);
+  assert.equal(codexCanStart(join(dir, 'brew-codex'), noNode, 'darwin'), true);
+  writeFileSync(join(dir, 'native-codex'), Buffer.from([0xcf, 0xfa, 0xed, 0xfe]));
+  assert.equal(codexCanStart(join(dir, 'native-codex'), noNode, 'linux'), true);
+  // Windows: npm's shim needs node.exe beside it or on PATH; a codex.exe needs none.
+  const shims = join(dir, 'npm');
+  mkdirSync(shims, { recursive: true });
+  // npm's cmd-shim, as it writes codex.cmd.
+  writeFileSync(join(shims, 'codex.cmd'), '@ECHO off\r\nSETLOCAL\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n"%_prog%" "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+  // Another tool's .cmd that wraps a native binary needs no Node.
+  writeFileSync(join(dir, 'wrapper.cmd'), '@"%~dp0\\codex-native.exe" %*\r\n');
+  assert.equal(codexCanStart(join(dir, 'wrapper.cmd'), noNode, 'win32'), true);
+  assert.equal(codexCanStart(join(shims, 'codex.cmd'), noNode, 'win32'), false);
+  assert.equal(codexCanStart(join(shims, 'codex.cmd'), withNode, 'win32'), true);
+  writeFileSync(join(shims, 'node.exe'), '');
+  assert.equal(codexCanStart(join(shims, 'codex.cmd'), noNode, 'win32'), true);
+  assert.equal(codexCanStart(join(dir, 'codex.exe'), noNode, 'win32'), true);
 });

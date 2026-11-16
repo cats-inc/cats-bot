@@ -61,10 +61,14 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
 4. **A missing CLI is said where it matters, when the owner sends a message.**
    - Before a turn binds a session, the core looks for the provider's command everywhere the Runtime would: on the
      PATH the running Runtime keeps, in the common npm folders on Windows, and where the provider's installer puts
-     it, read from the install knowledge of the Runtime that runs the cat bot. On macOS and Linux an npm Codex is a
-     script that starts Node, so it also needs `node` on that PATH. A native Codex does not, and on Windows the
-     Runtime starts Codex's own binary. If what is needed is in none of these places, an owner's message gets one
-     error saying which ("Codex" or "Node.js"), with `fix: { kind: 'install_cli' }`.
+     it, read from the install knowledge of the Runtime that runs the cat bot. npm's Codex runs on Node, so it
+     also needs the Node its shim runs: `node` on that PATH for a script whose first line runs `env node`, the
+     named file for one that names it, and on Windows `node.exe` beside npm's `codex.cmd` or on PATH. A native
+     Codex needs none. If what is needed is in none of these places, an owner's message gets one error saying
+     which ("Codex" or "Node.js"), with `fix: { kind: 'install_cli' }`.
+   - A CLI that is there but fails at start is not covered: a wrapper whose own first line is a shell, such as
+     pnpm's, may still need a Node it cannot find. Its first turn then reaches a session and fails, and SPEC-001
+     keeps that session.
    - PATH alone is not enough. A hub started from Finder has no login-shell PATH, and a cat bot started after
      launch is not looked up first, yet the Runtime still launches a CLI from where its installer put it, such as
      `~/.local/bin/claude`. Claiming it missing there would hide the real error. When the core cannot tell, as with a
@@ -79,7 +83,8 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
    - A running Runtime keeps the PATH it started with. When the shell reports a folder and the running Runtime
      cannot launch the CLI with its PATH but could with the core's new one, the Runtime starts again once no turn is
      running, as for a provider change. The next message is then answered without restarting the cat bot. A check
-     that finds a CLI the Runtime already launches restarts nothing, and a report during a restart adds none.
+     that finds a CLI the Runtime already launches restarts nothing. A report during a restart adds none at once;
+     the restart's end checks the PATH again.
    - Neither the Runtime's resume error nor the CLI's own error from before any output, such as a failed spawn, is
      added beside it. The work item keeps the raw reason for the log.
    - A host that names the command itself (development, tests) is trusted. So is hosted Antigravity, which runs

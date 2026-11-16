@@ -1,4 +1,4 @@
-import { closeSync, existsSync, openSync, readSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readFileSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -82,23 +82,55 @@ export function findProviderCommand(
 }
 
 /**
- * Whether the command at `path` is a script that starts Node through its first line, as npm's `codex` is on macOS
- * and Linux, so it runs only where `node` is on PATH. A native binary, such as Homebrew's `codex`, is not.
+ * Whether the Codex found at `path` can start: npm's Codex runs on Node, and the Runtime needs it as the shim does.
+ * - On Windows, npm's `codex.cmd` runs `node.exe` from beside it or from PATH; the Runtime starts Codex's own binary
+ *   only after finding that Node, and otherwise runs the shim, which needs it too. A `codex.exe` needs none.
+ * - Elsewhere, a script whose first line runs `env node` needs `node` on PATH, and one that names Node's file needs
+ *   that file. A native binary, such as Homebrew's `codex`, needs neither.
  */
-export function runsOnNode(path: string): boolean {
+export function codexCanStart(path: string, env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): boolean {
+  if (platform === 'win32') {
+    if (!/\.(?:cmd|bat)$/iu.test(path) || !isNpmNodeShim(path)) return true;
+    return existsSync(join(dirname(path), 'node.exe')) || findOnPath('node', env, platform) !== null;
+  }
+  const node = nodeInterpreter(path);
+  if (!node) return true;
+  return node.onPath ? findOnPath('node', env, platform) !== null : existsSync(node.file);
+}
+
+/** npm's cmd-shim runs `%_prog%`, set to the `node.exe` beside it or to `node` from PATH. */
+function isNpmNodeShim(path: string): boolean {
+  try {
+    return /\bSET\s+"_prog=node"/iu.test(readFileSync(path, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
+/** How the script at `path` starts Node, from its first line: through PATH, from a named file, or not at all. */
+export function nodeInterpreter(path: string): { onPath: true } | { onPath: false; file: string } | null {
+  let line: string;
   try {
     const fd = openSync(path, 'r');
     try {
-      const head = Buffer.alloc(128);
+      const head = Buffer.alloc(256);
       const read = readSync(fd, head, 0, head.length, 0);
-      const line = head.subarray(0, read).toString('utf8').split('\n', 1)[0] ?? '';
-      return line.startsWith('#!') && /(?:^|[\s/])node(?:\s|$)/u.test(line.slice(2));
+      line = head.subarray(0, read).toString('utf8').split('\n', 1)[0] ?? '';
     } finally {
       closeSync(fd);
     }
   } catch {
-    return false;
+    return null;
   }
+  if (!line.startsWith('#!')) return null;
+  const [interpreter, ...rest] = line.slice(2).trim().split(/\s+/u);
+  if (!interpreter) return null;
+  const name = interpreter.split('/').pop();
+  if (name === 'node') return { onPath: false, file: interpreter };
+  if (name !== 'env') return null;
+  // `env [-S] [-i] [NAME=value …] node …`
+  const program = rest.find((word) => !word.startsWith('-') && !word.includes('='));
+  return program === 'node' ? { onPath: true } : null;
 }
 
 const WINDOWS_NPM_EXTENSIONS = ['.cmd', '.bat', '.exe'];

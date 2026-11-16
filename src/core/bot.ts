@@ -51,7 +51,7 @@ import {
 } from './transports/telegram.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
-import { findProviderCommand, loadInstallKnowledge, runsOnNode, type InstallKnowledgeReader } from './providers/providerCommand.ts';
+import { codexCanStart, findProviderCommand, loadInstallKnowledge, type InstallKnowledgeReader } from './providers/providerCommand.ts';
 import { runtimeCommandFor } from './runtime/providersConfig.ts';
 import { RuntimeSupervisor, resolveRuntimeEntry, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
@@ -202,6 +202,8 @@ export class BotCore implements BotHostApi {
   private installKnowledge: InstallKnowledgeReader | null = null;
   /** Why the pending Runtime restart happens, when it is not a provider change. */
   private runtimeSwapReason: string | null = null;
+  /** A CLI folder was reported while the Runtime restarted; the restart's end checks its PATH again. */
+  private runtimePathRecheck = false;
   private readonly options: BotCoreOptions;
   private readonly now: () => Date;
   private readonly log: Logger;
@@ -443,7 +445,7 @@ export class BotCore implements BotHostApi {
 
   /**
    * ADR-032: what the Runtime cannot launch for this cat bot, read with the PATH the running Runtime keeps: its CLI
-   * (not on that PATH, nor where the provider's installer puts it), or the Node an npm Codex script runs on. A host
+   * (not on that PATH, nor where the provider's installer puts it), or the Node that npm's Codex runs on. A host
    * that names the command itself (development, tests), or a Runtime without install knowledge, is trusted.
    */
   private missingCli(): { provider: string; label: string } | null {
@@ -459,10 +461,7 @@ export class BotCore implements BotHostApi {
     const env = path === undefined ? given : { ...given, PATH: path };
     const found = findProviderCommand(knowledge, cli.provider, cli.command, env);
     if (!found) return { provider: cli.provider, label: cli.label };
-    // On Windows the Runtime starts Codex's own binary from npm's package, so only macOS and Linux need Node here.
-    if (cli.provider === 'codex' && process.platform !== 'win32' && runsOnNode(found) && !findOnPath('node', env)) {
-      return { provider: cli.provider, label: 'Node.js' };
-    }
+    if (cli.provider === 'codex' && !codexCanStart(found, env)) return { provider: cli.provider, label: 'Node.js' };
     return null;
   }
 
@@ -2051,9 +2050,14 @@ export class BotCore implements BotHostApi {
    */
   private restartRuntimeFor(): void {
     const supervisor = this.supervisor;
-    // A restart already on its way launches with the PATH as it is now.
-    if (!supervisor || supervisor.state === 'stopped' || this.options.runtime?.env
-      || this.runtimeSwapPending || this.swappingRuntime) return;
+    if (!supervisor || supervisor.state === 'stopped' || this.options.runtime?.env) return;
+    // A restart not begun yet launches with the PATH as it is now. One under way may have read it before this
+    // report, so its end looks again.
+    if (this.runtimeSwapPending) return;
+    if (this.swappingRuntime) {
+      this.runtimePathRecheck = true;
+      return;
+    }
     const launched = supervisor.launchedPath;
     if (launched === null || !this.unlaunchable(launched) || this.unlaunchable()) return;
     this.log('provider CLI folder added: the runtime restarts once the running turn ends');
@@ -2205,6 +2209,10 @@ export class BotCore implements BotHostApi {
       await this.ensureRuntime();
     } finally {
       this.swappingRuntime = false;
+      if (this.runtimePathRecheck) {
+        this.runtimePathRecheck = false;
+        if (!this.stopped) this.restartRuntimeFor();
+      }
       this.pump();
     }
   }
