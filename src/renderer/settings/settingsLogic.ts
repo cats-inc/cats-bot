@@ -296,8 +296,12 @@ export function editedPages(base: BotSettings, edits: BotEdits, modelEdited: boo
   return pages;
 }
 
-/** A provider chosen: the permission choice goes with it, and desktop control where it cannot stay. */
-export function withProvider(view: BotSettings, provider: string): BotEdits {
+/**
+ * A provider chosen: the permission choice goes with it, and desktop control where it cannot stay.
+ * Choosing the saved provider again brings back what is saved, so looking at another changes nothing.
+ */
+export function withProvider(base: BotSettings, view: BotSettings, provider: string): BotEdits {
+  if (provider === base.provider) return { provider, permission: base.permission, desktopControl: base.desktopControl };
   const permission = carryChoice(view.permission, view.provider, provider);
   return {
     provider,
@@ -672,7 +676,7 @@ export function bossCatToolsHint(holder: Pick<BotRow, 'name' | 'provider' | 'pro
     case 'external':
       return { text: t('{name} runs in another program, so it does not get the Boss Cat tools. They come once Cats Bot runs it.', { name: holder.name }), warn: true };
     case 'needsAccess':
-      return { text: t('{provider} gives the Boss Cat tools once its access is set: {name}\'s Settings → Cat bot → Provider access and tools.', { provider, name: holder.name }), warn: true };
+      return { text: t('{provider} gives the Boss Cat tools once it uses its native tools: in {name}\'s Settings → Permissions, choose "Follow {provider}\'s own settings".', { provider, name: holder.name }), warn: true };
     case 'unsupported':
       return { text: t('{provider} does not support the Boss Cat tools. {name} keeps the role and gets them at its next reply after moving to another provider.', { provider, name: holder.name }), warn: true };
     default:

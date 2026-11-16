@@ -186,7 +186,7 @@ test('an untouched page saves nothing, and only what changed is sent (SPEC-002 F
   assert.deepEqual(botPatch(PROFILE, { ...view, name: '  Mochi ' }, KEEP), { name: 'Mochi' });
   assert.deepEqual(botPatch(PROFILE, view, { model: null }), { executionTarget: { provider: 'claude', model: null } });
   // A new provider takes its permission choice with it, and its policy always goes too.
-  assert.deepEqual(botPatch(PROFILE, { ...view, ...withProvider(view, 'codex') }, { model: 'gpt-6.1-sol' }),
+  assert.deepEqual(botPatch(PROFILE, { ...view, ...withProvider(view, view, 'codex') }, { model: 'gpt-6.1-sol' }),
     { executionTarget: { provider: 'codex', model: 'gpt-6.1-sol' }, providerPolicy: null });
   assert.deepEqual(botPatch(PROFILE, { ...view, cwd: '  ' }, KEEP), null, 'an emptied folder is not saved');
   const asks = withPermission(view, { ask: 'ask', level: 'full-access', network: true });
@@ -212,13 +212,13 @@ test('Claude in Chrome is saved for Claude only and turned off when the provider
   assert.equal(view.claudeInChrome, false);
   assert.deepEqual(botPatch(PROFILE, { ...view, claudeInChrome: true }, KEEP),
     { executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } });
-  assert.equal(botPatch(PROFILE, { ...view, ...withProvider(view, 'codex'), claudeInChrome: true }, { model: null })?.executionTarget?.claudeInChrome, undefined,
+  assert.equal(botPatch(PROFILE, { ...view, ...withProvider(view, view, 'codex'), claudeInChrome: true }, { model: null })?.executionTarget?.claudeInChrome, undefined,
     'never sent for another provider when it was off');
   const chrome = { ...PROFILE, executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } };
   const on = botSettings(chrome, true);
   assert.equal(on.claudeInChrome, true);
   assert.equal(botPatch(chrome, on, KEEP), null);
-  assert.deepEqual(botPatch(chrome, { ...on, ...withProvider(on, 'codex') }, { model: null }),
+  assert.deepEqual(botPatch(chrome, { ...on, ...withProvider(on, on, 'codex') }, { model: null }),
     { executionTarget: { provider: 'codex', model: null, claudeInChrome: false }, providerPolicy: null });
   const patch = botPatch(PROFILE, { ...view, claudeInChrome: true }, KEEP);
   assert.match(pendingNotice(PROFILE, { ...view, claudeInChrome: true }, patch, 'Claude Code', false).join(' '), /Claude in Chrome on/u);
@@ -228,7 +228,7 @@ test('the save bar says before saving what saving does (SPEC-002 FR-2, ADR-030)'
   const view = botSettings(PROFILE, true);
   const say = (next: typeof view, target: { model: string | null } = KEEP, floating = false) => pendingNotice(PROFILE, next, botPatch(PROFILE, next, target), 'Codex', floating).join(' ');
   assert.match(say({ ...view, instructions: 'x' }), /fresh session/u);
-  assert.match(say({ ...view, ...withProvider(view, 'codex') }, { model: null }), /Switching to Codex: the runtime restarts/u);
+  assert.match(say({ ...view, ...withProvider(view, view, 'codex') }, { model: null }), /Switching to Codex: the runtime restarts/u);
   assert.match(say({ ...view, name: 'Mochi' }), /name and look change no conversation/u);
   assert.doesNotMatch(say({ ...view, name: 'Mochi' }), /fresh session/u);
   assert.match(say({ ...view, floating: false }, KEEP, true), /name and look/u);
@@ -239,12 +239,25 @@ test('the save bar says before saving what saving does (SPEC-002 FR-2, ADR-030)'
   assert.match(pendingNotice(desktop, away, botPatch(desktop, away, KEEP), 'Claude Code', false).join(' '), /revokes every app grant/u);
 });
 
+test('looking at another provider and coming back changes nothing (ADR-030)', () => {
+  const asking = { ...PROFILE, desktopControl: { enabled: true },
+    providerPolicy: { version: 1, mode: 'explicit', access: 'full-access', network: true, approval: 'on-request' } } as BotProfile;
+  const base = botSettings(asking, true);
+  const away = { ...base, ...withProvider(base, base, 'kimi') };
+  assert.equal(away.permission.ask, 'cli');
+  assert.equal(away.desktopControl, false, 'Kimi cannot keep desktop control');
+  const back = { ...away, ...withProvider(base, away, 'claude') };
+  assert.deepEqual(back.permission, base.permission);
+  assert.equal(back.desktopControl, true);
+  assert.equal(botPatch(asking, back, KEEP), null, 'nothing to save');
+});
+
 test('the rail marks the pages with an edit not saved; an edit put back is none (ADR-030)', () => {
   const base = botSettings(PROFILE, true);
   assert.deepEqual([...editedPages(base, {}, false)], []);
   assert.deepEqual([...editedPages(base, { name: 'Mochi' }, false)], ['look']);
   assert.deepEqual([...editedPages(base, { name: PROFILE.name }, false)], [], 'put back');
-  assert.deepEqual([...editedPages(base, withProvider(base, 'codex'), false)].sort(), ['brain', 'perm']);
+  assert.deepEqual([...editedPages(base, withProvider(base, base, 'codex'), false)].sort(), ['brain', 'perm']);
   assert.deepEqual([...editedPages(base, {}, true)], ['brain'], 'a model chosen on the menu');
   assert.deepEqual([...editedPages(base, { floating: false }, false)], ['look']);
 });
@@ -377,7 +390,7 @@ test('the Boss Cat row says when its tools come, and in red only why they cannot
   const access = bossCatToolsHint({ name: 'QQ', provider: 'grok', providerLabel: 'Grok', bossCatTools: 'needsAccess' });
   assert.equal(access?.warn, true);
   assert.match(access!.text, /Grok/u);
-  assert.match(access!.text, /Provider access and tools/u);
+  assert.match(access!.text, /Settings → Permissions/u);
   const unsupported = bossCatToolsHint({ name: 'QQ', provider: 'antigravity', providerLabel: null, bossCatTools: 'unsupported' });
   assert.equal(unsupported?.warn, true);
   assert.match(unsupported!.text, /antigravity does not support/u);

@@ -92,14 +92,19 @@ unchanged.
      - Read, never change, and Codex's limit at read: no policy, with a read-only filespace.
      - Codex's limit at read and edit: no policy (Runtime runs Codex in its sandbox without asking), or an explicit
        policy once the owner sets the network.
+     - Codex's limit that still asks before tools: an explicit policy at that level with `on-request`. This is how
+       the earlier page set Codex up for desktop control. It reads as the limit with one more line in the sentence,
+       keeps desktop control, and is not rewritten. Turning desktop control on inside the limit makes the limit ask.
      - Follow its own settings: a provider policy (Codex's level is the ceiling), or no policy for Claude Code.
    - Every stored combination reads as exactly one choice, so there is no "custom" row and nothing to keep aside.
      A policy Claude Code cannot hold reads as its choice at another level, so the next save replaces it.
    - Saving an untouched page sends nothing.
    - Extras:
      - "Use Chrome or Edge" appears for Claude Code only.
-     - Desktop control appears for Claude Code and Codex where it is available, and only with Ask me first. Its
-       row offers that change.
+     - Desktop control appears for Claude Code and Codex where it is available. It can be turned on with Ask me
+       first, or inside Codex's limit, which then asks before tools; otherwise its row offers Ask me first. A switch
+       that is on can always be turned off.
+     - Choosing another provider and then the saved one again brings back the saved choice and desktop control.
      - A row that cannot apply is not shown.
 4. **The tool allowlist is gone.**
    - `permissionMode: 'whitelist'` and `allowedTools` are no longer written: not by Settings, `updateProfile`,

@@ -17,6 +17,11 @@ export interface PermissionChoice {
   level: ExecutionAccess;
   /** Null when Bot sets nothing and the CLI's own setting applies (Codex's default). */
   network: boolean | null;
+  /**
+   * Codex's limit only: it still asks before a tool, such as desktop control (an explicit policy that asks).
+   * Absent means it does not.
+   */
+  toolsAsk?: true;
 }
 
 /** The profile fields a choice is stored in. */
@@ -63,7 +68,9 @@ export function currentChoice(stored: StoredPermissions): PermissionChoice {
   if (provider === 'codex') {
     if (policy?.mode === 'explicit') {
       if (policy.access === 'full-access') return { ask: policy.approval === 'never' ? 'never' : 'ask', ...FULL };
-      return { ask: 'fence', level: policy.access, network: policy.access === 'read-only' ? false : policy.network };
+      const fence: PermissionChoice = { ask: 'fence', level: policy.access, network: policy.access === 'read-only' ? false : policy.network };
+      // Commands outside the limit are declined either way; an asking policy still asks before tools (SPEC-006 BDC-04).
+      return policy.approval === 'never' ? fence : { ...fence, toolsAsk: true };
     }
     if (policy?.mode === 'provider') {
       const level = policy.constraints.maxAccess;
@@ -78,7 +85,7 @@ export function currentChoice(stored: StoredPermissions): PermissionChoice {
 }
 
 export function sameChoice(a: PermissionChoice, b: PermissionChoice): boolean {
-  return a.ask === b.ask && a.level === b.level && a.network === b.network;
+  return a.ask === b.ask && a.level === b.level && a.network === b.network && Boolean(a.toolsAsk) === Boolean(b.toolsAsk);
 }
 
 /** A choice made for another provider, carried to the one now chosen: a default stays a default. */
@@ -117,6 +124,10 @@ function storedFor(provider: string, choice: PermissionChoice, current: StoredPe
       const network = choice.level === 'read-only' ? false : choice.level === 'full-access' ? true : choice.network === true;
       return { providerPolicy: { version: 1, mode: 'provider', constraints: { maxAccess: choice.level, network } }, ...plain };
     }
+    if (choice.toolsAsk) {
+      const network = choice.level === 'workspace-write' && choice.network === true;
+      return { providerPolicy: explicit(choice.level, network, 'on-request'), ...plain };
+    }
     if (choice.level === 'read-only') return { providerPolicy: null, workspaceAccess: 'read_only', permissionMode: 'default' };
     if (choice.network === null) return { providerPolicy: null, ...plain };
     return { providerPolicy: explicit('workspace-write', choice.network, 'never'), ...plain };
@@ -150,15 +161,22 @@ export function permissionPatch(stored: StoredPermissions, provider: string, cho
   return Object.keys(patch).length ? patch : null;
 }
 
-/** SPEC-006 BDC-04: desktop control needs a policy that asks before each action. */
+/** SPEC-006 BDC-04: desktop control needs an explicit policy that asks before each tool. */
 export function desktopControlAllowed(provider: string, choice: PermissionChoice): boolean {
-  return (provider === 'claude' || provider === 'codex') && choice.ask === 'ask';
+  return (provider === 'claude' || provider === 'codex') && choice.ask === 'ask'
+    || provider === 'codex' && choice.ask === 'fence' && choice.toolsAsk === true;
+}
+
+/** Turning desktop control on inside Codex's limit makes the limit ask before tools. */
+export function withDesktopControl(provider: string, choice: PermissionChoice): PermissionChoice {
+  if (provider !== 'codex' || choice.ask !== 'fence' || choice.toolsAsk) return choice;
+  return { ...choice, toolsAsk: true, network: choice.level === 'workspace-write' ? choice.network === true : false };
 }
 
 /** The choice moved to another level, keeping what the level allows of the network. */
 export function withLevel(choice: PermissionChoice, level: ExecutionAccess): PermissionChoice {
   const network = level === 'read-only' ? false : level === 'full-access' ? true
-    : choice.network === null ? (choice.ask === 'cli' ? false : null) : choice.network;
+    : choice.network === null ? (choice.ask === 'cli' || choice.toolsAsk ? false : null) : choice.network;
   return { ...choice, level, network };
 }
 
@@ -235,6 +253,11 @@ export function reachOf(provider: string, label: string, choice: PermissionChoic
 
 /** The sentence at the top of the tab: what the cat bot can do, in plain words. */
 export function permissionSummary(name: string, provider: string, label: string, folder: string, choice: PermissionChoice): string {
+  const said = summaryOf(name, provider, label, folder, choice);
+  return choice.ask === 'fence' && choice.toolsAsk ? `${said} ${t('It asks you before it uses a tool, such as desktop control.')}` : said;
+}
+
+function summaryOf(name: string, provider: string, label: string, folder: string, choice: PermissionChoice): string {
   const values = { name, folder, provider: label };
   switch (choice.ask) {
     case 'ask':

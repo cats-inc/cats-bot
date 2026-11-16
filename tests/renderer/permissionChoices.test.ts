@@ -11,8 +11,10 @@ import {
   defaultChoice,
   desktopControlAllowed,
   permissionPatch,
+  permissionSummary,
   reachOf,
   withAsk,
+  withDesktopControl,
   withLevel,
   type PermissionChoice,
   type StoredPermissions,
@@ -72,6 +74,8 @@ function choicesFor(provider: string): PermissionChoice[] {
         const at = withLevel(choice, level);
         out.push(at);
         if (level === 'workspace-write') for (const network of ask === 'fence' ? [null, true, false] : [true, false]) out.push({ ...at, network });
+        // Codex's limit that still asks before tools (desktop control), as the earlier page stored it.
+        if (ask === 'fence') out.push(withDesktopControl('codex', at), ...(level === 'workspace-write' ? [{ ...withDesktopControl('codex', at), network: true }] : []));
       }
     } else out.push(choice);
   }
@@ -131,10 +135,28 @@ test('a choice carried to another provider stays a default, or the nearest it of
   assert.equal(carryChoice({ ask: 'readonly', level: 'read-only', network: false }, 'claude', 'codex').level, 'read-only');
 });
 
+test('a Codex limit that asks before tools reads as itself, keeps desktop control and is not rewritten (ADR-030, SPEC-006 BDC-04)', () => {
+  // The earlier page's desktop-control setup for Codex: an explicit sandbox that asks.
+  for (const approval of ['on-request', 'untrusted'] as const) {
+    const stored: StoredPermissions = { provider: 'codex', workspaceAccess: 'read_write', permissionMode: 'default',
+      providerPolicy: { version: 1, mode: 'explicit', access: 'workspace-write', network: false, approval } };
+    const choice = currentChoice(stored);
+    assert.deepEqual(choice, { ask: 'fence', level: 'workspace-write', network: false, toolsAsk: true });
+    assert.equal(desktopControlAllowed('codex', choice), true);
+    assert.equal(permissionPatch(stored, 'codex', choice), null, 'untouched, nothing is rewritten');
+    assert.match(permissionSummary('Mochi', 'codex', 'Codex', 'work', choice), /before it uses a tool/u);
+  }
+  // Turning desktop control on inside the limit makes it ask before tools, with the network Bot then sets.
+  const plain = currentChoice({ provider: 'codex', workspaceAccess: 'read_write', permissionMode: 'default', providerPolicy: null });
+  assert.equal(desktopControlAllowed('codex', plain), false);
+  assert.deepEqual(withDesktopControl('codex', plain), { ask: 'fence', level: 'workspace-write', network: false, toolsAsk: true });
+});
+
 test('desktop control only with Ask me first; the drawing is fixed wherever the provider fixes it (ADR-030, SPEC-006 BDC-04)', () => {
   for (const provider of PROVIDERS) {
     for (const choice of choicesFor(provider)) {
-      assert.equal(desktopControlAllowed(provider, choice), (provider === 'claude' || provider === 'codex') && choice.ask === 'ask');
+      assert.equal(desktopControlAllowed(provider, choice), (provider === 'claude' || provider === 'codex') && choice.ask === 'ask'
+        || provider === 'codex' && choice.ask === 'fence' && choice.toolsAsk === true);
       const reach = reachOf(provider, provider, choice);
       if (choice.ask === 'legacy') assert.equal(reach, null);
       else if (provider !== 'codex' || choice.ask === 'ask' || choice.ask === 'never') assert.equal(reach?.locked, true, `${provider} ${choice.ask}`);

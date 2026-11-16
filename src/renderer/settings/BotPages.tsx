@@ -14,6 +14,7 @@ import {
   askTitle,
   desktopControlAllowed,
   folderName,
+  withDesktopControl,
   permissionSummary,
   reachOf,
   withAsk,
@@ -160,6 +161,8 @@ export function BotPages({
   const deskRow = settingsRow(desktop);
   const deskOffered = (view.provider === 'claude' || view.provider === 'codex') && !deskRow.hidden;
   const deskAllowed = desktopControlAllowed(view.provider, view.permission);
+  // Inside Codex's limit, turning it on makes the limit ask before tools (SPEC-006 BDC-04).
+  const deskOffer = deskAllowed || view.provider === 'codex' && view.permission.ask === 'fence';
   const browse = async () => {
     const chosen = await api.shell.chooseFolder(view.cwd);
     if (chosen) edit({ cwd: chosen });
@@ -233,7 +236,7 @@ export function BotPages({
               {providerChoices(providers, profile.executionTarget.provider).map((item) => (
                 <label key={item.id} className="setup-choice">
                   <input type="radio" name="bot-provider" value={item.id} checked={view.provider === item.id}
-                    onChange={() => edit(withProvider(view, item.id))} />
+                    onChange={() => edit(withProvider(base, view, item.id))} />
                   <strong>{item.label}</strong>
                   <small>{PROVIDER_VENDORS[item.id]}</small>
                 </label>
@@ -299,14 +302,17 @@ export function BotPages({
             )}
             {deskOffered && (
               <Row label={t('Desktop control')} htmlFor="desktop-control-enabled" warn={Boolean(deskRow.note)}
-                hint={!deskAllowed
+                hint={!deskOffer
                   ? <>{t('Only with Ask me first, since every action needs your OK.')}{' '}
                       <button type="button" className="setup-more" id="desktop-control-ask" onClick={() => edit(withPermission(view, withAsk(view.provider, view.permission, 'ask')))}>{t('Use Ask me first')}</button></>
                   : deskRow.note ?? (view.desktopControl && desktop?.enabled ? enabledNotesText(desktop)
+                    : !deskAllowed ? t('Turning it on makes Codex ask you before it uses a tool.')
                     : t('In conversations where you turn it on, it sees and uses the apps you allow, asking each time. Only messages you send from this computer can use it.'))}>
                 <input type="checkbox" className="switch" id="desktop-control-enabled" checked={view.desktopControl}
-                  disabled={!deskAllowed || deskRow.disabled && !view.desktopControl}
-                  onChange={(event) => edit({ desktopControl: event.target.checked })} />
+                  disabled={!view.desktopControl && (!deskOffer || deskRow.disabled)}
+                  onChange={(event) => edit(event.target.checked
+                    ? { desktopControl: true, permission: withDesktopControl(view.provider, view.permission) }
+                    : { desktopControl: false })} />
               </Row>
             )}
           </Group>

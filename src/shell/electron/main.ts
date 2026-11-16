@@ -1827,7 +1827,7 @@ async function main(): Promise<void> {
     from.presenter.openSettings(typeof tab === 'string' ? tab : undefined);
     return null;
   });
-  // SPEC-013 FR-13: a bot's Cat bot tab links to the agent CLIs every cat bot shares.
+  // SPEC-013 FR-13: a bot's Provider and model page links to the agent CLIs every cat bot shares.
   ipcMain.handle('shell:openAgentClis', (event) => {
     if (!ownedMainFrame(event) || !fromSettings(event)) return null;
     openHubSettings('clis');
