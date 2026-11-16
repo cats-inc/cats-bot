@@ -56,3 +56,15 @@ test('every shell channel the preload invokes has a handler in the hub', () => {
   assert.ok(channels.includes('shell:openAgentClis'));
   assert.deepEqual(channels.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
 });
+
+test('every floating Cat and quick menu channel the preload uses has a handler in the hub (ADR-027)', () => {
+  const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
+  const handlers = read('src', 'shell', 'electron', 'main.ts');
+  const preload = read('assets', 'preload.cjs');
+  const invoked = [...preload.matchAll(/invoke\('((?:floating|quickMenu):\w+)'/gu)].map((match) => match[1]!);
+  const sent = [...preload.matchAll(/send\('((?:floating|quickMenu):\w+)'/gu)].map((match) => match[1]!);
+  assert.ok(invoked.includes('floating:openQuickMenu') && invoked.includes('quickMenu:state'));
+  assert.ok(sent.includes('floating:closeQuickMenu') && sent.includes('quickMenu:choose') && sent.includes('quickMenu:close'));
+  assert.deepEqual(invoked.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
+  assert.deepEqual(sent.filter((channel) => !handlers.includes(`ipcMain.on('${channel}'`)), []);
+});

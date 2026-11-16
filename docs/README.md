@@ -167,6 +167,9 @@ input is recorded in [ADR-014](decisions/014-set-linux-avatar-input-through-the-
 and its [findings](research/2026-11-02-linux-avatar-black-area-and-clicks.md).
 Windows/macOS popup-owner focus and its native validation boundary are recorded
 in the [avatar menu findings](research/2026-11-02-avatar-menu-focus.md).
+The single-click quick menu opens in a focusable window of its own
+([ADR-027](decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md),
+[findings](research/2026-11-16-avatar-quick-menu.md)).
 macOS notes reach the desktop and wallpaper layers through window levels
 ([ADR-016](decisions/016-put-macos-notes-on-the-desktop-and-wallpaper-through-window-levels.md)).
 

@@ -230,6 +230,50 @@ typecheck and build passed. Independent code/documentation review found no block
 The native fixture used a diagnostic menu and no real Bot records. It was not a
 packaged-app or native macOS/Linux acceptance run.
 
+The floating Cat's quick menu (SPEC-002 FR-7a, ADR-027) has these unit tests:
+
+- `tests/shell/quickMenu.test.ts`:
+  - The items and their order by latest message.
+  - Contact notes are left out, and one New conversation item is added.
+  - The placement: inside the work area, clear of the Cat, on either side, on a
+    second display and on a narrow one.
+- `tests/renderer/floatingClicks.test.ts`: single and double clicks, the 300 ms
+  wait, a click while open, drags, and the switch off.
+- `tests/shell/hub.test.ts`: `floatingQuickMenu` reads as on when absent.
+
+Windows native acceptance on 2026-11-16 used Electron 41.2.0 with the built
+`FloatingBot`, `QuickMenuWindow` and `quickMenuItems`, a disposable bot, the fake
+Runtime and `SendInput`. The fixture was a throwaway script and is not in the
+repository. All 14 checks passed:
+
+1. A single click opens the menu after the wait.
+2. The items come in order.
+3. The menu stays clear of the Cat.
+4. The menu has focus.
+5. A click on the Cat closes it at once.
+6. That click neither reopens it nor opens the DM.
+7. A click on another process's window closes it.
+8. Choosing an item reports it and closes the menu.
+9. A fast double click opens the DM only.
+10. A 400 ms double click ends with the DM and no menu.
+11. Escape closes it.
+12. A reply bubble is shown.
+13. Opening the menu puts that bubble away.
+14. With the switch off, a single click opens the DM without waiting.
+
+The turn-out animation was checked from frozen frames with full motion emulated.
+
+The fixture registered its own `floating:*` and `quickMenu:*` handlers. Only type
+checks and `tests/shell/bridge.test.ts` cover these parts of `main.ts`:
+
+- its handlers, including an item opening its note and New conversation;
+- `shell:setFloatingQuickMenu`;
+- the General-tab switch.
+
+macOS, Linux's native-menu path, several displays and the packaged app were not
+run. The [quick menu findings](research/2026-11-16-avatar-quick-menu.md) record
+the fixture's guards.
+
 After building, run `electron scripts/testing/bot-interaction-acceptance.mjs`
 for the real renderer's waiting/polling/cancellation checks, including recovery
 with completion notifications deliberately suppressed. The helper creates a temporary
@@ -478,6 +522,14 @@ native/windows-desktop-control/native-check/input-check.mjs [helper.exe]`
   Electron uses to forward moves to a click-through window. Read the cat's
   rectangle from the page (`getBoundingClientRect` plus `window.screenX`,
   times `devicePixelRatio`) before pressing.
+  - That hook runs on Electron's main thread. A fixture that waits on a
+    synchronous child process (an `execFileSync` input helper) blocks it, and
+    the Cat never takes the mouse.
+  - Put a window of your own behind the Cat, and refuse to click unless the
+    window under the pointer is yours. A click the Cat does not take otherwise
+    lands on the owner's desktop.
+  - Check the owner's last input (`GetLastInputInfo`) before every run, not
+    only the first.
 - Note layers (SPEC-002 FR-8) on Windows: put the note where no application
   window covers the desktop, confirm the parent with `GetAncestor(hwnd,
 GA_PARENT)` (Explorer's icons host for desktop, its `WorkerW` for wallpaper),

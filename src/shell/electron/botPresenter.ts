@@ -29,6 +29,8 @@ export interface PresenterHost {
   isQuitting(): boolean;
   /** The hub's display language (FR-18). */
   locale(): Locale;
+  /** FR-32: whether a single click on a floating Cat opens its quick menu. */
+  floatingQuickMenu?(): boolean;
   refreshTray(): void;
   /** Every event of this bot's core, after its windows had it. */
   event?(presenter: BotPresenter, event: BotHostEvent): void;
@@ -82,6 +84,7 @@ export class BotPresenter {
       persist: () => this.windows.persist(),
       avatar: () => this.storedAvatar(),
       slot,
+      quickMenu: () => host.floatingQuickMenu?.() ?? false,
     });
   }
 

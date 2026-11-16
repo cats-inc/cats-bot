@@ -10,7 +10,7 @@
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 | **Pending change**   | [SPEC-008](SPEC-008-hub-and-bots.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
-| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011) |
+| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a) |
 
 ## Summary
 
@@ -119,7 +119,8 @@ instead of opening the alert.
 7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar
    (one per running bot under the hub, each bound to its bot, drawn in that bot's look, SPEC-008 FR-29);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
-   opens the home note; right-click opens only that Cat’s conversations, heartbeat, desktop-control
+   opens the home note, or, with the quick menu on (FR-7a), a double click does and a single click opens
+   the quick menu; right-click opens only that Cat’s conversations, heartbeat, desktop-control
    Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.
    On Windows/macOS the Cat takes focus only while its native menu is open, so an
    outside click can dismiss it; closing the menu restores the unfocusable avatar.
@@ -132,6 +133,23 @@ instead of opening the alert.
    as unread, and is marked as read only when it is focused. Linux uses startup-time
    X11/XWayland selection and bounded avatar input shapes (ADR-012); native Wayland
    does not claim global position restoration or this programmatic drag contract.
+   - FR-7a (2026-11-16, ADR-027): The quick menu, on unless Cats Bot Settings turns it off (SPEC-008 FR-32).
+     - A single click waits 300 ms for a second. A second click in that time, or any click the system
+       counts as the second of a double click, opens the home note. Otherwise the quick menu opens. A
+       click on the Cat while the menu is open closes it at once, and dragging the Cat cancels both.
+     - The menu lists the direct message first, then up to four notes, latest message first (from either
+       side; a note without messages counts from when it was made). Contact notes are left out. With
+       fewer than four notes, one New conversation item follows. Each item shows its unread count;
+       long titles are cut short.
+     - On Windows and macOS the menu is a window of its own beside the Cat. It is on the side with room
+       (left first), centred on the Cat's head and kept inside the work area of the display nearest the
+       head, without covering the Cat. Its items turn out from the head by a small angle; with reduced
+       motion they only fade in. It takes focus while open, and closes when focus goes elsewhere, on
+       Escape, on a click beside its items or on the Cat, when an item is chosen, when the Cat moves,
+       hides or is captured out of a screenshot, when the displays change, when the menu is turned
+       off, or after 60 seconds. The Cat's own window stays unfocusable.
+     - On Linux the same items are a native menu at the pointer, with no animation.
+     - Opening the menu puts the reply bubble away; a bubble that arrives while it is open waits under it.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

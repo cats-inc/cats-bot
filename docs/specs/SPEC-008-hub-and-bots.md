@@ -7,7 +7,7 @@
 | **Status** | Implemented on 2026-10-30 (PLAN-009); the release is 0.3.0 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
-| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011) |
+| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the quick menu switch (FR-32) |
 
 ## Summary
 
@@ -361,6 +361,18 @@ descriptions for the model and this documentation say "bot".
     completion. Installed tools, external workspaces, provider logins/native
     history outside Runtime and Cats Desktop data stay intact. Details and
     failure recovery are in [ADR-023](../decisions/023-persist-utility-windows-and-reset-bot-data-offline.md).
+
+### Floating Cat quick menu
+
+32. FR-32 (2026-11-16, ADR-027): Cats Bot Settings' General tab has a *Quick
+    menu on a floating cat* switch, below Start at login. It is on by default.
+    On, a single click on any bot's floating Cat opens its quick menu and a
+    double click opens the direct message (SPEC-002 FR-7a). Off, one click
+    opens the direct message at once, as before.
+    - The hub keeps it as `floatingQuickMenu` in `hub-state.json`. A file
+      without it reads as on; nothing is migrated.
+    - Changing it applies to every running Cat at once and closes an open quick
+      menu when it is turned off.
 
 ### Non-Functional Requirements
 

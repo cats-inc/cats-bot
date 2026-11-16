@@ -189,6 +189,11 @@ body.offline .cat {
   animation: rise 0.25s ease-out;
 }
 
+/* SPEC-002 FR-7a: no bubble beside an open quick menu. */
+body.menu-open .bubble {
+  display: none;
+}
+
 .bubble::after {
   content: "";
   position: absolute;
