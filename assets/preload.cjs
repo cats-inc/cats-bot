@@ -209,7 +209,7 @@ contextBridge.exposeInMainWorld('catsBot', {
       };
     },
   },
-  // ADR-026: the quick menu's own page; the shell answers no other window.
+  // ADR-027: the quick menu's own page; the shell answers no other window.
   quickMenu: {
     state() {
       return ipcRenderer.invoke('quickMenu:state');

@@ -29,7 +29,7 @@ export default defineConfig({
         note: `${root}note.html`,
         settings: `${root}settings.html`,
         floating: `${root}floating.html`,
-        // ADR-026: the floating cat's quick menu, a window of its own.
+        // ADR-027: the floating cat's quick menu, a window of its own.
         quickMenu: `${root}quickMenu.html`,
         // SPEC-003 FR-9: one overlay per display while a region screenshot is taken.
         screenshotOverlay: `${root}screenshotOverlay.html`,

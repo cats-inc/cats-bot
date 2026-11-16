@@ -1684,7 +1684,7 @@ async function main(): Promise<void> {
     void refreshTray();
     return null;
   });
-  // SPEC-002 FR-7a / ADR-026: the quick menu a single click opens. Main builds and
+  // SPEC-002 FR-7a / ADR-027: the quick menu a single click opens. Main builds and
   // translates its items; its page can only choose one of them or close it.
   const runQuickMenuItem = (presenter: BotPresenter, item: QuickMenuItem) => {
     const actions = botMenuActionsFor(() => presenter);

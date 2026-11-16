@@ -7,7 +7,7 @@
 | **Status** | Implemented on 2026-10-30 (PLAN-009); the release is 0.3.0 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before implementation |
-| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011); [ADR-026](../decisions/026-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the quick menu switch (FR-32) |
+| **Changed by** | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run and New bot page (FR-4, FR-5), makes the PowerShell scripts step optional (FR-19) and makes start at login a checkbox (FR-23) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the quick menu switch (FR-32) |
 
 ## Summary
 
@@ -364,7 +364,7 @@ descriptions for the model and this documentation say "bot".
 
 ### Floating Cat quick menu
 
-32. FR-32 (2026-11-16, ADR-026): Cats Bot Settings' General tab has a *Quick
+32. FR-32 (2026-11-16, ADR-027): Cats Bot Settings' General tab has a *Quick
     menu on a floating cat* switch, below Start at login. It is on by default.
     On, a single click on any bot's floating Cat opens its quick menu and a
     double click opens the direct message (SPEC-002 FR-7a). Off, one click

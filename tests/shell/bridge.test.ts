@@ -57,7 +57,7 @@ test('every shell channel the preload invokes has a handler in the hub', () => {
   assert.deepEqual(channels.filter((channel) => !handlers.includes(`ipcMain.handle('${channel}'`)), []);
 });
 
-test('every floating Cat and quick menu channel the preload uses has a handler in the hub (ADR-026)', () => {
+test('every floating Cat and quick menu channel the preload uses has a handler in the hub (ADR-027)', () => {
   const read = (...path: string[]) => readFileSync(join(resolve(import.meta.dirname, '..', '..'), ...path), 'utf8');
   const handlers = read('src', 'shell', 'electron', 'main.ts');
   const preload = read('assets', 'preload.cjs');

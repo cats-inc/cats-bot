@@ -73,7 +73,7 @@ const inside = (rect: { x: number; y: number; width: number; height: number }, o
 const overlaps = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
   a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 
-test('the menu opens beside a cat in its default corner, inside the work area and clear of the cat (ADR-026)', () => {
+test('the menu opens beside a cat in its default corner, inside the work area and clear of the cat (ADR-027)', () => {
   const floating = placeFloating({}, [{ bounds: area, workArea: area }], { bounds: area, workArea: area });
   const layout = quickMenuLayout(floating, area, 5);
   const cat = { x: floating.x + FLOATING_CAT.x, y: floating.y + FLOATING_CAT.y, width: FLOATING_CAT.width, height: FLOATING_CAT.height };

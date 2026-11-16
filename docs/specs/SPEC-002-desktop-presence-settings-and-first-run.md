@@ -10,7 +10,7 @@
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 | **Pending change**   | [SPEC-008](SPEC-008-hub-and-bots.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
-| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-026](../decisions/026-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a) |
+| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a) |
 
 ## Summary
 
@@ -99,7 +99,7 @@ instead of opening the alert.
    as unread, and is marked as read only when it is focused. Linux uses startup-time
    X11/XWayland selection and bounded avatar input shapes (ADR-012); native Wayland
    does not claim global position restoration or this programmatic drag contract.
-   - FR-7a (2026-11-16, ADR-026): The quick menu, on unless Cats Bot Settings turns it off (SPEC-008 FR-32).
+   - FR-7a (2026-11-16, ADR-027): The quick menu, on unless Cats Bot Settings turns it off (SPEC-008 FR-32).
      - A single click waits 300 ms for a second. A second click in that time, or any click the system
        counts as the second of a double click, opens the home note. Otherwise the quick menu opens. A
        click on the Cat while the menu is open closes it at once, and dragging the Cat cancels both.

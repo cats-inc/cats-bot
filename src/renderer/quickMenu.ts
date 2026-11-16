@@ -1,4 +1,4 @@
-// ADR-026: the floating Cat's quick menu. The shell builds, translates and places
+// ADR-027: the floating Cat's quick menu. The shell builds, translates and places
 // the items; this page draws them, turning out from the cat's head, and reports
 // which one was chosen. A click beside the items, Escape or focus leaving
 // closes it.

@@ -21,7 +21,7 @@ import { sharedX11InputShape, x11InputRects, type InputRect, type WindowInputSha
  * pointer is over the cat or its bubble, which the page reports. Linux cannot
  * forward moves through an ignored window, so there the page reports its
  * visible regions and they become the window's X11 input shape (ADR-014).
- * Its quick menu (ADR-026) is a window of its own, which closes whenever the
+ * Its quick menu (ADR-027) is a window of its own, which closes whenever the
  * cat moves, hides or goes.
  */
 
@@ -49,7 +49,7 @@ export class FloatingBot {
   private watchingDisplays = false;
   private inputShape: WindowInputShape | null | undefined;
   private inputRegions: readonly InputRect[] = [FLOATING_CAT];
-  /** ADR-026: the quick menu beside the cat (Windows and macOS). */
+  /** ADR-027: the quick menu beside the cat (Windows and macOS). */
   readonly quickMenu: QuickMenuWindow;
   /** Linux shows the quick menu as a native menu; the shell says while one is open. */
   private nativeQuickMenuOpen = false;
@@ -77,7 +77,7 @@ export class FloatingBot {
     this.sendQuickMenuState();
   }
 
-  /** ADR-026: `pressedAt` is when the click that asked for it began. */
+  /** ADR-027: `pressedAt` is when the click that asked for it began. */
   async openQuickMenu(items: QuickMenuItem[], pressedAt: number, labels: { locale: Locale; title: string }): Promise<void> {
     const window = this.browserWindow;
     if (!window || !window.isVisible() || !this.quickMenuEnabled) return;

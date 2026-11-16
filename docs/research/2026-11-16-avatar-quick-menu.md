@@ -2,7 +2,7 @@
 
 Date: 2026-11-16. Scope: Electron 41.2.0 on Windows 11 with native `SendInput`
 input, one display at scale 1. macOS and Linux are covered by API contract only.
-Evidence for [ADR-026](../decisions/026-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md).
+Evidence for [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md).
 
 ## Question
 

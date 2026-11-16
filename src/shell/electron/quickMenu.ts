@@ -4,7 +4,7 @@ import type { QuickMenuItemKind } from '../../shared/quickMenu.ts';
 import { FLOATING_CAT } from './floatingPlacement.ts';
 
 /**
- * SPEC-002 FR-7a / ADR-026: the floating Cat's quick menu, as plain data so it
+ * SPEC-002 FR-7a / ADR-027: the floating Cat's quick menu, as plain data so it
  * can be tested without Electron: what it offers and where it opens.
  */
 

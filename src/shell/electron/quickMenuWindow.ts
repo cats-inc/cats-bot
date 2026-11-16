@@ -8,7 +8,7 @@ import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { applyWindowIdentity } from './windowIdentity.ts';
 
 /**
- * SPEC-002 FR-7a / ADR-026: the floating Cat's quick menu on Windows and macOS.
+ * SPEC-002 FR-7a / ADR-027: the floating Cat's quick menu on Windows and macOS.
  * Its own transparent, topmost window beside the cat, made when it opens and
  * destroyed when it closes. Unlike the cat, it takes focus, so focus moving
  * anywhere else closes it; the cat's own window never changes focusability.
@@ -118,7 +118,7 @@ export class QuickMenuWindow {
     if (this.window !== window || window.isDestroyed()) return;
     window.show();
     // The click on the cat was this app's input, so Windows lets it take the foreground.
-    // A Mac app is made active first; the native acceptance of that is still open (ADR-026).
+    // A Mac app is made active first; the native acceptance of that is still open (ADR-027).
     if (process.platform === 'darwin') app.focus({ steal: true });
     window.focus();
     this.expiry = setTimeout(() => this.close(), QUICK_MENU_MAX_MS);

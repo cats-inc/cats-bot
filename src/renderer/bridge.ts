@@ -257,13 +257,13 @@ export interface CatsBotBridge {
     dragEnd(): void;
     activate(): Promise<null>;
     menu(): Promise<null>;
-    /** ADR-026: `pressedAt` is when the click began (ms since the epoch). */
+    /** ADR-027: `pressedAt` is when the click began (ms since the epoch). */
     openQuickMenu(pressedAt: number): Promise<null>;
     closeQuickMenu(): void;
     onQuickMenu(listener: (state: QuickMenuState) => void): Unsubscribe;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
   };
-  /** ADR-026: the quick menu's own page only. */
+  /** ADR-027: the quick menu's own page only. */
   quickMenu: {
     state(): Promise<QuickMenuView | null>;
     choose(index: number): void;

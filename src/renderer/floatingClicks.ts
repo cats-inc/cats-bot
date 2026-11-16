@@ -1,7 +1,7 @@
 import type { QuickMenuState } from '../shared/quickMenu.ts';
 
 /**
- * SPEC-002 FR-7 / ADR-026: what a click on the floating Cat does. With the hub's
+ * SPEC-002 FR-7 / ADR-027: what a click on the floating Cat does. With the hub's
  * quick menu off, every click opens the direct message, as before. With it on,
  * a single click waits to see whether a second follows: a double click opens the
  * direct message, a single one opens the quick menu, and a click while the menu

@@ -2,7 +2,7 @@
 // whether the bot is awake, thinking, asleep or has unread replies. The
 // window ignores the mouse except over the cat and the bubble; dragging moves
 // the window and a right click opens the tray menu. A click opens the home note,
-// or, with the hub's quick menu on (ADR-026), a double click does and a single
+// or, with the hub's quick menu on (ADR-027), a double click does and a single
 // click opens the quick menu (floatingClicks.ts).
 import type { RuntimeState } from '../core/types.ts';
 import { translate, type Locale } from '../shared/language.ts';

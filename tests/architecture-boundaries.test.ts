@@ -203,7 +203,7 @@ test('the renderer takes only types from the core, and nothing from Node or Elec
         const systemSettings = target === join(srcRoot, 'shared', 'systemSettings.ts');
         // The reset confirmation and request shape are shared with the host; no platform imports.
         const dataReset = target === join(srcRoot, 'shared', 'dataReset.ts');
-        // ADR-026: the floating Cat's quick menu state and view, shared by the shell, the cat and the menu page.
+        // ADR-027: the floating Cat's quick menu state and view, shared by the shell, the cat and the menu page.
         const quickMenu = target === join(srcRoot, 'shared', 'quickMenu.ts');
         if (!language && !providerTools && !avatars && !botText && !providerSetup && !heartbeatRhythm && !heartbeatTurn
           && !attachments && !screenshot && !voice && !systemSettings && !dataReset && !quickMenu

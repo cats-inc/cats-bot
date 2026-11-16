@@ -230,7 +230,7 @@ typecheck and build passed. Independent code/documentation review found no block
 The native fixture used a diagnostic menu and no real Bot records. It was not a
 packaged-app or native macOS/Linux acceptance run.
 
-The floating Cat's quick menu (SPEC-002 FR-7a, ADR-026) has these unit tests:
+The floating Cat's quick menu (SPEC-002 FR-7a, ADR-027) has these unit tests:
 
 - `tests/shell/quickMenu.test.ts`:
   - The items and their order by latest message.

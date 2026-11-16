@@ -1,4 +1,4 @@
-# ADR-026: Open the Floating Cat's Quick Menu in Its Own Focusable Window
+# ADR-027: Open the Floating Cat's Quick Menu in Its Own Focusable Window
 
 ## Status
 

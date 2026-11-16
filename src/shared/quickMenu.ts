@@ -1,6 +1,6 @@
 import type { Locale } from './language.ts';
 
-/** SPEC-002 FR-7a / ADR-026: the floating Cat's quick menu, as the shell and its pages share it. */
+/** SPEC-002 FR-7a / ADR-027: the floating Cat's quick menu, as the shell and its pages share it. */
 
 /** What the shell tells the floating Cat's page. */
 export interface QuickMenuState {
