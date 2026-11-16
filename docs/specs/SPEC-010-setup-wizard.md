@@ -157,7 +157,7 @@ persona get one rule wherever they enter.
       is advisory and must not disable Create. The row explains that setup may still need
       completing before chatting. Opening or closing the terminal never proves readiness;
       "Check again" does. Runtime still validates the actual session permissions.
-16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, in the Bot tab too:
+16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, on a cat bot's Provider and model page too:
     every catalog entry; the selected entry's controls except `request` scope; `(default)`
     on default entries and values; the first listed value when a catalog names no default;
     controls reset when the model changes; catalog text not translated. A preset field
@@ -201,6 +201,8 @@ persona get one rule wherever they enter.
     - Amended by [SPEC-013](SPEC-013-agent-clis-in-cats-bot-settings.md) FR-13 (2026-11-11): the
       Bot tab draws its provider's chain in this wizard's rows, ticks and log, may also update, and
       links to Cats Bot Settings' Agent CLIs tab, which covers every CLI the cat bots share.
+    - Amended by ADR-030 (2026-11-16): that tab is now Provider and model, whose rows each have one action
+      instead of a tick and whose log opens when asked. This wizard keeps its ticks and log.
 
 **After an install**
 

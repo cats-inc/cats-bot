@@ -90,6 +90,15 @@ function conversation(id: string, role: 'home' | 'note', unreadCount: number, ti
 
 const DESKTOP_OFF = { enabled: false, pendingRequests: 0, waitingConversationId: null, holding: [] };
 
+/** Cat menu actions that record nothing, with any of them replaced. */
+function noActions(overrides: Partial<BotMenuActions> = {}): BotMenuActions {
+  return {
+    onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
+    onArrangeNotes: () => {}, onUndoArrangement: () => {}, onHideFloating: () => {}, onStopDesktopControl: () => {},
+    ...overrides,
+  };
+}
+
 const status: BotStatus = {
   id: 'mochi',
   name: 'Mochi',
@@ -118,13 +127,9 @@ test('a contact note is listed by the other bot\'s name (SPEC-012 FR-5)', () => 
     ],
     heartbeatEnabled: true,
     awaitingOwner: 0,
-    floatingVisible: true,
     desktopControl: DESKTOP_OFF,
     locale: 'zh-TW',
-  }, {
-    onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
-    onToggleFloating: () => {}, onStopDesktopControl: () => {},
-  } as unknown as BotMenuActions);
+  }, noActions());
   const submenu = template.flatMap((item) => (item as { submenu?: Array<{ label?: string }> }).submenu ?? []);
   assert.ok(submenu.some((item) => item.label === '與 Ada 的聯絡簿 (2)'), JSON.stringify(submenu.map((item) => item.label)));
 });
@@ -137,17 +142,20 @@ test('the Cat menu operates on its own conversations, settings and heartbeat', (
     conversations: [conversation('home', 'home', 2, 'Home'), conversation('conv-1', 'note', 1, 'Scratch')],
     heartbeatEnabled: true,
     awaitingOwner: 1,
-    floatingVisible: true,
+    arrangement: { notes: 2, canUndo: true },
     desktopControl: DESKTOP_OFF,
   }, {
     onOpenConversation: (id) => clicks.push(`open:${id}`),
     onNewNote: () => clicks.push('new'),
     onOpenSettings: (tab) => clicks.push(`settings:${tab ?? 'bot'}`),
     onToggleHeartbeat: (enabled) => clicks.push(`heartbeat:${enabled}`),
-    onToggleFloating: (visible) => clicks.push(`floating:${visible}`),
+    onArrangeNotes: (kind) => clicks.push(`arrange:${kind}`),
+    onUndoArrangement: () => clicks.push('undo-arrangement'),
+    onHideFloating: () => clicks.push('hide-cat'),
     onStopDesktopControl: () => clicks.push('desktop-stop'),
   });
   const labels = template.map((item) => item.label ?? item.type);
+  // SPEC-002 FR-7: status, conversations, the Cat's windows on screen, then behaviour and settings.
   assert.deepEqual(labels, [
     'Mochi: runtime ready, 3 unread, 1 waiting for you',
     'separator',
@@ -156,39 +164,40 @@ test('the Cat menu operates on its own conversations, settings and heartbeat', (
     'New conversation',
     'Manage conversations…',
     'separator',
+    'Stack conversation windows',
+    'Spread conversation windows',
+    'Undo arrangement',
+    'Hide this cat',
+    'separator',
     'Pause own initiative',
-    'Show floating cat',
     'Cat bot settings…',
   ]);
   assert.equal(template[0]?.enabled, false);
+  assert.equal(template.some((item) => item.type === 'checkbox'), false, 'no checkbox that is always ticked');
   assert.equal(template[3]?.submenu?.[0]?.label, 'Scratch (1)');
-  template[2]!.click!();
+  for (const index of [2, 4, 5, 7, 8, 9, 10, 12, 13]) template[index]!.click!();
   template[3]!.submenu![0]!.click!();
-  template[4]!.click!();
-  template[5]!.click!();
-  template[7]!.click!();
-  template[8]!.click!();
-  template[9]!.click!();
-  assert.equal(template[8]?.checked, true);
-  assert.deepEqual(clicks, ['open:home', 'open:conv-1', 'new', 'settings:notes', 'heartbeat:false', 'floating:false', 'settings:bot']);
-  assert.equal(buildTrayTooltip({ botName: 'Mochi', status, conversations: [conversation('home', 'home', 0)], heartbeatEnabled: true, awaitingOwner: 0, floatingVisible: true, desktopControl: DESKTOP_OFF }), 'Mochi (runtime ready)');
-  const paused = buildBotMenuTemplate({ botName: 'Mochi', status: { ...status, runtime: { state: 'failed', pid: null } }, conversations: [], heartbeatEnabled: false, awaitingOwner: 0, floatingVisible: false, desktopControl: DESKTOP_OFF }, {
-    onOpenConversation: () => {}, onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {}, onToggleFloating: () => {}, onStopDesktopControl: () => {},
-  });
+  assert.deepEqual(clicks, ['open:home', 'new', 'settings:notes', 'arrange:stack', 'arrange:spread', 'undo-arrangement', 'hide-cat',
+    'heartbeat:false', 'settings:bot', 'open:conv-1']);
+  assert.equal(buildTrayTooltip({ botName: 'Mochi', status, conversations: [conversation('home', 'home', 0)], heartbeatEnabled: true, awaitingOwner: 0, desktopControl: DESKTOP_OFF }), 'Mochi (runtime ready)');
+  const paused = buildBotMenuTemplate({ botName: 'Mochi', status: { ...status, runtime: { state: 'failed', pid: null } }, conversations: [], heartbeatEnabled: false, awaitingOwner: 0, desktopControl: DESKTOP_OFF }, noActions());
   assert.equal(paused[0]?.label, 'Mochi: runtime failed, retrying');
+  const stack = paused.find((item) => item.label === 'Stack conversation windows')!;
+  const spread = paused.find((item) => item.label === 'Spread conversation windows')!;
+  assert.deepEqual([stack.enabled, spread.enabled], [false, false], 'shown but greyed out with no open note to arrange');
+  assert.equal(paused.some((item) => item.label === 'Undo arrangement'), false, 'Undo only after an arrangement');
   assert.ok(paused.some((item) => item.label === 'Resume own initiative'));
   assert.ok(!paused.some((item) => item.label === 'Start at login'));
 });
 
 test('the Cat menu opens its waiting note and stops only that Cat’s conversations', () => {
   const clicks: string[] = [];
-  const actions = {
-    onOpenConversation: (id: string) => clicks.push(`open:${id}`), onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
-    onToggleFloating: () => {}, onStopDesktopControl: () => clicks.push('desktop-stop'),
-  };
+  const actions = noActions({
+    onOpenConversation: (id: string) => clicks.push(`open:${id}`), onStopDesktopControl: () => clicks.push('desktop-stop'),
+  });
   const base = {
     botName: 'Mochi', status, conversations: [conversation('home', 'home', 0, 'Home'), conversation('conv-1', 'note', 0, 'Scratch')],
-    heartbeatEnabled: true, awaitingOwner: 0, floatingVisible: true,
+    heartbeatEnabled: true, awaitingOwner: 0,
   };
   const off = buildBotMenuTemplate({ ...base, desktopControl: DESKTOP_OFF }, actions);
   assert.ok(!off.some((item) => item.label?.includes('esktop control')), 'nothing while the profile switch is off');
@@ -206,12 +215,12 @@ test('the Cat menu opens its waiting note and stops only that Cat’s conversati
   const labels = template.map((item) => item.label ?? item.type);
   assert.deepEqual(labels.slice(0, 4), [
     'Mochi: runtime ready',
+    'Desktop control requests (2)',
     'separator',
     'Open direct message',
-    'Desktop control requests (2)',
-  ]);
+  ], 'what waits for the owner sits under the status');
   assert.ok(labels.indexOf('Stop desktop control') > labels.indexOf('Pause own initiative'));
-  template[3]!.click!();
+  template[1]!.click!();
   assert.equal(buildTrayTooltip(waiting), 'Mochi (runtime ready) - desktop control request waiting');
   const unknown = buildBotMenuTemplate({ ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: null,
     holding: [] } }, actions);
@@ -221,13 +230,12 @@ test('the Cat menu opens its waiting note and stops only that Cat’s conversati
 
 test('while the Cat holds control its menu names the app and offers Stop first', () => {
   const clicks: string[] = [];
-  const actions = {
-    onOpenConversation: (id: string) => clicks.push(`open:${id}`), onNewNote: () => {}, onOpenSettings: () => {}, onToggleHeartbeat: () => {},
-    onToggleFloating: () => {}, onStopDesktopControl: () => clicks.push('desktop-stop'),
-  };
+  const actions = noActions({
+    onOpenConversation: (id: string) => clicks.push(`open:${id}`), onStopDesktopControl: () => clicks.push('desktop-stop'),
+  });
   const base = {
     botName: 'Mochi', status, conversations: [conversation('home', 'home', 0, 'Home')],
-    heartbeatEnabled: true, awaitingOwner: 0, floatingVisible: true,
+    heartbeatEnabled: true, awaitingOwner: 0,
   };
   const holding = { ...base, desktopControl: { enabled: true, pendingRequests: 1, waitingConversationId: 'home',
     holding: [{ conversationId: 'home', app: '記事本' }, { conversationId: 'conv-1', app: '記事本' }] } };
@@ -331,14 +339,16 @@ function menuFixture(name: string, clicks: string[]) {
   const model: BotMenuModel = {
     botName: name, status: { ...status, name },
     conversations: [conversation('home', 'home', 2, 'Home')],
-    heartbeatEnabled: true, awaitingOwner: 1, floatingVisible: false, desktopControl: DESKTOP_OFF,
+    heartbeatEnabled: true, awaitingOwner: 1, desktopControl: DESKTOP_OFF,
   };
   const actions: BotMenuActions = {
     onOpenConversation: (id) => clicks.push(`${name}:open:${id}`),
     onNewNote: () => clicks.push(`${name}:new`),
     onOpenSettings: () => clicks.push(`${name}:settings`),
     onToggleHeartbeat: (enabled) => clicks.push(`${name}:heartbeat:${enabled}`),
-    onToggleFloating: (visible) => clicks.push(`${name}:floating:${visible}`),
+    onArrangeNotes: (kind) => clicks.push(`${name}:arrange:${kind}`),
+    onUndoArrangement: () => clicks.push(`${name}:undo-arrangement`),
+    onHideFloating: () => clicks.push(`${name}:hide`),
     onStopDesktopControl: () => clicks.push(`${name}:stop`),
   };
   return { model, actions };
@@ -431,6 +441,9 @@ test('both menu scopes localize product labels and preserve owner conversation t
   bot.model.conversations.push(conversation('custom', 'note', 1, 'Settings…'));
   const catMenu = buildBotMenuTemplate(bot.model, bot.actions);
   assert.ok(catMenu.some((item) => item.label === '機器貓設定…'));
+  bot.model.arrangement = { notes: 1, canUndo: true };
+  const arranged = buildBotMenuTemplate(bot.model, bot.actions).map((item) => item.label);
+  for (const label of ['堆疊對話視窗', '攤開對話視窗', '復原排列', '隱藏這隻貓']) assert.ok(arranged.includes(label), label);
   assert.ok(catMenu.some((item) => item.submenu?.some((note) => note.label === 'Settings… (1)')));
   assert.equal(catMenu.some((item) => ['設定…', '檢查更新…', '結束', '登入時啟動'].includes(item.label ?? '')), false);
   const menu = buildHubTrayMenuTemplate({ locale: 'zh-TW', bots: [bot.model], openAtLogin: false, openAtLoginAvailable: true }, hubActions(clicks));

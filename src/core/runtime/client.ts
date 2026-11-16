@@ -64,8 +64,7 @@ export interface CreateSessionRequest {
   instructions?: string;
   workspaceKind?: 'source' | 'sandbox' | 'worktree';
   workspaceAccess?: 'read_write' | 'read_only';
-  permissionMode?: 'skip' | 'whitelist' | 'default';
-  allowedTools?: string[];
+  permissionMode?: 'skip' | 'default';
   mcpServers?: RuntimeMcpServer[];
   interactionHost?: InteractionHost;
   executionPolicy?: SessionExecutionPolicy;

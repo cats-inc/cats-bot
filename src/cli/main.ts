@@ -66,7 +66,7 @@ const USAGE = `Usage: cats-bot <command> [options]
 
 Commands:
   init --name <name> --provider <provider> [--model <model>] [--id <id>] [--cwd <dir>]
-       [--instructions <text>] [--permission-mode skip|whitelist|default]
+       [--instructions <text>] [--permission-mode default|skip]
   run [--json]                           run the bot core in the foreground; a presenting host adds
        [--manager <id>] [--host-cipher <label>] [--runtime-entry <path>] [--desktop-control-helper <path>]
   say <conversation|home> <text...>      send an owner message
@@ -218,6 +218,10 @@ async function commandInit(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<
   const id = given ?? freeDerivedId(name, env);
   assertNotArchived(id, env);
   const permissionMode = flagString(parsed.flags, 'permission-mode') as PermissionMode | undefined;
+  if (permissionMode !== undefined && !['default', 'skip'].includes(permissionMode)) {
+    process.stderr.write('--permission-mode is default or skip\n');
+    return 2;
+  }
   const { profile, root } = initializeBot(resolveBotsHome(env), {
     id,
     name,

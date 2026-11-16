@@ -1103,7 +1103,15 @@ async function main(): Promise<void> {
     onToggleHeartbeat: (enabled) => {
       void target()?.core.updateProfile({ heartbeat: { enabled } }).then(refreshTray);
     },
-    onToggleFloating: (visible) => target()?.setFloatingVisible(visible),
+    // SPEC-002 FR-7b: only this Cat's notes, beside this Cat.
+    onArrangeNotes: (kind) => {
+      void target()?.arrangeNotes(kind)
+        .catch((error: unknown) => log(`arrange conversations failed: ${diagnosticError(error)}`, 'error'));
+    },
+    onUndoArrangement: () => {
+      target()?.windows.undoArrangement();
+    },
+    onHideFloating: () => target()?.setFloatingVisible(false),
     // SPEC-006 BDC-10 / SPEC-133 DC-12: every conversation; grants are revoked and helper work is cancelled.
     onStopDesktopControl: () => {
       void target()?.core.stopAllDesktopControl().then(refreshTray).catch((error: unknown) => {
@@ -1211,7 +1219,9 @@ async function main(): Promise<void> {
     await providerSetup.whenIdle();
   });
   ipcMain.handle('setup:openTerminal', async (event, provider: unknown) => {
-    if (!ownedMainFrame(event) || !fromCreate(event)) throw new Error('Provider setup is available only from Settings');
+    if (!ownedMainFrame(event) || (!fromCreate(event) && !fromSettings(event))) throw new Error('Provider setup is available only from Settings');
+    // ADR-030: a cat bot's own page signs in only to a CLI its last check found working (SPEC-013 FR-10).
+    if (!fromCreate(event) && !providerSetup.providerWorks(provider)) throw new Error('Check this computer first');
     const result = await openSignInTerminal(provider);
     if (result.command) logTerminal(setupLogTo(event), result.command, result.opened);
     return result;
@@ -1222,8 +1232,9 @@ async function main(): Promise<void> {
     return { platform: process.platform, startAtLoginOffered: false };
   });
   ipcMain.handle('setup:openCodexInitialization', async (event) => {
-    if (quitting || !ownedMainFrame(event) || !fromCreate(event) || !providerSetup.codexSelected
-      || providerSetup.busy || finishing || creating) throw new Error('Wait for the current setup operation to finish');
+    const settings = fromSettings(event) !== null;
+    if (quitting || !ownedMainFrame(event) || (!fromCreate(event) && !settings) || providerSetup.busy || finishing || creating
+      || (settings ? !providerSetup.windowsCodexWorks : !providerSetup.codexSelected)) throw new Error('Wait for the current setup operation to finish');
     const result = await openCodexInitializationTerminal();
     if (result.command) logTerminal(setupLogTo(event), result.command, result.opened);
     return result;
@@ -1817,7 +1828,7 @@ async function main(): Promise<void> {
     from.presenter.openSettings(typeof tab === 'string' ? tab : undefined);
     return null;
   });
-  // SPEC-013 FR-13: a bot's Cat bot tab links to the agent CLIs every cat bot shares.
+  // SPEC-013 FR-13: a bot's Provider and model page links to the agent CLIs every cat bot shares.
   ipcMain.handle('shell:openAgentClis', (event) => {
     if (!ownedMainFrame(event) || !fromSettings(event)) return null;
     openHubSettings('clis');

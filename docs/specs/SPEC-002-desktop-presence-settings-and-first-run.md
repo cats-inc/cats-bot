@@ -10,7 +10,7 @@
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 | **Pending change**   | [SPEC-008](SPEC-008-hub-and-bots.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
-| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a) |
+| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a); [ADR-030](../decisions/030-split-a-cat-bots-settings-into-the-wizards-pages-and-ask-two-questions-about-permissions.md) splits the Bot tab into three pages with one save bar (FR-2 to FR-4) |
 
 ## Summary
 
@@ -50,6 +50,12 @@ instead of opening the alert.
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
    provider changes, the runtime restarts only after the turn in progress ends. A change to the name or
    the Cat's look (SPEC-008 FR-29) keeps every session.
+   - Name and look, Provider and model, and Permissions (FR-4) share one save bar (ADR-030, 2026-11-16). It
+     appears with the first edit and says before saving what the save will do. A dot in the rail marks a page with
+     an edit not saved, and an edit survives a look at another tab.
+   - One `updateProfile` carries a provider together with the permissions it allows. An untouched page sends
+     nothing.
+   - Saving waits for its own fields only, never for a CLI to be installed.
 3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
    command (for example antigravity is `agy`) and whether that command is on PATH; `listModels(provider)`
    asks the running runtime for the bot's current provider and reads the catalog shipped with the
@@ -58,8 +64,14 @@ instead of opening the alert.
    uses the provider name as the command.
 4. FR-4: There is one settings window per bot, opened from the floating Cat menu ("Bot settings…", "Manage
    conversations…") and from the ⚙ in a note's title bar, which opens it on the Notes tab like "Manage
-   conversations…" (2026-11-14); its tabs are Bot, Notes, Life, Telegram and Details
-   (the floating Cat, the bot's facts and folder), and it reaches only its own bot. The Life tab holds the
+   conversations…" (2026-11-14); its tabs are Name and look, Provider and model, Permissions, Notes, Life,
+   Telegram and Details (the bot's facts and folder, and the session check), and it reaches only its own bot.
+   - The first three follow the setup wizard's order and use its controls (ADR-030, 2026-11-16).
+     - Name and look: the name, the look, the personality, the reply language and the floating Cat.
+     - Provider and model: the provider cards, the CLI on this computer and its sign-in (SPEC-013 FR-13), the model.
+     - Permissions: whether it asks before it acts and what it can reach, as SPEC-001 FR-30 describes, with Claude
+       in Chrome and desktop control (SPEC-006 BDC-02) where they apply.
+   - Opening the window on `bot`, the tab before 2026-11-16, opens Name and look. The Life tab holds the
    heartbeat switch, its mode and Cats Desktop's daily rhythm (SPEC-011 FR-12). Cats Bot Settings,
    the hub's own window (tray "Settings…"), has General (display language, reply language, start at
    login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).
@@ -120,8 +132,9 @@ instead of opening the alert.
    (one per running bot under the hub, each bound to its bot, drawn in that bot's look, SPEC-008 FR-29);
    it shows awake/thinking/asleep/unread count; it can be dragged and remembers its position; one click
    opens the home note, or, with the quick menu on (FR-7a), a double click does and a single click opens
-   the quick menu; right-click opens only that Cat’s conversations, heartbeat, desktop-control
-   Stop, visibility and bot settings. It never offers hub settings, updates, start at login or Quit.
+   the quick menu; right-click opens only that Cat’s menu (FR-7b): its conversations, arranging its
+   notes, hiding it, heartbeat, desktop-control Stop and bot settings. It never offers hub settings,
+   updates, start at login or Quit.
    On Windows/macOS the Cat takes focus only while its native menu is open, so an
    outside click can dismiss it; closing the menu restores the unfocusable avatar.
    A short bubble is shown on a new reply; it can be hidden from its own menu and from settings.
@@ -150,6 +163,32 @@ instead of opening the alert.
        off, or after 60 seconds. The Cat's own window stays unfocusable.
      - On Linux the same items are a native menu at the pointer, with no animation.
      - Opening the menu puts the reply bubble away; a bubble that arrives while it is open waits under it.
+   - FR-7b (2026-11-16): The right-click menu, in groups separated by lines:
+     - Stop desktop control first while the Cat holds it (SPEC-006 BDC-10). Then the status, with
+       the provider and desktop-control requests waiting for the owner right under it.
+     - Open direct message, the Conversations submenu, New conversation and Manage conversations….
+     - Stack conversation windows, Spread conversation windows, Undo arrangement (only after an
+       arrangement) and Hide this cat. The hub tray's Show floating cats brings the Cat back.
+     - Pause or Resume own initiative, Stop desktop control while it is on or a request waits, and
+       Cat bot settings….
+   - Stack and Spread arrange this Cat's open notes on the `normal` or `top` layer that are not
+     minimized, maximized or full screen. With none they are greyed out. Desktop and wallpaper notes,
+     and closed notes, stay as they are. The order is the quick menu's (FR-7a): the direct message,
+     then the latest message first, contact notes included.
+     - Stack puts them beside the Cat (left first, as the quick menu), centred on it and kept inside
+       the work area of its display. Each note behind sits one title bar (36 px) higher, so every
+       title shows and the front note shows whole. Top-layer notes stay in front of the others. A
+       stack too tall for the display closes up.
+     - Spread puts them in rows across the Cat's display, centred and apart, top-layer notes after
+       the others. Rows that do not fit overlap evenly, a later row in front, with each row's titles
+       showing.
+     - Neither resizes a note, takes the focus or marks anything read. The notes are raised without
+       activation and their new places are remembered; the front-to-back order is not, so the next
+       click on a note changes it. The Cat is raised again afterwards, so no note covers it.
+     - Undo arrangement puts the last arrangement's notes back, closed ones included, kept on a
+       display. Moving, resizing, maximizing or minimizing any of them, or putting one on the desktop
+       or wallpaper layer, ends it; moves the system makes in the first 400 ms after placing (another
+       display's scaling) do not. It undoes one arrangement and does not survive a restart.
 8. FR-8: The layer of each note: `normal`, `top`, `desktop`, `wallpaper`, stored in
    `shell-state.json`; on Windows `desktop` and `wallpaper` are attached under Explorer's desktop
    window (lookup rules as in desktop-work-fleet `NativeShellLayers`), re-attached after an Explorer

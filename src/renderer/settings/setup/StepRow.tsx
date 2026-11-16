@@ -32,7 +32,7 @@ export function CommandSnippet({ command, copyable = false }: { command: string;
 function CheckIcon() {
   return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5 6.5 12 13 4.5" fill="none" stroke="var(--ok)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>;
 }
-function CrossIcon() {
+export function CrossIcon() {
   return <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" fill="none" stroke="var(--danger)" strokeWidth="2" strokeLinecap="round" /></svg>;
 }
 export function WaitIcon() {
@@ -106,7 +106,7 @@ export function QueuedRow({ step, depClass, extra }: { step: SetupStep<string>; 
   return <PlainRow id={step.id} label={step.label} optional={step.optional} depClass={depClass} extra={extra} glyph={<WaitIcon />} state={t('Queued')} />;
 }
 
-function Details({ step, facts, update }: { step: SetupStep<string>; facts: StepFacts; update: boolean }) {
+export function Details({ step, facts, update }: { step: SetupStep<string>; facts: StepFacts; update: boolean }) {
   const { t } = useI18n();
   const command = update ? step.updateCommand : step.applyCommand;
   return (
