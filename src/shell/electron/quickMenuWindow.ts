@@ -92,7 +92,9 @@ export class QuickMenuWindow {
       side: layout.side,
       head: layout.head,
       item: layout.item,
-      items: items.map((item, index) => ({ kind: item.kind, label: item.label, unread: item.unread, ...layout.items[index]! })),
+      items: items.map((item, index) => ({
+        kind: item.kind, label: item.label, unread: item.unread, waiting: item.waiting, ...layout.items[index]!,
+      })),
     };
     applyWindowIdentity(window, this.options.identity);
     guardNavigation(window.webContents);

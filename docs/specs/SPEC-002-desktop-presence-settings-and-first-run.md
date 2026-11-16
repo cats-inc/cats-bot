@@ -142,6 +142,11 @@ instead of opening the alert.
        side; a note without messages counts from when it was made). Contact notes are left out. With
        fewer than four notes, one New conversation item follows. Each item shows its unread count;
        long titles are cut short.
+     - (2026-11-16) A conversation with something waiting for the owner has a "Needs you" tag beside
+       its unread count: a question or approval the bot asked, a provider request in the running turn,
+       or a desktop-control grant request. Waiting notes come before the others, so a newer note never
+       crowds one out; the direct message keeps its place first. On Linux the tag follows the title.
+       When what waits cannot be read, the menu opens without tags.
      - On Windows and macOS the menu is a window of its own beside the Cat. It is on the side with room
        (left first), centred on the Cat's head and kept inside the work area of the display nearest the
        head, without covering the Cat. Its items turn out from the head by a small angle; with reduced

@@ -20,5 +20,6 @@ export interface QuickMenuView {
   /** The cat's head in the menu window, where the items turn out from. */
   head: { x: number; y: number };
   item: { width: number; height: number };
-  items: Array<{ kind: QuickMenuItemKind; label: string; unread: number; x: number; y: number }>;
+  /** `waiting`: something in that conversation waits for the owner (SPEC-002 FR-7a). */
+  items: Array<{ kind: QuickMenuItemKind; label: string; unread: number; waiting: boolean; x: number; y: number }>;
 }
