@@ -1,5 +1,11 @@
 # Feature Specifications
 
+- [SPEC-016: Linux dictation pack and dictation language in notes](SPEC-016-linux-dictation-pack-and-dictation-language-in-notes.md)
+  — draft, 2026-11-16; ADR-029's details. Platform's pack manager and helpers are vendored verbatim
+  (no relative value imports) and the controller is ported. Packs live once per Hub, and reset keeps them.
+  Composer notices carry Open Settings. Transcription survives hiding a note, and other notes get
+  `voice_busy`. A Voice input group sits in Hub General. Implementation not authorized.
+
 - [SPEC-006: Desktop control session MCP (Windows first)](SPEC-006-desktop-control-session-mcp.md)
   — draft, 2026-10-29; a Bot-served `cats-desktop` session MCP and its own native helper,
   following Platform SPEC-133's cross-implementation contract. Owner-present turns only,
