@@ -123,6 +123,56 @@ for (const replacementPending of [false, true]) for (const condition of ['live',
   });
 }
 
+// FR-11 (2026-11-17): the owner's message may replace a session Runtime says never got a native one, when nothing
+// native exists to lose. Every condition above that shows a native session, completed messages, native history, a
+// run going on or an unknown origin or backend still keeps the mapping.
+const OWNER_REPLACES = new Set(['attempted', 'attempt_unknown', 'source_path', 'last_run']);
+for (const condition of ['live', 'closing', 'used', 'count_unknown', 'origin_unknown', 'discovered', 'backend_unknown', 'api', 'saved_native', 'observed_native', 'attempted', 'attempt_unknown', 'source_path', 'provider_path', 'current_run', 'last_run']) {
+  test(`the owner's message ${OWNER_REPLACES.has(condition) ? 'replaces' : 'keeps'} a session with no native ID when ${condition}`, async t => {
+    const f = fixture(t);
+    if (condition === 'attempted' || condition === 'attempt_unknown') f.setAttempted(condition === 'attempted' ? true : undefined);
+    f.store.setAttachment('home', { providerSessionId: condition === 'saved_native' ? 'native-home' : null, replacementPending: true });
+    f.store.append('home', { kind: 'owner', origin: 'owner', text: 'Hello before signing in' });
+    f.client.getSession = async id => ({ id, status: condition === 'live' ? 'ready' : condition === 'closing' ? 'closing' : 'closed',
+      providerName: 'codex', providerBackend: condition === 'api' ? 'api' : condition === 'backend_unknown' ? undefined : 'cli',
+      origin: condition === 'discovered' ? 'discovered' : condition === 'origin_unknown' ? undefined : 'runtime',
+      messageCount: condition === 'used' ? 1 : condition === 'count_unknown' ? undefined : 0,
+      ...(condition === 'source_path' ? { sourcePath: 'fixture-history.jsonl' } : {}),
+      ...(condition === 'provider_path' ? { providerSourcePath: 'fixture-native.jsonl' } : {}),
+      ...(condition === 'current_run' ? { inspection: { currentRun: { status: 'running' } } } : {}),
+      ...(condition === 'last_run' ? { inspection: { lastRun: { status: 'failed' } } } : {}),
+      ...(condition === 'observed_native' ? { providerSessionId: 'native-home' } : {}) });
+    f.client.resumeSession = async () => { throw new RuntimeHttpError(400, 'No provider session ID to resume', null); };
+    const bound = await f.makeBinder().bind('home', { forTurn: true, owner: true });
+    if (OWNER_REPLACES.has(condition)) {
+      assert.deepEqual(bound, { ok: true, sessionId: 'new-1', how: 'created' });
+      assert.equal(f.calls.create.length, 1);
+      // The prompt that got no reply reaches the new session through the conversation's handoff.
+      assert.match((f.calls.create[0] as { instructions: string }).instructions, /Hello before signing in/u);
+      assert.deepEqual(f.calls.retired, ['runtime-home']);
+      // Nothing native was lost: no rebuild notice, and no resume failure.
+      assert.equal(f.store.transcript('home').some(entry => /a new session starts|resume/iu.test(entry.text)), false);
+    } else {
+      assert.equal(bound.ok, condition === 'live');
+      assert.equal(f.calls.create.length, 0);
+      assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+    }
+  });
+}
+
+test('a session that never started is kept for reconcile and background turns, which say nothing about it', async t => {
+  const f = fixture(t);
+  f.setAttempted(true);
+  f.store.setAttachment('home', { providerSessionId: null });
+  f.client.getSession = async id => ({ id, status: 'closed', providerName: 'codex', providerBackend: 'cli', origin: 'runtime', messageCount: 0 });
+  f.client.resumeSession = async () => { throw new RuntimeHttpError(400, 'No provider session ID to resume', null); };
+  const binder = f.makeBinder();
+  for (const intent of [{}, { forTurn: true }, {}]) assert.equal((await binder.bind('home', intent)).ok, false);
+  assert.equal(f.calls.create.length, 0);
+  assert.equal(f.store.home().attachment.sessionId, 'runtime-home');
+  assert.equal(f.store.transcript('home').filter(entry => entry.kind === 'error').length, 0);
+});
+
 test('after reload reconcile replaces an earlier process\'s unused replacement once, then a turn recovers its own', async t => {
   const f = fixture(t);
   f.store.setAttachment('home', { providerSessionId: null, replacementPending: true });

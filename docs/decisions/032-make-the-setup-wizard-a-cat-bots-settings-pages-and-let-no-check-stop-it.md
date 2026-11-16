@@ -66,9 +66,9 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
      named file for one that names it, and on Windows `node.exe` beside npm's `codex.cmd` or on PATH. A native
      Codex needs none. If what is needed is in none of these places, an owner's message gets one error saying
      which ("Codex" or "Node.js"), with `fix: { kind: 'install_cli' }`.
-   - A CLI that is there but fails at start is not covered: a wrapper whose own first line is a shell, such as
-     pnpm's, may still need a Node it cannot find. Its first turn then reaches a session and fails, and SPEC-001
-     keeps that session.
+   - A CLI that is there but fails at start is not caught here: a wrapper whose own first line is a shell, such
+     as pnpm's, may still need a Node it cannot find. Its first turn then reaches a session and fails. Since
+     2026-11-17 the owner's next message replaces that session once the CLI works (SPEC-001 FR-11).
    - PATH alone is not enough. A hub started from Finder has no login-shell PATH, and a cat bot started after
      launch is not looked up first, yet the Runtime still launches a CLI from where its installer put it, such as
      `~/.local/bin/claude`. Claiming it missing there would hide the real error. When the core cannot tell, as with a
@@ -113,8 +113,9 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
 - Page 2 holds more than the old page 2, so it scrolls in more states at 860×640, more at 800×600, and more with the
   log open. The button bar stays in place, as on the settings page.
 - A cat bot can be created whose CLI is missing. Its first message then says so instead of answering.
-- A cat bot whose first turn reached its CLI and failed at start, rather than finding no CLI, still keeps that
-  session under SPEC-001's rule, and its later messages fail to resume. This decision does not change that rule.
+- A cat bot whose first turn reached its CLI and failed at start, rather than finding no CLI, keeps that session
+  under SPEC-001's rule. As amended on 2026-11-17 (FR-11), the owner's next message replaces it when nothing native
+  exists to lose; background work still keeps it.
 - Each row is pressed and confirmed, where several ticks used to run with one Apply. "Set up all N" covers the
   required rows.
 

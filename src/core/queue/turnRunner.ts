@@ -183,7 +183,7 @@ export class TurnRunner {
     let rebuiltAfterExit = false;
     for (let round = 0; round < 3; round += 1) {
       if (controller.signal.aborted) return { kind: 'cancelled' };
-      const bound = await this.deps.binder.bind(item.conversationId, { forTurn: true });
+      const bound = await this.deps.binder.bind(item.conversationId, { forTurn: true, owner: item.kind === 'owner_message' });
       if (!bound.ok) {
         if (bound.noCapacity && item.kind !== 'owner_message') {
           return { kind: 'retry_later', reason: 'no_capacity', retryAfterMs: this.delays.noCapacityMs };

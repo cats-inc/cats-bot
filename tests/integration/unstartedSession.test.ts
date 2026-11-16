@@ -127,3 +127,43 @@ test('a failed Codex bootstrap is not an unstarted warm session after restart', 
     home.cleanup();
   }
 });
+
+test('after a failed Codex sign-in, the owner\'s next message replaces the session that never started, and is answered', { timeout: 120_000 }, async () => {
+  const home = makeTempHome('cats-bot-signed-in-later-');
+  const options = optionsFor(home.botsHome);
+  const failing = { ...options, runtime: { ...options.runtime, env: { ...options.runtime?.env,
+    CATS_BOT_FIXTURE_CODEX_BOOTSTRAP_ERROR: 'Fixture authentication denied' } } };
+  const { core, root } = openTestBot({ botsHome: home.botsHome, profile: { provider: 'codex' }, core: failing });
+  let reopened: BotCore | undefined;
+  try {
+    await core.updateProfile({ heartbeat: { enabled: false } });
+    await core.start();
+    const failed = await sendAndWait(core, 'home', 'Hello before signing in', 60_000);
+    assert.equal(failed.state, 'failed');
+    const stuck = (await core.listConversations())[0]!.attachment;
+    assert.ok(stuck.sessionId);
+    assert.equal(stuck.providerSessionId, null);
+    await core.stop();
+
+    // The owner signs in; Cats Bot starts again.
+    reopened = BotCore.open({ root, ...options });
+    await reopened.start();
+    // Reconcile keeps the mapping (SPEC-001 FR-11), so ticks do not create a session each time.
+    assert.equal((await reopened.tick()).outcome, 'wake_failed');
+    assert.equal((await reopened.listConversations())[0]!.attachment.sessionId, stuck.sessionId);
+
+    const next = await sendAndWait(reopened, 'home', 'Hello after signing in', 60_000);
+    assert.equal(next.state, 'completed', next.error);
+    const replaced = (await reopened.listConversations())[0]!.attachment;
+    assert.notEqual(replaced.sessionId, stuck.sessionId);
+    assert.ok(replaced.providerSessionId, 'the new session started a native one');
+    assert.ok(reopened.transcript('home').some(entry => entry.kind === 'bot' && entry.workItemId === next.id));
+    // Nothing native was lost, so the owner reads no rebuild notice and no resume failure.
+    assert.equal(reopened.transcript('home').some(entry => /a new session starts|resume/iu.test(entry.text)), false,
+      reopened.transcript('home').map(entry => `${entry.kind}: ${entry.text}`).join(' | '));
+  } finally {
+    await reopened?.stop();
+    await core.stop();
+    home.cleanup();
+  }
+});

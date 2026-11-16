@@ -2,7 +2,7 @@ import type { ConversationStore } from './store.ts';
 import { buildHandoffPack, composeInstructions } from './handoff.ts';
 import { effectiveReplyLanguage } from '../profile/profile.ts';
 import { replyLanguageInstruction } from '../../shared/language.ts';
-import { RuntimeHttpError, type CreateSessionRequest, type RuntimeClient, type RuntimeMcpServer } from '../runtime/client.ts';
+import { RuntimeHttpError, type CreateSessionRequest, type RuntimeClient, type RuntimeMcpServer, type RuntimeSessionView } from '../runtime/client.ts';
 import { isProviderSessionUnavailable, REBUILT_SESSION_NOTICE } from '../runtime/providerSession.ts';
 import type { BotProfile, ConversationRecord, SessionAttachment, TranscriptEntry } from '../types.ts';
 
@@ -19,6 +19,8 @@ export type BindResult =
 interface BindIntent {
   /** A work item will send a prompt immediately after binding. */
   forTurn: boolean;
+  /** That work item is the owner's message. */
+  owner?: boolean;
 }
 
 export interface SessionBinderDependencies {
@@ -122,13 +124,14 @@ export class SessionBinder {
    * bind of the same conversation runs joins it, so the tick and a turn never
    * create two sessions and overwrite each other's attachment.
    */
-  bind(conversationId: string, options: { forTurn?: boolean } = {}): Promise<BindResult> {
+  bind(conversationId: string, options: { forTurn?: boolean; owner?: boolean } = {}): Promise<BindResult> {
     const pending = this.inFlight.get(conversationId);
     if (pending) {
       pending.intent.forTurn ||= options.forTurn === true;
+      pending.intent.owner ||= options.owner === true;
       return pending.result;
     }
-    const intent: BindIntent = { forTurn: options.forTurn === true };
+    const intent: BindIntent = { forTurn: options.forTurn === true, owner: options.owner === true };
     const run = this.bindNow(conversationId, intent).finally(() => {
       this.inFlight.delete(conversationId);
     });
@@ -174,8 +177,9 @@ export class SessionBinder {
     const id = attachment.sessionId!;
     const unchanged = () => this.deps.conversations.get(conversation.id)?.attachment.sessionId === id
       && this.deps.profile().configRevision === profile.configRevision;
+    let observed: RuntimeSessionView | undefined;
     try {
-      const observed = await client.getSession(id);
+      observed = await client.getSession(id);
       if (!unchanged()) throw new Error('Conversation binding changed during resume.');
       if (observed.id !== id || observed.providerName && observed.providerName !== attachment.provider
         || observed.providerSessionId && attachment.providerSessionId
@@ -242,10 +246,21 @@ export class SessionBinder {
       if (error instanceof RuntimeHttpError && error.status === 404 && error.message === 'Session not found') {
         return this.replaceUnavailable(client, conversation, profile, 'runtime_session_missing');
       }
+      // FR-11 (2026-11-17): Runtime says this session never got a native one, and nothing was said in it, as after
+      // a failed sign-in or a CLI that failed to start. An owner's message replaces it, so the conversation works
+      // again once the CLI does. Reconcile and background work keep the mapping, so a CLI that still fails is not
+      // created again on every tick; each owner message tries once.
+      const unstarted = error instanceof RuntimeHttpError && error.status === 400
+        && /^No provider session ID to resume\b/u.test(error.message) && neverStarted(observed, attachment);
+      if (unstarted && intent.owner) {
+        this.deps.log(`conversation ${conversation.id}: session ${id} never started a native session; the owner's message replaces it`);
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable', true, false);
+      }
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.log(`conversation ${conversation.id}: resume of ${id} failed`);
       this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
-      if (attachment.lastError !== reason) this.deps.conversations.append(conversation.id, {
+      // Such a session is replaced by the owner's next message, so the owner reads nothing about it before then.
+      if (attachment.lastError !== reason && !unstarted) this.deps.conversations.append(conversation.id, {
         kind: 'error', origin: 'system', text: `Could not resume the previous session: ${reason}`,
       });
       return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };
@@ -380,4 +395,15 @@ export class SessionBinder {
       };
     }
   }
+}
+
+/**
+ * A Runtime CLI session with no native ID on either side, no completed message, no native history file and no run
+ * going on: nothing native exists that a replacement could lose. Runtime's own history may hold the prompt that got
+ * no reply; the conversation's transcript has it too, and the replacement's handoff carries it.
+ */
+function neverStarted(observed: RuntimeSessionView | undefined, attachment: SessionAttachment): boolean {
+  return observed !== undefined && observed.origin === 'runtime' && observed.providerBackend === 'cli'
+    && observed.messageCount === 0 && !observed.providerSessionId && !attachment.providerSessionId
+    && !observed.providerSourcePath && !observed.inspection?.currentRun;
 }
