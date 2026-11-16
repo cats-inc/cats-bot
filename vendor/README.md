@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `b95d9294a91164c6225beb717e42249288594239`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-b95d9294.tgz`; 1,890,762 bytes.
-SHA-256: `838dee2cca538e019a8f8758fa5a3159ee64c5462e79422c20f3fb3197d366aa`.
+Source `7c7e9e102933fab7326bc278e7279b07d287444e`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-7c7e9e10.tgz`; 1,891,722 bytes.
+SHA-256: `b96226ff307ec684e7fef37e0d568aea40450bab6bb9c1d483e8ca78c8106ea6`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -31,6 +31,11 @@ Bot 0.5.11 selects Runtime main at `512c074713cbe563124f21c4ed9218e0b408c33f`,
 including #223 write-only OpenClaw gateway token storage. This pin does not add
 a Bot token-setting UI or change Bot profile/conversation/journal formats.
 
+Bot 0.5.12 selects that same Runtime main, `512c0747`, which had nothing after that commit at
+selection; a clean-clone rebuild reproduced the same artifact bytes.
+Bot 0.5.13 again selects that commit, still Runtime main at selection.
+Bot 0.5.14 selects it once more; a clean-clone rebuild again reproduced the same bytes.
+
 The Kimi Code selection (ADR-025) moves the pin to Runtime main at
 `b9819a6c1213aa6954babaf086d50dedbaf9ea1c`. It adds three Runtime changes:
 - #224: the Kimi Code provider, its catalog and native session management.
@@ -48,10 +53,10 @@ ADR-028 moves the pin to Runtime main at `b95d9294a91164c6225beb717e422492885942
 sends the Bot marks as owner-started, revoked by Stop. It carries #229 too, a Muse catalog-probe
 fallback that does not change Bot behavior.
 
-Bot 0.5.12 selects the same Runtime main, which had nothing after that commit at
-selection; a clean-clone rebuild reproduced the same artifact bytes.
-Bot 0.5.13 again selects that commit, still Runtime main at selection.
-Bot 0.5.14 selects it once more; a clean-clone rebuild again reproduced the same bytes.
+Bot 0.5.15 selects Runtime main at `7c7e9e102933fab7326bc278e7279b07d287444e`. Beyond the ADR-028
+pin it adds #231, a catalog-maintenance skill fix that does not reach the package, and #232, which adds
+Kimi's asking selection template and a read-only listing of every session's standing grants for Cats
+Desktop. Neither changes Bot behavior, which writes its own provider file and reads grants per session.
 
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed
