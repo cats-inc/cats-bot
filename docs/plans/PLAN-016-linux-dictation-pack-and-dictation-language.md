@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Draft; no slice authorized or started |
+| Status | In progress; Slice 0 authorized by the owner and implemented, 2026-11-16 |
 | Spec | [SPEC-016](../specs/SPEC-016-linux-dictation-pack-and-dictation-language-in-notes.md) |
 | Decision | [ADR-029](../decisions/029-dictate-on-linux-with-the-linux-stt-pack-and-choose-the-dictation-language.md) |
 | Platform plan | [PLAN-138](https://github.com/cats-inc/cats-platform/blob/main/docs/plans/PLAN-138-feature-packs-linux-dictation-and-dictation-language.md) |
@@ -35,6 +35,12 @@ The gates follow SPEC-016 FR-A4 and ADR-029 D1.
    - The existing helper build and verify scripts still pass (FR-E1).
 1. **Language slice, macOS and Windows (after G1).**
    - Refresh the vendored helpers to the Platform commit with `--list-languages`.
+     - `--refresh` rewrites every file in the cats-platform group to that
+       checkout's HEAD, so the eleven Platform scripts move with the helpers.
+     - Review their diff in the same change, or first split the helpers into
+       a cats-platform group of their own.
+     - The reverse also holds: refreshing the scripts before G1 would pull in
+       helper changes that no real Mac has accepted.
    - Add `dictationLanguage` to `hub-state.json`, with the default and
      validation (FR-D3).
    - List languages in the shell with SPEC-146 FR-3 and FR-4's timeout and
@@ -124,3 +130,4 @@ These are the owner's to perform, not agent checkboxes:
 | Date | Update |
 | --- | --- |
 | 2026-11-16 | Plan drafted; no slice started. |
+| 2026-11-16 | Slice 0: the six `native/macos-stt` and `native/windows-stt` files joined the cats-platform group of `scripts/shared-tools.provenance.json` at its existing pin `190a65e1407c1eb5d3bf5b74ebd7463c7e4e1115`. They are byte-identical to that commit and to Platform `main`, so no refresh was needed and the other pinned files are unchanged. `npm run tools:check` verifies 26 files offline, the `--source cats-inc/cats-platform=…` check against the pinned Git objects passes, `tests/shell/sharedTools.test.ts` passes 3/3, and a deliberate edit to `Program.cs` is reported as drift. The helper build and verify scripts were not run here; they need Swift (macOS) and .NET (Windows), and their inputs are byte-identical. |

@@ -130,6 +130,42 @@
           "path": "scripts/shared/source-selection.mjs",
           "sha256": "868c1eb67c85aa39c73a7e4e1c11760a9dc236abf4f6a24ac24842267955b0e6",
           "executable": false
+        },
+        {
+          "source": "desktop/native/macos-stt/Package.swift",
+          "path": "native/macos-stt/Package.swift",
+          "sha256": "7ca9fd3f7c764376715ff4ff465ab6e97076cb9bed2b2d48392ce7244cebbb6a",
+          "executable": false
+        },
+        {
+          "source": "desktop/native/macos-stt/Sources/CatsSttMacos/main.swift",
+          "path": "native/macos-stt/Sources/CatsSttMacos/main.swift",
+          "sha256": "7efe3639cfdddb39436cd4973bf153eea5110a7fb2e764684d0b86a085fb87a0",
+          "executable": false
+        },
+        {
+          "source": "desktop/native/macos-stt/Tests/CatsSttMacosTests/MicrophoneAvailabilityTests.swift",
+          "path": "native/macos-stt/Tests/CatsSttMacosTests/MicrophoneAvailabilityTests.swift",
+          "sha256": "2343d523d7997abf09fe3e9f6756d04e97989169dc3c86f7d03415cdd2ba9e32",
+          "executable": false
+        },
+        {
+          "source": "desktop/native/macos-stt/Tests/CatsSttMacosTests/RecognitionCallbackTests.swift",
+          "path": "native/macos-stt/Tests/CatsSttMacosTests/RecognitionCallbackTests.swift",
+          "sha256": "182a62ab86f7b3b6ba7396e71f2bdbf3d7918dd0fd4b57bc075e0daf851ffba3",
+          "executable": false
+        },
+        {
+          "source": "desktop/native/windows-stt/CatsSttWindows.csproj",
+          "path": "native/windows-stt/CatsSttWindows.csproj",
+          "sha256": "de641a628a834ca082aaa2767e65802f1a54ac9ba9ef0104000d44627f7c020b",
+          "executable": false
+        },
+        {
+          "source": "desktop/native/windows-stt/Program.cs",
+          "path": "native/windows-stt/Program.cs",
+          "sha256": "bd5bc107797cb22114598dee8d885dd5ebf77eb098430376f6319ac294378696",
+          "executable": false
         }
       ]
     }

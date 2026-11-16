@@ -5,6 +5,11 @@ are pinned from Platform. `scripts/shared-tools.provenance.json` records the
 complete source closure, commits, SHA-256, executable modes and producer licenses.
 Each checkout remains independently runnable.
 
+The macOS and Windows dictation helper sources under `native/macos-stt` and
+`native/windows-stt` are part of that Platform closure ([SPEC-016](../docs/specs/SPEC-016-linux-dictation-pack-and-dictation-language-in-notes.md)
+FR-A1). Change them in cats-platform's `desktop/native/` and refresh. Editing them
+here makes `npm run tools:check` report drift.
+
 | Task | Command |
 | --- | --- |
 | Restart installed Bot Hub with CDP | `./scripts/macos/restart-bot-with-cdp.sh` (9223) |
