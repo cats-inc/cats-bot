@@ -19,7 +19,7 @@ const MARKER = 'SECRET-MARKER-7f3a';
 
 function conversation(id: string, overrides: Partial<ConversationRecord> = {}): ConversationRecord {
   return {
-    schemaVersion: 1, id, role: 'note', title: id, createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
+    schemaVersion: 1, id, role: 'note', title: id, titleSource: 'owner', createdAt: '2026-11-01T00:00:00.000Z', updatedAt: '2026-11-01T00:00:00.000Z',
     attachment: { state: 'none', sessionId: null, providerSessionId: null, provider: null, model: null, configRevision: null,
       updatedAt: '2026-11-01T00:00:00.000Z' },
     unreadCount: 0, lastOwnerMessageAt: null, lastBotMessageAt: null, checkpoint: null, contactOf: null, contactName: null,
@@ -86,6 +86,19 @@ test('a board carries states, counts, times and cleaned titles, never message te
   assert.doesNotMatch(parser.title, /[‮\u0007]/u, 'control and bidirectional overrides are removed');
   assert.equal(parser.lastTurn, 'failed');
   assert.equal(cleanBoardText('a⁦b​c  d'), 'a b c d');
+});
+
+test('a title drafted from a message or named by the bot from one never leaves the bot (SPEC-012 FR-3, SPEC-002 FR-5a)', () => {
+  const at = (day: number) => `2026-11-1${day}T00:00:00.000Z`;
+  const notes = buildWorkBoard({ status, workItems: [], schedules: [], waitingInteractions: 0, now: NOW, conversations: [
+    conversation('conv-draft', { title: `${MARKER} plan a trip`, titleSource: 'draft', lastOwnerMessageAt: at(4) }),
+    conversation('conv-cat', { title: `${MARKER} Kyoto trip`, titleSource: 'cat', lastOwnerMessageAt: at(3) }),
+    conversation('conv-owner', { title: 'Taxes', titleSource: 'owner', lastOwnerMessageAt: at(2) }),
+    conversation('conv-default', { title: 'Conversation 4', titleSource: 'default', lastOwnerMessageAt: at(1) }),
+  ] }).notes;
+  assert.deepEqual(notes.map((note) => [note.id, note.title]),
+    [['conv-draft', ''], ['conv-cat', ''], ['conv-owner', 'Taxes'], ['conv-default', 'Conversation 4']]);
+  assert.doesNotMatch(JSON.stringify(notes), new RegExp(MARKER, 'u'));
 });
 
 test('the peer section names bots that need the owner, fenced, and its fingerprint ignores times (SPEC-012 FR-10, FR-11)', () => {

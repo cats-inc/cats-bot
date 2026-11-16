@@ -148,11 +148,22 @@ export interface HandoffCheckpoint {
 }
 
 /** SPEC-001 FR-9. */
+/**
+ * SPEC-002 FR-5 and FR-5a: who named a note. `default` is the name it was made with ("Conversation 3"), `draft` the
+ * start of the owner's first message, `cat` the name the bot gave it from its first exchange, `owner` a name the
+ * owner chose. Only `default` and `owner` names may leave the bot (SPEC-012 FR-3).
+ */
+export type ConversationTitleSource = 'default' | 'draft' | 'cat' | 'owner';
+
 export interface ConversationRecord {
   schemaVersion: 1;
   id: string;
   role: ConversationRole;
   title: string;
+  /** Absent in records written before 2026-11-16, and read from the title then (SPEC-002 FR-5a). */
+  titleSource: ConversationTitleSource;
+  /** How often the bot was asked to name the note; it is asked at most twice. Absent reads as 0. */
+  titleAttempts?: number;
   createdAt: string;
   updatedAt: string;
   attachment: SessionAttachment;

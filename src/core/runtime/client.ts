@@ -69,6 +69,8 @@ export interface CreateSessionRequest {
   mcpServers?: RuntimeMcpServer[];
   interactionHost?: InteractionHost;
   executionPolicy?: SessionExecutionPolicy;
+  /** `ephemeral`: the provider keeps no session of its own (Codex). */
+  providerSessionPersistence?: 'persistent' | 'ephemeral';
 }
 
 export interface SendMessageRequest {

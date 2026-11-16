@@ -64,6 +64,8 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [024](./024-show-composer-failures-as-one-composer-notice.md) | Show Composer Failures as One Composer Notice | Accepted | 2026-11-14 |
 | [025](./025-add-kimi-code-as-a-hosted-only-sixth-cli.md) | Add Kimi Code as a Hosted-Only Sixth CLI | Accepted | 2026-11-16 |
 
+| [025](./025-name-notes-from-their-first-exchange-in-a-side-session.md) | Name Notes from Their First Exchange in a Side Session | Accepted | 2026-11-16 |
+
 <!-- Add new ADRs above this line -->
 
 ## For AI Agents

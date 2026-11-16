@@ -66,6 +66,20 @@ instead of opening the alert.
 5. FR-5: The Notes tab lists all conversations (home first, the rest ordered by last activity), shows
    unread and session state; they can be opened, added, renamed (`renameConversation`, must not be
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
+   A note added without a name is "Conversation N" until FR-5a names it. A rename is the owner's name,
+   which nothing replaces.
+   - FR-5a (2026-11-16, ADR-025): A note names itself, after Cats Desktop's Catlas titles.
+     - When the owner first writes in a note still called what it was made with, the note takes the first
+       48 characters of the first owner message, without its files.
+     - After the first owner turn completes, the bot names the note from its first message and first reply
+       (2,000 characters of each). It does this in a Runtime session of its own: an empty read-only sandbox,
+       no MCP servers or tools, closed and deleted at once.
+     - The bot is asked at most twice, and its title applies only while the note still has the drafted one.
+     - The record keeps `titleSource` (`default`, `draft`, `cat` or `owner`) and `titleAttempts`. A record
+       without a source reads "Conversation" or "Conversation N" as `default` and any other note title as
+       `owner`.
+     - The direct message and contact notes are never named this way.
+     - Drafted and named titles never reach the Boss Cat (SPEC-012 FR-3).
 6. FR-6: The Telegram tab can save or remove the token (`setTelegramToken`; the token is not returned
    to the page), toggle polling, and shows the protection method, the polling state and the owner chat.
 7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar
