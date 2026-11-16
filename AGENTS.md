@@ -35,7 +35,9 @@
   or parameter properties; relative imports end in `.ts`), `@cats-inc/cats-runtime` pinned
   to the exact version in `package.json` and consumed over its process + HTTP contract.
   Electron is the first shell; desktop-layer hosts need a later ADR.
-- Test command: `npm ci && npm run typecheck && npm test && npm run build`. `npm test`
+- Full test command, which `ci.yaml` runs on every PR and release branch:
+  `npm ci && npm run typecheck && npm test && npm run build`. Locally, run only what
+  [Local Validation Scope](#local-validation-scope) selects. `npm test`
   runs `node --test` over `tests/**/*.test.ts`, including `tests/integration/` which starts
   the real pinned cats-runtime from `node_modules` with the scripted fixture CLI; tests
   only write under temporary directories and never touch the real `~/.catsbot`
@@ -107,9 +109,34 @@ Default: plan → feature/fix branch → implement → test → independent revi
 Conventional Commit → PR → merge. Follow an explicitly authorized direct-commit
 workflow when requested. Do not interpret a review request as permission to edit.
 
-Use the project's documented test command; confirm the manifest/CI configuration
-when this template still contains placeholders. Report missing tests as missing,
-not successful. New or changed behavior needs appropriate regression coverage.
+Choose local checks under [Local Validation Scope](#local-validation-scope); CI runs
+the full test command. Report missing tests as missing, not successful. New or
+changed behavior needs appropriate regression coverage.
+
+## Local Validation Scope
+
+Owner instruction, 2026-11-16, matching the workspace rule "Run CI once per
+reviewed commit". `ci.yaml` runs the full three-OS suite and build on every PR
+and release branch, so a local full run only repeats it.
+
+- **Before commit or handoff**, run the smallest validation that covers the
+  changed behavior and its consumers:
+  - Core, CLI or shell logic: `npm run typecheck` and `node --test` on the
+    affected test files.
+  - Renderer: the same typecheck, which covers `tsconfig.renderer.json`, and the
+    renderer tests the change touches.
+  - Runtime pin or another vendored dependency: run `npm ci` first, so tests
+    exercise the new artifact. Then run `tests/integration/` and the
+    release/pin tests.
+  - Documentation only: review the diff and links; no tests or builds.
+- **Never run the full `npm test` or `npm run build` locally just to commit,
+  push, open a PR, bump or publish.** Run it locally only when the owner asks,
+  to reproduce a CI failure, or when the affected scope cannot be bounded, and
+  say why first.
+- **Review first.** Finish the independent review and its fixes locally before
+  the first push, so CI runs once per reviewed commit.
+- **Report honestly.** Record the checks actually run and their results. Never
+  describe focused checks as a full-suite pass.
 
 ## Project Roles
 
