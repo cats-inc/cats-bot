@@ -15,8 +15,8 @@
 
 Cats Bot Settings gets an Agent CLIs tab. It lists every agent CLI the cat bots can use and
 what those CLIs need, in the setup wizard's rows (SPEC-010). It can install, update and sign
-in, under the wizard's rules: nothing runs until the owner asks, and only ticked rows change
-anything. Each cat bot's Provider and model page shows its own CLI in the same rows (ADR-030).
+in, under the wizard's rules: nothing runs until the owner asks, and only what the owner
+confirms changes anything (ADR-030). Each cat bot's Provider and model page shows its own CLI in the same rows (ADR-030).
 
 ## Goals
 
@@ -76,6 +76,12 @@ anything. Each cat bot's Provider and model page shows its own CLI in the same r
      again without a new tick.
    - "Tick all N required" appears from two required rows.
    - Codex waits for Node.js and the npm folder; setting up Node.js also reads what waited on it.
+   - Amended by ADR-030 (2026-11-16):
+     - A row has one action instead of a tick: Install or Set up. It opens a box under the row with the tags and
+       details above, and the box's button runs it at once.
+     - "Set up all N" replaces "Tick all N required" and asks in the same kind of box before it runs the rows
+       top down. While it runs, "Stop after this one" takes its place.
+     - Try again stays on the row the owner ran.
 8. FR-8: A working row whose helper has an update gets an Update tick at its right, after its
    version. This covers Node.js and the six CLIs, not the npm folder or PowerShell scripts.
    - Rows without one keep the column, so versions line up.
@@ -86,6 +92,8 @@ anything. Each cat bot's Provider and model page shows its own CLI in the same r
    - An update runs the helper with `-Upgrade`: through `Invoke-SetupHelper.ps1 -Upgrade` on
      Windows, and `-Upgrade -Json` on macOS and Linux.
    - Updating Node.js on Windows needs administrator rights, and the footer says Windows will ask.
+   - Amended by ADR-030 (2026-11-16): the Update tick is an Update action on the row, and "Tick all N updates" is
+     "Update all N". Both ask in a box naming the update command. "Windows will ask" is said in that box.
 9. FR-9: An update is read before and after.
    - The row then says "Updated 2.0.14 → 2.0.20", "Updated to 2.0.20" when the version before was
      unknown, or "Already the newest".
@@ -129,10 +137,10 @@ anything. Each cat bot's Provider and model page shows its own CLI in the same r
 
 **The log**
 
-14. FR-14: The Agent CLIs tab ends in the wizard's log (SPEC-010 FR-14). Any run opens it. It closes about
-    1.4 s after success, stays open after a failure, and waits while the pointer is on it.
-    - A cat bot's page shows a run's report on its row and opens the whole log beside the rows only when asked
-      ("Log (N)", with Copy all) (ADR-030, 2026-11-16).
+14. FR-14: The Agent CLIs tab ended in the wizard's log (SPEC-010 FR-14).
+    - Amended by ADR-030 (2026-11-16): the tab and a cat bot's page show a run's report on its row, and open the
+      whole log beside the rows only when asked ("Log (N)", with Copy all). Neither has a footer. The wizard keeps
+      its log across its foot.
 
 ### Non-Functional Requirements
 

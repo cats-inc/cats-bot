@@ -164,7 +164,7 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
             </button>
           ))}
         </nav>
-        <main className={tab === 'clis' ? 'panels is-flush' : 'panels'}>
+        <main className="panels">
           {scope === 'bot' && profile && (
             <BotPages profile={profile} tab={tab} onSaved={saved} onPages={setEditedPages} onBusy={setSetupRunning} />
           )}

@@ -748,38 +748,23 @@ button.quiet.danger {
   position: relative;
 }
 
-/* SPEC-013: Cats Bot Settings' Agent CLIs tab takes the panel the way the wizard takes its window. */
-.panels.is-flush {
-  display: flex;
-  flex-direction: column;
-  padding: 0;
-  overflow: hidden;
-}
-
-.clis-host {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-
+/* SPEC-013, ADR-030: Cats Bot Settings' Agent CLIs tab is a settings page like the others, its log opened on demand. */
 .clis-panel {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  max-width: 680px;
 }
 
 .clis-pane {
-  padding: 20px 28px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.clis-pane h2 {
-  margin-bottom: 2px;
+.clis-head {
+  flex-wrap: wrap;
 }
 
-.clis-panel .setup-foot {
-  padding: 8px 28px;
+.panels .clis-pane .lead {
+  margin: -6px 0 0;
 }
 /*
  * SPEC-002 FR-5: one grid for every row, so the same three controls sit in the same columns whatever the row:

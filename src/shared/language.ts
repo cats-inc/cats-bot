@@ -1057,6 +1057,13 @@ export const zhTW: Record<string, string> = {
   'Set up all {count}?': '全部設定好（{count} 項）？',
   '{step} is still running.': '{step} 還在執行。',
   'One at a time, top down. Each one is read again after it runs.': '一次一項由上往下跑，每項跑完都會重新檢查。',
+  '{label} ran, but it is not done yet. Its row has the result.': '{label} 跑完了，但還沒好。結果在它那一列。',
+  'One at a time, with a fresh check after each.': '一次一項，每項跑完都會重新檢查。',
+  'Every cat bot on this computer shares these. Nothing is checked until you ask, and nothing changes until you confirm it.': '這台電腦上的機器貓都共用這些。你按下之前什麼都不會檢查，你確認之前什麼都不會改。',
+  'Results from your check at {time}. {count} item(s) your cat bots need are not ready.': '這是你在 {time} 檢查的結果。機器貓要用的有 {count} 項還沒好。',
+  'Update all {count}': '全部更新（{count}）',
+  'Update all {count}?': '全部更新（{count} 項）？',
+  'Windows will ask for administrator permission.': 'Windows 會要求系統管理員權限。',
 };
 
 export function translate(
