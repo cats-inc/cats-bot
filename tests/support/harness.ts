@@ -1,9 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { delimiter, join, resolve } from 'node:path';
 
 import { BotCore, initializeBot, type BotCoreOptions, type InitializeBotInput } from '../../src/core/bot.ts';
 import { saveProfile } from '../../src/core/profile/profile.ts';
+import { CLI_PROVIDERS } from '../../src/core/providers/catalog.ts';
 import { botPathsFor } from '../../src/core/store/paths.ts';
 import type { BotHostEvent, WorkItem } from '../../src/core/types.ts';
 
@@ -77,6 +78,21 @@ export interface TestBotOptions {
   awake?: boolean;
 }
 
+let standIns: string | null = null;
+/**
+ * The fake runtime launches no CLI. Empty stand-ins on its PATH keep a failed turn from reading as a missing CLI
+ * (ADR-032) on a machine that has none installed.
+ */
+function withStandInClis(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  if (!standIns) {
+    const dir = mkdtempSync(join(tmpdir(), 'cats-bot-stand-in-clis-'));
+    for (const { command } of CLI_PROVIDERS) writeFileSync(join(dir, command), '');
+    process.once('exit', () => rmSync(dir, { recursive: true, force: true }));
+    standIns = dir;
+  }
+  return { ...env, PATH: [standIns, env.PATH ?? env.Path ?? ''].join(delimiter) };
+}
+
 /** A bot on the fake runtime unless `core.runtime.runtimeEntry` says otherwise. */
 export function openTestBot(options: TestBotOptions): { core: BotCore; root: string } {
   const id = options.id ?? 'testbot';
@@ -89,6 +105,7 @@ export function openTestBot(options: TestBotOptions): { core: BotCore; root: str
   if (options.awake !== false) {
     saveProfile(botPathsFor(root), { ...profile, heartbeat: { ...profile.heartbeat, ...awakeNow(options.core?.now?.() ?? new Date(), { sinceWake: 5 * 60, untilBed: 12 * 60 }) } });
   }
+  const fakeRuntime = (options.core?.runtime?.runtimeEntry ?? fakeRuntimeEntry) === fakeRuntimeEntry;
   const core = BotCore.open({
     root,
     log: () => {},
@@ -96,7 +113,7 @@ export function openTestBot(options: TestBotOptions): { core: BotCore; root: str
       runtimeEntry: fakeRuntimeEntry,
       readyTimeoutMs: 15_000,
       stopTimeoutMs: 3_000,
-      env: { ...process.env, ...options.runtimeEnv },
+      env: fakeRuntime ? withStandInClis({ ...process.env, ...options.runtimeEnv }) : { ...process.env, ...options.runtimeEnv },
       ...options.core?.runtime,
     },
     handoffPollMs: 100,

@@ -58,39 +58,20 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
      running, then looks, read-only, where the chosen CLI is (`prepareEnvironment`). That puts its folder on the PATH
      the new core inherits, as a check on page 2 would have, because the Runtime can find a CLI outside PATH where
      its installer puts it.
-4. **A missing CLI is said where it matters, when the owner sends a message.**
-   - Before a turn binds a session, the core looks for the provider's command everywhere the Runtime would: on the
-     PATH the running Runtime keeps, in the common npm folders on Windows, and where the provider's installer puts
-     it, read from the install knowledge of the Runtime that runs the cat bot. npm's Codex runs on Node, so it
-     also needs the Node its shim runs: `node` on that PATH for a script whose first line runs `env node`, the
-     named file for one that names it, and on Windows `node.exe` beside npm's `codex.cmd` or on PATH. A native
-     Codex needs none. If what is needed is in none of these places, an owner's message gets one error saying
-     which ("Codex" or "Node.js"), with `fix: { kind: 'install_cli' }`.
-   - A CLI that is there but fails at start is not caught here: a wrapper whose own first line is a shell, such
-     as pnpm's, may still need a Node it cannot find. Its first turn then reaches a session and fails. Since
-     2026-11-17 the owner's next message replaces that session once the CLI works (SPEC-001 FR-11).
-   - PATH alone is not enough. A hub started from Finder has no login-shell PATH, and a cat bot started after
-     launch is not looked up first, yet the Runtime still launches a CLI from where its installer put it, such as
-     `~/.local/bin/claude`. Claiming it missing there would hide the real error. When the core cannot tell, as with a
-     Runtime that carries no install knowledge, it says nothing is missing.
-   - The note shows it as "{provider} is not on this computer, so this message got no reply." with "Open Provider
-     and model", which opens the cat bot's own settings on that page.
-   - No session is created or resumed while the CLI cannot be launched. The turn fails before it binds, and
-     reconciliation backs off as for a failed wake (SPEC-001 FR-11). A first turn that reached a session without
-     its CLI would leave one with no native ID. SPEC-001 keeps that mapping after an attempted turn, so every later
-     message failed with "resume failed: No provider session ID to resume", even after the CLI was installed and
-     Cats Bot restarted.
-   - A running Runtime keeps the PATH it started with. When the shell reports a folder and the running Runtime
-     cannot launch the CLI with its PATH but could with the core's new one, the Runtime starts again once no turn is
-     running, as for a provider change. The next message is then answered without restarting the cat bot. A check
-     that finds a CLI the Runtime already launches restarts nothing. A report during a restart adds none at once;
-     the restart's end checks the PATH again.
-   - Neither the Runtime's resume error nor the CLI's own error from before any output, such as a failed spawn, is
-     added beside it. The work item keeps the raw reason for the log.
-   - A host that names the command itself (development, tests) is trusted. So is hosted Antigravity, which runs
-     its ACP server rather than `agy`, so installing `agy` may not provide it. Heartbeats and schedules stay quiet.
-   - The install knowledge is read from the Runtime's package by path, as `resolveRuntimeEntry` finds its entry,
-     because the Runtime does not export it. Its pinned version is exact, and a test fails if the file moves.
+4. **A missing CLI is said where it matters, when the owner sends a message.** It only words the failure;
+   nothing waits on it or is held back by it. Cats Bot cannot control how owners install or remove a CLI.
+   - When an owner's message fails and the provider's command is not on the PATH the core gives the Runtime, the
+     conversation gets one error saying so, with `fix: { kind: 'install_cli' }`. The note shows it as "{provider}
+     is not on this computer, so this message got no reply." with "Open Provider and model", which opens the cat
+     bot's own settings on that page.
+   - The CLI's own error from before any output, such as a failed spawn, is not added beside it. The work item
+     keeps the raw reason for the log.
+   - The check is PATH only. A CLI the Runtime still finds outside PATH, where its installer puts it, can be named
+     missing when a message fails for another reason; the button still leads to the right page.
+   - A host that names the command itself (development, tests) is trusted. Heartbeats and schedules stay quiet.
+   - Once the CLI works, the owner's next message is answered: its first turn left a session with no native ID,
+     which the owner's message replaces (SPEC-001 FR-11, 2026-11-17). A CLI installed where the running Runtime
+     cannot see it is found after the cat bot restarts.
 5. **Page 3 says what the cat bot may do.** It shows the sentence the cat bot's Permissions page starts with, for
    the provider's default, which is not changed (ADR-030). Creation takes no permission input.
 6. **The reassuring lines are gone.**
@@ -123,7 +104,6 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
 
 - A transcript entry may carry `fix`. Older versions ignore the field and show the entry's English text.
 - `canCreateFromSetup`, the tick helpers and the ticking row are removed.
-- Installing a CLI another cat bot uses can restart that cat bot's Runtime once, when it could not find that CLI.
 
 ## Alternatives Considered
 

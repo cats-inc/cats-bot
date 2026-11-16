@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
-import { HOSTED_PROVIDER_POLICY } from '../../src/shared/providerTools.ts';
 import { makeTempHome, openTestBot, sendAndWait } from '../support/harness.ts';
 
 /**
@@ -56,64 +55,24 @@ function failingCli(dir: string, command: string): void {
   writeFileSync(join(dir, `${command}.cmd`), `@echo ${command}: failing on purpose 1>&2\r\n@exit /b 1\r\n`);
 }
 
-// The Runtime launches a CLI on PATH, or one where its installer puts it although PATH does not lead there, as for
-// a hub started from Finder whose cat bot was not looked up first. Either way the turn keeps its own error.
-for (const [where, provider, place] of [
-  ['on PATH', 'codex', (home: string) => join(home, 'bin')],
-  ['where its installer puts it, off PATH', 'claude', (home: string) => join(home, '.local', 'bin')],
-] as const) {
-  test(`a cat bot whose CLI is ${where} keeps its own error when a message fails, with no install line`, async () => {
-    const home = makeTempHome('cats-bot-present-cli-');
-    const projects = join(home.botsHome, 'projects');
-    mkdirSync(projects, { recursive: true });
-    const bin = place(home.botsHome);
-    failingCli(bin, provider);
-    const path = where === 'on PATH' ? bin : join(home.botsHome, 'no-clis');
-    const { core } = openTestBot({
-      botsHome: home.botsHome, id: 'present', profile: { provider },
-      core: {
-        runtime: {
-          runtimeEntry: resolveRuntimeEntry(), readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
-          instanceExtras: { projects_dir: projects },
-          env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: path,
-            APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
-            XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') },
-        },
-      },
-    });
-    await core.start();
-    try {
-      const turn = await sendAndWait(core, 'home', 'hello', 60_000);
-      assert.equal(turn.state, 'failed');
-      const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
-      assert.ok(errors.length > 0, 'the failure is written');
-      assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
-      // The Runtime launched the stand-in: the core and the Runtime agree that it is there.
-      if (process.platform !== 'win32') assert.ok(existsSync(join(bin, 'ran')), 'the Runtime launched the stand-in');
-    } finally {
-      await core.stop();
-    }
-  });
-}
-
-// Hosted Antigravity runs its ACP server, not `agy`; installing `agy` may not provide it, so nothing is claimed.
-test('a hosted Antigravity cat bot keeps its own error when a message fails, with no install line', async () => {
-  const home = makeTempHome('cats-bot-hosted-antigravity-');
+test('a cat bot whose CLI is on this computer keeps its own error when a message fails, with no install line', async () => {
+  const home = makeTempHome('cats-bot-present-cli-');
   const projects = join(home.botsHome, 'projects');
   mkdirSync(projects, { recursive: true });
+  const bin = join(home.botsHome, 'bin');
+  failingCli(bin, 'codex');
   const { core } = openTestBot({
-    botsHome: home.botsHome, id: 'hosted', profile: { provider: 'antigravity' },
+    botsHome: home.botsHome, id: 'present', profile: { provider: 'codex' },
     core: {
       runtime: {
         runtimeEntry: resolveRuntimeEntry(), readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
         instanceExtras: { projects_dir: projects },
-        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: join(home.botsHome, 'no-clis'),
+        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: bin,
           APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
           XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') },
       },
     },
   });
-  await core.updateProfile({ providerPolicy: HOSTED_PROVIDER_POLICY });
   await core.start();
   try {
     const turn = await sendAndWait(core, 'home', 'hello', 60_000);
@@ -121,6 +80,7 @@ test('a hosted Antigravity cat bot keeps its own error when a message fails, wit
     const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
     assert.ok(errors.length > 0, 'the failure is written');
     assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
+    if (process.platform !== 'win32') assert.ok(existsSync(join(bin, 'ran')), 'the Runtime launched the stand-in');
   } finally {
     await core.stop();
   }

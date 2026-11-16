@@ -175,10 +175,6 @@ export class TurnRunner {
     if (!client) {
       return { kind: 'retry_later', reason: 'runtime_unavailable', retryAfterMs: this.delays.runtimeUnavailableMs };
     }
-    // ADR-032: no session is created or resumed for a CLI the Runtime cannot launch. A session whose first turn
-    // found no CLI never gets a native one, so it could never be resumed, and every later message would fail on it.
-    const missing = this.deps.missingCli?.();
-    if (missing) return { kind: 'failed', reason: `${missing.label} is not on this computer.` };
     let resumedAfterNoWorker = false;
     let rebuiltAfterExit = false;
     // SPEC-001 FR-11: an owner's message replaces a session that never started at most once, and not after it made
@@ -537,11 +533,17 @@ export class TurnRunner {
     };
     const extra = this.deps.prepareSend ? await this.deps.prepareSend(item, sessionId) : {};
     if (controller.signal.aborted) return { kind: 'cancelled' };
+    // ADR-032: an owner's message that got nothing because its CLI is missing says so once (`explainMissingCli`),
+    // in place of the CLI's own errors, such as a failed spawn.
+    const flushPending = () => {
+      if (!produced && item.kind === 'owner_message' && this.deps.missingCli?.()) pendingErrors.length = 0;
+      for (const pending of pendingErrors.splice(0)) appendError(pending);
+    };
     let outcome;
     try {
       outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal, () => this.deps.accepted?.(item));
     } catch (error) {
-      for (const pending of pendingErrors.splice(0)) appendError(pending);
+      flushPending();
       presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed', this.deps.now());
       publishPresentation();
       throw error;
@@ -554,7 +556,7 @@ export class TurnRunner {
       this.deps.log(`turn ${item.id}: ${pendingErrors.length} error(s) before any output are not kept; the turn is sent again`);
       pendingErrors.length = 0;
     } else {
-      for (const pending of pendingErrors.splice(0)) appendError(pending);
+      flushPending();
     }
     const text = textParts.join('').trim();
     if (!outcome.completed && !controller.signal.aborted && unavailable) {

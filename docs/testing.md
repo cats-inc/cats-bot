@@ -805,24 +805,6 @@ failure/retry, explicit download, progress, reload persistence and cancelled or
 confirmed fixture installation. No provider, real profile or installer is used;
 screenshots/results stay in ignored `tmp/updates-renderer-*` directories.
 
-Desktop parity acceptance uses two separate Electron processes after a build:
-
-```bash
-node node_modules/electron/cli.js scripts/test-desktop-parity.mjs
-node node_modules/electron/cli.js scripts/test-desktop-parity.mjs --restore tmp/desktop-parity-<printed-id>
-```
-
-The first process exercises provider-first setup with deterministic missing/installed
-helpers, exact model/effort menus, selection persistence, legacy-target preservation,
-live language switching, tooltip removal and a close followed by a delayed startup
-restore through the real note/preload. It writes mixed visible/hidden windows
-and an all-hidden state. The second process confirms all-hidden startup, then
-restores mixed bounds/layers and the avatar from disk. Windows includes native
-Explorer desktop/wallpaper attachment; other OSes exercise normal/top only.
-`--native-dialog` also opens a real localized tray update result and waits for the
-operator or a scoped native UI driver to dismiss it. It asserts no Settings window
-was opened. Screenshots and JSON evidence stay in ignored `tmp/`.
-
 The helper runner/unit tests verify fixed arguments, prerequisite order, restart
 and failure handling, mutual exclusion, startup PATH recovery and source hashes.
 On macOS/Linux they also run the packaged Node → npm-folder → Codex checks with

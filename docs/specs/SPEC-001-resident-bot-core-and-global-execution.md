@@ -179,11 +179,6 @@ freeze of the storage format.
     a time: when the reconciliation tick and a turn bind at the same time they share one result, and do not
     each create a session that overwrites the other's attachment; the handoff pack does not include owner
     messages still `queued` / `running`, which are sent in as messages.
-    - ADR-032 (2026-11-16): while the provider's CLI cannot be launched (neither on the PATH the core gives the
-      Runtime nor where the Runtime's install knowledge says its installer puts it), no session is created or
-      resumed. A turn fails before it binds, and reconciliation backs off as for a failed wake. A first turn
-      that found no CLI would otherwise leave an attempted session with no native ID, whose mapping the rules
-      above keep, and every later message would fail on it.
     - 2026-11-17, at the owner's request: an owner's message may replace a session that Runtime refuses to
       resume with `400 No provider session ID to resume`, when nothing in it can be resumed. That means a
       Runtime-origin CLI record with no native ID in either the attachment or Runtime, zero completed
