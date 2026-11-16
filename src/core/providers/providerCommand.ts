@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { closeSync, existsSync, openSync, readSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -44,11 +44,24 @@ export function canFindProviderCommand(
   env: NodeJS.ProcessEnv,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  if (findOnPath(command, env, platform)) return true;
+  return findProviderCommand(knowledge, provider, command, env, platform) !== null;
+}
+
+/** Where `canFindProviderCommand` finds the command, or null. */
+export function findProviderCommand(
+  knowledge: InstallKnowledgeReader,
+  provider: string,
+  command: string,
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): string | null {
+  const onPath = findOnPath(command, env, platform);
+  if (onPath) return onPath;
   const windows = platform === 'win32';
   const read = (name: string) => envValue(env, name, windows);
   // The Runtime looks in the common npm folders with a fixed list of extensions, whatever PATHEXT says.
-  if (windows && commandIn(command, npmFolders(read), env, platform, WINDOWS_NPM_EXTENSIONS)) return true;
+  const inNpm = windows ? commandIn(command, npmFolders(read), env, platform, WINDOWS_NPM_EXTENSIONS) : null;
+  if (inNpm) return inNpm;
   const dirs: string[] = [];
   let check: InstallKnowledge['check'];
   try {
@@ -60,12 +73,32 @@ export function canFindProviderCommand(
   // The expected path names the stock binary, so its folder holds the command under one of its extensions.
   const expected = check?.expectedPaths?.[target];
   const expectedPath = expected ? expandInstallPath(expected, read) : null;
-  if (expectedPath && commandBaseName(expectedPath) === command.toLowerCase() && existsSync(expectedPath)) return true;
+  if (expectedPath && commandBaseName(expectedPath) === command.toLowerCase() && existsSync(expectedPath)) return expectedPath;
   if (expectedPath) dirs.push(dirname(expectedPath));
   const hint = check?.pathHints?.[target]?.directoryHint;
   const hintPath = hint ? expandInstallPath(hint, read) : null;
   if (hintPath) dirs.push(hintPath);
-  return commandIn(command, dirs, env, platform) !== null;
+  return commandIn(command, dirs, env, platform);
+}
+
+/**
+ * Whether the command at `path` is a script that starts Node through its first line, as npm's `codex` is on macOS
+ * and Linux, so it runs only where `node` is on PATH. A native binary, such as Homebrew's `codex`, is not.
+ */
+export function runsOnNode(path: string): boolean {
+  try {
+    const fd = openSync(path, 'r');
+    try {
+      const head = Buffer.alloc(128);
+      const read = readSync(fd, head, 0, head.length, 0);
+      const line = head.subarray(0, read).toString('utf8').split('\n', 1)[0] ?? '';
+      return line.startsWith('#!') && /(?:^|[\s/])node(?:\s|$)/u.test(line.slice(2));
+    } finally {
+      closeSync(fd);
+    }
+  } catch {
+    return false;
+  }
 }
 
 const WINDOWS_NPM_EXTENSIONS = ['.cmd', '.bat', '.exe'];

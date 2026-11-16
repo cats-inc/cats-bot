@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { canFindProviderCommand, loadInstallKnowledge } from '../../src/core/providers/providerCommand.ts';
+import { canFindProviderCommand, loadInstallKnowledge, runsOnNode } from '../../src/core/providers/providerCommand.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { fakeRuntimeEntry, makeTempHome } from '../support/harness.ts';
 
@@ -68,4 +68,18 @@ test('on Windows the Runtime\'s own lookups count whatever PATHEXT says, and PAT
   mkdirSync(shims, { recursive: true });
   writeFileSync(join(shims, 'kimi.cmd'), '');
   assert.equal(canFindProviderCommand(knowledge, 'kimi', 'kimi', { ...env, PATHEXT: '', Path: `${join(home, 'no-clis')}; ${shims} ` }, 'win32'), true);
+});
+
+test('a script whose first line starts Node runs on Node; a shell script or a native binary does not', () => {
+  const dir = makeTempHome('cats-bot-runs-on-node-').botsHome;
+  const file = (name: string, content: string | Buffer) => {
+    writeFileSync(join(dir, name), content);
+    return join(dir, name);
+  };
+  assert.equal(runsOnNode(file('npm-codex', '#!/usr/bin/env node\nrequire("./bin")\n')), true);
+  assert.equal(runsOnNode(file('pinned', '#!/usr/local/bin/node --no-warnings\n')), true);
+  assert.equal(runsOnNode(file('shell', '#!/bin/sh\nexec codex-native "$@"\n')), false);
+  assert.equal(runsOnNode(file('nodemon-like', '#!/usr/bin/env nodemon\n')), false);
+  assert.equal(runsOnNode(file('native', Buffer.from([0xcf, 0xfa, 0xed, 0xfe, 0x07, 0x00]))), false);
+  assert.equal(runsOnNode(join(dir, 'absent')), false);
 });

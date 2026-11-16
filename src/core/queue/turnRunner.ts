@@ -533,17 +533,11 @@ export class TurnRunner {
     };
     const extra = this.deps.prepareSend ? await this.deps.prepareSend(item, sessionId) : {};
     if (controller.signal.aborted) return { kind: 'cancelled' };
-    // ADR-032: an owner's message that got nothing because its CLI is missing says so once (`explainMissingCli`),
-    // in place of the CLI's own errors, such as a failed spawn.
-    const flushPending = () => {
-      if (!produced && item.kind === 'owner_message' && this.deps.missingCli?.()) pendingErrors.length = 0;
-      for (const pending of pendingErrors.splice(0)) appendError(pending);
-    };
     let outcome;
     try {
       outcome = await client.streamMessage(sessionId, { message: item.prompt, ...extra }, onEvent, controller.signal, () => this.deps.accepted?.(item));
     } catch (error) {
-      flushPending();
+      for (const pending of pendingErrors.splice(0)) appendError(pending);
       presentation?.seal(controller.signal.aborted ? 'cancelled' : 'failed', this.deps.now());
       publishPresentation();
       throw error;
@@ -556,7 +550,7 @@ export class TurnRunner {
       this.deps.log(`turn ${item.id}: ${pendingErrors.length} error(s) before any output are not kept; the turn is sent again`);
       pendingErrors.length = 0;
     } else {
-      flushPending();
+      for (const pending of pendingErrors.splice(0)) appendError(pending);
     }
     const text = textParts.join('').trim();
     if (!outcome.completed && !controller.signal.aborted && unavailable) {
