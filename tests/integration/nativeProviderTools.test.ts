@@ -81,9 +81,12 @@ test('packed Runtime lets an owner grant Kimi commands once, never for Telegram,
     assert.deepEqual(await answerNext('owner', { action: 'accept', choice: 'allow', standingGrant: { until: 'session' } }),
       { text: 'native approval accepted', cardSeen: true });
     assert.deepEqual((await core.providerInteractions('home')).standingGrants?.map(grant => grant.category), ['command']);
-    // 2. The owner's next message runs without a card.
-    assert.deepEqual(await answerNext('owner', null), { text: 'native approval accepted', cardSeen: false });
-    assert.equal((await core.status()).awaitingOwner, 0);
+    // 2. The owner's next message runs without a card: nothing waits for the owner at any point.
+    const waited: number[] = [];
+    const unsubscribe = core.subscribe((event) => { if (event.type === 'provider.interactions') waited.push(event.pending); });
+    assert.equal((await answerNext('owner', null)).text, 'native approval accepted');
+    unsubscribe();
+    assert.deepEqual(waited.filter((count) => count > 0), []);
     // 3. A Telegram message still asks.
     assert.deepEqual(await answerNext('telegram', { action: 'decline' }), { text: 'native approval denied', cardSeen: true });
     // 4. After Stop the owner is asked again.

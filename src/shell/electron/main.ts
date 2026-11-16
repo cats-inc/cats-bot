@@ -736,6 +736,8 @@ async function main(): Promise<void> {
       }
       const model = { locale: locale(), bots, openAtLogin: hubState.openAtLogin, openAtLoginAvailable };
       if (!quitting) tray?.update(buildHubTrayMenuTemplate(model, hubTrayActions), buildHubTrayTooltip(model));
+      // ADR-026: a bot stopping or leaving the Hub also releases the Stop hotkey.
+      syncStopHotkey();
     } finally {
       refreshing = false;
       if (refreshAgain) {

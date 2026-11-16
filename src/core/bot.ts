@@ -367,7 +367,9 @@ export class BotCore implements BotHostApi {
       prepareSend: async (item, sessionId) => ({ ...await this.prepareSend(item.conversationId, sessionId),
         // ADR-026: only a message the owner sent in person (note or local CLI) may use standing grants;
         // Telegram, heartbeats, schedules and recovery reruns keep every approval card.
-        ...(item.kind === 'owner_message' && item.source === 'owner' ? { standingGrants: true as const } : {}) }),
+        // An answer to the bot's own question continues whatever turn asked it, which may be a background one.
+        ...(item.kind === 'owner_message' && item.source === 'owner' && !item.sourceRef?.startsWith('decision:')
+          ? { standingGrants: true as const } : {}) }),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
@@ -1261,28 +1263,40 @@ export class BotCore implements BotHostApi {
     const sessionId = record.attachment.sessionId;
     const client = this.client();
     if (sessionId && client && this.running?.item.conversationId !== record.id) {
-      try { this.interactions.setGrants(record.id, (await client.interactions(sessionId)).standingGrants); }
-      catch { /* An unreachable Runtime holds no grants for this view. */ this.interactions.setGrants(record.id, []); }
+      // A failed read keeps what was last known, so Stop stays in view while Runtime is busy.
+      try { this.interactions.setGrants(record.id, (await client.interactions(sessionId)).standingGrants); } catch { /* keep */ }
     }
     return this.interactions.snapshot(record.id);
   }
 
   /**
-   * ADR-026: the owner's Stop. Ends the standing grants of one conversation's session, or of every
-   * conversation (tray, hotkey), and cancels the turn running there. Runtime's cancel ends the provider
-   * process, which for Kimi also ends a running computer-use cell.
+   * ADR-026: the owner's Stop. Cancels the turn running in a granted conversation first, then ends the grants of
+   * one conversation's session, or of every granted conversation (tray, hotkey). Queued work stays queued, and a
+   * conversation without grants is left alone. Throws unless Runtime confirmed every grant ended.
    */
   async stopStandingGrants(conversationId?: string): Promise<void> {
     const ids = conversationId ? [this.conversations.require(this.resolveConversationId(conversationId)).id]
-      : [...new Set([...this.interactions.grantedConversations(), ...(this.running ? [this.running.item.conversationId] : [])])];
+      : this.interactions.grantedConversations();
+    for (const id of ids) if (this.running?.item.conversationId === id) await this.cancelRunningTurn(id);
     const client = this.client();
+    const unconfirmed: string[] = [];
     for (const id of ids) {
       const sessionId = this.conversations.get(id)?.attachment.sessionId;
-      if (sessionId && client) await client.revokeStandingGrants(sessionId).catch(() => undefined);
-      this.interactions.setGrants(id, []);
-      if (this.running?.item.conversationId === id) await this.cancelTurn(id);
+      // Without a session or a running Runtime there is nothing that could hold a grant.
+      if (!sessionId || !client) { this.interactions.setGrants(id, []); continue; }
+      try {
+        const snapshot = await client.revokeStandingGrants(sessionId);
+        this.interactions.setGrants(id, snapshot.standingGrants);
+        if (snapshot.standingGrants?.length) unconfirmed.push(id);
+      } catch { unconfirmed.push(id); }
     }
-    this.log(`standing grants stopped in ${ids.length} conversation(s)`);
+    this.log(`standing grants stopped in ${ids.length - unconfirmed.length} of ${ids.length} conversation(s)`);
+    if (unconfirmed.length) throw new Error('Runtime did not confirm that every grant ended. Stop again, or quit Cats Bot to end them all.');
+  }
+
+  /** ADR-026: the conversations whose grants the core last saw, for a presenting host that attaches later. */
+  async standingGrantConversations(): Promise<string[]> {
+    return this.interactions.grantedConversations();
   }
 
   async respondProviderInteraction(conversationId: string, interactionId: string, response: BotInteractionResponse): Promise<void> {
@@ -1508,7 +1522,7 @@ export class BotCore implements BotHostApi {
       this.pump();
       return;
     }
-    await this.sendOwnerMessage(item.conversationId, decisionText);
+    await this.sendOwnerMessage(item.conversationId, decisionText, 'owner', `decision:${item.id}`);
   }
 
   private expireWorkItem(item: WorkItem, reason: string): void {
@@ -1904,6 +1918,11 @@ export class BotCore implements BotHostApi {
   async cancelTurn(conversationId: string): Promise<void> {
     const id = this.resolveConversationId(conversationId);
     this.dropPendingWork(item => item.conversationId === id, 'cancelled by the owner');
+    await this.cancelRunningTurn(id);
+  }
+
+  /** Cancels the turn running in a conversation, leaving its queued work queued. */
+  private async cancelRunningTurn(id: string): Promise<void> {
     const running = this.running;
     if (!running || running.item.conversationId !== id) return;
     // A rejected send can still be unwinding while its work is deferred. It

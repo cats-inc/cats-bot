@@ -328,6 +328,7 @@ const server = createServer(async (req, res) => {
     const session = sessions.get(grantsRoute[1]);
     if (!session) return json(res, 404, {});
     calls.push({ op: 'revoke_grants', id: session.id });
+    if (process.env.FAKE_REVOKE_FAILS === '1') return json(res, 500, { error: 'busy' });
     session.standingGrants = [];
     return json(res, 200, { version: 1, sessionId: session.id, workerGeneration: session.generation, revision: 0, interactions: [], standingGrants: [] });
   }

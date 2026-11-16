@@ -5,8 +5,9 @@ import { writeJsonAtomic } from '../store/atomicFile.ts';
 import { INTERACTION_KINDS, type BotInteraction, type BotInteractionResponse, type BotInteractionSnapshot,
   type InteractionAnswer, type StandingGrant, type WorkItem } from '../types.ts';
 
+const live = (i: BotInteraction) => i.status === 'pending' || i.status === 'responding';
 // ADR-026: a request Runtime answered from a standing grant never waits for the owner.
-const live = (i: BotInteraction) => (i.status === 'pending' || i.status === 'responding') && i.reason !== 'standing_grant';
+const waiting = (i: BotInteraction) => live(i) && i.reason !== 'standing_grant';
 
 /**
  * SPEC-012 FR-6: in a contact note the owner answers a provider request by
@@ -125,7 +126,7 @@ export class BotInteractions {
   }
 
   pending(conversationId?: string): number {
-    return [...this.entries.values()].filter(i => live(i) && (!conversationId || i.conversationId === conversationId)).length;
+    return [...this.entries.values()].filter(i => waiting(i) && (!conversationId || i.conversationId === conversationId)).length;
   }
 
   async snapshot(conversationId: string): Promise<BotInteractionSnapshot> {
@@ -195,7 +196,25 @@ export class BotInteractions {
     if (grants.length) this.grants.set(conversationId, grants); else this.grants.delete(conversationId);
     const changed = before !== JSON.stringify(grants);
     if (changed) this.grantsChanged(this.grantedConversations());
+    this.scheduleExpiry();
     return changed;
+  }
+
+  private expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** A timed grant leaves the note, the tray and the hotkey when it expires, also with no note open. */
+  private scheduleExpiry(): void {
+    clearTimeout(this.expiryTimer);
+    const expiries = [...this.grants.values()].flat().flatMap((grant) => grant.expiresAt ? [Date.parse(grant.expiresAt)] : [])
+      .filter(Number.isFinite);
+    if (!expiries.length) return;
+    this.expiryTimer = setTimeout(() => {
+      const now = Date.now();
+      for (const [conversationId, grants] of [...this.grants]) {
+        this.setGrants(conversationId, grants.filter((grant) => !grant.expiresAt || Date.parse(grant.expiresAt) > now));
+      }
+    }, Math.max(0, Math.min(...expiries) - Date.now()) + 50);
+    this.expiryTimer.unref?.();
   }
 
   /** Conversations Runtime last reported grants for. */

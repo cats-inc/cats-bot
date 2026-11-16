@@ -204,6 +204,12 @@ export class BotPresenter {
   /** Follows the core's events and opens what was open before. */
   async start(): Promise<void> {
     this.unsubscribe = this.core.subscribe((event) => this.onEvent(event));
+    // ADR-026: a Hub that attaches to a core already running learns its grants, so Stop shows at once.
+    void this.core.standingGrantConversations().then((ids) => {
+      this.grantedConversations = [...ids];
+      this.host.grantsChanged?.();
+      this.host.refreshTray();
+    }).catch(() => undefined);
     // A token the CLI stored as a file is re-stored with the OS facility.
     void this.core.protectSecretsAtRest().catch((error: unknown) => this.host.log(`secret re-store failed: ${errorMessage(error)}`, 'error'));
     if (this.windows.shellState.floatingBot.visible) this.setFloatingVisible(true);

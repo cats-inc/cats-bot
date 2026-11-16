@@ -256,7 +256,8 @@ export function toolSummary(item: ToolItem): string {
  * (`cats-bot interactions`); as a card it only repeated "resolved".
  */
 export function liveInteractions(interactions: readonly BotInteraction[]): BotInteraction[] {
-  return interactions.filter((i) => i.status === 'pending' || i.status === 'responding');
+  // ADR-026: Runtime answered a standing-grant request itself; it is never a card.
+  return interactions.filter((i) => (i.status === 'pending' || i.status === 'responding') && i.reason !== 'standing_grant');
 }
 
 /** Keeps the note's copy of a work item current from `work.updated` events. */

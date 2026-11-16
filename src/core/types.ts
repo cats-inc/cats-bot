@@ -461,6 +461,8 @@ export interface BotHostApi {
   stopDesktopControl(conversationId?: string): Promise<void>;
   /** ADR-026: ends standing grants and cancels the turn; without a conversation, every conversation. */
   stopStandingGrants(conversationId?: string): Promise<void>;
+  /** ADR-026: conversations whose standing grants the core last saw (a presenting host's tray and hotkey). */
+  standingGrantConversations(): Promise<string[]>;
   quit(): Promise<void>;
 }
 
