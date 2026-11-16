@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
+import { HOSTED_PROVIDER_POLICY } from '../../src/shared/providerTools.ts';
 import { makeTempHome, openTestBot, sendAndWait } from '../support/harness.ts';
 
 /**
@@ -84,8 +85,40 @@ for (const [where, provider, place] of [
       const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
       assert.ok(errors.length > 0, 'the failure is written');
       assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
+      // The Runtime launched the stand-in: the core and the Runtime agree that it is there.
+      if (process.platform !== 'win32') assert.match(turn.error ?? '', /failing on purpose/u);
     } finally {
       await core.stop();
     }
   });
 }
+
+// Hosted Antigravity runs its ACP server, not `agy`; installing `agy` may not provide it, so nothing is claimed.
+test('a hosted Antigravity cat bot keeps its own error when a message fails, with no install line', async () => {
+  const home = makeTempHome('cats-bot-hosted-antigravity-');
+  const projects = join(home.botsHome, 'projects');
+  mkdirSync(projects, { recursive: true });
+  const { core } = openTestBot({
+    botsHome: home.botsHome, id: 'hosted', profile: { provider: 'antigravity' },
+    core: {
+      runtime: {
+        runtimeEntry: resolveRuntimeEntry(), readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+        instanceExtras: { projects_dir: projects },
+        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: join(home.botsHome, 'no-clis'),
+          APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+          XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') },
+      },
+    },
+  });
+  await core.updateProfile({ providerPolicy: HOSTED_PROVIDER_POLICY });
+  await core.start();
+  try {
+    const turn = await sendAndWait(core, 'home', 'hello', 60_000);
+    assert.equal(turn.state, 'failed');
+    const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
+    assert.ok(errors.length > 0, 'the failure is written');
+    assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
+  } finally {
+    await core.stop();
+  }
+});

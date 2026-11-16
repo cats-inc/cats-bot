@@ -47,17 +47,9 @@ export function canFindProviderCommand(
   if (findOnPath(command, env, platform)) return true;
   const windows = platform === 'win32';
   const read = (name: string) => envValue(env, name, windows);
-  const homes = [read('HOME'), read('USERPROFILE')].filter((value): value is string => Boolean(value));
+  // The Runtime looks in the common npm folders with a fixed list of extensions, whatever PATHEXT says.
+  if (windows && commandIn(command, npmFolders(read), env, platform, WINDOWS_NPM_EXTENSIONS)) return true;
   const dirs: string[] = [];
-  if (windows) {
-    const appData = read('APPDATA');
-    const localAppData = read('LOCALAPPDATA');
-    dirs.push(
-      ...[read('npm_config_prefix'), ...homes.map((home) => join(home, '.npm-global'))].filter((dir): dir is string => Boolean(dir)),
-      ...(appData ? [join(appData, 'npm')] : homes.map((home) => join(home, 'AppData', 'Roaming', 'npm'))),
-      ...(localAppData ? [join(localAppData, 'npm')] : homes.map((home) => join(home, 'AppData', 'Local', 'npm'))),
-    );
-  }
   let check: InstallKnowledge['check'];
   try {
     check = knowledge(provider)?.check;
@@ -68,11 +60,31 @@ export function canFindProviderCommand(
   // The expected path names the stock binary, so its folder holds the command under one of its extensions.
   const expected = check?.expectedPaths?.[target];
   const expectedPath = expected ? expandInstallPath(expected, read) : null;
+  if (expectedPath && commandBaseName(expectedPath) === command.toLowerCase() && existsSync(expectedPath)) return true;
   if (expectedPath) dirs.push(dirname(expectedPath));
   const hint = check?.pathHints?.[target]?.directoryHint;
   const hintPath = hint ? expandInstallPath(hint, read) : null;
   if (hintPath) dirs.push(hintPath);
   return commandIn(command, dirs, env, platform) !== null;
+}
+
+const WINDOWS_NPM_EXTENSIONS = ['.cmd', '.bat', '.exe'];
+
+/** The npm folders the Runtime tries on Windows when PATH does not lead to a command. */
+function npmFolders(read: (name: string) => string | undefined): string[] {
+  const homes = [read('USERPROFILE'), read('HOME')].filter((value): value is string => Boolean(value));
+  const appData = read('APPDATA');
+  const localAppData = read('LOCALAPPDATA');
+  return [
+    ...[read('npm_config_prefix'), ...homes.map((home) => join(home, '.npm-global'))].filter((dir): dir is string => Boolean(dir)),
+    ...(appData ? [join(appData, 'npm')] : homes.map((home) => join(home, 'AppData', 'Roaming', 'npm'))),
+    ...(localAppData ? [join(localAppData, 'npm')] : homes.map((home) => join(home, 'AppData', 'Local', 'npm'))),
+  ];
+}
+
+/** `muse`, `muse.cmd` and `…\muse\muse.cmd` all name the same command, as the Runtime compares them. */
+function commandBaseName(path: string): string {
+  return (path.split(/[\\/]/u).pop() ?? path).replace(/\.(?:exe|cmd|bat|com|ps1)$/iu, '').toLowerCase();
 }
 
 /** `%NAME%` from the Runtime's environment and a leading `~`, as the Runtime expands them; null when one is unset. */

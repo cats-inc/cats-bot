@@ -53,6 +53,7 @@ import {
 import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
 import { canFindProviderCommand, loadInstallKnowledge, type InstallKnowledgeReader } from './providers/providerCommand.ts';
+import { runtimeCommandFor } from './runtime/providersConfig.ts';
 import { RuntimeSupervisor, resolveRuntimeEntry, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, blankJournalText, blankWorkItemText, readJournal } from './store/journal.ts';
@@ -446,12 +447,24 @@ export class BotCore implements BotHostApi {
    * knowledge, is trusted.
    */
   private missingCli(): { provider: string; label: string } | null {
-    if (this.options.runtimeClient || this.options.runtime?.providerCommand || !this.installKnowledge) return null;
+    const cli = this.providerCli();
+    if (!cli || !this.installKnowledge) return null;
+    const env = this.options.runtime?.env ?? process.env;
+    return canFindProviderCommand(this.installKnowledge, cli.provider, cli.command, env) ? null : { provider: cli.provider, label: cli.label };
+  }
+
+  /**
+   * The command the Runtime launches for this cat bot, when it is the CLI "Open Provider and model" installs. Null
+   * for a host that names the command itself, and for hosted Antigravity, whose ACP server installing `agy` may
+   * not provide.
+   */
+  private providerCli(): { provider: string; label: string; command: string } | null {
+    if (this.options.runtimeClient || this.options.runtime?.providerCommand) return null;
     const provider = this.profile.executionTarget.provider;
     const definition = CLI_PROVIDERS.find((item) => item.id === provider);
     if (!definition) return null;
-    const env = this.options.runtime?.env ?? process.env;
-    return canFindProviderCommand(this.installKnowledge, provider, definition.command, env) ? null : { provider, label: definition.label };
+    const command = runtimeCommandFor(provider, usesHostedProvider(provider, this.profile.providerPolicy) ? 'hosted' : undefined);
+    return command === definition.command ? { provider, label: definition.label, command } : null;
   }
 
   private createSupervisor(): RuntimeSupervisor {
@@ -900,6 +913,7 @@ export class BotCore implements BotHostApi {
       } catch {
         this.installKnowledge = null;
       }
+      if (this.stopped) return;
     }
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
@@ -2024,13 +2038,11 @@ export class BotCore implements BotHostApi {
   private restartRuntimeFor(directory: string): void {
     const supervisor = this.supervisor;
     const knowledge = this.installKnowledge;
-    if (!supervisor || !knowledge || supervisor.state === 'stopped' || this.options.runtime?.env
-      || this.options.runtime?.providerCommand) return;
+    const cli = this.providerCli();
+    if (!supervisor || !knowledge || !cli || supervisor.state === 'stopped' || this.options.runtime?.env) return;
     const launched = supervisor.launchedPath;
     if (launched === null) return;
-    const provider = this.profile.executionTarget.provider;
-    const command = CLI_PROVIDERS.find((item) => item.id === provider)?.command;
-    if (!command) return;
+    const { provider, command } = cli;
     // Only what the running Runtime cannot find: a check that found a CLI it already launches restarts nothing.
     const seen = { ...process.env, PATH: launched };
     const unseen = [command, ...(provider === 'codex' ? ['node'] : [])].filter((name) =>

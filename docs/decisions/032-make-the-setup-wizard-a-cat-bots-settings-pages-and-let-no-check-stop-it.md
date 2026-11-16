@@ -80,7 +80,8 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
      bot. A check that finds a CLI the Runtime already launches restarts nothing.
    - Neither the Runtime's resume error nor the CLI's own error from before any output, such as a failed spawn, is
      added beside it. The work item keeps the raw reason for the log.
-   - A host that names the command itself (development, tests) is trusted. Heartbeats and schedules stay quiet.
+   - A host that names the command itself (development, tests) is trusted. So is hosted Antigravity, which runs
+     its ACP server rather than `agy`, so installing `agy` may not provide it. Heartbeats and schedules stay quiet.
    - The install knowledge is read from the Runtime's package by path, as `resolveRuntimeEntry` finds its entry,
      because the Runtime does not export it. Its pinned version is exact, and a test fails if the file moves.
 5. **Page 3 says what the cat bot may do.** It shows the sentence the cat bot's Permissions page starts with, for

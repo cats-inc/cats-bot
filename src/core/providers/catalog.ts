@@ -41,14 +41,21 @@ export function defaultCommandFor(provider: string): string {
 /** Finds an executable on PATH the way a shell would, honouring PATHEXT on Windows. */
 export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env, platform = process.platform): string | null {
   const path = env.PATH ?? env.Path ?? '';
-  return commandIn(command, path.split(platform === 'win32' ? ';' : delimiter), env, platform);
+  // Windows resolves a trimmed entry, as the Runtime does; elsewhere the spawn searches PATH as it is.
+  const dirs = platform === 'win32' ? path.split(';').map((dir) => dir.trim()) : path.split(delimiter);
+  return commandIn(command, dirs, env, platform);
 }
 
-/** The first of `dirs` that holds `command`, honouring PATHEXT on Windows. */
-export function commandIn(command: string, dirs: readonly string[], env: NodeJS.ProcessEnv = process.env, platform = process.platform): string | null {
+/**
+ * The first of `dirs` that holds `command`, honouring PATHEXT on Windows (an empty one means the default) and any
+ * `also` extensions after it.
+ */
+export function commandIn(command: string, dirs: readonly string[], env: NodeJS.ProcessEnv = process.env,
+  platform = process.platform, also: readonly string[] = []): string | null {
   // PATHEXT is upper case; the lower-case spelling matters only on a case-sensitive file system.
   const extensions = platform === 'win32'
-    ? ['', ...new Set((env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).flatMap((ext) => [ext, ext.toLowerCase()]))]
+    ? ['', ...new Set([...(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((ext) => ext.trim()), ...also]
+      .filter(Boolean).flatMap((ext) => [ext, ext.toLowerCase()]))]
     : [''];
   for (const dir of dirs) {
     if (!dir) continue;

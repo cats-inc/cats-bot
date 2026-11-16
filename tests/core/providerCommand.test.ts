@@ -46,3 +46,26 @@ test('on Windows the npm folders count, an environment name in any case expands,
   writeFileSync(join(home, '.npm-global', 'kimi.cmd'), '');
   assert.equal(canFindProviderCommand(knowledge, 'kimi', 'kimi', env, 'win32'), true);
 });
+
+test('on Windows the Runtime\'s own lookups count whatever PATHEXT says, and PATH entries are trimmed', async () => {
+  const knowledge = (await loadInstallKnowledge(resolveRuntimeEntry()))!;
+  const home = makeTempHome('cats-bot-provider-command-ext-').botsHome;
+  const appData = join(home, 'Roaming');
+  const localAppData = join(home, 'Local');
+  const env = { USERPROFILE: home, APPDATA: appData, LOCALAPPDATA: localAppData, PATHEXT: '.EXE', Path: join(home, 'no-clis') };
+  // The npm folders are searched with .cmd, .bat and .exe.
+  mkdirSync(join(appData, 'npm'), { recursive: true });
+  writeFileSync(join(appData, 'npm', 'codex.cmd'), '');
+  assert.equal(canFindProviderCommand(knowledge, 'codex', 'codex', env, 'win32'), true);
+  // The expected path is taken as it is. Its `\` separators name a folder only on a Windows file system.
+  if (process.platform === 'win32') {
+    mkdirSync(join(localAppData, 'Programs', 'muse'), { recursive: true });
+    writeFileSync(join(localAppData, 'Programs', 'muse', 'muse.cmd'), '');
+    assert.equal(canFindProviderCommand(knowledge, 'muse', 'muse', env, 'win32'), true);
+  }
+  // An empty PATHEXT means the default, and a PATH entry with spaces around it is the folder it names.
+  const shims = join(home, 'shims');
+  mkdirSync(shims, { recursive: true });
+  writeFileSync(join(shims, 'kimi.cmd'), '');
+  assert.equal(canFindProviderCommand(knowledge, 'kimi', 'kimi', { ...env, PATHEXT: '', Path: `${join(home, 'no-clis')}; ${shims} ` }, 'win32'), true);
+});

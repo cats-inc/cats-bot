@@ -36,6 +36,12 @@ function yamlScalar(value: string): string {
   return JSON.stringify(value);
 }
 
+/** The command the Runtime is told to launch for a provider and protocol, when the host names none. */
+export function runtimeCommandFor(provider: string, protocol?: string, platform: NodeJS.Platform = process.platform): string {
+  if (protocol === 'hosted' && provider === 'antigravity') return platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par';
+  return defaultCommandFor(provider);
+}
+
 export function renderProvidersConfig(input: ProvidersConfigInput): string {
   const lines = [
     GENERATED_MARKER,
@@ -56,8 +62,7 @@ export function renderProvidersConfig(input: ProvidersConfigInput): string {
     '        instances:',
     '          native:',
     '            environment: native',
-    `            command: ${yamlScalar(input.command ?? (input.protocol === 'hosted' && input.provider === 'antigravity'
-      ? process.platform === 'win32' ? 'agy_acp_server.exe' : 'agy_acp_server.par' : defaultCommandFor(input.provider)))}`,
+    `            command: ${yamlScalar(input.command ?? runtimeCommandFor(input.provider, input.protocol))}`,
     '            runner: auto',
   ];
   if (input.protocol) lines.push(`            protocol: ${yamlScalar(input.protocol)}`);
