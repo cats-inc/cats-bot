@@ -69,6 +69,15 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
      Runtime that carries no install knowledge, it says nothing is missing.
    - The note shows it as "{provider} is not on this computer, so this message got no reply." with "Open Provider
      and model", which opens the cat bot's own settings on that page.
+   - No session is created or resumed while the CLI cannot be launched. The turn fails before it binds, and
+     reconciliation backs off as for a failed wake (SPEC-001 FR-11). A first turn that reached a session without
+     its CLI would leave one with no native ID. SPEC-001 keeps that mapping after an attempted turn, so every later
+     message failed with "resume failed: No provider session ID to resume", even after the CLI was installed and
+     Cats Bot restarted.
+   - A running Runtime keeps the PATH it started with. When the shell reports a folder that holds the cat bot's
+     CLI, or the Node that Codex runs on, and the running Runtime could not find it, the Runtime starts again once
+     no turn is running, as for a provider change. The next message is then answered without restarting the cat
+     bot. A check that finds a CLI the Runtime already launches restarts nothing.
    - Neither the Runtime's resume error nor the CLI's own error from before any output, such as a failed spawn, is
      added beside it. The work item keeps the raw reason for the log.
    - A host that names the command itself (development, tests) is trusted. Heartbeats and schedules stay quiet.
@@ -96,6 +105,8 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
 - Page 2 holds more than the old page 2, so it scrolls in more states at 860×640, more at 800×600, and more with the
   log open. The button bar stays in place, as on the settings page.
 - A cat bot can be created whose CLI is missing. Its first message then says so instead of answering.
+- A cat bot whose first turn reached its CLI and failed at start, rather than finding no CLI, still keeps that
+  session under SPEC-001's rule, and its later messages fail to resume. This decision does not change that rule.
 - Each row is pressed and confirmed, where several ticks used to run with one Apply. "Set up all N" covers the
   required rows.
 
@@ -103,6 +114,7 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
 
 - A transcript entry may carry `fix`. Older versions ignore the field and show the entry's English text.
 - `canCreateFromSetup`, the tick helpers and the ticking row are removed.
+- Installing a CLI another cat bot uses can restart that cat bot's Runtime once, when it could not find that CLI.
 
 ## Alternatives Considered
 

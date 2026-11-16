@@ -106,6 +106,8 @@ export interface LifeTickReport {
 }
 
 export interface LifeLoopDependencies {
+  /** ADR-032: the provider's CLI cannot be launched, so no session is made for it. */
+  cliMissing?(): boolean;
   now(): Date;
   random(): number;
   profile(): BotProfile;
@@ -445,7 +447,10 @@ export class LifeLoop {
     if (this.memory.backoffUntil > now.getTime()) return 'backoff';
     if (this.deps.isTurnRunning(home.id)) return 'busy_turn';
     if (!stillCurrent()) return 'runtime_unknown';
-    const bound = await this.deps.binder.bind(home.id);
+    // ADR-032: no session is made for a CLI the Runtime cannot launch; the tick backs off as for a failed wake.
+    const bound = this.deps.cliMissing?.()
+      ? { ok: false as const, reason: 'provider CLI not found', noCapacity: false }
+      : await this.deps.binder.bind(home.id);
     if (!bound.ok) {
       const reason: PresenceReason = bound.noCapacity
         ? 'no_capacity'

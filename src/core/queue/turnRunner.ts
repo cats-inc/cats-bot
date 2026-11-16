@@ -175,6 +175,10 @@ export class TurnRunner {
     if (!client) {
       return { kind: 'retry_later', reason: 'runtime_unavailable', retryAfterMs: this.delays.runtimeUnavailableMs };
     }
+    // ADR-032: no session is created or resumed for a CLI the Runtime cannot launch. A session whose first turn
+    // found no CLI never gets a native one, so it could never be resumed, and every later message would fail on it.
+    const missing = this.deps.missingCli?.();
+    if (missing) return { kind: 'failed', reason: `${missing.label} is not on this computer.` };
     let resumedAfterNoWorker = false;
     let rebuiltAfterExit = false;
     for (let round = 0; round < 3; round += 1) {

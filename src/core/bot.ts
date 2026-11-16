@@ -25,6 +25,8 @@ import { createFileLogger, type Logger } from './log.ts';
 import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
 import {
   CLI_PROVIDERS,
+  commandIn,
+  findOnPath,
   listProviders,
   readLocalModelCatalog,
   type ModelCatalog,
@@ -390,6 +392,7 @@ export class BotCore implements BotHostApi {
     });
     const life = options.life ?? {};
     this.life = new LifeLoop({
+      cliMissing: () => this.missingCli() !== null,
       now: this.now,
       random: life.random ?? Math.random,
       profile: () => this.profile,
@@ -2010,6 +2013,32 @@ export class BotCore implements BotHostApi {
   useCommandDirectory(directory: string): void {
     const current = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
     process.env.PATH = [...new Set([directory, ...current])].join(delimiter);
+    this.restartRuntimeFor(directory);
+  }
+
+  /**
+   * ADR-032: a running Runtime keeps the PATH it started with. When `directory` holds this cat bot's CLI, or the
+   * Node that Codex runs on, and that PATH did not include it, the Runtime starts again once no turn is running, as
+   * for a provider change. The next message then finds what was just installed.
+   */
+  private restartRuntimeFor(directory: string): void {
+    const supervisor = this.supervisor;
+    const knowledge = this.installKnowledge;
+    if (!supervisor || !knowledge || supervisor.state === 'stopped' || this.options.runtime?.env
+      || this.options.runtime?.providerCommand) return;
+    const launched = supervisor.launchedPath;
+    if (launched === null) return;
+    const provider = this.profile.executionTarget.provider;
+    const command = CLI_PROVIDERS.find((item) => item.id === provider)?.command;
+    if (!command) return;
+    // Only what the running Runtime cannot find: a check that found a CLI it already launches restarts nothing.
+    const seen = { ...process.env, PATH: launched };
+    const unseen = [command, ...(provider === 'codex' ? ['node'] : [])].filter((name) =>
+      name === command ? !canFindProviderCommand(knowledge, provider, name, seen) : !findOnPath(name, seen));
+    if (!unseen.some((name) => commandIn(name, [directory]))) return;
+    this.log('provider CLI folder added: the runtime restarts once the running turn ends');
+    this.runtimeSwapPending = true;
+    this.pump();
   }
 
   async sendOwnerMessage(
