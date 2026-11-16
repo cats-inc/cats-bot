@@ -1,5 +1,10 @@
 # Implementation Plans
 
+- [PLAN-016: Linux dictation pack and dictation language](PLAN-016-linux-dictation-pack-and-dictation-language.md)
+  — draft, 2026-11-16; no slice authorized. Vendor the helpers now; the language slice after Platform's
+  `--list-languages` (G1); the pack slice after Platform PLAN-138 M2 (G2); hardware acceptance; then
+  release-bound lock pins and record updates (G3).
+
 - [PLAN-013: Persistent conversation resume](PLAN-013-persistent-conversation-resume.md)
   — implemented, unpublished, 2026-11-11; resume saved identities after restart, distinguish terminal
   loss from temporary failure and validate against an exact Runtime candidate.
