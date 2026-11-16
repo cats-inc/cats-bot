@@ -230,6 +230,11 @@ export interface TranscriptEntry {
    * replies sealed before it was kept, which show `at`, when their turn started.
    */
   presentationEndedAt?: string;
+  /**
+   * ADR-032: what the owner can do about an error. `install_cli`: the provider's CLI is not on this computer,
+   * and the note offers the cat bot's Provider and model page.
+   */
+  fix?: { kind: 'install_cli'; provider: string; label: string };
 }
 
 export type WorkItemKind = 'owner_message' | 'heartbeat' | 'schedule' | 'event';

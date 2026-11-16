@@ -75,12 +75,16 @@ read-only `claude auth status --json` command with a 10-second timeout; an API k
 also satisfies the existing authentication check. The helper does not read
 credential files or expose the command's authentication output. macOS/Linux
 native-provider helpers report installation readiness without probing sign-in.
-Creating a cat bot takes three pages (SPEC-010). The first runs nothing. "Check this computer"
-reads the selected provider's state, with a log that opens while it runs. Then each script that
-changes something runs only if you tick it, and the row says what it does, with the exact command
-and a way to do it by hand. On Windows, PowerShell scripts is optional. The last page signs in
-through a real terminal, picks the model and creates the cat bot. Cats Bot itself should not need
-a restart after an install; terminals that were already open do, to see the new PATH.
+Creating a cat bot takes three pages, the same three as a cat bot's settings (SPEC-010, ADR-032):
+Name and look, Provider and model, Permissions. The first runs nothing. On the second, "Check this
+computer" reads the chosen agent CLI's state, with a log that opens while it runs. Each script that
+changes something runs only after you press its row's button and confirm the box, which says what
+it does, with the exact command and a way to do it by hand. On Windows, PowerShell scripts is
+optional. Sign-in, through a real terminal, and the model are on the same page. The last page says
+what the new cat bot may do, then creates it. Nothing a check finds stops Next or Create: a cat bot
+whose CLI is missing says so when you send it a message, with a button to its Provider and model
+page. Cats Bot itself should not need a restart after an install; terminals that were already open
+do, to see the new PATH.
 
 The Codex npm installer follows npm's normal engine policy without adding an
 extra `--engine-strict` gate. An explicit user engine policy remains effective.

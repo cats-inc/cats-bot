@@ -57,16 +57,33 @@ test('closing first-run setup cancels a pending provider check and removes its I
   assert.equal(f.providers.busy, false);
 });
 
-test('closing during the final provider recheck never creates a bot from a late result', async t => {
-  const helper = deferred<HelperResult>();
+test('creating never refuses for what a check found, and reads only where the chosen CLI is (ADR-032)', async t => {
+  const calls: string[] = [];
   let created = false;
-  const f = fixture(t, () => helper.promise, async () => { created = true; });
-  const finishing = assert.rejects(ipcMain.invoke(f.window, 'setup:finish', input), { name: 'AbortError' });
-  f.window.close();
-  assert.equal(await f.done, false, 'cancellation does not wait for the helper result');
-  helper.resolve(ready());
+  const f = fixture(t, async (helper, apply) => { calls.push(`${helper}:${apply}`); return { status: 'not_installed', installed: false }; },
+    async () => { created = true; });
+  assert.equal((await ipcMain.invoke(f.window, 'setup:check', 'claude') as { canFinish: boolean }).canFinish, false);
+  calls.length = 0;
+  await ipcMain.invoke(f.window, 'setup:finish', input);
+  assert.equal(await f.done, true);
+  assert.equal(created, true, 'a CLI the check did not find still lets the owner create');
+  assert.deepEqual(calls, ['claude:false'], 'one read-only look, so the new core inherits the CLI\'s folder if it is there');
+});
+
+test('creating waits for a step that is still running before it creates (ADR-032)', async t => {
+  const installed = deferred<HelperResult>();
+  let created = false;
+  const f = fixture(t, async (_helper, apply) => apply ? installed.promise : ready(), async () => { created = true; });
+  await ipcMain.invoke(f.window, 'setup:check', 'claude');
+  const installing = ipcMain.invoke(f.window, 'setup:install', 'claude', 'provider');
+  const finishing = ipcMain.invoke(f.window, 'setup:finish', input);
+  await new Promise(done => setTimeout(done, 20));
+  assert.equal(created, false, 'not while the install runs');
+  installed.resolve(ready());
+  await installing;
   await finishing;
-  assert.equal(created, false);
+  assert.equal(created, true);
+  assert.equal(await f.done, true);
 });
 
 test('a setup window closed during page load stays closed when the load completes', async t => {

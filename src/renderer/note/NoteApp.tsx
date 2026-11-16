@@ -228,6 +228,16 @@ function OwnerBody({ conversationId, entry }: { conversationId: string; entry: T
   </div>;
 }
 
+/** ADR-032: the CLI is not on this computer. The fix is on the cat bot's Provider and model page. */
+function MissingCli({ label }: { label: string }) {
+  return <div className="messageBody">
+    <p className="missing-cli">{t('{provider} is not on this computer, so this message got no reply.', { provider: label })}</p>
+    <div className="decision-actions">
+      <button type="button" className="decision-approve" onClick={() => void api.shell.openSettings('brain')}>{t('Open Provider and model')}</button>
+    </div>
+  </div>;
+}
+
 /** A failed owner message: the note shows it failed and offers to run its turn again. */
 interface EntryRetry {
   onRetry: () => void;
@@ -253,7 +263,8 @@ function Entry({ entry, conversationId, retry, cast }: {
     onCopy={() => { void navigator.clipboard.writeText(copyText); }} actions={actions}>
     {entry.kind === 'bot' ? <div className="messageBodyWrapper"><ConversationMarkdown text={entry.text} /></div>
       : entry.kind === 'owner' ? <OwnerBody conversationId={conversationId} entry={entry} />
-        : <p className="messageBody">{entryText(entry)}</p>}
+        : entry.fix?.kind === 'install_cli' ? <MissingCli label={entry.fix.label} />
+          : <p className="messageBody">{entryText(entry)}</p>}
     {meta && <span className="entry-meta" title={messageTimestamp(entryTime(entry)!)}>{meta}</span>}
     {retry && <div className="userTurnStatus userTurnStatusFailed">{t('Response failed')}</div>}
   </ConversationMessage>;

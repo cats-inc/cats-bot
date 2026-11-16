@@ -129,7 +129,10 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       const input = validateSetupInput(raw);
       submitting = true;
       try {
-        await options.providers.checkForCreation(input.provider, checks.signal, sendLog);
+        // ADR-032: what a check finds never stops creation. This read-only look puts the chosen CLI's folder on the
+        // PATH the new core inherits, as a check on page 2 would have, and waits for a step that is still running.
+        await options.providers.whenIdle();
+        await options.providers.prepareEnvironment(input.provider).catch(() => {});
         checks.signal.throwIfAborted();
         creating = true;
         await options.create(input);

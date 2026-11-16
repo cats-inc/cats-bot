@@ -24,6 +24,8 @@ import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleI
 import { createFileLogger, type Logger } from './log.ts';
 import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
 import {
+  CLI_PROVIDERS,
+  findOnPath,
   listProviders,
   readLocalModelCatalog,
   type ModelCatalog,
@@ -49,7 +51,9 @@ import {
 } from './transports/telegram.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
-import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
+import { codexCanStart, findProviderCommand, loadInstallKnowledge, type InstallKnowledgeReader } from './providers/providerCommand.ts';
+import { runtimeCommandFor } from './runtime/providersConfig.ts';
+import { RuntimeSupervisor, resolveRuntimeEntry, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, blankJournalText, blankWorkItemText, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
@@ -194,6 +198,12 @@ export class ContactNoteError extends Error {
 export class BotCore implements BotHostApi {
   readonly paths: BotPaths;
   private profile: BotProfile;
+  /** ADR-032: where the Runtime looks for a provider CLI besides PATH; null says nothing is missing. */
+  private installKnowledge: InstallKnowledgeReader | null = null;
+  /** Why the pending Runtime restart happens, when it is not a provider change. */
+  private runtimeSwapReason: string | null = null;
+  /** A CLI folder was reported while the Runtime restarted; the restart's end checks its PATH again. */
+  private runtimePathRecheck = false;
   private readonly options: BotCoreOptions;
   private readonly now: () => Date;
   private readonly log: Logger;
@@ -381,9 +391,11 @@ export class BotCore implements BotHostApi {
           ? { standingGrants: true as const } : {}) }),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
+      missingCli: () => this.missingCli(),
     });
     const life = options.life ?? {};
     this.life = new LifeLoop({
+      cliMissing: () => this.missingCli() !== null,
       now: this.now,
       random: life.random ?? Math.random,
       profile: () => this.profile,
@@ -429,6 +441,42 @@ export class BotCore implements BotHostApi {
     const profile = readBotProfile(options.root);
     if (!profile) throw new BotNotInitializedError(options.root);
     return new BotCore(options, profile);
+  }
+
+  /**
+   * ADR-032: what the Runtime cannot launch for this cat bot, read with the PATH the running Runtime keeps: its CLI
+   * (not on that PATH, nor where the provider's installer puts it), or the Node that npm's Codex runs on. A host
+   * that names the command itself (development, tests), or a Runtime without install knowledge, is trusted.
+   */
+  private missingCli(): { provider: string; label: string } | null {
+    return this.unlaunchable(this.supervisor?.launchedPath ?? undefined);
+  }
+
+  /** `missingCli` for a Runtime started with `path`, or with the PATH the core gives it now. */
+  private unlaunchable(path?: string): { provider: string; label: string } | null {
+    const cli = this.providerCli();
+    const knowledge = this.installKnowledge;
+    if (!cli || !knowledge) return null;
+    const given = this.options.runtime?.env ?? process.env;
+    const env = path === undefined ? given : { ...given, PATH: path };
+    const found = findProviderCommand(knowledge, cli.provider, cli.command, env);
+    if (!found) return { provider: cli.provider, label: cli.label };
+    if (cli.provider === 'codex' && !codexCanStart(found, env)) return { provider: cli.provider, label: 'Node.js' };
+    return null;
+  }
+
+  /**
+   * The command the Runtime launches for this cat bot, when it is the CLI "Open Provider and model" installs. Null
+   * for a host that names the command itself, and for hosted Antigravity, whose ACP server installing `agy` may
+   * not provide.
+   */
+  private providerCli(): { provider: string; label: string; command: string } | null {
+    if (this.options.runtimeClient || this.options.runtime?.providerCommand) return null;
+    const provider = this.profile.executionTarget.provider;
+    const definition = CLI_PROVIDERS.find((item) => item.id === provider);
+    if (!definition) return null;
+    const command = runtimeCommandFor(provider, usesHostedProvider(provider, this.profile.providerPolicy) ? 'hosted' : undefined);
+    return command === definition.command ? { provider, label: definition.label, command } : null;
   }
 
   private createSupervisor(): RuntimeSupervisor {
@@ -871,6 +919,14 @@ export class BotCore implements BotHostApi {
     }
     this.profile = loaded.profile;
     if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
+    if (!this.options.runtimeClient && !this.options.runtime?.providerCommand) {
+      try {
+        this.installKnowledge = await loadInstallKnowledge(this.options.runtime?.runtimeEntry ?? resolveRuntimeEntry());
+      } catch {
+        this.installKnowledge = null;
+      }
+      if (this.stopped) return;
+    }
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
     await this.channel.start();
@@ -1983,6 +2039,31 @@ export class BotCore implements BotHostApi {
   useCommandDirectory(directory: string): void {
     const current = (process.env.PATH ?? '').split(delimiter).filter(Boolean);
     process.env.PATH = [...new Set([directory, ...current])].join(delimiter);
+    this.restartRuntimeFor();
+  }
+
+  /**
+   * ADR-032: a running Runtime keeps the PATH it started with. When it cannot launch this cat bot's CLI with that
+   * PATH and could with the one the core has now, it starts again once no turn is running, as for a provider
+   * change. The next message then finds what was just installed; a check that finds a CLI the Runtime already
+   * launches restarts nothing.
+   */
+  private restartRuntimeFor(): void {
+    const supervisor = this.supervisor;
+    if (!supervisor || supervisor.state === 'stopped' || this.options.runtime?.env) return;
+    // A restart not begun yet launches with the PATH as it is now. One under way may have read it before this
+    // report, so its end looks again.
+    if (this.runtimeSwapPending) return;
+    if (this.swappingRuntime) {
+      this.runtimePathRecheck = true;
+      return;
+    }
+    const launched = supervisor.launchedPath;
+    if (launched === null || !this.unlaunchable(launched) || this.unlaunchable()) return;
+    this.log('provider CLI folder added: the runtime restarts once the running turn ends');
+    this.runtimeSwapReason = 'provider CLI folder added: restarting the runtime with it on PATH';
+    this.runtimeSwapPending = true;
+    this.pump();
   }
 
   async sendOwnerMessage(
@@ -2118,14 +2199,20 @@ export class BotCore implements BotHostApi {
     if (this.swappingRuntime || !this.supervisor) return;
     this.swappingRuntime = true;
     this.runtimeSwapPending = false;
+    const reason = this.runtimeSwapReason;
+    this.runtimeSwapReason = null;
     try {
-      this.log('provider changed: restarting the runtime for the new selection');
+      this.log(reason ?? 'provider changed: restarting the runtime for the new selection');
       await this.supervisor.stop();
       if (this.stopped) return;
       this.supervisor = this.createSupervisor();
       await this.ensureRuntime();
     } finally {
       this.swappingRuntime = false;
+      if (this.runtimePathRecheck) {
+        this.runtimePathRecheck = false;
+        if (!this.stopped) this.restartRuntimeFor();
+      }
       this.pump();
     }
   }

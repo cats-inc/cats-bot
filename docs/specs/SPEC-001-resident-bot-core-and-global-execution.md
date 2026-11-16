@@ -179,6 +179,11 @@ freeze of the storage format.
     a time: when the reconciliation tick and a turn bind at the same time they share one result, and do not
     each create a session that overwrites the other's attachment; the handoff pack does not include owner
     messages still `queued` / `running`, which are sent in as messages.
+    - ADR-032 (2026-11-16): while the provider's CLI cannot be launched (neither on the PATH the core gives the
+      Runtime nor where the Runtime's install knowledge says its installer puts it), no session is created or
+      resumed. A turn fails before it binds, and reconciliation backs off as for a failed wake. A first turn
+      that found no CLI would otherwise leave an attempted session with no native ID, whose mapping the rules
+      above keep, and every later message would fail on it.
 12. FR-12: Handoff context: the CLI provider's native transcript is kept by the CLI; the core additionally keeps
     its own transcript and, when creating or replacing a session, sends the handoff pack in the instructions:
     12,000-character cap, verbatim for short conversations, digest plus recent content for long ones. The

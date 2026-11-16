@@ -174,9 +174,10 @@ The single-click quick menu opens in a focusable window of its own
 macOS notes reach the desktop and wallpaper layers through window levels
 ([ADR-016](decisions/016-put-macos-notes-on-the-desktop-and-wallpaper-through-window-levels.md)).
 
-Creating a cat bot is a three-page wizard: nothing runs until asked, and every
-script that changes the computer is ticked by the owner
+Creating a cat bot is a three-page wizard on a cat bot's settings pages: nothing runs until
+asked, and every script that changes the computer is confirmed by the owner on its row
 ([ADR-015](decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md),
+[ADR-032](decisions/032-make-the-setup-wizard-a-cat-bots-settings-pages-and-let-no-check-stop-it.md),
 [SPEC-010](specs/SPEC-010-setup-wizard.md),
 [PLAN-011](plans/PLAN-011-setup-wizard.md)). Cats Bot Settings' Agent CLIs tab
 installs, updates and signs in to the CLIs every cat bot shares, in the same

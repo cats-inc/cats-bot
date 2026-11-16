@@ -47,37 +47,9 @@ export const needsAction = (step: SetupStep): boolean => rowKind(step) !== 'read
 export const tickableSteps = (state: ProviderSetupState | null): SetupStep[] =>
   (state?.steps ?? []).filter((step) => rowKind(step) === 'needs');
 
-/** FR-9: the shortcut's rows: required ones, and it appears from two of them. */
-export const requiredTickable = (state: ProviderSetupState | null): SetupStep[] =>
-  tickableSteps(state).filter((step) => !step.optional);
-
-/** Required rows that are not done, which is how far from ready the page says this computer is. */
-export const requiredPending = (state: ProviderSetupState | null): SetupStep[] =>
-  (state?.steps ?? []).filter((step) => !step.optional && rowKind(step) !== 'ready');
-
-/** FR-11: ticked rows in the order they run, top down. */
-export function queueOf(state: ProviderSetupState | null, ticked: ReadonlySet<SetupStepId>): SetupStepId[] {
-  return (state?.steps ?? [])
-    .filter((step) => ticked.has(step.id) && rowKind(step) === 'needs')
-    .map((step) => step.id);
-}
-
-/** A row that stopped the queue, which the page's title and footer speak to. */
+/** A row that stopped a run of steps. */
 export function stoppedStep(state: ProviderSetupState | null): SetupStep | null {
   return (state?.steps ?? []).find((step) => ['failed', 'declined', 'restart'].includes(rowKind(step))) ?? null;
-}
-
-/**
- * FR-9: what "Try again" runs: the stopped row, then whatever is still ticked. Only a row the owner
- * already ran can be retried. One that failed a read-only check was never ticked, so nothing runs it.
- */
-export function retryQueue(
-  stopped: SetupStep | null,
-  attempted: ReadonlySet<SetupStepId>,
-  queued: readonly SetupStepId[],
-): SetupStepId[] {
-  if (!stopped || rowKind(stopped) === 'restart' || !attempted.has(stopped.id)) return [];
-  return [stopped.id, ...queued.filter((id) => id !== stopped.id)];
 }
 
 export interface PendingStep {
@@ -96,11 +68,6 @@ export function pendingSteps(provider: string, label: string, platform: string):
     { id: 'provider', helper: provider, label: 'Codex', optional: false },
     ...(platform === 'win32' ? [{ id: 'shell' as const, helper: 'shell', label: 'PowerShell scripts', optional: true }] : []),
   ];
-}
-
-/** FR-3: the hint beside "Check this computer". */
-export function checksToRun(provider: string, platform: string): number {
-  return pendingSteps(provider, provider, platform).length + (provider === 'codex' && platform === 'win32' ? 1 : 0);
 }
 
 /** FR-14: a helper run in the log: its start and end entries as one. */

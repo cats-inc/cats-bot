@@ -14,7 +14,16 @@ import { useElapsed, useSetupLog } from './setup/useSetupLog.ts';
  * Save never waits for it. Looking at a provider starts nothing. What was read stays with
  * its provider while another is looked at, and a run goes on when the page or the provider
  * changes; only one setup step runs at a time across Cats Bot (SPEC-013 FR-12).
+ * ADR-032: the setup wizard's Provider and model page uses it too, with the wizard's log at
+ * the window's foot (`dock`) instead of the sheet.
  */
+
+/** ADR-032: the wizard's log, told when a check or a step starts and ends. */
+export interface DockedLog {
+  started(line: string): void;
+  /** A failure keeps the log open. */
+  ended(failed: boolean): void;
+}
 
 const api = window.catsBot;
 
@@ -29,6 +38,9 @@ export function ProviderOps({
   who,
   onState,
   onBusy,
+  dock,
+  onRestart,
+  updates = true,
 }: {
   provider: string;
   label: string;
@@ -36,6 +48,11 @@ export function ProviderOps({
   who: string;
   onState?(state: ProviderSetupState | null): void;
   onBusy?(busy: boolean): void;
+  dock?: DockedLog;
+  /** The wizard can restart Cats Bot and keep what was typed (SPEC-010 FR-13). */
+  onRestart?(): void;
+  /** Whether a ready row may offer Update: not in the setup wizard, whose windows only install. */
+  updates?: boolean;
 }) {
   const { t } = useI18n();
   const [platform, setPlatform] = useState('');
@@ -57,8 +74,8 @@ export function ProviderOps({
   const [codexTerminal, setCodexTerminal] = useState<'opened' | 'missing' | null>(null);
   const [opening, setOpening] = useState(false);
   const [logOpen, setLogOpen] = useState(false);
-  const callbacks = useRef({ onState, onBusy });
-  callbacks.current = { onState, onBusy };
+  const callbacks = useRef({ onState, onBusy, dock });
+  callbacks.current = { onState, onBusy, dock };
   const log = useSetupLog();
   const elapsed = useElapsed(runStart);
   const key = (id: string, of = provider) => `${of}/${id}`;
@@ -94,13 +111,19 @@ export function ProviderOps({
     setNotices(new Map());
     setCheckFrom(log.runsRef.current.length);
     setRunStart(Date.now());
+    callbacks.current.dock?.started(t('Checking this computer'));
+    let failed = false;
     try {
-      remember(of, await api.setup.check(of));
+      const next = await api.setup.check(of);
+      remember(of, next);
+      failed = next.steps.some((step) => ['failed', 'declined', 'checkFailed'].includes(rowKind(step)));
     } catch (failure) {
+      failed = true;
       fail(failure);
     } finally {
       setChecking(null);
       setRunStart(null);
+      callbacks.current.dock?.ended(failed);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, log]);
@@ -126,12 +149,15 @@ export function ProviderOps({
     setError(null);
     setQueue(items.map((item) => key(item.id, of)));
     let current: Item | null = null;
+    let failed = false;
     try {
       for (const item of items) {
         if (stopRequested.current) break;
         current = item;
         setRunning({ provider: of, id: item.id });
         setRunStart(Date.now());
+        const step = states[of]?.steps.find((candidate) => candidate.id === item.id);
+        callbacks.current.dock?.started(step?.script?.file ?? t(step?.label ?? item.id));
         setNotices((current) => { const rest = new Map(current); rest.delete(key(item.id, of)); return rest; });
         setAttempted((current) => new Map(current).set(key(item.id, of), item.change));
         const next = await install(of, item);
@@ -146,14 +172,17 @@ export function ProviderOps({
           continue;
         }
         if (updateFailed) setAttempted((current) => { const rest = new Map(current); rest.delete(key(item.id, of)); return rest; });
+        failed = true;
         break;
       }
     } catch (failure) {
+      failed = true;
       fail(failure, current?.id);
     } finally {
       setRunning(null);
       setQueue([]);
       setRunStart(null);
+      callbacks.current.dock?.ended(failed);
     }
   };
 
@@ -211,11 +240,14 @@ export function ProviderOps({
             onCancel={() => setConfirming(null)}
             onRun={(change) => void apply([{ id: step.id, change }])}
             onCheckAgain={() => void check()}
+            {...(onRestart ? { onRestart } : {})}
+            updates={updates}
           />
         );
       });
 
   const mainReady = steps.some((step) => (step.id === provider || step.id === 'provider') && rowKind(step) === 'ready');
+  const powerShellLeft = provider === 'codex' && windows && steps.some((step) => step.id === 'shell' && rowKind(step) !== 'ready');
   const elsewhere = running && running.provider !== provider
     ? states[running.provider]?.steps.find((step) => step.id === running.id)?.label ?? running.id
     : null;
@@ -236,8 +268,8 @@ export function ProviderOps({
                   {checking === provider ? t('Checking…') : state ? t('Check again') : t('Check this computer')}
                 </button>
               </>}
-          <LogButton runs={log.runs} onOpen={() => setLogOpen(true)} />
-          <button type="button" className="setup-more" id="provider-all-clis" onClick={() => void api.shell.openAgentClis()}>{t('All agent CLIs')}</button>
+          {!dock && <LogButton runs={log.runs} onOpen={() => setLogOpen(true)} />}
+          {!dock && <button type="button" className="setup-more" id="provider-all-clis" onClick={() => void api.shell.openAgentClis()}>{t('All agent CLIs')}</button>}
         </div>
       </div>
       {elsewhere && <p className="hint">{t('{step} is still running.', { step: t(elsewhere) })}</p>}
@@ -261,7 +293,7 @@ export function ProviderOps({
         {rows}
         {state && mainReady && (
           <SignInRow id="provider" label={label} signIn={state.signIn} command={state.signInCommand} who={who}
-            busy={busy || opening} terminal={terminal} powerShellLeft={false} changedPath={applied.size > 0}
+            busy={busy || opening} terminal={terminal} powerShellLeft={powerShellLeft} changedPath={applied.size > 0}
             onOpen={() => void openTerminal()} />
         )}
         {state && mainReady && provider === 'codex' && windows && (
@@ -269,7 +301,7 @@ export function ProviderOps({
             onOpen={() => void openTerminal(true)} />
         )}
       </ul>
-      {logOpen && <LogSheet runs={log.runs} onClose={() => setLogOpen(false)} />}
+      {logOpen && !dock && <LogSheet runs={log.runs} onClose={() => setLogOpen(false)} />}
     </section>
   );
 }

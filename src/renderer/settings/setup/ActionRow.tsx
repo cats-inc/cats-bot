@@ -9,7 +9,8 @@ import { CheckIcon, CrossIcon, Details, PlainRow, QueuedRow, RunningRow, StepTit
  * ADR-030: a wizard row as a settings page shows it. Settings is not a process the window walks
  * through, so a row has one action instead of a tick: it asks in a box under the row, naming
  * what will run, and runs at once. What the run reported stays on the row; the whole log
- * opens only when asked (`LogSheet`). The wizard keeps its ticks and its log (SPEC-010).
+ * opens only when asked (`LogSheet`). ADR-032: the wizard's Provider and model page uses these rows too,
+ * with its log at the window's foot.
  */
 
 /** Node.js and the CLIs are installed; the npm folder and PowerShell scripts are set up. */
@@ -39,6 +40,8 @@ export function ActionRow({
   onCancel,
   onRun,
   onCheckAgain,
+  onRestart,
+  updates = true,
 }: {
   step: SetupStep<string>;
   provider: string;
@@ -65,6 +68,10 @@ export function ActionRow({
   onCancel(): void;
   onRun(change: SetupChange): void;
   onCheckAgain?: () => void;
+  /** A row Cats Bot cannot find yet: restart Cats Bot, keeping what the wizard holds. */
+  onRestart?: () => void;
+  /** The setup wizard only installs (SPEC-013 FR-13), so it offers no Update. */
+  updates?: boolean;
 }) {
   const { t } = useI18n();
   const boxRef = useRef<HTMLDivElement>(null);
@@ -112,7 +119,7 @@ export function ActionRow({
 
   if (kind === 'ready') {
     const note = updateNote(step);
-    const update = canUpdate(step);
+    const update = updates && canUpdate(step);
     return (
       <li className={rowClass('setup-row is-ready')} data-row={step.id}>
         <div className="setup-row-top">
@@ -183,7 +190,9 @@ export function ActionRow({
             {users}
           </div>
           <span className="setup-row-state is-attention">{t('Not found yet')}</span>
-          <span className="setup-row-act" />
+          <span className="setup-row-act">
+            {onRestart && !step.systemRestartRequired && <button type="button" className="setup-act" id="setup-restart" disabled={disabled} onClick={onRestart}>{t('Restart Cats Bot')}</button>}
+          </span>
         </div>
       </li>
     );

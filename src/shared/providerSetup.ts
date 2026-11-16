@@ -107,11 +107,6 @@ export interface ComputerSetupState {
   codexInitialization?: CodexInitialization;
 }
 
-export function canCreateFromSetup(state: ProviderSetupState | null): boolean {
-  // Sandbox readiness is advice about future turns, not a prerequisite for creating a cat.
-  return state?.canFinish === true;
-}
-
 /** FR-14: one run of a helper, or one terminal opened, as the page's log shows it. */
 export interface SetupLogEntry {
   /** The same for a run's start and end. */

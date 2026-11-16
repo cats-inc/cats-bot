@@ -111,6 +111,8 @@ export interface TurnRunnerDependencies {
   prepareSend?(item: WorkItem, sessionId: string): Promise<Pick<SendMessageRequest, 'mcpServers' | 'standingGrants'>>;
   log(line: string): void;
   delays?: Partial<TurnRetryDelays>;
+  /** ADR-032: the provider whose CLI is not on this computer, or null when it is there or cannot be told. */
+  missingCli?(): { provider: string; label: string } | null;
 }
 
 export function originForKind(kind: WorkItem['kind']): MessageOrigin {
@@ -142,10 +144,41 @@ export class TurnRunner {
   }
 
   async run(item: WorkItem, controller: AbortController): Promise<TurnOutcome> {
+    const outcome = await this.attempt(item, controller);
+    // The line it writes is the failure the owner sees, so the raw reason is not written beside it.
+    if (outcome.kind === 'failed' && this.explainMissingCli(item)) return { ...outcome, reported: true };
+    return outcome;
+  }
+
+  /**
+   * ADR-032: a message that failed because its CLI is not on this computer says so, once, with the way to
+   * install it. Background turns stay quiet; the owner sees it on the next message they send.
+   */
+  private explainMissingCli(item: WorkItem): boolean {
+    if (item.kind !== 'owner_message') return false;
+    const missing = this.deps.missingCli?.();
+    if (!missing) return false;
+    const entry = this.deps.conversations.append(item.conversationId, {
+      kind: 'error',
+      origin: originForKind(item.kind),
+      text: `${missing.label} is not on this computer, so this message got no reply.`,
+      workItemId: item.id,
+      isError: true,
+      fix: { kind: 'install_cli', provider: missing.provider, label: missing.label },
+    });
+    this.deps.emit({ type: 'turn.delta', conversationId: item.conversationId, workItemId: item.id, entry });
+    return true;
+  }
+
+  private async attempt(item: WorkItem, controller: AbortController): Promise<TurnOutcome> {
     const client = this.deps.client();
     if (!client) {
       return { kind: 'retry_later', reason: 'runtime_unavailable', retryAfterMs: this.delays.runtimeUnavailableMs };
     }
+    // ADR-032: no session is created or resumed for a CLI the Runtime cannot launch. A session whose first turn
+    // found no CLI never gets a native one, so it could never be resumed, and every later message would fail on it.
+    const missing = this.deps.missingCli?.();
+    if (missing) return { kind: 'failed', reason: `${missing.label} is not on this computer.` };
     let resumedAfterNoWorker = false;
     let rebuiltAfterExit = false;
     for (let round = 0; round < 3; round += 1) {

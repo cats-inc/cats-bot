@@ -475,6 +475,10 @@ textarea {
   background: #e8dcc0;
 }
 
+/* ADR-032: a missing CLI's line is centred like the note's other system lines, and so is its button. */
+.missing-cli { margin: 0; }
+.missing-cli + .decision-actions { justify-content: center; }
+
 .decision-actions button:disabled {
   opacity: 0.5;
   cursor: default;

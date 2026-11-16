@@ -184,38 +184,40 @@ async function main() {
     });
     await wait(() => BrowserWindow.getAllWindows().length === 1, 'setup window');
     const ui = await renderer(BrowserWindow.getAllWindows()[0]);
-    // SPEC-010: opening the page runs nothing, and no provider is chosen for the owner.
-    await ui.wait("document.querySelectorAll('input[name=setup-provider]').length === 5");
+    // SPEC-010, ADR-032: opening the page runs nothing, and no provider is chosen for the owner.
+    await ui.wait(`document.querySelectorAll('input[name=setup-provider]').length === ${CLI_PROVIDERS.length}`);
     assert.deepEqual(
       await ui.evaluate("Array.from(document.querySelectorAll('input[name=setup-provider]')).map(o=>o.value)"),
       CLI_PROVIDERS.map((p) => p.id),
     );
-    assert.equal(await ui.evaluate("document.querySelector('#setup-check').disabled"), true);
+    assert.equal(await ui.evaluate("!!document.querySelector('input[name=setup-provider]:checked')"), false);
     assert.deepEqual(calls, []);
     await ui.select('#display-language', 'zh-TW');
     await ui.wait(
-      "document.documentElement.lang === 'zh-TW' && document.querySelector('h1')?.textContent === '認識你的機器貓'",
+      "document.documentElement.lang === 'zh-TW' && document.querySelector('.setup-pane:not([hidden]) h1')?.textContent === '認識你的機器貓'",
     );
     await ui.screenshot('onboarding-zh-TW.png');
+    await ui.click('#setup-to-provider');
     await ui.click('input[name=setup-provider][value=codex]');
     assert.deepEqual(calls, []);
-    await ui.click('#setup-check');
-    for (let index = 0; index < 2; index++) {
-      await ui.wait("document.querySelector('.setup-rows input[type=checkbox]') && document.querySelector('#setup-recheck')");
-      await ui.evaluate("Array.from(document.querySelectorAll('.setup-rows input[type=checkbox]')).filter(n => !n.closest('[data-row=shell]')).forEach(n => n.click())");
-      await ui.wait("document.querySelector('#setup-apply')");
-      await ui.click('#setup-apply');
-      await ui.wait("document.querySelector('#setup-recheck') && !document.querySelector('.setup-rows').getAttribute('aria-busy').includes('true')");
-    }
+    await ui.click('#provider-check');
+    // Node.js first, then the npm folder and Codex together, each confirmed in its own box.
+    await ui.wait("document.querySelector('#setup-act-node')");
+    await ui.click('#setup-act-node');
+    await ui.click('.setup-row[data-row=node] .setup-confirm .run');
+    await ui.wait("document.querySelector('#provider-setup-all')");
+    await ui.click('#provider-setup-all');
+    await ui.click('.provider-ops > .setup-confirm .run');
+    await ui.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready') && !document.querySelector('.provider-ops').getAttribute('aria-busy').includes('true')");
     assert.deepEqual(
       calls.filter((call) => call.endsWith(':true')),
       ['node:true', 'npm:true', 'codex:true'],
     );
-    await ui.wait("!document.querySelector('#setup-next').disabled");
     await ui.click('#setup-next');
     await ui.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled");
     await ui.screenshot('onboarding-page-three.png');
-    await ui.click('#setup-submit');
+    // Creating closes the window, so the click is queued rather than awaited.
+    await ui.evaluate("setTimeout(() => document.querySelector('#setup-submit').click()); true");
     await done;
     makeWindows();
     registerShell();

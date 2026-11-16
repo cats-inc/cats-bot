@@ -97,6 +97,7 @@ export class RuntimeSupervisor {
   private _apiKey: string = '';
   private _client: RuntimeClient | null = null;
   private _pid: number | null = null;
+  private _launchedPath: string | null = null;
   private exited: Promise<void> | null = null;
   private generation = 0;
   private starting: Promise<RuntimeClient> | null = null;
@@ -113,6 +114,11 @@ export class RuntimeSupervisor {
 
   get baseUrl(): string | null {
     return this._baseUrl;
+  }
+
+  /** The PATH the running Runtime was started with, which it keeps; null before a start. */
+  get launchedPath(): string | null {
+    return this._launchedPath;
   }
 
   get pid(): number | null {
@@ -162,6 +168,7 @@ export class RuntimeSupervisor {
       CATS_RUNTIME_DOCKER_DISCOVERY_POLICY: 'manual_only',
       ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}),
     };
+    this._launchedPath = env.PATH ?? env.Path ?? '';
     const entry = this.options.runtimeEntry ?? resolveRuntimeEntry();
     let port: number;
     try {
