@@ -710,11 +710,16 @@ and the renderer (`tsconfig.renderer.json`).
 
 `.github/workflows/ci.yaml` runs `npm ci`, `npm run typecheck`, `npm test` and
 `npm run build` on `ubuntu-latest`, `windows-latest` and `macos-latest` with Node 24 for every
-pull request and every push to `main` that changes a path outside root `docs/`.
+pull request and every push to `main` that changes code: a path outside root
+`docs/` other than the root agent instruction files (`AGENTS.md`, `CLAUDE.md`,
+`CODEX.md` and `GEMINI.md`). An agent file counts as documentation only while it
+still exists: adding or editing one is documentation, while deleting or renaming
+one is code, because the skill sync requires the root `AGENTS.md`. Nested
+`AGENTS.md` files are code.
 The `changes` job follows the other Cats repositories' docs-only detection: PRs
 compare the test merge to its first parent; pushes compare the entire pushed
-range. Renames count both old and new paths. An unknown base, empty diff or failed
-detection runs full CI.
+range. Renames count both old and new paths. An unknown base, empty diff, manual
+run or failed detection runs full CI.
 
 For confirmed docs-only changes, the existing `node (...)` checks acknowledge the
 skip on lightweight Ubuntu runners; no Windows/macOS runner, dependency install,
@@ -741,12 +746,26 @@ The `node (...)` checks then acknowledge the skip on Ubuntu, and
 check. `tests/shell/ci.test.ts` runs this step against a local origin with a
 stubbed `gh`.
 
+Code that already passed is skipped the same way. The `changes` job fingerprints
+the mode, blob and path of every tracked file outside `docs/`; the root agent
+instruction files keep their mode and path but not their content. After a full
+run passes all three `node (...)` legs, `preview-contract` and `validate`, the
+last `validate` steps save a `ci-green-v1-<fingerprint>` cache marker. A later
+pull request or push run whose fingerprint has a marker, for example a rebase
+that only brought in documentation from `main`, skips as `tested`. Cache scope
+limits reuse: a pull request sees its own markers and those from `main`, and a
+push to `main` sees only `main`'s. Manual runs never look up a marker, so the
+release branch's exact-source run is always full. A skipped push run still
+concludes as a success for its commit, so the release guard accepts it; the
+same code passed every check in the run it reused.
+
 The same CI builds all Standard Preview architecture/format combinations as
 unsigned candidates and checks the complete asset metadata, source bundle and
 checksums. Candidate identity disables updates. The `candidate-windows` artifact
 is also the Windows installer and portable build that SPEC-002 FR-9 keeps for
-every main update: in the push run, or in the merged pull request's run when the
-push reuses it. Publication is a separate manual workflow documented in
+every main update that changes code: in the push run, or in the earlier run the
+push reuses (its merged pull request's, or one that passed on the same code).
+Publication is a separate manual workflow documented in
 [deployment.md](deployment.md). It does not rerun typecheck or the tests: its
 guard requires a successful CI push run on `main` for the source commit.
 
