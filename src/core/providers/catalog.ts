@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { delimiter, dirname, join } from 'node:path';
+import { delimiter, dirname, extname, join } from 'node:path';
 import { readCatalogFactory, readLocalCatalogProjection } from '@cats-inc/cats-runtime/catalogs';
 
 /**
@@ -48,14 +48,15 @@ export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env
 
 /**
  * The first of `dirs` that holds `command`, honouring PATHEXT on Windows (an empty one means the default) and any
- * `also` extensions after it.
+ * `also` extensions after it. As on Windows itself and in the Runtime, a name without an extension is tried with
+ * each extension first and as it is last: npm puts an extensionless shell script beside `codex.cmd`.
  */
 export function commandIn(command: string, dirs: readonly string[], env: NodeJS.ProcessEnv = process.env,
   platform = process.platform, also: readonly string[] = []): string | null {
   // PATHEXT is upper case; the lower-case spelling matters only on a case-sensitive file system.
-  const extensions = platform === 'win32'
-    ? ['', ...new Set([...(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((ext) => ext.trim()), ...also]
-      .filter(Boolean).flatMap((ext) => [ext, ext.toLowerCase()]))]
+  const extensions = platform === 'win32' && !extname(command)
+    ? [...new Set([...(env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').map((ext) => ext.trim()), ...also]
+      .filter(Boolean).flatMap((ext) => [ext, ext.toLowerCase()])), '']
     : [''];
   for (const dir of dirs) {
     if (!dir) continue;

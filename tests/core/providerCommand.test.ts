@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
-import { canFindProviderCommand, codexCanStart, loadInstallKnowledge, nodeInterpreter } from '../../src/core/providers/providerCommand.ts';
+import { canFindProviderCommand, codexCanStart, findProviderCommand, loadInstallKnowledge, nodeInterpreter } from '../../src/core/providers/providerCommand.ts';
 import { resolveRuntimeEntry } from '../../src/core/runtime/supervisor.ts';
 import { fakeRuntimeEntry, makeTempHome } from '../support/harness.ts';
 
@@ -114,4 +114,21 @@ test('npm\'s Codex can start only with the Node it runs on; a native Codex needs
   writeFileSync(join(shims, 'node.exe'), '');
   assert.equal(codexCanStart(join(shims, 'codex.cmd'), noNode, 'win32'), true);
   assert.equal(codexCanStart(join(dir, 'codex.exe'), noNode, 'win32'), true);
+});
+
+test('on Windows npm\'s codex.cmd is found before the shell script beside it, so its Node is checked', async () => {
+  const knowledge = (await loadInstallKnowledge(resolveRuntimeEntry()))!;
+  const home = makeTempHome('cats-bot-provider-command-npm-').botsHome;
+  const npm = join(home, 'Roaming', 'npm');
+  mkdirSync(npm, { recursive: true });
+  // What npm writes on Windows: a shell script, a cmd-shim and a PowerShell shim.
+  writeFileSync(join(npm, 'codex'), '#!/bin/sh\nexec node "$basedir/node_modules/@openai/codex/bin/codex.js" "$@"\n');
+  writeFileSync(join(npm, 'codex.cmd'), '@ECHO off\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n)\r\n');
+  writeFileSync(join(npm, 'codex.ps1'), '');
+  for (const path of [npm, join(home, 'no-clis')]) {
+    const env = { USERPROFILE: home, APPDATA: join(home, 'Roaming'), Path: path };
+    const found = findProviderCommand(knowledge, 'codex', 'codex', env, 'win32');
+    assert.match(found ?? '', /codex\.cmd$/iu, `found through ${path === npm ? 'PATH' : 'the npm folder'}`);
+    assert.equal(codexCanStart(found!, env, 'win32'), false, 'no Node beside it or on PATH');
+  }
 });
