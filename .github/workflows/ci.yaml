@@ -8,8 +8,16 @@ on:
     branches: [main]
 
 jobs:
-  # Match the other Cats repos: detect docs-only changes inside the workflow so
-  # required checks still report. Unknown bases and failed detection run CI.
+  # Match the other Cats repos: detect documentation-only changes inside the
+  # workflow so required checks still report. Documentation is root docs/ plus
+  # the root agent instruction files (AGENTS.md, CLAUDE.md, CODEX.md and
+  # GEMINI.md) while they still exist. Code that already passed is skipped too:
+  # the fingerprint covers every tracked file outside docs/, counting only the
+  # agent files' presence, so a rebase that only brings in documentation from
+  # main reuses the earlier green run. A pull request's cache is scoped to that
+  # request, so a push to main also reuses its merged pull request's run when
+  # that run tested the same tree. Unknown bases, manual runs and failed
+  # detection run CI.
   changes:
     runs-on: ubuntu-latest
     # Job permissions replace the defaults: checkout and the merge lookups read
@@ -20,6 +28,7 @@ jobs:
       actions: read
     outputs:
       code: ${{ steps.paths.outputs.code }}
+      fingerprint: ${{ steps.fingerprint.outputs.fingerprint }}
       skip: ${{ steps.plan.outputs.skip }}
     steps:
       - uses: actions/checkout@v4
@@ -41,11 +50,44 @@ jobs:
           if [ -n "$base" ] && git rev-parse --verify --quiet "$base^{commit}" > /dev/null; then
             # Include both sides of renames across the docs/ boundary.
             changed=$(git diff --no-renames --name-only "$base" HEAD)
-            code_changed=$(git diff --no-renames --name-only "$base" HEAD -- . ':(top,exclude)docs/')
+            code_changed=$(git diff --no-renames --name-only "$base" HEAD -- . ':(top,exclude)docs/' \
+              ':(top,exclude)AGENTS.md' ':(top,exclude)CLAUDE.md' ':(top,exclude)CODEX.md' ':(top,exclude)GEMINI.md')
+            # A root agent file counts as documentation only while it exists:
+            # added or modified. Deleting, renaming or retyping one is code,
+            # because the skill sync requires the root AGENTS.md. Nested
+            # AGENTS.md files are always code.
+            agents_removed=$(git diff --no-renames --name-only --diff-filter=am "$base" HEAD -- \
+              ':(top)AGENTS.md' ':(top)CLAUDE.md' ':(top)CODEX.md' ':(top)GEMINI.md')
             printf 'Changed files:\n%s\n' "$changed"
-            if [ -n "$changed" ] && [ -z "$code_changed" ]; then code=false; fi
+            if [ -n "$changed" ] && [ -z "$code_changed$agents_removed" ]; then code=false; fi
           fi
           echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+      - name: Fingerprint the code under test
+        id: fingerprint
+        run: |
+          set -euo pipefail
+          # Mode, blob and path of every tracked file outside docs/. The root
+          # agent instruction files keep their mode and path but not their
+          # content, so adding or removing one changes the fingerprint and
+          # editing one does not. For a pull request this is the merge result
+          # that the tests would exercise.
+          fingerprint=$(git -c core.quotePath=false ls-tree -r --full-tree HEAD |
+            awk -F '\t' '
+              $2 ~ /^docs\// { next }
+              $2 == "AGENTS.md" || $2 == "CLAUDE.md" || $2 == "CODEX.md" || $2 == "GEMINI.md" {
+                sub(/ [0-9a-f]+$/, " agent-instructions", $1); print $1 "\t" $2; next
+              }
+              { print }' |
+            sha256sum | cut -d ' ' -f 1)
+          echo "fingerprint=$fingerprint" | tee -a "$GITHUB_OUTPUT"
+      - name: Look for an earlier green run of this exact code
+        id: green
+        if: steps.paths.outputs.code == 'true' && github.event_name != 'workflow_dispatch'
+        uses: actions/cache/restore@v4
+        with:
+          path: .ci-green
+          key: ci-green-v1-${{ steps.fingerprint.outputs.fingerprint }}
+          lookup-only: true
       - name: Reuse the merged pull request's green run
         id: merged
         if: github.event_name == 'push' && steps.paths.outputs.code == 'true'
@@ -83,18 +125,20 @@ jobs:
         id: plan
         env:
           CODE: ${{ steps.paths.outputs.code }}
-          TESTED: ${{ steps.merged.outputs.tested }}
+          GREEN: ${{ steps.green.outputs.cache-hit }}
+          MERGED: ${{ steps.merged.outputs.tested }}
         run: |
           set -euo pipefail
           skip=
-          if [ "$CODE" = "false" ]; then skip=docs; elif [ "$TESTED" = "true" ]; then skip=tested; fi
+          if [ "$CODE" = "false" ]; then skip=docs; elif [ "$GREEN" = "true" ] || [ "$MERGED" = "true" ]; then skip=tested; fi
           echo "skip=$skip" | tee -a "$GITHUB_OUTPUT"
 
   # ADR-001 §9 / PLAN-005: test and package on each supported platform.
   # Keep required matrix names stable, but use only lightweight Ubuntu jobs to
-  # acknowledge a skip: a docs-only change, or a main push whose merged pull
-  # request already passed on the same tree. Tests run `.ts` files directly
-  # through Node 24 type stripping, so the source stays limited to erasable syntax.
+  # acknowledge a skip: a documentation-only change, or code that already
+  # passed, in an earlier run or in a main push's merged pull request. Tests run
+  # `.ts` files directly through Node 24 type stripping, so the source stays
+  # limited to erasable syntax.
   node:
     name: node (${{ matrix.os }})
     needs: changes
@@ -115,10 +159,10 @@ jobs:
     steps:
       - name: Documentation-only change
         if: env.SKIP == 'docs'
-        run: echo "Only docs/ changed; install, typecheck, tests and packaging are skipped."
-      - name: Already tested in its pull request
+        run: echo "Only docs/ or root agent instruction files (AGENTS.md, CLAUDE.md, CODEX.md, GEMINI.md) changed; install, typecheck, tests and packaging are skipped."
+      - name: Already tested
         if: env.SKIP == 'tested'
-        run: echo "The merged pull request passed CI on this exact tree; install, typecheck, tests and packaging are skipped, and its run holds the candidate packages."
+        run: echo "This exact code outside docs/ and the agent instruction files already passed every required check, in an earlier run or in the merged pull request; install, typecheck, tests and packaging are skipped, and the candidate packages are in that run."
       - uses: actions/checkout@v4
         if: env.SKIP == ''
 
@@ -273,3 +317,21 @@ jobs:
           print(f"Checked {len(paths)} YAML file(s), {failures} invalid")
           sys.exit(1 if failures else 0)
           PY
+
+      # Reached only when the gate and every check above passed, so all three
+      # node legs, the package contract and this job succeeded on this code.
+      # A skip, or a failed detection, records nothing.
+      - name: Record this code as tested
+        if: needs.changes.result == 'success' && needs.changes.outputs.skip == '' && needs.changes.outputs.fingerprint != ''
+        env:
+          FINGERPRINT: ${{ needs.changes.outputs.fingerprint }}
+        run: |
+          mkdir -p .ci-green
+          echo "$FINGERPRINT $GITHUB_RUN_ID" > .ci-green/marker
+
+      - name: Save the tested marker
+        if: needs.changes.result == 'success' && needs.changes.outputs.skip == '' && needs.changes.outputs.fingerprint != ''
+        uses: actions/cache/save@v4
+        with:
+          path: .ci-green
+          key: ci-green-v1-${{ needs.changes.outputs.fingerprint }}

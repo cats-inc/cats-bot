@@ -209,11 +209,12 @@ installation before in-app updates become available.
 
 ## Validation and failure recovery
 
-For changes outside root `docs/`, CI builds the same full architecture/format matrix as unsigned candidates,
+For code changes (outside root `docs/` and the root agent instruction files), CI builds the same full architecture/format matrix as unsigned candidates,
 validates the combined metadata/checksums and creates the complete-source ZIP.
-Docs-only changes skip candidate and Windows Package builds; required CI checks
-still report as described in [testing.md](testing.md#cicd-integration). Manual
-release and Package dispatches remain unchanged.
+Docs-only changes, and code that already passed in an earlier run, skip candidate
+and Windows Package builds; required CI checks still report as described in
+[testing.md](testing.md#cicd-integration). Manual release and Package dispatches
+remain unchanged and always run every check.
 The shared packager also checks the macOS executable's Intel and Apple Silicon
 architecture slices in both candidate CI and release builds. CI does not publish.
 Both workflows use GitHub's standard ARM64 `macos-latest` build host. The

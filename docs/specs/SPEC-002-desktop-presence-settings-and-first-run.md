@@ -218,9 +218,10 @@ instead of opening the alert.
    without `layer` derives it from `alwaysOnTop` (`top` or `normal`), and writing still keeps
    `alwaysOnTop`, so that versions that do not support layers still float a `top` note on top as
    before.
-9. FR-9: CI builds the Windows NSIS installer and portable build for every main update outside root `docs/` and uploads them
-   as artifacts: in the push run, or in the merged pull request's run when the push reuses that run because it tested the same
-   tree; starting from the shortcut after installation enters FR-1 or the existing bot.
+9. FR-9: CI builds the Windows NSIS installer and portable build for every main update outside root `docs/` and the root agent
+   instruction files, and uploads them as artifacts: in the push run, or in the earlier run the push reuses because it tested
+   the same code (the merged pull request's run, or an earlier run with the same code fingerprint); starting from the shortcut
+   after installation enters FR-1 or the existing bot.
 
 ## Acceptance
 
