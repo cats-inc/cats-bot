@@ -49,7 +49,10 @@ replace the waiting session. Telegram only notifies the owner to use a local
 surface; ordinary Telegram text is never interpreted as a native answer.
 
 Profile schema 2 stores `providerPolicy: null` for existing behavior, or the
-versioned Runtime provider/explicit policy. Explicit policy separates local
+versioned Runtime provider/explicit policy. A Kimi bot carries the hosted provider policy, with
+the optional `providerPolicyAuto: true` while Cats filled it in rather than the owner
+(ADR-025); leaving Kimi drops only such a policy. An older Bot that drops the field keeps
+the policy, which never widens access. Explicit policy separates local
 access, network and approval. Read-only workspace and allowlist boundaries cannot
 be overridden. Selecting a policy requires Runtime capability negotiation before
 create/resume; absence is unavailable, never silently ignored. Global changes

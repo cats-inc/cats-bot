@@ -20,8 +20,8 @@ export function providerCanOfferSessionTools(provider: string, policy: SessionEx
 
 /**
  * ADR-025: the policy a profile runs with. A hosted-only provider without a policy gets the hosted
- * policy. Leaving it keeps that policy: the next provider then follows its own native approvals,
- * and a bot never falls back to a legacy mode (which may be `skip`) the owner left behind.
+ * policy; the profile marks it (`providerPolicyAuto`) so that leaving that provider drops only a
+ * policy Cats filled in, never one the owner chose.
  */
 export function requiredProviderPolicy(provider: string, policy: SessionExecutionPolicy | null): SessionExecutionPolicy | null {
   return HOSTED_ONLY_PROVIDERS.includes(provider) ? policy ?? structuredClone(HOSTED_PROVIDER_POLICY) : policy;

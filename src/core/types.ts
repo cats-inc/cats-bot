@@ -82,6 +82,12 @@ export interface BotProfile {
   permissions: BotPermissions;
   /** Null retains the original permissionMode behavior; never inferred from skip. */
   providerPolicy: SessionExecutionPolicy | null;
+  /**
+   * ADR-025: set when the hosted policy was filled in because Kimi needs it, not chosen by the owner.
+   * Leaving Kimi then drops that policy again. Absent reads as chosen, so an older writer that drops
+   * the field only keeps a policy, never widens one.
+   */
+  providerPolicyAuto?: true;
   heartbeat: HeartbeatPolicy;
   idleSleepMinutes: number;
   telegram: TelegramPolicy;
