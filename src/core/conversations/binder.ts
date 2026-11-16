@@ -246,20 +246,21 @@ export class SessionBinder {
       if (error instanceof RuntimeHttpError && error.status === 404 && error.message === 'Session not found') {
         return this.replaceUnavailable(client, conversation, profile, 'runtime_session_missing');
       }
-      // FR-11 (2026-11-17): Runtime says this session never got a native one, and nothing was said in it, as after
-      // a failed sign-in or a CLI that failed to start. An owner's message replaces it, so the conversation works
-      // again once the CLI does. Reconcile and background work keep the mapping, so a CLI that still fails is not
-      // created again on every tick; each owner message tries once.
+      // FR-11 (2026-11-17): Runtime says this session never got a native one, and no message in it completed, as
+      // after a failed sign-in or a CLI that failed to start, so nothing in it can be resumed. An owner's message
+      // replaces it, so the conversation works again once the CLI does. Reconcile and background work keep the
+      // mapping, so a CLI that still fails is not created again on every tick; each owner message tries once.
       const unstarted = error instanceof RuntimeHttpError && error.status === 400
         && /^No provider session ID to resume\b/u.test(error.message) && neverStarted(observed, attachment);
       if (unstarted && intent.owner) {
         this.deps.log(`conversation ${conversation.id}: session ${id} never started a native session; the owner's message replaces it`);
-        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable', true, false);
+        return this.replaceUnavailable(client, conversation, profile, 'provider_session_unavailable', true, false, false, true);
       }
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.log(`conversation ${conversation.id}: resume of ${id} failed`);
       this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
-      // Such a session is replaced by the owner's next message, so the owner reads nothing about it before then.
+      // Such a session is replaced by the owner's next message, so the binder writes nothing about it. A schedule
+      // or event that could not run still shows its own failure.
       if (attachment.lastError !== reason && !unstarted) this.deps.conversations.append(conversation.id, {
         kind: 'error', origin: 'system', text: `Could not resume the previous session: ${reason}`,
       });
@@ -269,7 +270,7 @@ export class SessionBinder {
 
   private async replaceUnavailable(client: RuntimeClient, conversation: ConversationRecord, profile: BotProfile,
     reason: NonNullable<SessionAttachment['unavailableReason']>, unstartedTurn = false, notice = true,
-    byReconcile = false): Promise<BindResult> {
+    byReconcile = false, byOwner = false): Promise<BindResult> {
     const { attachment } = conversation;
     if (attachment.replacementPending && !unstartedTurn) return this.fenced(conversation.id, attachment.sessionId);
     const before = {
@@ -283,13 +284,14 @@ export class SessionBinder {
     // capacity, a bad request) or one never sent leaves no worker: the fence goes back as it was, so the next
     // turn, or reconcile after its back-off, can try again. An ambiguous failure (a timeout) keeps the fence,
     // except after reconcile's own try: that must never spend the owner's next turn, and reconcile does not
-    // try that session again in this process.
+    // try that session again in this process. An owner's replacement of a session that never started gives the
+    // fence back too (FR-11), so the next message can try again; each message tries once.
     const after = this.deps.conversations.get(conversation.id)?.attachment;
-    if (!result.ok && (refused || byReconcile) && after?.sessionId === attachment.sessionId) {
+    if (!result.ok && (refused || byReconcile || byOwner) && after?.sessionId === attachment.sessionId) {
       // A refused try left no worker, so reconcile may try again after its wake back-off.
       if (refused && byReconcile) this.reconcileTried.delete(attachment.sessionId!);
       this.deps.conversations.setAttachment(conversation.id, { ...before, lastError: after.lastError });
-      this.deps.log(`conversation ${conversation.id}: replacement ${refused ? 'refused before a worker started' : 'by reconcile failed'}; fence restored`);
+      this.deps.log(`conversation ${conversation.id}: replacement ${refused ? 'refused before a worker started' : byOwner ? 'for the owner failed' : 'by reconcile failed'}; fence restored`);
     }
     return result;
   }
@@ -399,8 +401,9 @@ export class SessionBinder {
 
 /**
  * A Runtime CLI session with no native ID on either side, no completed message, no native history file and no run
- * going on: nothing native exists that a replacement could lose. Runtime's own history may hold the prompt that got
- * no reply; the conversation's transcript has it too, and the replacement's handoff carries it.
+ * going on: nothing in it can be resumed. Runtime's own history may hold the prompt that got no reply; the
+ * conversation's transcript has it too, and the replacement's handoff carries it. Work a CLI did before it failed
+ * without reporting its ID (Grok reports it only at the end) is out of reach either way.
  */
 function neverStarted(observed: RuntimeSessionView | undefined, attachment: SessionAttachment): boolean {
   return observed !== undefined && observed.origin === 'runtime' && observed.providerBackend === 'cli'

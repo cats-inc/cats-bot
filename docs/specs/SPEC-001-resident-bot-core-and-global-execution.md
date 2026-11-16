@@ -185,17 +185,22 @@ freeze of the storage format.
       that found no CLI would otherwise leave an attempted session with no native ID, whose mapping the rules
       above keep, and every later message would fail on it.
     - 2026-11-17, at the owner's request: an owner's message may replace a session that Runtime refuses to
-      resume with `400 No provider session ID to resume`, when nothing native exists to lose. That means a
+      resume with `400 No provider session ID to resume`, when nothing in it can be resumed. That means a
       Runtime-origin CLI record with no native ID in either the attachment or Runtime, zero completed
-      messages, no native history path and no current run. An attempted turn, a failed last run and Runtime's
+      messages, no native history path and no current run. (Work a CLI did before failing without reporting
+      its ID, as Grok reports it only at the end, is out of reach either way; the handoff carries the
+      conversation, not that work.) An attempted turn, a failed last run and Runtime's
       own history of the unanswered prompt do not prevent it. This covers a first turn whose CLI was reached
       but failed to start, such as a failed sign-in: once the CLI works, the owner's next message is answered,
       and earlier stuck conversations recover the same way. The prompt that got no reply reaches the new
       session through the handoff, and no rebuild notice is shown. Each owner message replaces at most once,
-      past the replacement fence, so a CLI that still fails costs one session per message the owner sends.
-      Reconciliation, heartbeats, schedules and events keep the mapping as above and write no resume error
-      for such a session. Any other evidence (completed messages, a native ID or history path, a run going
-      on, an unknown or discovered origin, an unknown or API backend) still preserves the mapping.
+      past the replacement fence, and not after its own turn created a session, so a CLI that still fails
+      costs one session per message the owner sends. A replacement whose create fails, even ambiguously,
+      gives the fence back, so the next message tries again; a timed-out create may leave one unused worker.
+      Reconciliation, heartbeats, schedules and events keep the mapping as above. The binder writes no resume
+      error for such a session; reconciliation and heartbeats stay silent, and a schedule or event that could
+      not run still shows its failure. Any other evidence (completed messages, a native ID or history path, a
+      run going on, an unknown or discovered origin, an unknown or API backend) still preserves the mapping.
 12. FR-12: Handoff context: the CLI provider's native transcript is kept by the CLI; the core additionally keeps
     its own transcript and, when creating or replacing a session, sends the handoff pack in the instructions:
     12,000-character cap, verbatim for short conversations, digest plus recent content for long ones. The

@@ -114,8 +114,8 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
   log open. The button bar stays in place, as on the settings page.
 - A cat bot can be created whose CLI is missing. Its first message then says so instead of answering.
 - A cat bot whose first turn reached its CLI and failed at start, rather than finding no CLI, keeps that session
-  under SPEC-001's rule. As amended on 2026-11-17 (FR-11), the owner's next message replaces it when nothing native
-  exists to lose; background work still keeps it.
+  under SPEC-001's rule. As amended on 2026-11-17 (FR-11), the owner's next message replaces it when nothing in it
+  can be resumed; background work still keeps it.
 - Each row is pressed and confirmed, where several ticks used to run with one Apply. "Set up all N" covers the
   required rows.
 

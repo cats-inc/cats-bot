@@ -181,9 +181,13 @@ export class TurnRunner {
     if (missing) return { kind: 'failed', reason: `${missing.label} is not on this computer.` };
     let resumedAfterNoWorker = false;
     let rebuiltAfterExit = false;
+    // SPEC-001 FR-11: an owner's message replaces a session that never started at most once, and not after it made
+    // one itself: a CLI that dies at start would otherwise cost a second session in the same turn.
+    let created = false;
     for (let round = 0; round < 3; round += 1) {
       if (controller.signal.aborted) return { kind: 'cancelled' };
-      const bound = await this.deps.binder.bind(item.conversationId, { forTurn: true, owner: item.kind === 'owner_message' });
+      const bound = await this.deps.binder.bind(item.conversationId, { forTurn: true, owner: item.kind === 'owner_message' && !created });
+      if (bound.ok && bound.how === 'created') created = true;
       if (!bound.ok) {
         if (bound.noCapacity && item.kind !== 'owner_message') {
           return { kind: 'retry_later', reason: 'no_capacity', retryAfterMs: this.delays.noCapacityMs };
