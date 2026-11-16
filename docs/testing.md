@@ -243,10 +243,10 @@ The floating Cat's quick menu (SPEC-002 FR-7a, ADR-027) has these unit tests:
     grant request waits. A grant state that cannot be read, a provider request
     without a running turn and a core older than `awaitingOwnerConversations`
     leave notes untagged.
-- `tests/core/life.test.ts`: `status().awaitingOwnerConversations` names the
-  conversation an `ask_owner` question waits in, and empties once it is decided.
   - The placement: inside the work area, clear of the Cat, on either side, on a
     second display and on a narrow one.
+- `tests/core/life.test.ts`: `status().awaitingOwnerConversations` names the
+  conversation an `ask_owner` question waits in, and empties once it is decided.
 - `tests/renderer/floatingClicks.test.ts`: single and double clicks, the 300 ms
   wait, a click while open, drags, and the switch off.
 - `tests/shell/hub.test.ts`: `floatingQuickMenu` reads as on when absent.

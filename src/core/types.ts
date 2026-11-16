@@ -551,8 +551,11 @@ export interface BotStatus {
   pendingInteractions: number;
   /** Work items waiting for the owner's answer, such as `ask_owner` questions. */
   awaitingOwner: number;
-  /** The conversations those work items are in, each once (SPEC-002 FR-7a). */
-  awaitingOwnerConversations: string[];
+  /**
+   * The conversations those work items are in, each once (SPEC-002 FR-7a). Absent from a core
+   * started before it existed, which the Hub can still attach to.
+   */
+  awaitingOwnerConversations?: string[];
   /** SPEC-009 FR-10 and FR-11: whether the hub reports this bot as the Boss Cat, and whether its provider gives it the tools. */
   bossCat: { holder: boolean; tools: boolean };
   conversations: number;
