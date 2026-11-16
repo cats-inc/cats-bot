@@ -67,6 +67,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [026](./026-clear-the-direct-message-and-give-every-note-row-the-same-controls.md) | Clear the Direct Message and Give Every Note Row the Same Controls | Accepted | 2026-11-16 |
 | [027](./027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) | Open the Floating Cat's Quick Menu in Its Own Focusable Window | Accepted | 2026-11-16 |
 | [028](./028-let-the-owner-grant-a-conversations-actions-once.md) | Let the Owner Grant a Conversation's Actions Once | Accepted | 2026-11-16 |
+| [029](./029-dictate-on-linux-with-the-linux-stt-pack-and-choose-the-dictation-language.md) | Dictate on Linux with the linux-stt Pack and Choose the Dictation Language | Proposed | 2026-11-16 |
 
 <!-- Add new ADRs above this line -->
 
