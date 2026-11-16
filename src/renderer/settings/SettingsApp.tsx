@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BotProfile, BotStatus } from '../../core/types.ts';
 import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
 import { avatarUrl } from '../avatarArt.ts';
+import { executionSummary } from '../note/executionSummary.ts';
 import { AgentClisTab } from './AgentClisTab.tsx';
 import { BotTab } from './BotTab.tsx';
 import { BotsTab } from './BotsTab.tsx';
@@ -55,6 +56,9 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
   }, [tab]);
   const [profile, setProfile] = useState<BotProfile | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
+  // The provider, model and effort under the bot's name, as its note header names them (SPEC-003 FR-11).
+  const [target, setTarget] = useState('');
+  const targetSettled = useRef('');
   const [toastText, setToastText] = useState<string | null>(null);
   const toastTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
@@ -96,6 +100,22 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
     };
   }, [refreshStatus, scope, locale]);
 
+  useEffect(() => {
+    if (scope === 'hub' || !profile) return;
+    const executionTarget = profile.executionTarget;
+    const key = `${JSON.stringify(executionTarget)}|${locale}`;
+    if (key === targetSettled.current) return;
+    let live = true;
+    setTarget((current) => current || executionSummary('', executionTarget, null));
+    void api.invoke('listModels', executionTarget.provider).catch(() => null).then((catalog) => {
+      if (!live) return;
+      setTarget(executionSummary('', executionTarget, catalog));
+      // Only Runtime's own catalog settles the names; until it answers, the next read asks again.
+      if (catalog?.source === 'runtime') targetSettled.current = key;
+    });
+    return () => { live = false; };
+  }, [profile, status?.runtime.state, scope, locale]);
+
   const saved = (next: BotProfile) => {
     setProfile(next);
     void refreshStatus();
@@ -115,9 +135,10 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
             />
             <div>
               <strong id="brand-name">{status?.name ?? t('Cats Bot')}</strong>
-              <small id="brand-state">{scope === 'hub' ? t('Settings') : status ? brandState(profile, status) : '…'}</small>
+              <small id="brand-state">{scope === 'hub' ? t('Settings') : status ? brandState(status) : '…'}</small>
             </div>
           </div>
+          {scope === 'bot' && target && <p className="brand-target" id="brand-target">{target}</p>}
           {tabs.map((name) => (
             <button
               key={name}

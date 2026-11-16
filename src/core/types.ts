@@ -179,6 +179,21 @@ export interface ConversationRecord {
   contactOf: string | null;
   /** The other bot's name, refreshed from each of its deliveries. */
   contactName: string | null;
+  /**
+   * SPEC-002 FR-5b: the direct message was last cleared at `at`, when its transcript ended at `throughSeq`. Later
+   * entries continue from there, and work admitted before `at` is no longer the conversation's. Absent until then.
+   */
+  cleared?: ConversationClear;
+  /**
+   * Sessions this conversation had before its current one, which a provider or model change replaced (FR-27).
+   * Clearing or deleting the conversation deletes them too; one Runtime keeps is remembered for the next time.
+   */
+  retiredSessionIds?: string[];
+}
+
+export interface ConversationClear {
+  at: string;
+  throughSeq: number;
 }
 
 export type TranscriptEntryKind =
@@ -399,6 +414,8 @@ export interface BotDelivery {
   fromName: string;
   /** The conversation a reply returns to; a message goes to the direct message. */
   conversationId?: string;
+  /** For a reply: when its message was sent, so a reply to a direct message cleared since goes elsewhere. */
+  askedAt?: string;
   text: string;
 }
 
@@ -432,6 +449,8 @@ export interface BotHostApi {
   listConversations(): Promise<ConversationRecord[]>;
   createConversation(title?: string): Promise<ConversationRecord>;
   deleteConversation(conversationId: string): Promise<void>;
+  /** SPEC-002 FR-5b: the direct message starts over; it is never deleted. */
+  clearConversation(conversationId: string): Promise<ConversationRecord>;
   openView(conversationId: string): Promise<void>;
   closeView(conversationId: string): Promise<void>;
   /** An open view in the background does not read replies; only a focused one does. */
@@ -484,6 +503,8 @@ export interface BotProfilePatch {
 export type BotHostEvent =
   | { type: 'provider.interactions'; conversationId: string; pending: number; notify?: boolean }
   | { type: 'conversation.updated'; conversation: ConversationRecord }
+  /** SPEC-002 FR-5b: the direct message was cleared; a window showing it drops what it shows. */
+  | { type: 'conversation.cleared'; conversation: ConversationRecord }
   | { type: 'turn.delta'; conversationId: string; workItemId: string; entry: TranscriptEntry }
   | { type: 'turn.presentation'; conversationId: string; workItemId: string; entry: TranscriptEntry }
   | { type: 'turn.completed'; conversationId: string; workItem: WorkItem }

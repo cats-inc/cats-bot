@@ -8,6 +8,7 @@ import { appendTranscript, readTranscript } from '../store/transcript.ts';
 import { deletePresentations, readPresentations, savePresentation, projectPresentationTranscript } from '../store/presentation.ts';
 import type {
   AttachmentState,
+  ConversationClear,
   ConversationRecord,
   ConversationRole,
   ConversationTitleSource,
@@ -74,6 +75,22 @@ function normalizeAttachment(raw: unknown, now: string): SessionAttachment {
   };
 }
 
+/** At most this many replaced sessions are remembered per conversation; older ones stay to Runtime alone. */
+export const RETIRED_SESSION_LIMIT = 50;
+
+function normalizeClear(raw: unknown): ConversationClear | null {
+  if (!isRecord(raw) || typeof raw.at !== 'string' || !Number.isFinite(Date.parse(raw.at))) return null;
+  const throughSeq = typeof raw.throughSeq === 'number' && Number.isSafeInteger(raw.throughSeq) && raw.throughSeq >= 0
+    ? raw.throughSeq : 0;
+  return { at: raw.at, throughSeq };
+}
+
+function normalizeSessionIds(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const ids = raw.filter((id): id is string => typeof id === 'string' && id.length > 0 && id.length <= 200);
+  return [...new Set(ids)].slice(-RETIRED_SESSION_LIMIT);
+}
+
 export function normalizeConversation(raw: unknown, now: string): ConversationRecord | null {
   if (!isRecord(raw) || typeof raw.id !== 'string' || !raw.id) return null;
   const role: ConversationRole = raw.role === 'home' ? 'home' : 'note';
@@ -94,6 +111,8 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
   const contactOf = role === 'note' && typeof raw.contactOf === 'string' && isValidBotId(raw.contactOf) ? raw.contactOf : null;
   const titleAttempts = typeof raw.titleAttempts === 'number' && Number.isSafeInteger(raw.titleAttempts) && raw.titleAttempts > 0
     ? raw.titleAttempts : 0;
+  const cleared = role === 'home' ? normalizeClear(raw.cleared) : null;
+  const retiredSessionIds = normalizeSessionIds(raw.retiredSessionIds);
   return {
     schemaVersion: 1,
     id: raw.id,
@@ -114,6 +133,8 @@ export function normalizeConversation(raw: unknown, now: string): ConversationRe
     contactName: role === 'note' && typeof raw.contactName === 'string' && raw.contactName.trim()
       ? raw.contactName.trim().slice(0, 80)
       : null,
+    ...(cleared ? { cleared } : {}),
+    ...(retiredSessionIds.length ? { retiredSessionIds } : {}),
   };
 }
 
@@ -306,6 +327,52 @@ export class ConversationStore {
     });
   }
 
+  /** FR-27: a session this conversation no longer uses, remembered so clearing or deleting it removes that too. */
+  retireSession(id: string, sessionId: string): void {
+    this.update(id, (record) => {
+      const ids = (record.retiredSessionIds ?? []).filter((known) => known !== sessionId);
+      record.retiredSessionIds = [...ids, sessionId].slice(-RETIRED_SESSION_LIMIT);
+    });
+  }
+
+  /** Replaced sessions Runtime has deleted are forgotten; the rest stay for the next clear or delete. */
+  forgetRetiredSessions(id: string, sessionIds: readonly string[]): void {
+    const gone = new Set(sessionIds);
+    if (!this.get(id)?.retiredSessionIds?.some((known) => gone.has(known))) return;
+    this.update(id, (record) => {
+      const kept = (record.retiredSessionIds ?? []).filter((known) => !gone.has(known));
+      if (kept.length) record.retiredSessionIds = kept;
+      else delete record.retiredSessionIds;
+    });
+  }
+
+  /**
+   * SPEC-002 FR-5b: the direct message starts over. Its transcript and presentations go, and the record keeps
+   * its name, nothing it said, and no session: the caller cancelled its work and took its sessions first. The
+   * transcript continues after the last `seq` it had, so nothing that remembered a `seq` can meet it again.
+   */
+  clear(id: string, at = this.now().toISOString()): ConversationRecord {
+    const record = this.require(id);
+    if (record.role !== 'home') throw new Error('Only the direct message is cleared; a note is deleted');
+    const throughSeq = Math.max(this.lastSeq(id), record.cleared?.throughSeq ?? 0);
+    rmSync(transcriptFile(this.paths, id), { force: true });
+    deletePresentations(this.paths, id);
+    this.nextSeq.set(id, throughSeq + 1);
+    return this.update(id, (next) => {
+      next.attachment = emptyAttachment(at);
+      next.unreadCount = 0;
+      next.lastOwnerMessageAt = null;
+      next.lastBotMessageAt = null;
+      next.checkpoint = null;
+      next.cleared = { at, throughSeq };
+    });
+  }
+
+  private lastSeq(id: string): number {
+    const next = this.nextSeq.get(id);
+    return next !== undefined ? next - 1 : readTranscript(this.paths, id).at(-1)?.seq ?? 0;
+  }
+
   /** SPEC-001 FR-14: the record and transcript go together; the caller closed the session first. */
   remove(id: string): void {
     const record = this.require(id);
@@ -336,7 +403,8 @@ export class ConversationStore {
     this.require(id);
     let seq = this.nextSeq.get(id);
     if (seq === undefined) {
-      seq = (readTranscript(this.paths, id).at(-1)?.seq ?? 0) + 1;
+      // A cleared direct message continues after the transcript it had (FR-5b).
+      seq = Math.max(readTranscript(this.paths, id).at(-1)?.seq ?? 0, this.records.get(id)?.cleared?.throughSeq ?? 0) + 1;
     }
     const at = this.now().toISOString();
     const full: TranscriptEntry = { seq, at, ...entry };

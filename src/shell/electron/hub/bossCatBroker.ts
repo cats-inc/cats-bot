@@ -81,6 +81,8 @@ interface DeliveryRecord {
   to: string;
   /** For a message, the holder's conversation its reply returns to; for a reply, that conversation. */
   conversationId: string;
+  /** For a reply: when its message was sent, which tells a direct message cleared since (SPEC-002 FR-5b). */
+  askedAt?: string;
   /** Kept while the delivery may be sent again; a settled one keeps none (compaction). */
   text: string;
   state: 'accepted' | 'sent' | 'answered' | 'failed';
@@ -421,7 +423,8 @@ export class BossCatBroker {
         const item = await core.admitBotMessage({
           deliveryId: current.id, chainId: current.chainId, hop: current.hop, kind: current.kind,
           from: current.from, fromName: current.fromName, text: current.text,
-          ...(current.kind === 'reply' ? { conversationId: current.conversationId } : {}),
+          ...(current.kind === 'reply'
+            ? { conversationId: current.conversationId, ...(current.askedAt ? { askedAt: current.askedAt } : {}) } : {}),
         });
         this.save({ ...current, state: 'sent', workItemId: item.id });
         return true;
@@ -458,7 +461,7 @@ export class BossCatBroker {
       replyRecord = {
         id: replyId, kind: 'reply', chainId: message.chainId, hop: message.hop + 1,
         from: message.to, fromName: this.name(message.to, RECORD_NAME_LENGTH), to: message.from, conversationId: message.conversationId,
-        text: text.slice(0, MAX_TEXT), state: 'accepted', at: this.now().toISOString(),
+        askedAt: message.at, text: text.slice(0, MAX_TEXT), state: 'accepted', at: this.now().toISOString(),
       };
       this.save(replyRecord);
     }

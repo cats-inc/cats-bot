@@ -361,8 +361,12 @@ export class SessionBinder {
         kind: 'system', origin: 'system', text: REBUILT_SESSION_NOTICE,
       });
       this.deps.log(`conversation ${conversation.id}: created session ${view.id} (${view.status})`);
-      // FR-27: nothing else would ever close the replaced session's worker.
-      if (replaced && replaced !== view.id) this.deps.retireSession?.(replaced);
+      // FR-27: nothing else would ever close the replaced session's worker. It is remembered, so clearing or
+      // deleting the conversation deletes it as well (SPEC-002 FR-5b).
+      if (replaced && replaced !== view.id) {
+        this.deps.conversations.retireSession(conversation.id, replaced);
+        this.deps.retireSession?.(replaced);
+      }
       return { result: { ok: true, sessionId: view.id, how: 'created' }, refused: false };
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
