@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
 
@@ -99,7 +99,8 @@ test('an npm Codex with no Node says Node.js is missing, and runs once the Node 
   // npm's `codex` is a script that starts Node; it sits where the Runtime's install knowledge looks for it.
   const npmBin = join(h, '.npm-global', 'bin');
   mkdirSync(npmBin, { recursive: true });
-  writeFileSync(join(npmBin, 'codex'), '#!/usr/bin/env node\nprocess.stderr.write("STUB-CODEX-RAN\\n");\nprocess.exit(1);\n');
+  // Each run leaves `ran` beside it, since the turn's last error depends on how the Runtime retried.
+  writeFileSync(join(npmBin, 'codex'), `#!/usr/bin/env node\nrequire('node:fs').appendFileSync(${JSON.stringify(join(npmBin, 'ran'))}, 'ran\\n');\nprocess.exit(1);\n`);
   chmodSync(join(npmBin, 'codex'), 0o755);
   const core = await openCore(h, 'codex', 'codex');
   try {
@@ -110,7 +111,7 @@ test('an npm Codex with no Node says Node.js is missing, and runs once the Node 
     core.useCommandDirectory(nodeBin);
     const next = await sendAndWait(core, 'home', 'hello again', 90_000);
     assert.equal(next.state, 'failed');
-    assert.match(next.error ?? '', /STUB-CODEX-RAN/u, 'the Runtime launched codex with Node');
+    assert.ok(existsSync(join(npmBin, 'ran')), 'the Runtime launched codex with Node');
   } finally {
     await core.stop();
   }

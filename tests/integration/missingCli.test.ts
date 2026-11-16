@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { chmodSync, mkdirSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 
@@ -45,10 +45,13 @@ for (const [provider, label] of [['codex', 'Codex'], ['grok', 'Grok']] as const)
   });
 }
 
-/** A CLI that is there and fails at once, for a turn that fails for another reason than a missing CLI. */
+/**
+ * A CLI that is there and fails at once, for a turn that fails for another reason than a missing CLI. Each run
+ * leaves `ran` beside it, since the turn's last error depends on how the Runtime retried.
+ */
 function failingCli(dir: string, command: string): void {
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, command), `#!/bin/sh\necho "${command}: failing on purpose" >&2\nexit 1\n`);
+  writeFileSync(join(dir, command), `#!/bin/sh\necho ran >> "${join(dir, 'ran')}"\necho "${command}: failing on purpose" >&2\nexit 1\n`);
   chmodSync(join(dir, command), 0o755);
   writeFileSync(join(dir, `${command}.cmd`), `@echo ${command}: failing on purpose 1>&2\r\n@exit /b 1\r\n`);
 }
@@ -86,7 +89,7 @@ for (const [where, provider, place] of [
       assert.ok(errors.length > 0, 'the failure is written');
       assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
       // The Runtime launched the stand-in: the core and the Runtime agree that it is there.
-      if (process.platform !== 'win32') assert.match(turn.error ?? '', /failing on purpose/u);
+      if (process.platform !== 'win32') assert.ok(existsSync(join(bin, 'ran')), 'the Runtime launched the stand-in');
     } finally {
       await core.stop();
     }
