@@ -41,11 +41,16 @@ export function defaultCommandFor(provider: string): string {
 /** Finds an executable on PATH the way a shell would, honouring PATHEXT on Windows. */
 export function findOnPath(command: string, env: NodeJS.ProcessEnv = process.env, platform = process.platform): string | null {
   const path = env.PATH ?? env.Path ?? '';
+  return commandIn(command, path.split(platform === 'win32' ? ';' : delimiter), env, platform);
+}
+
+/** The first of `dirs` that holds `command`, honouring PATHEXT on Windows. */
+export function commandIn(command: string, dirs: readonly string[], env: NodeJS.ProcessEnv = process.env, platform = process.platform): string | null {
   // PATHEXT is upper case; the lower-case spelling matters only on a case-sensitive file system.
   const extensions = platform === 'win32'
     ? ['', ...new Set((env.PATHEXT ?? '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean).flatMap((ext) => [ext, ext.toLowerCase()]))]
     : [''];
-  for (const dir of path.split(platform === 'win32' ? ';' : delimiter)) {
+  for (const dir of dirs) {
     if (!dir) continue;
     for (const extension of extensions) {
       const candidate = join(dir.replace(/^"(.*)"$/u, '$1'), `${command}${extension}`);

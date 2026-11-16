@@ -25,7 +25,6 @@ import { createFileLogger, type Logger } from './log.ts';
 import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
 import {
   CLI_PROVIDERS,
-  findOnPath,
   listProviders,
   readLocalModelCatalog,
   type ModelCatalog,
@@ -51,7 +50,8 @@ import {
 } from './transports/telegram.ts';
 import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
-import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
+import { canFindProviderCommand, loadInstallKnowledge, type InstallKnowledgeReader } from './providers/providerCommand.ts';
+import { RuntimeSupervisor, resolveRuntimeEntry, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
 import { appendJournal, blankJournalText, blankWorkItemText, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
@@ -196,6 +196,8 @@ export class ContactNoteError extends Error {
 export class BotCore implements BotHostApi {
   readonly paths: BotPaths;
   private profile: BotProfile;
+  /** ADR-032: where the Runtime looks for a provider CLI besides PATH; null says nothing is missing. */
+  private installKnowledge: InstallKnowledgeReader | null = null;
   private readonly options: BotCoreOptions;
   private readonly now: () => Date;
   private readonly log: Logger;
@@ -436,15 +438,17 @@ export class BotCore implements BotHostApi {
   }
 
   /**
-   * ADR-032: the provider whose command is not on the PATH the Runtime is given, as `listProviders` looks.
-   * A host that names the command itself (development, tests) is trusted.
+   * ADR-032: the provider whose CLI the Runtime cannot launch: not on the PATH it is given, nor where the provider's
+   * installer puts it. A host that names the command itself (development, tests), or a Runtime without install
+   * knowledge, is trusted.
    */
   private missingCli(): { provider: string; label: string } | null {
-    if (this.options.runtimeClient || this.options.runtime?.providerCommand) return null;
+    if (this.options.runtimeClient || this.options.runtime?.providerCommand || !this.installKnowledge) return null;
     const provider = this.profile.executionTarget.provider;
     const definition = CLI_PROVIDERS.find((item) => item.id === provider);
     if (!definition) return null;
-    return findOnPath(definition.command, this.options.runtime?.env ?? process.env) ? null : { provider, label: definition.label };
+    const env = this.options.runtime?.env ?? process.env;
+    return canFindProviderCommand(this.installKnowledge, provider, definition.command, env) ? null : { provider, label: definition.label };
   }
 
   private createSupervisor(): RuntimeSupervisor {
@@ -887,6 +891,13 @@ export class BotCore implements BotHostApi {
     }
     this.profile = loaded.profile;
     if (!this.options.runtimeClient) this.supervisor = this.createSupervisor();
+    if (!this.options.runtimeClient && !this.options.runtime?.providerCommand) {
+      try {
+        this.installKnowledge = await loadInstallKnowledge(this.options.runtime?.runtimeEntry ?? resolveRuntimeEntry());
+      } catch {
+        this.installKnowledge = null;
+      }
+    }
     this.log(`core start bot=${this.profile.id} pid=${process.pid}`);
     await this.control.start();
     await this.channel.start();

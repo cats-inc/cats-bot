@@ -59,14 +59,21 @@ ticks, and [SPEC-010](../specs/SPEC-010-setup-wizard.md) FR-1 to FR-3, FR-6, FR-
      the new core inherits, as a check on page 2 would have, because the Runtime can find a CLI outside PATH where
      its installer puts it.
 4. **A missing CLI is said where it matters, when the owner sends a message.**
-   - When an owner's message fails, the core looks for the provider's command on the PATH it gives the Runtime, as
-     `listProviders` does. If the command is not there, the conversation gets one error saying so, with
-     `fix: { kind: 'install_cli' }`.
+   - When an owner's message fails, the core looks for the provider's command everywhere the Runtime would: on the
+     PATH it gives the Runtime, in the common npm folders on Windows, and where the provider's installer puts it,
+     read from the install knowledge of the Runtime that runs the cat bot. If the command is in none of them, the
+     conversation gets one error saying so, with `fix: { kind: 'install_cli' }`.
+   - PATH alone is not enough. A hub started from Finder has no login-shell PATH, and a cat bot started after
+     launch is not looked up first, yet the Runtime still launches a CLI from where its installer put it, such as
+     `~/.local/bin/claude`. Claiming it missing there would hide the real error. When the core cannot tell, as with a
+     Runtime that carries no install knowledge, it says nothing is missing.
    - The note shows it as "{provider} is not on this computer, so this message got no reply." with "Open Provider
      and model", which opens the cat bot's own settings on that page.
    - Neither the Runtime's resume error nor the CLI's own error from before any output, such as a failed spawn, is
      added beside it. The work item keeps the raw reason for the log.
    - A host that names the command itself (development, tests) is trusted. Heartbeats and schedules stay quiet.
+   - The install knowledge is read from the Runtime's package by path, as `resolveRuntimeEntry` finds its entry,
+     because the Runtime does not export it. Its pinned version is exact, and a test fails if the file moves.
 5. **Page 3 says what the cat bot may do.** It shows the sentence the cat bot's Permissions page starts with, for
    the provider's default, which is not changed (ADR-030). Creation takes no permission input.
 6. **The reassuring lines are gone.**

@@ -44,36 +44,48 @@ for (const [provider, label] of [['codex', 'Codex'], ['grok', 'Grok']] as const)
   });
 }
 
-test('a cat bot whose CLI is on this computer keeps its own error when a message fails, with no install line', async () => {
-  const home = makeTempHome('cats-bot-present-cli-');
-  const projects = join(home.botsHome, 'projects');
-  const bin = join(home.botsHome, 'bin');
-  mkdirSync(projects, { recursive: true });
-  mkdirSync(bin, { recursive: true });
-  // A `codex` that is there and fails at once, for a turn that fails for another reason than a missing CLI.
-  writeFileSync(join(bin, 'codex'), '#!/bin/sh\necho "codex: failing on purpose" >&2\nexit 1\n');
-  chmodSync(join(bin, 'codex'), 0o755);
-  writeFileSync(join(bin, 'codex.cmd'), '@echo codex: failing on purpose 1>&2\r\n@exit /b 1\r\n');
-  const { core } = openTestBot({
-    botsHome: home.botsHome, id: 'present', profile: { provider: 'codex' },
-    core: {
-      runtime: {
-        runtimeEntry: resolveRuntimeEntry(), readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
-        instanceExtras: { projects_dir: projects },
-        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: bin,
-          APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
-          XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') },
+/** A CLI that is there and fails at once, for a turn that fails for another reason than a missing CLI. */
+function failingCli(dir: string, command: string): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, command), `#!/bin/sh\necho "${command}: failing on purpose" >&2\nexit 1\n`);
+  chmodSync(join(dir, command), 0o755);
+  writeFileSync(join(dir, `${command}.cmd`), `@echo ${command}: failing on purpose 1>&2\r\n@exit /b 1\r\n`);
+}
+
+// The Runtime launches a CLI on PATH, or one where its installer puts it although PATH does not lead there, as for
+// a hub started from Finder whose cat bot was not looked up first. Either way the turn keeps its own error.
+for (const [where, provider, place] of [
+  ['on PATH', 'codex', (home: string) => join(home, 'bin')],
+  ['where its installer puts it, off PATH', 'claude', (home: string) => join(home, '.local', 'bin')],
+] as const) {
+  test(`a cat bot whose CLI is ${where} keeps its own error when a message fails, with no install line`, async () => {
+    const home = makeTempHome('cats-bot-present-cli-');
+    const projects = join(home.botsHome, 'projects');
+    mkdirSync(projects, { recursive: true });
+    const bin = place(home.botsHome);
+    failingCli(bin, provider);
+    const path = where === 'on PATH' ? bin : join(home.botsHome, 'no-clis');
+    const { core } = openTestBot({
+      botsHome: home.botsHome, id: 'present', profile: { provider },
+      core: {
+        runtime: {
+          runtimeEntry: resolveRuntimeEntry(), readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+          instanceExtras: { projects_dir: projects },
+          env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome, PATH: path,
+            APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+            XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share') },
+        },
       },
-    },
+    });
+    await core.start();
+    try {
+      const turn = await sendAndWait(core, 'home', 'hello', 60_000);
+      assert.equal(turn.state, 'failed');
+      const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
+      assert.ok(errors.length > 0, 'the failure is written');
+      assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
+    } finally {
+      await core.stop();
+    }
   });
-  await core.start();
-  try {
-    const turn = await sendAndWait(core, 'home', 'hello', 60_000);
-    assert.equal(turn.state, 'failed');
-    const errors = core.transcript('home').filter((entry) => entry.kind === 'error');
-    assert.ok(errors.length > 0, 'the failure is written');
-    assert.ok(errors.every((entry) => !entry.fix), errors.map((entry) => entry.text).join(' | '));
-  } finally {
-    await core.stop();
-  }
-});
+}

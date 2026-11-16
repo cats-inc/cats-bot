@@ -63,8 +63,9 @@ for the current-versus-pending boundary.
    owner message, not failed, or in a conversation with a queued or running turn. Cancelled and
    interrupted turns are not offered, and a send the note could not deliver (shown only in the note) has
    no work item to retry.
-   - ADR-032 (2026-11-16): when an owner message fails and the provider's command is not on the PATH the
-     core gives the Runtime, the conversation gets one error, "{provider} is not on this computer, so this
+   - ADR-032 (2026-11-16): when an owner message fails and the Runtime could not launch the provider's
+     command (it is neither on the PATH the core gives the Runtime nor where the Runtime's install knowledge
+     says its installer puts it), the conversation gets one error, "{provider} is not on this computer, so this
      message got no reply.", with "Open Provider and model", which opens the cat bot's settings on that page.
      Neither the Runtime's resume error nor the CLI's own error from before any output is added beside it.
      Heartbeats and schedules add nothing.
