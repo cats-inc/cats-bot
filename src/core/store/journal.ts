@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
+
+import { HEARTBEAT_PROMPT_PREFIX, isHeartbeatPrompt } from '../../shared/heartbeatTurn.ts';
 import type { JournalEntry, ScheduleRecord, WorkItem } from '../types.ts';
-import { appendJsonLine, readJsonLines } from './atomicFile.ts';
+import { appendJsonLine, readJsonLines, writeFileAtomic } from './atomicFile.ts';
 import type { BotPaths } from './paths.ts';
 
 /**
@@ -38,4 +41,59 @@ export function rebuildJournalState(
     }
   }
   return { workItems, schedules };
+}
+
+/**
+ * SPEC-002 FR-5b and SPEC-001 FR-14: a work item of a cleared or deleted conversation keeps its id, kind, state,
+ * times, `sourceRef` and chain, so a message accepted once stays accepted once and a delivery's state can still be
+ * read, but no longer what was asked or answered. A heartbeat keeps the mark that makes it one.
+ */
+export function blankWorkItemText(item: WorkItem): WorkItem {
+  const blank: WorkItem = { ...item, prompt: isHeartbeatPrompt(item.prompt) ? HEARTBEAT_PROMPT_PREFIX : '' };
+  if (item.result) blank.result = { ...item.result, text: '' };
+  return blank;
+}
+
+/**
+ * Blanks one conversation's text in `journal.jsonl`: its work items' prompts and replies (with `before`, only of
+ * work admitted before then) and, with `schedules`, its schedules' prompts. The file is rewritten line by line, so
+ * a line that cannot be read stays as it was, and atomically, without a backup copy, which would keep exactly
+ * what is erased. Returns how many lines changed.
+ */
+export function blankJournalText(
+  paths: BotPaths,
+  conversationId: string,
+  options: { schedules: boolean; before?: string },
+): number {
+  let text: string;
+  try {
+    text = readFileSync(paths.journal, 'utf8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
+    throw error;
+  }
+  let changed = 0;
+  const lines = text.split('\n').map((line) => {
+    if (!line.trim()) return line;
+    let entry: JournalEntry;
+    try {
+      entry = JSON.parse(line) as JournalEntry;
+    } catch {
+      return line;
+    }
+    if (entry?.type === 'work' && entry.item?.conversationId === conversationId
+      && (options.before === undefined || !(entry.item.createdAt >= options.before))) {
+      const blank = blankWorkItemText(entry.item);
+      if (blank.prompt === entry.item.prompt && blank.result?.text === entry.item.result?.text) return line;
+      changed += 1;
+      return JSON.stringify({ ...entry, item: blank });
+    }
+    if (options.schedules && entry?.type === 'schedule' && entry.schedule?.conversationId === conversationId && entry.schedule.prompt) {
+      changed += 1;
+      return JSON.stringify({ ...entry, schedule: { ...entry.schedule, prompt: '' } });
+    }
+    return line;
+  });
+  if (changed) writeFileAtomic(paths.journal, lines.join('\n'));
+  return changed;
 }

@@ -78,6 +78,7 @@ for (const id of ['home', 'note']) {
     assert.equal(f.calls.create.length, 1);
     assert.match((f.calls.create[0] as { instructions: string }).instructions, /Keep my previous conversation/u);
     assert.deepEqual(f.calls.retired, [`runtime-${id}`]);
+    assert.deepEqual(f.store.require(id).retiredSessionIds, [`runtime-${id}`], 'remembered for a clear or delete');
     assert.equal(f.store.require(id).attachment.replacementPending, true);
     // Nothing was said in the unused session, so nothing is lost and the owner reads no notice.
     assert.equal(f.store.transcript(id).filter(entry => entry.text.includes('a new session starts')).length, 0);

@@ -192,6 +192,11 @@ freeze of the storage format.
 14. FR-14: Deleting a conversation: `close` first, then `DELETE /sessions/{id}`, and after confirmation remove
     the transcript and views; closing a note view never deletes a conversation; quitting the bot never deletes
     any conversation.
+    - Since 2026-11-16 (ADR-026): a turn running in it is cancelled and waited for (at most 20 s) first. Every
+      session it had is deleted, the ones FR-27 replaced included. The journal keeps its work items and
+      schedules by id and state, but no longer their prompts or replies (a heartbeat keeps its mark). The
+      journal is rewritten line by line and atomically, keeping lines it cannot read and making no backup copy.
+    - The direct message is cleared instead (SPEC-002 FR-5b, `clearConversation`).
 
 ### Admission, queue and turns
 
@@ -317,7 +322,8 @@ freeze of the storage format.
     cancelled; a `queued` work item rereads at admission; an attachment created under an older revision is
     marked `stale` and not resumed, the next admission rebuilds the session from the handoff pack and tells the
     owner in the conversation; the superseded session is closed (`close`) when no turn is running in it, so no
-    worker is left outside the idle policy. When the values are all identical it is a no-op; name, heartbeat,
+    worker is left outside the idle policy. The conversation remembers it (`retiredSessionIds`, the last 50),
+    so clearing or deleting the conversation deletes it too (FR-14, SPEC-002 FR-5b). When the values are all identical it is a no-op; name, heartbeat,
     idle and Telegram settings do not affect the session. Changing provider requires restarting the private
     runtime: if a turn is running, let it finish under the original setting first, during which the queue
     pauses admission and the tick does not touch the runtime; only after the turn ends is the runtime
@@ -350,14 +356,15 @@ freeze of the storage format.
 ### Presentation contract (`BotHostApi`)
 
 32. FR-32: Commands: `getProfile`, `updateProfile` (including `executionTarget`, `heartbeat`),
-    `listConversations`, `createConversation`, `deleteConversation`, `openView` / `closeView` (change only the
+    `listConversations`, `createConversation`, `deleteConversation`, `clearConversation` (the direct message
+    only, SPEC-002 FR-5b), `openView` / `closeView` (change only the
     view), `setViewFocused(conversationId, focused)` (which view the owner is looking at; only a focused view
     keeps new replies from counting as unread, and a note that is open but in the background still accumulates
     unread), `sendOwnerMessage(conversationId, text)`, `retryOwnerMessage(conversationId, workItemId)` (SPEC-003
     FR-7), `addOwnerAttachment(conversationId, name, data)` and `attachmentPreview(conversationId, relativePath)`
     (SPEC-003 FR-8), `cancelTurn(conversationId)`,
     `markSeen(conversationId)`, `listSchedules`, `cancelSchedule`, `resolveApproval(workItemId, decision)`,
-    `quit`. Events: `conversation.updated`, `turn.delta`, `turn.completed`, `work.awaitingOwner`,
+    `quit`. Events: `conversation.updated`, `conversation.cleared` (SPEC-002 FR-5b), `turn.delta`, `turn.completed`, `work.awaitingOwner`,
     `presence.changed`, `runtime.status`. The renderer never gets the runtime's URL or API key.
 33. FR-33: Note view: streaming output, an input box, history, cancel, an unread marker, on-screen dragging,
     optional always-on-top. Tray: open the home note, list conversations, new note, pause heartbeat, quit.

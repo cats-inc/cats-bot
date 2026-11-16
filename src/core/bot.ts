@@ -47,11 +47,11 @@ import {
   writeTelegramLastUpdateId,
   type TelegramStatus,
 } from './transports/telegram.ts';
-import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
+import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
-import { appendJournal, readJournal } from './store/journal.ts';
+import { appendJournal, blankJournalText, blankWorkItemText, readJournal } from './store/journal.ts';
 import { acquireInstanceLock, readInstanceLock, takeHandoffs, type InstanceLock } from './store/lock.ts';
 import { assertBotDataResetNotPending } from './store/dataResetGuard.ts';
 import { botPathsFor, isValidBotId, type BotPaths } from './store/paths.ts';
@@ -179,6 +179,8 @@ interface RunningTurn {
 }
 
 const PACKAGE_VERSION = '0.1.0';
+/** How long clearing or deleting a conversation waits for its cancelled turn to unwind before it goes on. */
+const TURN_UNWIND_MS = 20_000;
 
 /** SPEC-012 FR-6: why the owner cannot write in a contact note. */
 export class ContactNoteError extends Error {
@@ -240,6 +242,10 @@ export class BotCore implements BotHostApi {
   private runtimeSwapPending = false;
   private swappingRuntime = false;
   private running: RunningTurn | null = null;
+  /** Settles once the running turn has ended and been recorded. */
+  private turnSettled: Promise<void> = Promise.resolve();
+  /** SPEC-002 FR-5b: the direct message being cleared; no turn starts meanwhile and the owner cannot write in it. */
+  private clearing: string | null = null;
   private releaseLock: (() => void) | null = null;
   /** The tail of the profile changes in progress (`changeProfile`). */
   private profileChanges: Promise<unknown> = Promise.resolve();
@@ -510,7 +516,7 @@ export class BotCore implements BotHostApi {
     return buildWorkBoard({
       status: this.status(),
       conversations,
-      workItems: [...this.workItems.values()],
+      workItems: [...this.workItems.values()].filter((item) => !this.clearedAway(item)),
       schedules: this.scheduleRecords(),
       waitingInteractions: Math.max(0, this.interactions.pending() - inContactNotes),
       now: this.now(),
@@ -625,10 +631,13 @@ export class BotCore implements BotHostApi {
     const existing = [...this.workItems.values()].find((item) => item.sourceRef === sourceRef);
     if (existing) return structuredClone(existing);
     const fromName = oneLine(delivery.fromName, 80) || delivery.from;
-    // A reply whose conversation the owner deleted goes to its sender's conversation, never to the direct message.
-    const conversationId = delivery.kind === 'reply' && delivery.conversationId && this.conversations.get(delivery.conversationId)
-      ? delivery.conversationId
-      : this.senderConversation(delivery.from, fromName);
+    // A reply whose conversation the owner deleted, or cleared after its message was sent (SPEC-002 FR-5b), goes
+    // to its sender's conversation, never to the direct message. A reply from an older hub names no time and
+    // returns to its conversation as before.
+    const asked = delivery.kind === 'reply' && delivery.conversationId ? this.conversations.get(delivery.conversationId) : undefined;
+    const clearedSince = !!asked && (this.clearing === asked.id
+      || (!!asked.cleared && !!delivery.askedAt && delivery.askedAt < asked.cleared.at));
+    const conversationId = asked && !clearedSince ? asked.id : this.senderConversation(delivery.from, fromName);
     const prompt = delivery.kind === 'message'
       ? `A message from ${fromName}, the owner's Boss Cat, through the Cats Bot hub. `
         + `It is not from the owner. Your answer goes back to ${fromName}.\n\n${delivery.text}`
@@ -1244,11 +1253,21 @@ export class BotCore implements BotHostApi {
     };
   }
 
+  /**
+   * Every work item (which is how a message is accepted once), or one conversation's; a cleared direct message's
+   * work from before the clear is no longer its own (SPEC-002 FR-5b).
+   */
   listWorkItems(conversationId?: string): WorkItem[] {
     const id = conversationId === undefined ? undefined : this.resolveConversationId(conversationId);
     return [...this.workItems.values()]
-      .filter((item) => id === undefined || item.conversationId === id)
+      .filter((item) => id === undefined || (item.conversationId === id && !this.clearedAway(item)))
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  /** Work the direct message had before it was last cleared. */
+  private clearedAway(item: WorkItem): boolean {
+    const cleared = this.conversations.get(item.conversationId)?.cleared;
+    return !!cleared && item.createdAt < cleared.at;
   }
 
   providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
@@ -1741,18 +1760,16 @@ export class BotCore implements BotHostApi {
   async deleteConversation(conversationId: string): Promise<void> {
     const record = this.conversations.require(conversationId);
     if (record.role === 'home') throw new Error('The direct message cannot be deleted');
-    if (this.running?.item.conversationId === record.id) await this.cancelTurn(record.id);
-    this.dropPendingWork((item) => item.conversationId === record.id, 'conversation deleted');
+    await this.endConversationWork(record.id, 'conversation deleted');
     for (const schedule of this.scheduleRecords()) {
       if (schedule.conversationId === record.id && schedule.state === 'active') {
         this.saveSchedule({ ...schedule, state: 'cancelled', nextAt: null });
       }
     }
-    const client = this.client();
-    if (record.attachment.sessionId && client) {
-      await client.closeSession(record.attachment.sessionId).catch(() => undefined);
-      await client.deleteSession(record.attachment.sessionId).catch(() => undefined);
-    }
+    const current = this.conversations.require(record.id);
+    await this.deleteSessions(null, [current.attachment.sessionId, ...(current.retiredSessionIds ?? [])]);
+    // What was said in it leaves the journal too; its work items and schedules keep their ids and states.
+    this.blankConversationText(record.id, { schedules: true });
     try {
       this.desktop.forget(record.id);
     } catch (error) {
@@ -1763,6 +1780,121 @@ export class BotCore implements BotHostApi {
     this.views.delete(record.id);
     this.focusedViews.delete(record.id);
     this.log(`conversation ${record.id} deleted`);
+  }
+
+  /**
+   * SPEC-002 FR-5b: the direct message starts over, which the Settings list offers where a note has Delete. Its
+   * work ends and its turn unwinds first; then its transcript, what the journal kept of what was said and its
+   * sessions go, the ones a provider or model change replaced included. It keeps its name, layer, desktop control
+   * switch and schedules, and its next message starts a new session with nothing to hand over.
+   */
+  async clearConversation(conversationId: string): Promise<ConversationRecord> {
+    const id = this.resolveConversationId(conversationId);
+    const record = this.conversations.require(id);
+    if (record.role !== 'home') throw new Error('Only the direct message is cleared; a note is deleted.');
+    if (this.clearing) throw new Error('The direct message is already being cleared.');
+    const at = this.now().toISOString();
+    this.clearing = id;
+    let sessions: Array<string | null> = [];
+    let cleared: ConversationRecord;
+    try {
+      await this.endConversationWork(id, 'conversation cleared', at);
+      const current = this.conversations.require(id);
+      sessions = [current.attachment.sessionId, ...(current.retiredSessionIds ?? [])];
+      this.runner.forget(id);
+      cleared = this.conversations.clear(id, at);
+      this.blankConversationText(id, { schedules: false, before: at });
+      this.log(`conversation ${id} cleared`);
+    } catch (error) {
+      this.clearing = null;
+      this.pump();
+      throw error;
+    }
+    this.clearing = null;
+    // Windows hear of the clear before any new turn's work, which they would otherwise drop with it.
+    this.bus.emit({ type: 'conversation.cleared', conversation: cleared });
+    this.bus.emit({ type: 'conversation.updated', conversation: cleared });
+    this.pump();
+    // The record no longer names them, so a message sent meanwhile gets a new session of its own.
+    await this.deleteSessions(id, sessions);
+    return structuredClone(this.conversations.require(id));
+  }
+
+  /**
+   * A conversation about to be cleared or deleted: its queued work is cancelled, and its running turn is cancelled
+   * and waited for, so nothing that turn still writes lands afterwards. With `before`, only work admitted before
+   * then is cancelled.
+   */
+  private async endConversationWork(id: string, reason: string, before?: string): Promise<void> {
+    const ours = (item: WorkItem) => item.conversationId === id && (before === undefined || item.createdAt < before);
+    this.dropPendingWork(ours, reason);
+    // A decision it waits for the owner on ends too; whoever waits for it hears so, as for dropped work.
+    for (const item of [...this.workItems.values()]) {
+      if (item.state !== 'awaiting_owner' || !ours(item)) continue;
+      const cancelled = this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
+      this.bus.emit({ type: 'turn.completed', conversationId: cancelled.conversationId, workItem: cancelled });
+    }
+    if (this.running?.item.conversationId === id) {
+      await this.cancelTurn(id);
+      let timer: NodeJS.Timeout | undefined;
+      const unwound = await Promise.race([
+        this.turnSettled.then(() => true),
+        new Promise<false>((resolve) => { timer = setTimeout(() => resolve(false), TURN_UNWIND_MS); }),
+      ]);
+      clearTimeout(timer);
+      if (!unwound) this.log(`conversation ${id}: its cancelled turn had not ended after ${TURN_UNWIND_MS / 1000} s; going on`);
+      this.dropPendingWork(ours, reason);
+    }
+  }
+
+  /** The prompts and replies of a cleared or deleted conversation's work, in memory and in the journal. */
+  private blankConversationText(id: string, options: { schedules: boolean; before?: string }): void {
+    for (const item of this.workItems.values()) {
+      if (item.conversationId !== id || (options.before !== undefined && item.createdAt >= options.before)) continue;
+      this.workItems.set(item.id, blankWorkItemText(item));
+    }
+    if (options.schedules) {
+      for (const schedule of this.schedules.values()) {
+        if (schedule.conversationId === id && schedule.prompt) this.schedules.set(schedule.id, { ...schedule, prompt: '' });
+      }
+    }
+    try {
+      const changed = blankJournalText(this.paths, id, options);
+      if (changed) this.log(`conversation ${id}: ${changed} journal record(s) no longer hold what was said`);
+    } catch (error) {
+      this.log(`conversation ${id}: the journal still holds what was said: ${error instanceof Error ? error.message : 'error'}`);
+    }
+  }
+
+  /**
+   * A cleared or deleted conversation's sessions, its current one and those it replaced, closed and deleted in
+   * Runtime, which also removes the provider CLI's own record of them where it can. One Runtime keeps (in use,
+   * locked, or not reachable now) is remembered for the cleared direct message's next clear.
+   */
+  private async deleteSessions(conversationId: string | null, ids: ReadonlyArray<string | null>): Promise<void> {
+    const wanted = [...new Set(ids.filter((id): id is string => !!id))];
+    if (!wanted.length) return;
+    const client = this.client();
+    const gone: string[] = [];
+    for (const sessionId of wanted) {
+      if (!client) break;
+      await client.closeSession(sessionId).catch(() => undefined);
+      try {
+        const answer = await client.deleteSession(sessionId) as { status?: unknown; deleted?: unknown } | null;
+        if (answer?.status === 'retained') {
+          this.log(`session ${sessionId} kept by Runtime for now`);
+          continue;
+        }
+        gone.push(sessionId);
+      } catch (error) {
+        if (error instanceof RuntimeHttpError && error.status === 404) gone.push(sessionId);
+        else this.log(`session ${sessionId} not deleted: ${error instanceof Error ? error.message : 'error'}`);
+      }
+    }
+    if (!conversationId || !this.conversations.get(conversationId)) return;
+    const kept = wanted.filter((sessionId) => !gone.includes(sessionId));
+    for (const sessionId of kept) this.conversations.retireSession(conversationId, sessionId);
+    this.conversations.forgetRetiredSessions(conversationId, gone);
   }
 
   async openView(conversationId: string): Promise<void> {
@@ -1803,6 +1935,7 @@ export class BotCore implements BotHostApi {
   ): Promise<WorkItem> {
     const id = this.resolveConversationId(conversationId);
     this.refuseInContactNote(id);
+    if (this.clearing === id) throw new Error('The direct message is being cleared. Send the message again in a moment.');
     const prompt = text.trim();
     if (!prompt) throw new Error('An owner message needs text');
     const item: WorkItem = {
@@ -1975,7 +2108,7 @@ export class BotCore implements BotHostApi {
     for (const sessionId of [...this.retiring]) {
       if (this.running?.item.run?.sessionId !== sessionId) this.retireSession(sessionId);
     }
-    if (this.running || this.stopped || !this.started || this.swappingRuntime) return;
+    if (this.running || this.stopped || !this.started || this.swappingRuntime || this.clearing) return;
     if (this.runtimeSwapPending) {
       void this.swapRuntime().catch((error: unknown) => this.log(`runtime swap failed: ${error instanceof Error ? error.message : 'error'}`));
       return;
@@ -1987,7 +2120,7 @@ export class BotCore implements BotHostApi {
     if (!item) return;
     const controller = new AbortController();
     this.running = { item, controller };
-    void this.runItem(item, controller).finally(() => {
+    this.turnSettled = this.runItem(item, controller).finally(() => {
       this.admittedTurns.delete(item.id);
       try { this.interactions.end(item.id); }
       finally {

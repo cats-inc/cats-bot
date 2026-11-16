@@ -68,6 +68,20 @@ instead of opening the alert.
    empty) and deleted (not home, needs a second confirmation; deleting closes its note window).
    A note added without a name is "Conversation N" until FR-5a names it. A rename is the owner's name,
    which nothing replaces.
+   - The list's rows (2026-11-16, ADR-026) are one grid. Every row has the same three controls in the same
+     columns, whatever its kind:
+     - where the note lives, a menu button with the layer's short name and a glyph of the layers stacked from
+       the top of the screen down, the note's own drawn long and amber; the menu names each layer with a line
+       under it, and a list too narrow for the names keeps the glyphs;
+     - Open;
+     - Delete, which the direct message has as Clear (FR-5b).
+   - A pencil beside the title renames a conversation; a contact note, which is not renamed (SPEC-012 FR-6),
+     has none.
+   - Delete and Clear ask in a box under the button that says what goes and what stays; the button keeps its
+     size, so a row never changes width or wraps. Escape or Cancel returns to the button.
+   - Unread reads "{count} unread".
+   - The rail under the bot's name shows its Runtime's state, and under that, on a line of its own that wraps,
+     its provider, model and effort as its note header names them (SPEC-003 FR-11).
    - FR-5a (2026-11-16, ADR-025): A note names itself, after Cats Desktop's Catlas titles.
      - When the owner first writes in a note still called what it was made with, the note takes the first
        48 characters of the first owner message, without its files.
@@ -80,6 +94,26 @@ instead of opening the alert.
        `owner`.
      - The direct message and contact notes are never named this way.
      - Drafted and named titles never reach the Boss Cat (SPEC-012 FR-3).
+   - FR-5b (2026-11-16, ADR-026): The direct message, which is never deleted, is cleared
+     (`clearConversation`), after the same confirmation.
+     - Its queued work is cancelled, and a turn running in it is cancelled and waited for (at most 20 s), so
+       nothing it still writes lands afterwards. While it is cleared, no turn starts and the owner's message
+       to it is refused.
+     - Its transcript and presentations go. The record keeps its id, name, layer, desktop control switch and
+       schedules, loses its session, unread count, message times and handoff checkpoint, and records
+       `cleared` (`at`, and the `throughSeq` its transcript had reached). Its transcript continues after that
+       `seq`.
+     - Its work from before `at` is no longer the conversation's. The note window and the status board
+       (SPEC-012 FR-1) leave it out, but it stays in the journal under its id, so a message accepted once
+       stays accepted once (SPEC-001 FR-26).
+     - The journal keeps no prompt or reply of that work (SPEC-001 FR-14).
+     - Its sessions are closed and deleted in Runtime: the current one and every one a provider or model
+       change replaced (SPEC-001 FR-27). Runtime's delete also removes the provider CLI's own session files
+       where it can. A session Runtime keeps is remembered for the next clear.
+     - Its next message starts a new session with nothing to hand over.
+     - A note window showing it drops what it showed (`conversation.cleared`).
+     - Telegram's chat keeps its own copy, and the confirmation says so when Telegram is connected.
+     - A Boss Cat reply to a message sent before the clear goes to the contact note (SPEC-009 FR-8).
 6. FR-6: The Telegram tab can save or remove the token (`setTelegramToken`; the token is not returned
    to the page), toggle polling, and shows the protection method, the polling state and the owner chat.
 7. FR-7: The floating bot: a transparent, borderless, topmost Cat that does not appear in the taskbar

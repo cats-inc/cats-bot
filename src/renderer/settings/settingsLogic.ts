@@ -1,4 +1,4 @@
-import { t } from '../localeStore.ts';
+import { conversationTitle, t } from '../localeStore.ts';
 import { resolveBotAvatar, type BotAvatar } from '../../shared/avatars.ts';
 import { botNameMessage, botNameProblem, botPersonaMessage, botPersonaProblem, normalizeBotName, normalizeBotPersona } from '../../shared/botText.ts';
 import { heartbeatRhythmProblem } from '../../shared/heartbeatRhythm.ts';
@@ -27,7 +27,7 @@ import type {
   ProviderInfo,
   TelegramSettingsStatus,
 } from '../../core/types.ts';
-import type { BotAction, BotRow } from '../bridge.ts';
+import type { BotAction, BotRow, NoteLayer } from '../bridge.ts';
 
 /**
  * SPEC-002 FR-1–FR-6, SPEC-003 FR-6: what the settings and first-run pages
@@ -341,9 +341,20 @@ export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProf
   return lines.join(' ');
 }
 
-export function brandState(profile: BotProfile | null, status: BotStatus): string {
-  const target = profile ? `${profile.executionTarget.provider}${profile.executionTarget.model ? ` · ${profile.executionTarget.model}` : ''}` : '';
-  return t('{value0} · runtime {value1}', { value0: target, value1: status.runtime.state });
+/**
+ * The rail under the bot's name: its Runtime's state on the first line; the provider, model and effort follow on
+ * a line of their own that wraps, so none of them is cut (`executionSummary`).
+ */
+const RUNTIME_WORDS: Record<string, string> = {
+  stopped: 'Runtime stopped',
+  starting: 'Runtime starting',
+  ready: 'Runtime ready',
+  failed: 'Runtime failed',
+};
+
+export function brandState(status: BotStatus): string {
+  const words = RUNTIME_WORDS[status.runtime.state];
+  return words ? t(words) : t('Runtime {value0}', { value0: status.runtime.state });
 }
 
 // ---- Notes tab --------------------------------------------------------------------
@@ -384,6 +395,57 @@ export function ago(
   const hours = Math.round(minutes / 60);
   if (hours < 48) return t('{value0} h ago', { value0: hours });
   return formatDate(new Date(iso));
+}
+
+/**
+ * SPEC-002 FR-5: where a note window lives, from the top of the screen down, as the list's layer menu orders
+ * them and its glyph stacks them. A platform without the desktop layers offers the first two.
+ */
+export const NOTE_LAYER_ORDER: readonly NoteLayer[] = ['top', 'normal', 'desktop', 'wallpaper'];
+
+/** The short name the list's layer button shows, and the line under it in the menu. */
+export const NOTE_LAYER_NAMES: Record<NoteLayer, { name: string; detail: string }> = {
+  top: { name: 'On top', detail: 'Stays above every other window' },
+  normal: { name: 'Normal', detail: 'Comes forward and goes back like any window' },
+  desktop: { name: 'Desktop', detail: 'Below every window, above the desktop icons' },
+  wallpaper: { name: 'Wallpaper', detail: 'Below the desktop icons, to look at only' },
+};
+
+export function layerStack(available: readonly NoteLayer[]): NoteLayer[] {
+  return NOTE_LAYER_ORDER.filter((layer) => available.includes(layer));
+}
+
+/** SPEC-002 FR-5 / FR-5b: what the confirmation under Delete, or the direct message's Clear, says. */
+export interface RemovalCopy {
+  title: string;
+  detail: string;
+  action: string;
+  done: string;
+}
+
+export function removalCopy(record: ConversationRecord, telegram: boolean): RemovalCopy {
+  const title = conversationTitle(record);
+  if (record.role === 'home') {
+    return {
+      title: t('Clear every message in the direct message?'),
+      detail: [
+        t('Its history and its CLI sessions are deleted, and the next message starts from nothing. The direct message, its layer and its schedules stay.'),
+        ...(telegram ? [t('The Telegram chat keeps its own copy.')] : []),
+      ].join(' '),
+      action: t('Clear'),
+      done: t('Cleared the direct message'),
+    };
+  }
+  return {
+    title: t('Delete “{value0}”?', { value0: title }),
+    detail: record.contactOf
+      ? t('Only this side’s history and sessions are deleted. When {value0} writes again, a new contact note starts.', {
+        value0: record.contactName ?? record.contactOf,
+      })
+      : t('Its history, its schedules and its CLI sessions are deleted. This cannot be undone.'),
+    action: t('Delete'),
+    done: t('Deleted {value0}', { value0: title }),
+  };
 }
 
 export function noteMeta(record: ConversationRecord, now = Date.now()): string {

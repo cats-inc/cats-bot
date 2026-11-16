@@ -1496,7 +1496,7 @@ async function main(): Promise<void> {
     const result = await runHostCommand(presenter.core, command, list, (url) => shell.openExternal(url));
     if (command === 'deleteConversation' && typeof list[0] === 'string') presenter.windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
-      || command === 'renameConversation' || command === 'createConversation') {
+      || command === 'clearConversation' || command === 'renameConversation' || command === 'createConversation') {
       void refreshTray();
     }
     if (command === 'updateProfile') botsChanged();
