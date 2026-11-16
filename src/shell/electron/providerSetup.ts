@@ -416,17 +416,6 @@ export class ProviderSetup {
       return this.inspect(provider, signal, listener);
     }, false, signal);
   }
-  /** Both creation IPC paths recheck installation; Codex readiness remains advisory. */
-  async checkForCreation(provider: unknown, signal?: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
-    this.assertProvider(provider);
-    return this.exclusive(async (signal) => {
-      this.selected = provider;
-      // A diagnostic probe must not hold the owner's creation action open.
-      const state = await this.inspect(provider, signal, listener, false);
-      if (!state.canFinish) throw new Error('Complete setup for the selected provider first');
-      return state;
-    }, false, signal);
-  }
   /**
    * SPEC-010 FR-11 and SPEC-013 FR-8: one ticked step of the checked provider's chain,
    * installed or, where its helper has one, updated, followed by a fresh check.
@@ -682,7 +671,7 @@ export class ProviderSetup {
    * waits unread. Once it works, everything is read in one pass, because a check only
    * reads: a clean machine then asks the owner twice rather than once per step.
    */
-  private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener, includeInitialization = true): Promise<ProviderSetupState> {
+  private async inspect(provider: string, signal: AbortSignal, listener?: SetupLogListener): Promise<ProviderSetupState> {
     const steps: SetupStep[] = [];
     let codexCommandPath: string | undefined;
     let nodeReady = true;
@@ -697,7 +686,7 @@ export class ProviderSetup {
       steps.push(this.stepOf(link, result));
     }
     let codexInitialization: CodexInitialization | undefined;
-    if (includeInitialization && this.windows && provider === 'codex') {
+    if (this.windows && provider === 'codex') {
       codexInitialization = { status: 'required' };
       if (steps.every((step) => step.optional || stepDone(step))) {
         codexInitialization = await this.readCodexInitialization(codexCommandPath, signal, listener);

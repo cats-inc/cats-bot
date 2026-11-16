@@ -70,6 +70,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [029](./029-dictate-on-linux-with-the-linux-stt-pack-and-choose-the-dictation-language.md) | Dictate on Linux with the linux-stt Pack and Choose the Dictation Language | Proposed | 2026-11-16 |
 | [030](./030-split-a-cat-bots-settings-into-the-wizards-pages-and-ask-two-questions-about-permissions.md) | Split a Cat Bot's Settings into the Wizard's Pages and Ask Two Questions About Permissions | Accepted | 2026-11-16 |
 | [031](./031-give-the-cat-bots-list-one-grid-and-the-boss-cat-one-place.md) | Give the Cat Bots List One Grid and the Boss Cat One Place | Accepted | 2026-11-16 |
+| [032](./032-make-the-setup-wizard-a-cat-bots-settings-pages-and-let-no-check-stop-it.md) | Make the Setup Wizard a Cat Bot's Settings Pages, and Let No Check Stop It | Accepted | 2026-11-16 |
 
 <!-- Add new ADRs above this line -->
 

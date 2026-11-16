@@ -92,7 +92,7 @@ test('every stored combination reads as one offered choice, and saving it untouc
   }
 });
 
-test('a new cat bot reads as its provider\'s default, so the default is not changed (ADR-030)', () => {
+test('a new cat bot reads as its provider\'s default, so the default is not changed and the wizard\'s Permissions page says it (ADR-030, ADR-032)', () => {
   for (const provider of PROVIDERS) {
     const profile = createProfile({ name: 'N', provider, cwd: '/w', now });
     assert.deepEqual(currentChoice(storedOf(profile)), defaultChoice(provider), provider);

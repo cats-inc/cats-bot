@@ -1278,7 +1278,7 @@ async function main(): Promise<void> {
     const input = validateSetupInput(raw);
     finishing = true;
     try {
-      await providerSetup.checkForCreation(input.provider, checks.signal, setupLogTo(event));
+      // ADR-032: what the last check found never stops creation; the cat bot says so if its CLI is missing.
       checks.signal.throwIfAborted();
       if (quitting) throw new Error('Cats Bot is stopping');
       creating = true;

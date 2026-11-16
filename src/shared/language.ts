@@ -1069,6 +1069,11 @@ export const zhTW: Record<string, string> = {
   'Update all {count}': '全部更新（{count}）',
   'Update all {count}?': '全部更新（{count} 項）？',
   'Windows will ask for administrator permission.': 'Windows 會要求系統管理員權限。',
+  // ADR-032: the setup wizard on a cat bot's settings pages, and a missing CLI (2026-11-16).
+  'Which agent CLI {name} uses': '{name} 要用哪個 Agent CLI',
+  'What {name} can do': '{name} 可以做什麼',
+  '{provider} is not on this computer, so this message got no reply.': '這台電腦找不到 {provider}，所以這則訊息沒有回覆。',
+  'Open Provider and model': '打開「Provider 與模型」',
   // ADR-031: Cats Bot Settings' pages (2026-11-16).
   "Move {name} up": "把 {name} 往上移",
   "Move {name} down": "把 {name} 往下移",

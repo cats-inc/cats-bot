@@ -36,6 +36,8 @@ export interface SessionBinderDependencies {
   hasAttemptedSessionTurn?(sessionId: string): boolean;
   /** Closes a replaced session once no turn runs in it (FR-27); without it the old worker is left alone. */
   retireSession?(sessionId: string): void;
+  /** ADR-032: the provider's CLI is not on this computer; the turn says so instead of the resume error. */
+  cliMissing?(): boolean;
   log(line: string): void;
 }
 
@@ -245,7 +247,7 @@ export class SessionBinder {
       const reason = error instanceof Error ? error.message : String(error);
       this.deps.log(`conversation ${conversation.id}: resume of ${id} failed`);
       this.deps.conversations.setAttachment(conversation.id, { state: 'failed', lastError: reason });
-      if (attachment.lastError !== reason) this.deps.conversations.append(conversation.id, {
+      if (attachment.lastError !== reason && !this.deps.cliMissing?.()) this.deps.conversations.append(conversation.id, {
         kind: 'error', origin: 'system', text: `Could not resume the previous session: ${reason}`,
       });
       return { ok: false, reason: `resume failed: ${reason}`, kind: 'resume_failed', noCapacity: isNoCapacity(reason) };

@@ -289,7 +289,7 @@ test('each run is logged at its start and end, for the page and the hub (FR-14)'
   assert.equal(hub.length, 6, 'the hub hears every run');
 });
 
-test('Windows Codex checks log the native command; creation only rechecks installation', async () => {
+test('Windows Codex checks log the native command', async () => {
   const entries: SetupLogEntry[] = [];
   const shim = 'C:\\Users\\cat\\npm\\codex.ps1';
   const command = '"C:\\Users\\cat\\npm\\native\\codex.exe" "app-server"';
@@ -302,32 +302,16 @@ test('Windows Codex checks log the native command; creation only rechecks instal
   });
   await setup.check('codex', undefined, entry => entries.push(entry));
   assert.deepEqual(entries.filter(entry => entry.helper === 'codex-initialization').map(entry => [entry.phase, entry.command]), [['start', command], ['end', command]]);
-  entries.length = 0;
-  await setup.checkForCreation('codex', undefined, entry => entries.push(entry));
-  assert.equal(probes, 1, 'creation must not wait for sandbox diagnostics');
-  assert.deepEqual(entries.filter(entry => entry.phase === 'start').map(entry => entry.helper), ['node', 'npm', 'codex', 'shell']);
+  assert.equal(probes, 1);
   const unavailable = new ProviderSetup(async () => ready(), { windows: true });
   assert.equal((await unavailable.check('codex')).canFinish, true);
-  assert.equal((await unavailable.checkForCreation('codex')).canFinish, true);
-});
-
-test('a readiness probe that would never settle cannot delay creation or bypass installation requirements', async () => {
-  let probes = 0, installed = true;
-  const setup = new ProviderSetup(async () => installed ? ready() : { status: 'changes_required' }, {
-    windows: true, codexInitialization: () => { probes++; return new Promise(() => {}); },
-  });
-  assert.equal((await setup.checkForCreation('codex')).canFinish, true);
-  assert.equal(probes, 0);
-  installed = false;
-  await assert.rejects(setup.checkForCreation('codex'), /Complete setup for the selected provider first/u);
-  assert.equal(probes, 0);
 });
 
 test('Codex initialization never applies to another platform or provider', async () => {
   const unexpected = async (): Promise<never> => { throw new Error('must not probe'); };
   for (const [windows, provider] of [[false, 'codex'], [true, 'claude']] as const) {
     const setup = new ProviderSetup(async () => ready(), { windows, codexInitialization: unexpected });
-    assert.equal((await setup.checkForCreation(provider)).codexInitialization, undefined);
+    assert.equal((await setup.check(provider)).codexInitialization, undefined);
   }
 });
 

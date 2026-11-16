@@ -8,6 +8,10 @@ Accepted — 2026-11-04, by the owner after reviewing an interactive mock. Speci
 [ADR-006](006-share-runtime-catalogs-and-package-provider-setup-helpers.md); its catalog,
 vendoring and provenance rules stay.
 
+Amended by [ADR-032](032-make-the-setup-wizard-a-cat-bots-settings-pages-and-let-no-check-stop-it.md)
+(2026-11-16): the wizard's pages are a cat bot's settings pages, a row's own action confirmed in a box replaces the
+tick, and nothing a check finds stops the wizard.
+
 ## Context
 
 The page that creates a bot opens with Codex selected and immediately runs its packaged

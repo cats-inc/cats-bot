@@ -24,6 +24,8 @@ import { createSchedule as buildSchedule, describeSchedule, type CreateScheduleI
 import { createFileLogger, type Logger } from './log.ts';
 import { BotNotInitializedError, readBotProfile } from './profile/initialize.ts';
 import {
+  CLI_PROVIDERS,
+  findOnPath,
   listProviders,
   readLocalModelCatalog,
   type ModelCatalog,
@@ -350,6 +352,7 @@ export class BotCore implements BotHostApi {
         return state === 'queued' || state === 'running';
       },
       retireSession: (sessionId) => this.retireSession(sessionId),
+      cliMissing: () => this.missingCli() !== null,
       log: this.log,
     });
     this.runner = new TurnRunner({
@@ -381,6 +384,7 @@ export class BotCore implements BotHostApi {
           ? { standingGrants: true as const } : {}) }),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
+      missingCli: () => this.missingCli(),
     });
     const life = options.life ?? {};
     this.life = new LifeLoop({
@@ -429,6 +433,18 @@ export class BotCore implements BotHostApi {
     const profile = readBotProfile(options.root);
     if (!profile) throw new BotNotInitializedError(options.root);
     return new BotCore(options, profile);
+  }
+
+  /**
+   * ADR-032: the provider whose command is not on the PATH the Runtime is given, as `listProviders` looks.
+   * A host that names the command itself (development, tests) is trusted.
+   */
+  private missingCli(): { provider: string; label: string } | null {
+    if (this.options.runtimeClient || this.options.runtime?.providerCommand) return null;
+    const provider = this.profile.executionTarget.provider;
+    const definition = CLI_PROVIDERS.find((item) => item.id === provider);
+    if (!definition) return null;
+    return findOnPath(definition.command, this.options.runtime?.env ?? process.env) ? null : { provider, label: definition.label };
   }
 
   private createSupervisor(): RuntimeSupervisor {

@@ -1439,10 +1439,16 @@ button.quiet.danger {
 }
 
 .setup-avatars,
-.setup-providers,
 .setup-chips {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+/* ADR-032: six agent CLIs, two full rows, in the wizard as in a cat bot's settings. */
+.setup-providers {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
 }
 
@@ -2066,10 +2072,6 @@ button.quiet.danger {
 
 .bot-page .setup-avatars .setup-choice {
   padding: 6px 2px 4px;
-}
-
-.bot-page .setup-providers {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .bot-page .setup-providers .setup-choice {

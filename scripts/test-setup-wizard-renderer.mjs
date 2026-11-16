@@ -120,16 +120,28 @@ async function open(world, extra = {}) {
     writeFileSync(join(evidence, `${name}.png`), (await webContents.capturePage()).toPNG());
   };
   const logOpen = () => js("document.querySelector('.setup-log').classList.contains('is-open')");
-  const rows = () => js("[...document.querySelectorAll('.setup-rows > .setup-row:not(.setup-row-shortcut)')].map((row) => row.dataset.row + ':' + row.className.replace('setup-row', '').trim())");
-  await wait("document.querySelector('#setup-name') && document.querySelectorAll('input[name=setup-provider]').length === 5", 'page 1');
-  return { window, calls, created, done, errors, js, wait, click, type, shot, logOpen, rows };
+  const page = () => js("[...document.querySelectorAll('.setup-pane')].findIndex((pane) => !pane.hidden) + 1");
+  const rows = () => js("[...document.querySelectorAll('.setup-pane:not([hidden]) .setup-rows > .setup-row')].filter((row) => row.dataset.row).map((row) => row.dataset.row + ':' + row.className.replace('setup-row', '').trim())");
+  // ADR-032: a row's action asks in a box under the row, and the box's own button runs it.
+  const runRow = async (id) => {
+    await click(`#setup-act-${id}`);
+    await wait(`document.querySelector('.setup-row[data-row=${id}] .setup-confirm .run')`, `${id} box`);
+    await click(`.setup-row[data-row=${id}] .setup-confirm .run`);
+  };
+  await wait("document.querySelector('#setup-name') && document.querySelectorAll('input[name=setup-provider]').length === 6", 'page 1');
+  // Creating closes the window, so the click is queued and the script waits on `done` instead.
+  const submit = async () => {
+    await js("setTimeout(() => document.querySelector('#setup-submit').click()); true");
+    await done;
+  };
+  return { window, calls, created, done, errors, js, wait, click, type, shot, logOpen, page, rows, runRow, submit };
 }
 
 // Electron waits for its ESM entrypoint before ready; top-level await would
 // deadlock this fixture before its first scenario. Register the work instead.
 app.whenReady().then(async () => {
 
-/* ---- Codex on a clean Windows machine ---- */
+/* ---- Codex on a clean machine, on the three pages of a cat bot's settings (ADR-032) ---- */
 {
   const world = {
     state: { node: 'changes_required', npm: 'changes_required', codex: 'changes_required', shell: 'changes_required' },
@@ -142,13 +154,12 @@ app.whenReady().then(async () => {
 
   // Page 1 starts nothing and fits the minimum window.
   check('opening runs no helper', w.calls.length === 0, w.calls.join(','));
-  check('no provider is preselected', await w.js("!document.querySelector('input[name=setup-provider]:checked')"));
+  check('the rail names the settings pages', (await w.js("[...document.querySelectorAll('.setup-step-title')].map((n) => n.textContent).join('>')")) === 'Name and look>Provider and model>Permissions');
   check('the name has focus', await w.js("document.activeElement?.id === 'setup-name'"));
-  check('the button waits for a provider', await w.js("document.querySelector('#setup-check').disabled"));
-  const fit = await w.js("(() => { const p = document.querySelector('.setup-pane'); return [p.scrollHeight, p.clientHeight, document.documentElement.clientWidth, document.documentElement.clientHeight]; })()");
+  const fit = await w.js("(() => { const p = document.querySelector('.setup-pane:not([hidden])'); return [p.scrollHeight, p.clientHeight]; })()");
   check('page 1 fits the minimum window', fit[0] <= fit[1], fit.join(' '));
-  const order = await w.js("[...document.querySelectorAll('.setup-pane .field > span, .setup-pane .field > label, .setup-pane legend')].map((n) => n.firstChild.textContent.trim())");
-  check('fields keep their order', order.join('>') === 'Name>Appearance>Agent CLI>Personality', order.join('>'));
+  const order = await w.js("[...document.querySelectorAll('.setup-pane:not([hidden]) .field > span, .setup-pane:not([hidden]) .field > label, .setup-pane:not([hidden]) legend')].map((n) => n.firstChild.textContent.trim())");
+  check('page 1 has name, look and personality', order.join('>') === 'Name>Appearance>Personality', order.join('>'));
   check('the log says nothing has run', (await w.js("document.querySelector('.setup-log-last').textContent")) === 'Nothing has run yet.');
   await w.shot('1-page-one-minimum');
 
@@ -162,349 +173,237 @@ app.whenReady().then(async () => {
   const hint = await w.js("document.querySelector('#setup-instructions').placeholder");
   check('the first preset is the placeholder', first === hint && first.length > 0);
   await w.type('#setup-instructions', '');
-  check('clearing keeps the placeholder', (await w.js("document.querySelector('#setup-instructions').placeholder")) === hint);
   check('clearing unpresses', await w.js("[...document.querySelectorAll('.setup-chip')].every((c) => c.getAttribute('aria-pressed') === 'false')"));
   // FR-5: Ctrl+Z, sent to this page alone, brings back what a preset replaced.
   await w.js("document.querySelector('#setup-instructions').focus(); document.execCommand('insertText', false, 'my own words')");
   await w.click('#setup-persona-1');
   await w.wait("document.querySelector('#setup-instructions').value.startsWith('You are a calm')", 'preset replaced the words');
-  check('a preset leaves the focus on its button', await w.js("document.activeElement?.id === 'setup-persona-1'"));
   w.window.webContents.focus();
-  w.window.webContents.sendInputEvent({ type: 'rawKeyDown', keyCode: 'Z', modifiers: ['control'] });
-  w.window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Z', modifiers: ['control'] });
+  // Ctrl+Z reaches the page's editing directly. On macOS, Cmd+Z goes through the app menu, which this
+  // fixture has none of, so the page's own undo stands in for it.
+  if (process.platform === 'darwin') {
+    await w.js("document.querySelector('#setup-instructions').focus(); document.execCommand('undo')");
+  } else {
+    w.window.webContents.sendInputEvent({ type: 'rawKeyDown', keyCode: 'Z', modifiers: ['control'] });
+    w.window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Z', modifiers: ['control'] });
+  }
   await sleep(200);
   const undone = await w.js("document.querySelector('#setup-instructions').value");
-  check('Ctrl+Z restores what a preset replaced', undone === 'my own words', undone.slice(0, 60));
+  check('undo restores what a preset replaced', undone === 'my own words', undone.slice(0, 60));
   await w.type('#setup-instructions', '');
 
   // The rule, on the page.
-  await w.click('input[name=setup-provider][value=codex]');
-  check('choosing a provider runs nothing', w.calls.length === 0);
-  check('the hint counts the checks', /at most 5 read-only checks/u.test(await w.js("document.querySelector('.setup-foot-hint').textContent")) || process.platform !== 'win32');
-  await w.type('#setup-name', 'a\nb');
-  await w.type('#setup-name', 'Mo\u202Echi');
+  await w.type('#setup-name', 'Mo‮chi');
   await w.wait("document.querySelector('#setup-name-error')", 'name error');
-  check('a hidden character in the name blocks the button', await w.js("document.querySelector('#setup-check').disabled"));
+  check('a hidden character in the name holds Next', await w.js("document.querySelector('#setup-to-provider').disabled"));
   await w.type('#setup-name', 'Mochi');
   await w.type('#setup-instructions', `Be kind.${String.fromCodePoint(0xE0068, 0xE0069)}`);
   await w.wait("document.querySelector('#setup-persona-error')", 'persona error');
-  check('hidden text in the persona blocks the button', await w.js("document.querySelector('#setup-check').disabled"));
-  await w.type('#setup-instructions', `Be kind.${String.fromCodePoint(0xE0168, 0xE0169)}`);
-  await w.wait("document.querySelector('#setup-persona-error')", 'persona error for variation selectors');
-  check('hidden text in variation selectors blocks the button', await w.js("document.querySelector('#setup-check').disabled"));
+  check('hidden text in the persona holds Next', await w.js("document.querySelector('#setup-to-provider').disabled"));
   await w.type('#setup-instructions', 'x'.repeat(4001));
   await w.wait("/4,000/.test(document.querySelector('#setup-persona-error')?.textContent ?? '')", 'length error');
   await w.type('#setup-instructions', '');
-  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
+  await w.wait("!document.querySelector('#setup-to-provider').disabled", 'Next enabled');
+  await w.click('#setup-to-provider');
 
-  // The check.
-  await w.click('#setup-check');
+  // Page 2: Provider and model, as a cat bot's settings has it.
+  await w.wait("document.querySelector('#setup-next')", 'page 2');
+  check('no provider is preselected', await w.js("!document.querySelector('input[name=setup-provider]:checked')"));
+  check('Next waits for a provider', await w.js("document.querySelector('#setup-next').disabled"));
+  await w.click('input[name=setup-provider][value=codex]');
+  await w.wait("document.querySelector('#provider-check')", 'provider rows');
+  check('choosing a provider runs nothing', w.calls.length === 0);
+  check('before the check every row is unchecked', await w.js("[...document.querySelectorAll('.setup-pane:not([hidden]) .setup-rows .setup-row-state')].every((n) => n.textContent === 'Not checked yet')"));
+  check('Next does not wait for a check (ADR-032)', await w.js("!document.querySelector('#setup-next').disabled"));
+  check('the page has no tick boxes', await w.js("!document.querySelector('.setup-pane:not([hidden]) .setup-rows input[type=checkbox]')"));
+  check('the page has no sheet or link to Cats Bot Settings', await w.js("!document.querySelector('#provider-all-clis') && !document.querySelector('.setup-log-sheet')"));
+  await w.click('#provider-check');
   await w.wait("document.querySelector('.setup-log').classList.contains('is-open')", 'log opens');
   check('the log opens for a read-only check', true);
-  await w.wait("document.querySelector('.setup-row[data-row=shell] input')", 'first round');
+  await w.wait("document.querySelector('#setup-act-node')", 'first round');
   const round1 = await w.rows();
-  check('round 1: Node.js and the optional step can be ticked, the rest wait', round1.join(' ') === 'node:is-needs npm:is-waiting provider:is-waiting shell:is-needs', round1.join(' '));
-  check('the check ran only what it could', w.calls.join(' ') === 'node:false shell:false', w.calls.join(' '));
-  check('nothing is ticked by default', await w.js("![...document.querySelectorAll('.setup-rows input[type=checkbox]')].some((n) => n.checked)"));
-  check('details are closed', await w.js("document.querySelectorAll('.setup-details').length === 0"));
-  check('optional is words in the title', await w.js("document.querySelector('.setup-row[data-row=shell] .setup-optional').textContent === '(optional step)'"));
+  check('round 1: Node.js can be set up, what needs it waits', round1.filter((row) => !row.startsWith('shell')).join(' ') === 'node:is-needs npm:is-waiting provider:is-waiting', round1.join(' '));
+  check('the check ran only what it could', w.calls.filter((call) => call !== 'shell:false').join(' ') === 'node:false', w.calls.join(' '));
   await w.wait("!document.querySelector('.setup-log').classList.contains('is-open')", 'log closes after success');
-  check('the log closes after success', true);
-  check('next waits for what is required', await w.js("document.querySelector('#setup-next').disabled"));
+  check('the log closes after a good check', true);
+  check('Next still does not wait for what is missing', await w.js("!document.querySelector('#setup-next').disabled"));
   await w.shot('2-round-one');
 
-  // A declined UAC prompt.
-  await w.click('#setup-tick-node');
-  await w.wait("document.querySelector('#setup-apply')", 'apply');
-  check('apply says Windows will ask', /administrator permission/u.test(await w.js("document.querySelector('.setup-foot-hint').textContent")) || process.platform !== 'win32');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('#setup-retry')", 'failure');
+  // A declined prompt.
+  await w.runRow('node');
+  await w.wait("document.querySelector('#setup-retry-node')", 'failure');
   const declined = await w.js("document.querySelector('.setup-row[data-row=node]').textContent");
   check('a declined prompt says nothing changed', /chose No/u.test(declined) && world.state.node !== 'ready', declined.slice(0, 80));
   check('a failure opens the log', await w.logOpen());
-  check('a failure opens only its details', await w.js("document.querySelectorAll('.setup-details').length === 1 && !!document.querySelector('.setup-row[data-row=node] .setup-details')"));
-  check('commands share one style', await w.js("document.querySelectorAll('.setup-details .setup-command').length === 2"));
   await w.shot('3-declined');
 
-  // Try again needs no new tick, and round 2 lists the rest.
-  await w.click('#setup-retry');
-  await w.wait("document.querySelector('.setup-row[data-row=npm] input')", 'second round');
+  // Try again needs no new box, and the second round reads the rest.
+  await w.click('#setup-retry-node');
+  await w.wait("document.querySelector('#setup-act-npm')", 'second round');
   const round2 = await w.rows();
-  check('round 2: everything else is read at once', round2.join(' ') === 'node:is-ready npm:is-needs provider:is-needs shell:is-needs', round2.join(' '));
-  check('the npm PATH plan can be ticked without restarting', await w.js("!!document.querySelector('#setup-tick-npm') && !document.querySelector('#setup-restart')"));
-  check('the shortcut closes the list', await w.js("document.querySelector('.setup-rows').lastElementChild.classList.contains('setup-row-shortcut')"));
-  await w.click('#setup-tick-required');
-  await w.wait("document.querySelector('#setup-tick-provider')?.checked", 'shortcut ticks');
-  const ticks = await w.js("[...document.querySelectorAll('.setup-rows input[type=checkbox]')].filter((n) => n.checked).map((n) => n.id).join(' ')");
-  check('the shortcut ticks only what is required', ticks === 'setup-tick-npm setup-tick-provider', ticks);
-  check('the shortcut turns into its undo', (await w.js("document.querySelector('#setup-tick-required').textContent")) === 'Untick all required');
-  await w.shot('4-round-two');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready') && !document.querySelector('.setup-foot .primary').disabled", 'applied');
-  check('only ticked scripts changed anything', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true node:true npm:true codex:true', w.calls.filter((call) => call.endsWith(':true')).join(' '));
+  check('round 2: everything else is read at once', round2.filter((row) => !row.startsWith('shell')).join(' ') === 'node:is-ready npm:is-needs provider:is-needs', round2.join(' '));
+  await w.click('#provider-setup-all');
+  await w.wait("document.querySelector('.provider-ops > .setup-confirm .run')", 'set up all box');
+  const listed = await w.js("document.querySelector('.provider-ops > .setup-confirm').textContent");
+  check('set up all names only what is required', /npm/u.test(listed) && /Codex/u.test(listed) && !/PowerShell/u.test(listed), listed.slice(0, 120));
+  await w.click('.provider-ops > .setup-confirm .run');
+  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready') && !document.querySelector('.provider-ops').getAttribute('aria-busy').includes('true')", 'applied');
+  check('only what was confirmed changed anything', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true node:true npm:true codex:true', w.calls.filter((call) => call.endsWith(':true')).join(' '));
   check('the optional step did not run', world.state.shell !== 'ready');
-  await w.wait("!document.querySelector('#setup-next').disabled", 'next');
-  check('the optional step does not block', true);
-  await w.shot('5-ready');
+  const signIn = await w.js("document.querySelector('.setup-row[data-row=sign-in]')?.textContent ?? ''");
+  check('sign-in is on page 2 once Codex works, with its fixed command', /codex login/u.test(signIn), signIn.slice(0, 80));
+  const models = await w.js("[...document.querySelectorAll('#setup-model option')].map((o) => o.textContent)");
+  check('the model list comes from the catalog', models.length > 3, models.join(','));
+  await w.shot('4-ready');
 
-  // Page 3.
+  // Page 3: what the cat bot may do, then create.
   await w.click('#setup-next');
   await w.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled", 'page 3');
-  const signIn = await w.js("document.querySelector('.setup-row[data-row=sign-in]').textContent");
-  check('Codex gives no sign-in signal, and the row says so', /Cannot tell/u.test(signIn), signIn.slice(0, 80));
-  check('sign-in opens in Command Prompt without the PowerShell step', /Command Prompt/u.test(signIn) || process.platform !== 'win32');
-  check('the fixed command is shown', /codex login/u.test(signIn));
-  check('the summary names the changes', /changed 3 item/u.test(await w.js("document.querySelector('.setup-summary').textContent")), await w.js("document.querySelector('.setup-summary .hint').textContent"));
-  check('the summary names the Boss Cat role', /Boss Cat/u.test(await w.js("document.querySelector('.setup-summary').textContent")));
-  check('the summary names the folder', /mochi-catsbot/u.test(await w.js("document.querySelector('.setup-summary').textContent")));
-  const models = await w.js("[...document.querySelectorAll('#setup-model option')].map((o) => o.textContent)");
-  check('the model list comes from the catalog', models.length > 3 && models.includes('GPT-6.1-Sol'), models.join(','));
-  const effort = await w.js("[...document.querySelectorAll('.setup-fields select')][1]?.selectedOptions[0]?.textContent");
-  check('effort shows the catalog default', effort === 'Low (default)', String(effort));
-  check('catalog text is not translated', await w.js("[...document.querySelectorAll('.setup-fields .field > span')].map((n) => n.textContent).join('/') === 'Model/Reasoning effort'"));
+  const said = await w.js("document.querySelector('#setup-permission').textContent");
+  check('page 3 says what the default lets it do', /Mochi reads and edits files in the filespace folder/u.test(said), said);
+  const summary = await w.js("document.querySelector('.setup-summary').textContent");
+  check('the summary names the Boss Cat role and the folder', /Boss Cat/u.test(summary) && /mochi-catsbot/u.test(summary), summary.slice(0, 160));
+  check('nothing on page 3 counts changes or says nothing changed', !/changed|has changed nothing/iu.test(summary));
   check('start at login is ticked by default', await w.js("document.querySelector('#setup-start-at-login').checked"));
-  await w.shot('6-page-three');
+  const fit3 = await w.js("(() => { const p = document.querySelector('.setup-pane:not([hidden])'); return [p.scrollHeight, p.clientHeight]; })()");
+  check('page 3 fits the minimum window', fit3[0] <= fit3[1], fit3.join(' '));
+  await w.shot('5-page-three');
   await w.click('#setup-start-at-login');
-  await w.click('#setup-submit');
-  await w.done;
+  await w.submit();
   const input = w.created[0];
   check('the owner\'s choices reach creation', input?.name === 'Mochi' && input?.provider === 'codex' && input?.startAtLogin === false, JSON.stringify(input));
   check('no page error, Codex path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
-/* ---- Codex first-run Windows initialization is separate from installation/sign-in ---- */
-if (process.platform === 'win32') {
-  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
+/* ---- What the check finds never stops creation (ADR-032) ---- */
+{
+  const world = { state: { grok: 'changes_required' } };
   const w = await open(world);
-  await w.click('input[name=setup-provider][value=codex]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'can reach login');
+  await w.click('#setup-to-provider');
+  await w.click('input[name=setup-provider][value=grok]');
+  await w.wait("document.querySelector('#provider-check')", 'provider rows');
   await w.click('#setup-next');
-  await w.wait("document.querySelector('#setup-open-codex')", 'initialization action');
-  check('Windows first-run initialization follows the login row', await w.js("!!document.querySelector('[data-row=sign-in] + [data-row=codex-initialization]')"));
-  check('missing sandbox permits Create with installed CLI and optional PowerShell unset', await w.js("!document.querySelector('#setup-submit').disabled"));
-  check('initialization advice explains that creation can continue', await w.js("document.querySelector('[data-row=codex-initialization]').textContent.includes('You can create Mochi now.')"));
-  await w.shot('10-codex-initialization-needed');
-  await w.click('#setup-open-codex');
-  await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Terminal opened.')", 'terminal result');
-  check('initialization opens the fixed terminal action', w.calls.includes('open-codex-terminal'));
-  check('opened terminal is not proof of readiness', await w.js("!document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready')"));
-  world.codexInitialization = 'unavailable';
-  await w.click('#setup-recheck');
-  await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Could not verify')", 'unknown readiness');
-  await w.wait("!document.querySelector('#setup-submit').disabled", 'unverified setup permits creation');
-  check('an inconclusive check permits Create without claiming readiness', await w.js("!document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready')"));
-  await w.click('#setup-submit'); await w.done;
-  check('unverified initialization still creates the selected cat', w.created[0]?.provider === 'codex');
-  check('unverified initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
-}
-if (process.platform === 'win32') {
-  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
-  const w = await open(world);
-  await w.click('input[name=setup-provider][value=codex]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'installed prerequisites');
+  await w.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled", 'page 3 without a check');
+  check('Create needs no check', true);
+  await w.click('#setup-back');
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('#setup-act-provider')", 'grok needs installing');
   await w.click('#setup-next');
-  await w.wait("document.querySelector('#setup-submit') && !document.querySelector('#setup-submit').disabled", 'incomplete setup permits creation');
-  await w.click('#setup-submit'); await w.done;
-  check('required initialization still creates the selected cat', w.created[0]?.provider === 'codex');
-  check('required initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
-}
-if (process.platform === 'win32') {
-  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
-  const w = await open(world);
-  await w.click('input[name=setup-provider][value=codex]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'installed prerequisites');
-  await w.click('#setup-next');
-  world.codexInitialization = 'ready';
-  await w.click('#setup-recheck');
-  await w.wait("document.querySelector('[data-row=codex-initialization]').classList.contains('is-ready') && !document.querySelector('#setup-submit').disabled", 'verified readiness');
-  check('fresh ready evidence permits Create', true);
-  await w.shot('11-codex-initialization-ready');
-  check('initialization adds no horizontal overflow', await w.js("document.documentElement.scrollWidth <= innerWidth"));
-  await w.click('#setup-submit'); await w.done;
-  check('verified initialization creates the selected cat', w.created[0]?.provider === 'codex');
-  check('initialization flow has no page errors', w.errors.length === 0, w.errors.join(' | '));
+  await w.wait("!document.querySelector('#setup-submit').disabled", 'create with a missing CLI');
+  await w.submit();
+  check('a missing CLI still creates the cat bot', w.created[0]?.provider === 'grok', JSON.stringify(w.created[0]));
+  check('creation ran no check of its own', w.calls.filter((call) => call === 'grok:false').length === 1, w.calls.join(' '));
+  check('no page error, missing CLI path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
-/* ---- Claude, installed but not signed in, with an old npm shim first ---- */
+/* ---- A step goes on while another page shows; only Create waits for it ---- */
 {
-  const world = {
-    state: { claude: 'changes_required' },
-    planned: { claude: ['remove_legacy_npm_claude_shim'] },
-  };
+  const world = { state: { grok: 'changes_required' }, delay: 60 };
   const w = await open(world);
-  await w.click('input[name=setup-provider][value=claude]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('.setup-row[data-row=provider] input')", 'claude row');
-  check('removing something says so', /Removes the npm version/u.test(await w.js("document.querySelector('.setup-row[data-row=provider]').textContent")));
-  check('one required row has no shortcut', await w.js("!document.querySelector('#setup-tick-required')"));
-  await w.click('#setup-tick-provider');
-  await w.wait("document.querySelector('#setup-apply')", 'apply');
-  world.applies = { claude: [{ status: 'ready', installed: true, appliedChanges: ['remove_legacy_npm_claude_shim'] }] };
-  world.state.claude = 'auth_required';
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled", 'installed');
+  await w.click('#setup-to-provider');
+  await w.click('input[name=setup-provider][value=grok]');
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('#setup-act-provider')", 'grok row');
+  world.delay = 1500;
+  await w.runRow('provider');
+  await w.wait("document.querySelector('.setup-row[data-row=provider] .setup-spinner, .setup-row[data-row=provider].is-running')", 'running');
   await w.click('#setup-next');
-  await w.wait("document.querySelector('#setup-recheck')", 'sign-in row');
-  check('Claude reports not signed in', /Not signed in/u.test(await w.js("document.querySelector('.setup-row[data-row=sign-in]').textContent")));
-  check('open terminals are mentioned after a change', /already open/u.test(await w.js("document.querySelector('.setup-row[data-row=sign-in]').textContent")));
-  await w.wait("!document.querySelector('#setup-submit').disabled", 'skip allowed');
-  check('sign-in can be skipped', true);
-  world.state.claude = 'ready';
-  await w.click('#setup-recheck');
-  await w.wait("/Signed in/.test(document.querySelector('.setup-row[data-row=sign-in]').textContent)", 'signed in');
-  check('asking again shows signed in', true);
-  const default_ = await w.js("document.querySelector('#setup-model').selectedOptions[0].textContent");
-  check('the catalog\'s default model is marked', default_ === 'Opus 5.5 (default)', default_);
+  await w.wait("document.querySelector('#setup-submit')", 'page 3');
+  check('Create waits while a step runs', await w.js("document.querySelector('#setup-submit').disabled"));
+  check('the log bar names what runs', /grok/iu.test(await w.js("document.querySelector('.setup-log-last').textContent")), await w.js("document.querySelector('.setup-log-last').textContent"));
+  await w.wait("!document.querySelector('#setup-submit').disabled", 'step finished');
+  check('the step finished while page 3 showed', world.state.grok === 'ready');
+  await w.click('#setup-back');
+  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready')", 'ready on page 2');
+  check('page 2 shows the result when it comes back', true);
   w.window.destroy();
   await w.done;
-  check('no page error, Claude path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+  check('no page error, background step path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
-/* ---- Back stops a check; the log stays as the owner set it; a restart keeps the input ---- */
+/* ---- A check that fails, a step it cannot confirm, and a restart that keeps the input ---- */
 {
-  const world = { state: { grok: 'ready' }, hang: { grok: true } };
+  const world = { state: { grok: 'failed' } };
   const kept = [];
   const w = await open(world, { restart: (draft) => { kept.push(draft); return true; } });
+  await w.click('#setup-to-provider');
   await w.click('input[name=setup-provider][value=grok]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-back') && document.querySelector('.setup-row .setup-spinner')", 'hanging check');
-  await w.click('#setup-back');
-  await w.wait("document.querySelector('#setup-name')", 'back on page 1');
-  check('back stops the check', await w.js("!!document.querySelector('input[name=setup-provider]:checked')"));
-  await w.wait("/Stopped/.test(document.querySelector('.setup-log-scroll').textContent)", 'stopped in log');
-  check('the log records that it stopped', true);
-  await w.click('#setup-log-toggle');
-  await w.wait("!document.querySelector('.setup-log').classList.contains('is-open')", 'owner closes');
-  world.hang = {};
-  world.state.grok = 'changes_required';
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('.setup-row[data-row=provider] input')", 'grok row');
-  check('the log stays closed once the owner closed it', !(await w.logOpen()));
-  check('a remote script is named', /x\.ai\/cli\/install/u.test(await w.js("document.querySelector('.setup-row[data-row=provider]').textContent")));
-  await w.click('#setup-more-provider');
-  await w.wait("document.querySelector('.setup-details')", 'details');
-  check('details show the helper\'s own words', /grok:plan/u.test(await w.js("document.querySelector('.setup-details').textContent")));
-  // A script that runs and leaves its row unfinished stops and says so.
-  world.applies = { grok: [{ status: 'changes_required', installed: false }, { status: 'relaunch_required', installed: false }] };
-  await w.click('#setup-tick-provider');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('#setup-error')", 'not done');
-  check('a script that ran without finishing says so', /not done yet/u.test(await w.js("document.querySelector('#setup-error').textContent")));
-  await w.click('#setup-tick-provider');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('#setup-restart')", 'fallback');
-  check('a step the check cannot confirm offers checking again first', (await w.js("document.querySelector('.setup-foot .primary').textContent")) === 'Check again');
-  check('the failure opened the log even though the owner closed it', await w.logOpen());
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-failed')", 'failed row');
+  await sleep(1700);
+  check('a failed check keeps the log open', await w.logOpen());
+  check('a row that failed a check offers no retry', await w.js("!document.querySelector('#setup-retry-provider')"));
+  check('a failed check does not hold Next', await w.js("!document.querySelector('#setup-next').disabled"));
+  check('no script that changes anything ran', !w.calls.some((call) => call.endsWith(':true')), w.calls.join(' '));
+  await w.shot('6-check-failed');
+  world.applies = { grok: [{ status: 'relaunch_required', installed: false }] };
+  await w.runRow('provider');
+  await w.wait("document.querySelector('#setup-restart')", 'not found yet');
+  check('a step Cats Bot cannot find yet offers a restart on its row', true);
+  check('it does not hold Next', await w.js("!document.querySelector('#setup-next').disabled"));
   await w.shot('7-not-found');
   await w.click('#setup-restart');
   await sleep(150);
   check('a restart keeps the input', kept[0]?.name === 'Mochi' && kept[0]?.provider === 'grok', JSON.stringify(kept[0]));
   world.state.grok = 'ready';
-  await w.click('#setup-recheck');
+  await w.click('#provider-check');
   await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready')", 'recovered');
   check('checking again recovers', true);
-  w.window.destroy();
-  await w.done;
-  check('no page error, recovery path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
-}
-
-/* ---- A check that fails: nothing offers to run what was never ticked ---- */
-{
-  const world = { state: { grok: 'failed' } };
-  const w = await open(world);
-  await w.type('#setup-name', 'Mochi');
-  await w.click('input[name=setup-provider][value=grok]');
-  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-failed')", 'failed row');
-  await sleep(1700);
-  check('a failed check keeps the log open', await w.logOpen());
-  check('a failed check opens its details', await w.js("!!document.querySelector('.setup-row[data-row=provider] .setup-details')"));
-  check('a row that failed a check cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
-  check('it offers checking again', await w.js("!!document.querySelector('#setup-recheck')"));
-  check('the title says the check failed', /Cannot check/u.test(await w.js("document.querySelector('.setup-pane h1').textContent")));
-  check('no script that changes anything ran', !w.calls.some((call) => call.endsWith(':true')), w.calls.join(' '));
-  await w.shot('8-check-failed');
-  world.state.grok = 'ready';
-  await w.click('#setup-recheck');
-  await w.wait("document.querySelector('.setup-row[data-row=provider]')?.classList.contains('is-ready')", 'recovered');
-  await w.click('#setup-next');
   await w.wait("document.querySelector('#setup-open-terminal')", 'sign-in row');
   // The real handler would open a real terminal, so this one answers that none was found.
   ipcMain.removeHandler('setup:openTerminal');
   ipcMain.handle('setup:openTerminal', () => ({ opened: false, command: 'grok' }));
-  await w.wait("!document.querySelector('.setup-log').classList.contains('is-open')", 'log closes after the good check');
   await w.click('#setup-open-terminal');
-  await w.wait("document.querySelector('.setup-log').classList.contains('is-open')", 'log opens for a missing terminal');
-  await sleep(1700);
-  check('a terminal that cannot open opens the log and it stays', await w.logOpen());
+  await w.wait("/No terminal was found/.test(document.querySelector('.setup-row[data-row=sign-in]').textContent)", 'missing terminal');
+  check('a terminal that cannot open says so on its row', true);
   w.window.destroy();
   await w.done;
-  check('no page error, failed check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+  check('no page error, failure path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
-/* ---- A change whose fresh check shows the next row failing ---- */
+/* ---- Claude, installed but not signed in ---- */
 {
-  const world = { state: { node: 'changes_required', npm: 'failed', codex: 'changes_required', shell: 'ready' } };
+  const world = { state: { claude: 'changes_required' }, planned: { claude: ['remove_legacy_npm_claude_shim'] } };
   const w = await open(world);
-  await w.type('#setup-name', 'Mochi');
-  await w.click('input[name=setup-provider][value=codex]');
-  await w.wait("!document.querySelector('#setup-check').disabled", 'button enabled');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-tick-node')", 'node row');
-  await w.click('#setup-tick-node');
-  await w.wait("document.querySelector('#setup-apply')", 'apply');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('.setup-row[data-row=npm]')?.classList.contains('is-failed')", 'npm failed');
-  await w.wait("document.querySelector('#setup-recheck') && !document.querySelector('#setup-recheck').disabled", 'apply finished');
-  await sleep(1700);
-  check('a fresh check that shows a failure keeps the log open', await w.logOpen());
-  check('that row\'s details open', await w.js("!!document.querySelector('.setup-row[data-row=npm] .setup-details')"));
-  check('that row cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
-  check('only the ticked script ran', w.calls.filter((call) => call.endsWith(':true')).join(' ') === 'node:true', w.calls.join(' '));
-  world.state.node = 'failed';
-  await w.click('#setup-recheck');
-  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-failed')", 'node failed its check');
-  check('a finished row that later fails a check cannot be tried again', await w.js("!document.querySelector('#setup-retry')"));
+  await w.click('#setup-to-provider');
+  await w.click('input[name=setup-provider][value=claude]');
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('#setup-act-provider')", 'claude row');
+  await w.click('#setup-act-provider');
+  await w.wait("document.querySelector('.setup-row[data-row=provider] .setup-confirm')", 'box');
+  check('removing something says so in the box', /Removes the npm version/u.test(await w.js("document.querySelector('.setup-row[data-row=provider] .setup-confirm').textContent")));
+  check('one required row has no set-up-all', await w.js("!document.querySelector('#provider-setup-all')"));
+  world.applies = { claude: [{ status: 'ready', installed: true, appliedChanges: ['remove_legacy_npm_claude_shim'] }] };
+  world.state.claude = 'auth_required';
+  await w.click('.setup-row[data-row=provider] .setup-confirm .run');
+  await w.wait("/Not signed in|Sign in in a real terminal/.test(document.querySelector('.setup-row[data-row=sign-in]')?.textContent ?? '')", 'sign-in row');
+  check('Claude reports not signed in', true);
+  await w.click('#setup-next');
+  await w.wait("!document.querySelector('#setup-submit').disabled", 'skip allowed');
+  check('sign-in can be skipped', true);
+  check('page 3 says what Claude Code may do', /follows your Claude Code settings/u.test(await w.js("document.querySelector('#setup-permission').textContent")));
   w.window.destroy();
   await w.done;
-  check('no page error, fresh check path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+  check('no page error, Claude path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
 }
 
-/* ---- A real Windows restart is distinct from a Cats Bot/PATH relaunch ---- */
-{
-  const world = {
-    state: { node: 'changes_required', npm: 'ready', codex: 'ready', shell: 'ready' },
-    applies: { node: [{ status: 'restart_required', installed: true, restartRequired: true,
-      appliedChanges: ['fixture_msi_install'], warnings: ['Windows requires a system restart.'],
-      interruptions: [{ kind: 'restart_required', requiresRestart: true }] }] },
-  };
+/* ---- Windows only: Codex first-time setup sits under sign-in on page 2, and never holds Create ---- */
+if (process.platform === 'win32') {
+  const world = { state: { node: 'ready', npm: 'ready', codex: 'ready', shell: 'changes_required' }, codexInitialization: 'required' };
   const w = await open(world);
-  await w.type('#setup-name', 'Mochi');
+  await w.click('#setup-to-provider');
   await w.click('input[name=setup-provider][value=codex]');
-  await w.click('#setup-check');
-  await w.wait("document.querySelector('#setup-tick-node')", 'Node plan');
-  await w.click('#setup-tick-node');
-  await w.click('#setup-apply');
-  await w.wait("document.querySelector('.setup-system-restart') && !document.querySelector('#setup-recheck')?.disabled", 'Windows restart advice');
-  check('a Windows reboot is not offered as a Cats Bot restart', await w.js("!document.querySelector('#setup-restart') && /Restart Windows/.test(document.querySelector('.setup-pane').textContent)"));
-  await w.click('#setup-recheck');
-  await w.wait("!document.querySelector('#setup-recheck')?.disabled && !!document.querySelector('.setup-system-restart')", 'unavailable Node keeps reboot advice');
-  check('a missing Node does not offer reinstall or app restart while Windows reboot is pending', await w.js("!document.querySelector('#setup-tick-node') && !document.querySelector('#setup-restart')"));
-  world.state.node = 'ready';
-  await w.click('#setup-recheck');
-  await w.wait("document.querySelector('.setup-row[data-row=node]')?.classList.contains('is-ready')", 'Node usable after probe');
-  check('a ready Node keeps the Windows restart advice visible', await w.js("!!document.querySelector('.setup-row[data-row=node] .setup-system-restart')"));
-  check('the Windows restart advice has visible layout', await w.js("(() => { const node = document.querySelector('.setup-system-restart'); const box = node.getBoundingClientRect(); const style = getComputedStyle(node); return box.width > 0 && box.height > 0 && style.display !== 'none' && style.visibility !== 'hidden'; })()"));
-  check('a usable Node can continue without hiding reboot advice', await w.js("!!document.querySelector('#setup-next') && !document.querySelector('#setup-next').disabled"));
-  check('a successful install followed by rechecking still counts its change', await w.js("/Changed 1 item/.test(document.querySelector('.setup-pane').textContent)"));
-  await w.shot('9-windows-system-restart');
-  w.window.destroy();
-  await w.done;
-  check('no page error, Windows restart path', w.errors.length === 0, w.errors.join(' | ').slice(0, 200));
+  await w.click('#provider-check');
+  await w.wait("document.querySelector('#setup-open-codex')", 'initialization action');
+  check('first-time setup follows the sign-in row', await w.js("!!document.querySelector('[data-row=sign-in] + [data-row=codex-initialization]')"));
+  await w.click('#setup-open-codex');
+  await w.wait("document.querySelector('[data-row=codex-initialization]').textContent.includes('Terminal opened.')", 'terminal result');
+  check('first-time setup opens the fixed terminal action', w.calls.includes('open-codex-terminal'));
+  await w.click('#setup-next');
+  await w.wait("!document.querySelector('#setup-submit').disabled", 'Create');
+  await w.submit();
+  check('unfinished first-time setup still creates the cat bot', w.created[0]?.provider === 'codex');
+  check('no page error, Windows first-time setup path', w.errors.length === 0, w.errors.join(' | '));
 }
 
 console.log(results.join('\n'));

@@ -6,17 +6,12 @@ import { controlChoices, modelControls, modelOptions, selectedModel } from '../.
 import { PROVIDER_VENDORS, stepFacts } from '../../src/renderer/settings/setup/setupFacts.ts';
 import {
   addLogEntry,
-  checksToRun,
   elapsedLabel,
   liveRow,
   logText,
   logTotals,
   PERSONA_PRESETS,
   pendingSteps,
-  queueOf,
-  requiredPending,
-  requiredTickable,
-  retryQueue,
   rowKind,
   runFacts,
   runFailed,
@@ -25,7 +20,6 @@ import {
 import { botPersonaProblem } from '../../src/shared/botText.ts';
 import { translate, zhTW } from '../../src/shared/language.ts';
 import type { ProviderSetupState, SetupLogEntry, SetupStep, SetupStepId } from '../../src/shared/providerSetup.ts';
-import { canCreateFromSetup } from '../../src/shared/providerSetup.ts';
 
 const step = (id: SetupStepId, status: string, extra: Partial<SetupStep> = {}): SetupStep => ({
   id, label: id, status, installed: status === 'ready', version: null, manualSteps: [], warnings: [], restartRequired: false,
@@ -33,15 +27,6 @@ const step = (id: SetupStepId, status: string, extra: Partial<SetupStep> = {}): 
 });
 const state = (...steps: SetupStep[]): ProviderSetupState => ({
   provider: 'codex', steps, canFinish: false, signIn: 'unknown', signInCommand: 'codex login',
-});
-
-test('Codex initialization advice never disables Create once installation is complete', () => {
-  assert.equal(canCreateFromSetup(null), false);
-  for (const status of ['ready', 'required', 'unavailable'] as const) {
-    const checked = { ...state(step('provider', 'ready')), codexInitialization: { status } };
-    assert.equal(canCreateFromSetup(checked), false, 'missing prerequisites still block creation');
-    assert.equal(canCreateFromSetup({ ...checked, canFinish: true }), true, status);
-  }
 });
 
 test('each status maps to one row state (SPEC-010 FR-8)', () => {
@@ -62,20 +47,6 @@ test('each status maps to one row state (SPEC-010 FR-8)', () => {
   assert.equal(rowKind(step('node', 'failed', { systemRestartRequired: true })), 'failed', 'reboot advice cannot hide a real check failure');
 });
 
-test('the shortcut, the queue and what is left leave optional and waiting rows alone (FR-9, FR-11)', () => {
-  const current = state(step('node', 'ready'), step('npm', 'changes_required'), step('provider', 'changes_required'), step('shell', 'changes_required'));
-  assert.deepEqual(requiredTickable(current).map((item) => item.id), ['npm', 'provider']);
-  assert.deepEqual(requiredPending(current).map((item) => item.id), ['npm', 'provider']);
-  assert.deepEqual(queueOf(current, new Set<SetupStepId>(['shell', 'provider', 'npm'])), ['npm', 'provider', 'shell'], 'top down, whatever order they were ticked');
-  assert.deepEqual(queueOf(current, new Set<SetupStepId>(['node'])), [], 'a ready row never runs');
-  const waiting = state(step('node', 'changes_required'), step('npm', 'prerequisite_required'), step('provider', 'prerequisite_required'));
-  assert.deepEqual(requiredTickable(waiting).map((item) => item.id), ['node']);
-  assert.deepEqual(queueOf(waiting, new Set<SetupStepId>(['npm', 'node'])), ['node'], 'a waiting row cannot have been ticked into the queue');
-  assert.deepEqual(requiredPending(waiting).map((item) => item.id), ['node', 'npm', 'provider']);
-  assert.deepEqual(queueOf(null, new Set<SetupStepId>(['node'])), []);
-  assert.deepEqual(queueOf(state(step('node', 'failed')), new Set<SetupStepId>(['node'])), [], 'a failed row has no tick box to undo the tick');
-});
-
 test('the row that stopped the queue is the one the page speaks to', () => {
   assert.equal(stoppedStep(state(step('node', 'ready'), step('npm', 'changes_required'))), null);
   assert.equal(stoppedStep(state(step('node', 'elevation_required'), step('npm', 'prerequisite_required')))?.id, 'node');
@@ -83,24 +54,10 @@ test('the row that stopped the queue is the one the page speaks to', () => {
   assert.equal(stoppedStep(null), null);
 });
 
-test('only a row the owner already ran can be tried again (FR-9)', () => {
-  const ran = new Set<SetupStepId>(['node']);
-  const none = new Set<SetupStepId>();
-  assert.deepEqual(retryQueue(step('node', 'elevation_required'), ran, ['npm', 'node']), ['node', 'npm'], 'it goes first, then what is still ticked');
-  assert.deepEqual(retryQueue(step('node', 'failed'), ran, []), ['node']);
-  assert.deepEqual(retryQueue(step('node', 'failed'), none, ['npm']), [], 'a row that failed a check was never ticked');
-  assert.deepEqual(retryQueue(step('node', 'elevation_required'), none, []), []);
-  assert.deepEqual(retryQueue(step('node', 'relaunch_required'), ran, []), [], 'a restart is not a retry');
-  assert.deepEqual(retryQueue(null, ran, ['npm']), []);
-});
-
-test('rows before the check follow the shell\'s order, and the hint counts them (FR-3, FR-8)', () => {
+test('rows before the check follow the shell\'s order (FR-8)', () => {
   assert.deepEqual(pendingSteps('codex', 'Codex', 'win32').map((item) => item.id), ['node', 'npm', 'provider', 'shell']);
   assert.deepEqual(pendingSteps('codex', 'Codex', 'darwin').map((item) => item.id), ['node', 'npm', 'provider']);
   assert.deepEqual(pendingSteps('grok', 'Grok', 'win32').map((item) => [item.id, item.helper]), [['provider', 'grok']]);
-  assert.equal(checksToRun('codex', 'win32'), 5);
-  assert.equal(checksToRun('codex', 'linux'), 3);
-  assert.equal(checksToRun('muse', 'win32'), 1);
 });
 
 const entry = (run: number, phase: 'start' | 'end', extra: Partial<SetupLogEntry> = {}): SetupLogEntry => ({

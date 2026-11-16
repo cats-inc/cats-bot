@@ -7,14 +7,18 @@
 | **Status** | Implemented on 2026-11-04 (PLAN-011), approved by the owner after an interactive mock. Installs on clean machines are not yet accepted: see PLAN-011 Phase 4 |
 | **Owner** | Product owner |
 | **Reviewer** | Independent agent before each merge |
-| **Related decision** | [ADR-015](../decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md) |
+| **Related decision** | [ADR-015](../decisions/015-make-creating-a-cat-bot-a-wizard-whose-scripts-the-owner-ticks.md), amended by [ADR-032](../decisions/032-make-the-setup-wizard-a-cat-bots-settings-pages-and-let-no-check-stop-it.md) (2026-11-16) |
 | **Related plan** | [PLAN-011](../plans/PLAN-011-setup-wizard.md) |
 | **Updates** | SPEC-002 FR-1 and FR-3; SPEC-008 FR-4, FR-5, FR-19 and FR-23; SPEC-009 FR-4 |
 
 ## Summary
 
 Creating a cat bot becomes a three-page wizard. Nothing runs until the owner asks, every
-script that changes the computer is ticked by the owner, and a log shows what ran. The same
+script that changes the computer is ticked by the owner, and a log shows what ran.
+
+ADR-032 (2026-11-16) makes the three pages a cat bot's settings pages: Name and look, Provider
+and model, Permissions. A row's own action, confirmed in a box, replaces the tick, and nothing
+a check finds stops Next or Create. The amendments below say where. The same
 wizard serves the first run, Settings' New cat bot and a Boss Cat's request. A name and a
 persona get one rule wherever they enter.
 
@@ -50,9 +54,13 @@ persona get one rule wherever they enter.
    request, which opens it filled in (`purpose=create`). Its three steps are shown in a
    side rail with the Cat and a note holding the name and provider, in Settings' layout.
    Finished steps can be revisited until a run or the creation starts.
+   - ADR-032: the steps are Name and look, Provider and model, and Permissions, the names of a
+     cat bot's settings pages. The rail shows no note under them. Every page stays mounted, so
+     a run on page 2 goes on while another page shows; only creating holds the rail.
 2. FR-2: The window opens at 860×640 and is resizable, with a minimum of 800×600. Page 1
    fits the minimum without scrolling. A larger window gives the log more height, up to
    320 px; forms keep a readable width.
+   - ADR-032: page 2 may scroll, as the settings page does; the button bar stays in place.
 
 **Page 1: who it is**
 
@@ -61,6 +69,8 @@ persona get one rule wherever they enter.
    in order: name, look, provider, optional personality. Display language is offered on the
    first run only. The button reads "Check this computer", is disabled until the name is
    valid and a provider chosen, and the hint beside it says how many read-only checks run.
+   - ADR-032: the provider moves to page 2. Page 1's fields are name, look and personality,
+     and its button is Next, disabled only while the name or persona breaks FR-19.
 4. FR-4: A Boss Cat's request fills in name, persona and provider, and still waits for the
    button.
 5. FR-5: Five preset buttons sit above the personality box on the five-column grid: Curious,
@@ -74,6 +84,9 @@ persona get one rule wherever they enter.
 
 6. FR-6: The check runs the selected provider's helpers, read-only, only after the button or
    "Check again". Back cancels a running check.
+   - ADR-032: page 2 opens with the agent CLIs, three to a row; choosing one runs nothing.
+     "Check this computer" is in the rows' heading. A check goes on when the page or the
+     provider changes, as on a cat bot's Provider and model page; closing the window stops it.
 7. FR-7: Reading order for Codex: Node.js first. While Node.js is not ready, the npm folder
    and Codex wait unread, because their plans cannot be known. PowerShell scripts (Windows)
    is read regardless. Once Node.js is ready, everything is read in one pass.
@@ -85,6 +98,8 @@ persona get one rule wherever they enter.
    - queued or running, with a timer;
    - failed, including a declined UAC prompt;
    - installed but not found, the fallback in FR-13.
+   - ADR-032: these are the settings page's rows (`ActionRow`): a row that needs work has its
+     action button in place of a tick box.
 9. FR-9: Every script that changes anything runs only if ticked, and all are unticked by
    default. "Tick all required" closes the list after the last tickable row, ticks required
    rows only, and turns into its undo when all are ticked. It appears from two required
@@ -92,6 +107,10 @@ persona get one rule wherever they enter.
    only for a row the owner already ran. A row that failed its read-only check was never
    ticked, so it offers "Check again" and the command for doing it by hand, and leaves other
    ticked rows free to apply.
+   - ADR-032: a script runs only after its row's action is pressed and its box confirmed. The
+     box names what will run, with the row's tags and details. "Set up all N" appears from two
+     required rows and runs them top down after its own box. "Try again" still needs no new
+     confirmation, and only for a row the owner ran.
 10. FR-10: A row shows a plain summary, tags for its consequences, and details that are
     collapsed by default; only a failed row's details open by themselves. The details hold:
     - what the helper reports it would do (`plannedActions`, `plannedChanges`), verbatim;
@@ -105,6 +124,8 @@ persona get one rule wherever they enter.
     command in the wizard uses one snippet style.
 11. FR-11: "Apply" runs ticked rows one at a time from the top, with a fresh check after each.
     "Stop after this one" leaves the rest ticked. The window cannot close during an install.
+    - ADR-032: a row or "Set up all N" runs at once after its box; each row is read again
+      after it runs, and "Stop after this one" ends a run of several.
 12. FR-12: PowerShell scripts is optional: "（選用）" in its title, no prerequisite, and it
     never blocks Codex or finishing. Declining it opens sign-in in Command Prompt.
 13. FR-13: A failure stops the queue and states what happened: a declined UAC prompt says
@@ -112,6 +133,7 @@ persona get one rule wherever they enter.
     confirm the step, the row says the item is installed but not found yet, offering "Check
     again" first and then restarting Cats Bot, keeping the page's input (a draft file read
     once and removed on the next start).
+    - ADR-032: the row itself offers "Restart Cats Bot"; the page's buttons stay as they were.
 
     An explicit Windows machine-restart request from an installer is separate
     from a PATH/Cats Bot relaunch. Keep its advice visible through subsequent
@@ -157,6 +179,10 @@ persona get one rule wherever they enter.
       is advisory and must not disable Create. The row explains that setup may still need
       completing before chatting. Opening or closing the terminal never proves readiness;
       "Check again" does. Runtime still validates the actual session permissions.
+    - ADR-032: sign-in, Windows Codex's first-time setup and the model are on page 2, under the
+      rows, once the CLI works. Nothing a check finds disables Next or Create, and neither
+      creation entry point checks again. Create waits only while a check or a step runs. A cat
+      bot whose CLI is missing says so when the owner sends it a message (ADR-032 §4).
 16. FR-16: The model field follows Cats Chat's `ProviderModelFields`, on a cat bot's Provider and model page too:
     every catalog entry; the selected entry's controls except `request` scope; `(default)`
     on default entries and values; the first listed value when a catalog names no default;
@@ -168,6 +194,9 @@ persona get one rule wherever they enter.
 18. FR-18: Before creating, the page lists what the button does: the folder it creates, the
     Boss Cat role on a first run, and starting the cat bot. It also states how many changes
     the wizard made.
+    - ADR-032: page 3 (Permissions) starts with the sentence a cat bot's Permissions page
+      starts with, for the provider's default, then start at login (FR-17) and the list. The
+      count of changes is left to the log.
 
 **A name and a persona**
 

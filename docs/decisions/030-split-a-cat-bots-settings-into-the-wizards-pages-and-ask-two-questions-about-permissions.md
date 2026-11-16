@@ -133,7 +133,7 @@ unchanged.
      - A run continues across tab and provider changes. The rail shows it while it runs.
      - A step another window is running is said on the row.
    - The same rows replace ticks, "Apply N ticked" and the docked log on Cats Bot Settings' Agent CLIs tab. The
-     wizard keeps its ticks and its log.
+     wizard keeps its ticks and its log. (ADR-032, 2026-11-16: the wizard uses these rows too and keeps its log.)
 6. **Signing in from a cat bot's page.** Provider and model shows the wizard's sign-in row, and Windows Codex's
    first-time setup.
    - The shell opens their terminals for that window only for a CLI its last check found working (SPEC-013 FR-10).

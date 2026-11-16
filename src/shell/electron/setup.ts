@@ -129,7 +129,7 @@ export function runFirstRunSetup(options: FirstRunOptions): Promise<boolean> {
       const input = validateSetupInput(raw);
       submitting = true;
       try {
-        await options.providers.checkForCreation(input.provider, checks.signal, sendLog);
+        // ADR-032: what the last check found never stops creation; the cat bot says so if its CLI is missing.
         checks.signal.throwIfAborted();
         creating = true;
         await options.create(input);

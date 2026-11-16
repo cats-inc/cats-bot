@@ -57,16 +57,17 @@ test('closing first-run setup cancels a pending provider check and removes its I
   assert.equal(f.providers.busy, false);
 });
 
-test('closing during the final provider recheck never creates a bot from a late result', async t => {
-  const helper = deferred<HelperResult>();
+test('creating runs no check of its own, whatever the last check found (ADR-032)', async t => {
+  const calls: string[] = [];
   let created = false;
-  const f = fixture(t, () => helper.promise, async () => { created = true; });
-  const finishing = assert.rejects(ipcMain.invoke(f.window, 'setup:finish', input), { name: 'AbortError' });
-  f.window.close();
-  assert.equal(await f.done, false, 'cancellation does not wait for the helper result');
-  helper.resolve(ready());
-  await finishing;
-  assert.equal(created, false);
+  const f = fixture(t, async (helper, apply) => { calls.push(`${helper}:${apply}`); return { status: 'not_installed', installed: false }; },
+    async () => { created = true; });
+  assert.equal((await ipcMain.invoke(f.window, 'setup:check', 'claude') as { canFinish: boolean }).canFinish, false);
+  calls.length = 0;
+  await ipcMain.invoke(f.window, 'setup:finish', input);
+  assert.equal(await f.done, true);
+  assert.equal(created, true, 'a CLI the check did not find still lets the owner create');
+  assert.deepEqual(calls, [], 'creation runs no helper');
 });
 
 test('a setup window closed during page load stays closed when the load completes', async t => {
