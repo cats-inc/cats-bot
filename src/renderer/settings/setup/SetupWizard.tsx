@@ -278,8 +278,8 @@ export function SetupWizard({ purpose }: { purpose: 'first-run' | 'create' }) {
   const pageTwo = (
     <>
       <h1 ref={headings[1]} tabIndex={-1}>{t('Which agent CLI {name} uses', { name: displayName })}</h1>
-      <fieldset className="setup-fieldset setup-gap" id="setup-provider">
-        <legend>{t('Agent CLI')}</legend>
+      {/* The heading already names the choice, so the group's name is read out rather than shown again. */}
+      <fieldset className="setup-fieldset setup-gap" id="setup-provider" aria-label={t('Agent CLI')}>
         <div className="setup-providers">
           {providers.map((item) => (
             <label key={item.id} className="setup-choice">
