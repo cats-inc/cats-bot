@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `7c7e9e102933fab7326bc278e7279b07d287444e`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-7c7e9e10.tgz`; 1,891,722 bytes.
-SHA-256: `b96226ff307ec684e7fef37e0d568aea40450bab6bb9c1d483e8ca78c8106ea6`.
+Source `a1f898a2acf04d925171ae12d88b18cbe20538d7`, package version 0.7.0.
+Artifact: `vendor/cats-runtime-0.7.0-a1f898a2.tgz`; 1,911,364 bytes.
+SHA-256: `a19875fd4768992ec533a1c92513646024aabdddf86c42358049a17f0db3ca80`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -58,6 +58,17 @@ pin it adds #231, a catalog-maintenance skill fix that does not reach the packag
 Kimi's asking selection template and a read-only listing of every session's standing grants for Cats
 Desktop. Neither changes Bot behavior, which writes its own provider file and reads grants per session.
 
+Bot 0.5.16 selects Runtime main at `a1f898a2acf04d925171ae12d88b18cbe20538d7`, the Runtime 0.7.0 version
+change (#244), so the package version moves from 0.6.2 to 0.7.0. Runtime takes the next minor for
+`provider_session_unavailable` (#214, HTTP 410), which every Bot pin since 0.5.8 already carries and which Bot
+answers by continuing the conversation in a new session (cats-bot#139). Beyond the 0.5.15 pin it adds:
+- #234, #235 and #243: catalog bases. Bot sends no basis, so its saved model selections are unchanged.
+- #237 and #242: close, reset and delete wait up to 6 seconds for the provider process to stop, including
+  per-turn Kimi Code and Junie processes, and a CLI session's sandbox is freed before it is deleted on Windows.
+- #239 to #241: on Windows every CLI Runtime starts is ended with its process tree.
+
+#236 changes the catalog-maintenance skill and #238 CI and tests; neither reaches the package.
+
 The candidate separates legacy ephemeral CLI startup (30 seconds) from provider
 silence after init (120 seconds), preventing a reasoning agy turn from being killed
 at the startup deadline. Provider progress resets the latter; Runtime HTTP
@@ -91,7 +102,8 @@ lockfile together. It does not change the description in this file, so update th
 hand. A Runtime without the advertised policy/interaction capability is unavailable
 for the new mode, never silently used with different permissions.
 
-Runtime remains version 0.6.2; Bot 0.5.11 adds no profile/journal format change or
-mandatory data migration. Existing profiles retain `providerPolicy: null` until the owner enables
-native tools. Existing Codex/Claude catalogs, interactions, policy and inventory
-are retained. Desktop control keeps its separate permission and platform gates.
+Runtime stayed at package version 0.6.2 through Bot 0.5.15; Bot 0.5.11 added no profile/journal format
+change or mandatory data migration. Its existing profiles kept `providerPolicy: null` until the owner enabled
+native tools; Kimi (0.5.15) and the ADR-030 allowlist upgrade (0.5.16) later set a policy themselves.
+Existing Codex/Claude catalogs, interactions, policy and inventory are retained. Desktop control keeps its
+separate permission and platform gates.

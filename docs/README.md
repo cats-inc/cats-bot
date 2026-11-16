@@ -26,9 +26,9 @@ and [PLAN-004 P6](plans/PLAN-004-provider-interactions-and-tool-visibility.md#p6
 [Production host diagnostics](decisions/013-keep-bounded-production-host-diagnostics.md)
 records the host/core log retention, detached stderr maintenance and no-dump policy.
 
-The [0.5.15 Standard Preview release notes](releases/v0.5.15.md) describe Kimi
-Code as the sixth CLI, allowing a conversation's actions once with Stop always in
-reach, clearing the direct message, the floating cat's quick menu, exact
+The [0.5.16 Standard Preview release notes](releases/v0.5.16.md) describe a cat
+bot's settings and the setup wizard as the same pages, the one-time tool allowlist
+upgrade, notes stacked and spread from the floating cat, Runtime 0.7.0, exact
 producer/artifact pins, compatibility and signing policy.
 
 [Runtime catalog validation](research/2026-11-01-runtime-catalog-consumer-validation.md)
