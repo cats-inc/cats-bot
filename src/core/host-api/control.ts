@@ -64,7 +64,7 @@ export class HostControlServer {
           case 'desktop_stop':
             await this.api.stopDesktopControl(everyConversation ? undefined : conversationId);
             result = await this.api.desktopControlState(everyConversation ? undefined : conversationId); break;
-          // ADR-026: the owner's Stop for standing grants, also from the local CLI.
+          // ADR-027: the owner's Stop for standing grants, also from the local CLI.
           case 'grants_stop':
             await this.api.stopStandingGrants(everyConversation ? undefined : conversationId);
             result = everyConversation ? { stopped: true } : await this.api.providerInteractions(conversationId); break;

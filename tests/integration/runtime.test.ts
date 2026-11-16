@@ -266,6 +266,46 @@ test('the real runtime runs the bot\'s naming in an empty read-only sandbox and 
   }
 });
 
+test('clearing the direct message deletes its sessions, the replaced one included, from the real Runtime (SPEC-002 FR-5b)', async () => {
+  const { core } = openTestBot({
+    botsHome: home.botsHome,
+    id: 'clear-real',
+    core: {
+      runtime: {
+        runtimeEntry: resolveRuntimeEntry(), providerCommand: fixtureCliCommand, providerLaunchArgs: fixtureCliLaunchArgs,
+        instanceExtras: { projects_dir: projectsDir }, readyTimeoutMs: 90_000, stopTimeoutMs: 10_000,
+        env: { ...process.env, HOME: home.botsHome, USERPROFILE: home.botsHome,
+          APPDATA: join(home.botsHome, 'AppData', 'Roaming'), LOCALAPPDATA: join(home.botsHome, 'AppData', 'Local'),
+          XDG_CONFIG_HOME: join(home.botsHome, '.config'), XDG_DATA_HOME: join(home.botsHome, '.local', 'share'),
+          CATS_BOT_FIXTURE_LOG: join(home.botsHome, 'clear-fixture.log') },
+      },
+    },
+  });
+  await core.start();
+  const homeRecord = async () => (await core.listConversations()).find((record) => record.id === 'home')!;
+  try {
+    assert.equal((await sendAndWait(core, 'home', 'first words', 60_000)).state, 'completed');
+    const replaced = (await homeRecord()).attachment.sessionId!;
+    // FR-27: a model change gives the next turn a new session and retires this one.
+    await core.updateProfile({ executionTarget: { provider: 'claude', model: 'sonnet' } });
+    assert.equal((await sendAndWait(core, 'home', 'second words', 60_000)).state, 'completed');
+    const current = (await homeRecord()).attachment.sessionId!;
+    assert.notEqual(current, replaced);
+    assert.deepEqual((await homeRecord()).retiredSessionIds, [replaced]);
+
+    const record = await core.clearConversation('home');
+    assert.equal(record.attachment.sessionId, null);
+    assert.equal(record.retiredSessionIds, undefined, 'Runtime confirmed both deletes');
+    const client = (core as unknown as { client(): RuntimeClient }).client();
+    for (const id of [replaced, current]) {
+      await assert.rejects(client.getSession(id), (error: unknown) => (error as { status?: number }).status === 404, id);
+    }
+    assert.equal((await sendAndWait(core, 'home', 'after the clear', 60_000)).state, 'completed');
+  } finally {
+    await core.stop();
+  }
+});
+
 test('a Codex bot names a note in an ephemeral read-only thread (SPEC-002 FR-5a)', async () => {
   const codexLog = join(home.botsHome, 'naming-codex.log');
   const { core } = openTestBot({

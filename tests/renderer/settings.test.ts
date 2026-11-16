@@ -10,6 +10,9 @@ import {
   bossCatChoice,
   bossCatToolsHint,
   botForm,
+  brandState,
+  layerStack,
+  removalCopy,
   botStateLine,
   botPatch,
   botReplyLanguageOptions,
@@ -239,6 +242,32 @@ test('notes: home first, then the most recently active; ages read like a person 
   assert.equal(ago('2026-10-28T11:15:00.000Z', now), '45 min ago');
   assert.equal(ago('2026-10-27T12:00:00.000Z', now), '24 h ago');
   assert.equal(ago('2026-10-20T12:00:00.000Z', now, () => 'Oct 20'), 'Oct 20');
+});
+
+test('the conversation list stacks layers from the top down and says what Delete and Clear take (FR-5, FR-5b)', () => {
+  assert.deepEqual(layerStack(['normal', 'top', 'desktop', 'wallpaper']), ['top', 'normal', 'desktop', 'wallpaper']);
+  assert.deepEqual(layerStack(['normal', 'top']), ['top', 'normal'], 'without the desktop layers');
+  const base: ConversationRecord = {
+    schemaVersion: 1, id: 'home', role: 'home', title: 'Direct message', titleSource: 'default',
+    createdAt: '2026-11-16T00:00:00.000Z', updatedAt: '2026-11-16T00:00:00.000Z',
+    attachment: { state: 'none', sessionId: null, provider: null, model: null, configRevision: null } as unknown as ConversationRecord['attachment'],
+    unreadCount: 0, lastOwnerMessageAt: null, lastBotMessageAt: null, checkpoint: null, contactOf: null, contactName: null,
+  };
+  const clear = removalCopy(base, false);
+  assert.equal(clear.action, 'Clear');
+  assert.match(clear.detail, /schedules stay/u);
+  assert.doesNotMatch(clear.detail, /Telegram/u);
+  assert.match(removalCopy(base, true).detail, /Telegram chat keeps its own copy/u);
+  const note = removalCopy({ ...base, id: 'conv-1', role: 'note', title: 'Plans' }, false);
+  assert.equal(note.action, 'Delete');
+  assert.equal(note.title, 'Delete “Plans”?');
+  assert.equal(note.done, 'Deleted Plans');
+  const contact = removalCopy({ ...base, id: 'bot-mochi', role: 'note', title: 'Messages from Mochi', contactOf: 'mochi', contactName: 'Mochi' }, false);
+  assert.equal(contact.title, 'Delete “Contact with Mochi”?');
+  assert.match(contact.detail, /When Mochi writes again, a new contact note starts/u);
+  const status = (state: BotStatus['runtime']['state']) => ({ runtime: { state } }) as unknown as BotStatus;
+  assert.equal(brandState(status('ready')), 'Runtime ready');
+  assert.equal(brandState(status('starting')), 'Runtime starting');
 });
 
 test('life minutes must be whole positive numbers; facts never show the Telegram token', () => {

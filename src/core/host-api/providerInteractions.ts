@@ -6,7 +6,7 @@ import { INTERACTION_KINDS, type BotInteraction, type BotInteractionResponse, ty
   type InteractionAnswer, type StandingGrant, type WorkItem } from '../types.ts';
 
 const live = (i: BotInteraction) => i.status === 'pending' || i.status === 'responding';
-// ADR-026: a request Runtime answered from a standing grant never waits for the owner.
+// ADR-027: a request Runtime answered from a standing grant never waits for the owner.
 const waiting = (i: BotInteraction) => live(i) && i.reason !== 'standing_grant';
 
 /**
@@ -20,7 +20,7 @@ export function assertChoicesOnly(interaction: BotInteraction, answer: Interacti
     throw new Error('In a contact note only listed choices can be sent; typed answers stay with the owner.');
   };
   if (!answer || !['accept', 'decline', 'cancel'].includes(answer.action)) refuse();
-  // ADR-026: a standing grant is the owner's own decision for their own sessions, never for a contact's.
+  // ADR-027: a standing grant is the owner's own decision for their own sessions, never for a contact's.
   if (answer!.standingGrant !== undefined) refuse();
   const prompt = interaction.prompt;
   if (answer!.choice !== undefined && !prompt?.choices?.some((choice) => choice.id === answer!.choice)) refuse();
@@ -66,7 +66,7 @@ export class BotInteractions {
   private readonly entries = new Map<string, BotInteraction>();
   private readonly contexts = new Map<string, { item: WorkItem; client: RuntimeClient; executionId?: string; generation?: string; dirty?: boolean }>();
   private readonly refreshes = new Map<string, Promise<BotInteractionSnapshot>>();
-  /** ADR-026: the standing grants Runtime last reported per conversation. */
+  /** ADR-027: the standing grants Runtime last reported per conversation. */
   private readonly grants = new Map<string, StandingGrant[]>();
   private readonly botId: string;
   private readonly changed: (conversationId: string, pending: number, notify?: boolean) => void;

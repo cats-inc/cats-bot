@@ -43,6 +43,7 @@ export interface HostCommands {
   listConversations: { args: []; result: ConversationRecord[] };
   createConversation: { args: [title?: string]; result: ConversationRecord };
   deleteConversation: { args: [conversationId: string]; result: null };
+  clearConversation: { args: [conversationId: string]; result: ConversationRecord };
   transcript: { args: [conversationId: string]; result: TranscriptEntry[] };
   conversationTranscript: { args: [conversationId: string]; result: TranscriptEntry[] };
   sendOwnerMessage: { args: [conversationId: string, text: string]; result: WorkItem };
@@ -67,7 +68,7 @@ export interface HostCommands {
   setConversationDesktopControl: { args: [conversationId: string, enabled: boolean]; result: DesktopControlState };
   respondDesktopGrant: { args: [conversationId: string, requestId: string, decision: DesktopGrantDecision]; result: DesktopControlState };
   stopDesktopControl: { args: [conversationId: string]; result: DesktopControlState };
-  /** ADR-026: ends this conversation's standing grants and cancels its turn. */
+  /** ADR-027: ends this conversation's standing grants and cancels its turn. */
   stopStandingGrants: { args: [conversationId: string]; result: BotInteractionSnapshot };
 }
 
@@ -81,6 +82,7 @@ export const BRIDGE_COMMANDS = [
   'listConversations',
   'createConversation',
   'deleteConversation',
+  'clearConversation',
   'transcript',
   'conversationTranscript',
   'sendOwnerMessage',

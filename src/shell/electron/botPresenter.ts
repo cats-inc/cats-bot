@@ -30,7 +30,7 @@ export interface PresenterHost {
   /** The hub's display language (FR-18). */
   locale(): Locale;
   refreshTray(): void;
-  /** ADR-026: some bot's standing grants changed; the hub keeps its Stop hotkey in step. */
+  /** ADR-027: some bot's standing grants changed; the hub keeps its Stop hotkey in step. */
   grantsChanged?(): void;
   /** Every event of this bot's core, after its windows had it. */
   event?(presenter: BotPresenter, event: BotHostEvent): void;
@@ -153,7 +153,7 @@ export class BotPresenter {
     };
   }
 
-  /** ADR-026: conversations holding standing grants, as the core last reported. */
+  /** ADR-027: conversations holding standing grants, as the core last reported. */
   grantedConversations: string[] = [];
 
   private async showBubble(conversationId: string, text: string): Promise<void> {
@@ -204,7 +204,7 @@ export class BotPresenter {
   /** Follows the core's events and opens what was open before. */
   async start(): Promise<void> {
     this.unsubscribe = this.core.subscribe((event) => this.onEvent(event));
-    // ADR-026: a Hub that attaches to a core already running learns its grants, so Stop shows at once.
+    // ADR-027: a Hub that attaches to a core already running learns its grants, so Stop shows at once.
     void this.core.standingGrantConversations().then((ids) => {
       this.grantedConversations = [...ids];
       this.host.grantsChanged?.();

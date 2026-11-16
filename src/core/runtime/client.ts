@@ -77,7 +77,7 @@ export interface SendMessageRequest {
   message: string;
   instructions?: string;
   mcpServers?: RuntimeMcpServer[];
-  /** Runtime ADR-055 / ADR-026: only a turn the owner started in person may use standing grants. */
+  /** Runtime ADR-055 / ADR-027: only a turn the owner started in person may use standing grants. */
   standingGrants?: true;
 }
 

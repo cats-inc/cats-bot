@@ -686,7 +686,7 @@ async function main(): Promise<void> {
   };
 
   /**
-   * ADR-026: the owner's Stop for actions allowed without asking. Every bot's grants end and their turns
+   * ADR-027: the owner's Stop for actions allowed without asking. Every bot's grants end and their turns
    * are cancelled. The hotkey is registered only while some bot holds grants, so it never takes the
    * chord from other apps the rest of the time.
    */
@@ -736,7 +736,7 @@ async function main(): Promise<void> {
       }
       const model = { locale: locale(), bots, openAtLogin: hubState.openAtLogin, openAtLoginAvailable };
       if (!quitting) tray?.update(buildHubTrayMenuTemplate(model, hubTrayActions), buildHubTrayTooltip(model));
-      // ADR-026: a bot stopping or leaving the Hub also releases the Stop hotkey.
+      // ADR-027: a bot stopping or leaving the Hub also releases the Stop hotkey.
       syncStopHotkey();
     } finally {
       refreshing = false;
@@ -1523,7 +1523,7 @@ async function main(): Promise<void> {
     const result = await runHostCommand(presenter.core, command, list, (url) => shell.openExternal(url));
     if (command === 'deleteConversation' && typeof list[0] === 'string') presenter.windows.forget(list[0]);
     if (command === 'markSeen' || command === 'sendOwnerMessage' || command === 'updateProfile' || command === 'deleteConversation'
-      || command === 'renameConversation' || command === 'createConversation') {
+      || command === 'clearConversation' || command === 'renameConversation' || command === 'createConversation') {
       void refreshTray();
     }
     if (command === 'updateProfile') botsChanged();

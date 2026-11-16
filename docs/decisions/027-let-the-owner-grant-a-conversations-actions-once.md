@@ -1,4 +1,4 @@
-# ADR-026: Let the Owner Grant a Conversation's Actions Once
+# ADR-027: Let the Owner Grant a Conversation's Actions Once
 
 ## Status
 

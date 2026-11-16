@@ -4,7 +4,7 @@ import { assertChoicesOnly, BotInteractions } from '../../src/core/host-api/prov
 import type { BotInteraction } from '../../src/core/types.ts';
 import { fetchFakeState, makeTempHome, openTestBot, sendAndWait } from '../support/harness.ts';
 
-// ADR-026: only messages the owner sends in person may use Runtime's standing grants (Runtime ADR-055).
+// ADR-027: only messages the owner sends in person may use Runtime's standing grants (Runtime ADR-055).
 
 test('only an owner-sent message marks its send; Telegram, recovery and decision follow-ups never do', async () => {
   const home = makeTempHome('cats-grants-send-');
@@ -81,7 +81,7 @@ test('a request Runtime answered from a grant never counts as waiting, and a con
   } finally { home.cleanup(); }
 });
 
-test('Stop fails loudly and keeps the grants in view when Runtime does not confirm (ADR-026 review)', async () => {
+test('Stop fails loudly and keeps the grants in view when Runtime does not confirm (ADR-027 review)', async () => {
   const home = makeTempHome('cats-grants-stopfail-');
   const { core } = openTestBot({ botsHome: home.botsHome, runtimeEnv: { FAKE_PROVIDER_INTERACTIONS: '1', FAKE_REVOKE_FAILS: '1' } });
   try {
@@ -98,7 +98,7 @@ test('Stop fails loudly and keeps the grants in view when Runtime does not confi
   } finally { await core.stop(); home.cleanup(); }
 });
 
-test('a timed grant leaves the bot when it expires, with no note open (ADR-026 review)', async () => {
+test('a timed grant leaves the bot when it expires, with no note open (ADR-027 review)', async () => {
   const home = makeTempHome('cats-grants-expiry-');
   try {
     const changed: string[][] = [];

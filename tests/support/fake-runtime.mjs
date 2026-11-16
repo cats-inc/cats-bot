@@ -20,6 +20,8 @@ const maxSessions = Number(process.env.FAKE_MAX_SESSIONS ?? '50');
 const resumeFails = process.env.FAKE_RESUME_FAILS === '1';
 const crashAfterMs = Number(process.env.FAKE_CRASH_AFTER_MS ?? '0');
 const createDelayMs = Number(process.env.FAKE_CREATE_DELAY_MS ?? '0');
+// Runtime keeps a session whose files are locked or in use, and says so instead of deleting it.
+const deleteRetains = process.env.FAKE_DELETE_RETAINS === '1';
 
 const sessions = new Map();
 const calls = [];
@@ -363,6 +365,7 @@ const server = createServer(async (req, res) => {
   if (req.method === 'GET' && !action) return json(res, 200, view(session));
   if (req.method === 'DELETE' && !action) {
     calls.push({ op: 'delete', id: session.id });
+    if (deleteRetains) return json(res, 200, { status: 'retained', reason: 'Session files are locked or in use. Nothing was removed.' });
     sessions.delete(session.id);
     return json(res, 200, { deleted: true });
   }

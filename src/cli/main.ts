@@ -572,7 +572,7 @@ async function commandProviderControl(parsed: ParsedArgs, env: NodeJS.ProcessEnv
   return 0;
 }
 
-/** ADR-026: the owner's standing grants, read or stopped through the running Bot's control endpoint. */
+/** ADR-027: the owner's standing grants, read or stopped through the running Bot's control endpoint. */
 async function commandGrants(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
   const target = resolveTarget(parsed, env);
   const positional = [...parsed.positional];

@@ -23,7 +23,7 @@ import type {
 /** Commands a renderer may send through the shell (SPEC-002, SPEC-006). */
 export const CORE_COMMANDS = [
   'providerInteractions', 'respondProviderInteraction', 'sessionCapabilities',
-  'getProfile', 'updateProfile', 'listConversations', 'createConversation', 'deleteConversation',
+  'getProfile', 'updateProfile', 'listConversations', 'createConversation', 'deleteConversation', 'clearConversation',
   'transcript', 'conversationTranscript', 'sendOwnerMessage', 'retryOwnerMessage', 'addOwnerAttachment',
   'attachmentPreview', 'cancelTurn', 'markSeen',
   'listSchedules', 'cancelSchedule', 'listWorkItems', 'resolveApproval', 'status',
@@ -90,6 +90,9 @@ function asDelivery(value: unknown): BotDelivery {
     from: raw.from,
     fromName: asString(raw.fromName, 'fromName'),
     ...(raw.conversationId === undefined || raw.conversationId === null ? {} : { conversationId: asString(raw.conversationId, 'conversationId') }),
+    // SPEC-002 FR-5b: when a reply's message was sent; a hub that does not say is answered as before.
+    ...(typeof raw.askedAt === 'string' && raw.askedAt.length <= 40 && Number.isFinite(Date.parse(raw.askedAt))
+      ? { askedAt: raw.askedAt } : {}),
     text: asString(raw.text, 'text', MAX_DELIVERY_TEXT),
   };
 }
@@ -171,6 +174,7 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'deleteConversation':
       await target.deleteConversation(asString(args[0], 'conversationId'));
       return null;
+    case 'clearConversation': return target.clearConversation(asString(args[0], 'conversationId'));
     case 'transcript': return recentEntries(await target.transcript(asString(args[0], 'conversationId')));
     case 'conversationTranscript': return recentEntries(await target.conversationTranscript(asString(args[0], 'conversationId')));
     case 'sendOwnerMessage': return target.sendOwnerMessage(asString(args[0], 'conversationId'), asString(args[1], 'text', MAX_TEXT));
@@ -225,7 +229,7 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       await target.stopDesktopControl();
       return target.desktopControlState();
     case 'stopStandingGrants':
-      // ADR-026: a note stops its own conversation; the tray and the hotkey stop every conversation.
+      // ADR-027: a note stops its own conversation; the tray and the hotkey stop every conversation.
       await target.stopStandingGrants(asString(args[0], 'conversationId'));
       return target.providerInteractions(asString(args[0], 'conversationId'));
     case 'stopAllStandingGrants':

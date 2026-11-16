@@ -170,6 +170,34 @@ test('a message reaches the other bot once, and its answer returns to the Boss C
   }
 });
 
+test('a reply to a message sent before the direct message was cleared goes to the contact note (SPEC-002 FR-5b)', async () => {
+  const f = await setUp('cleared');
+  try {
+    const beta = f.bots.get(f.beta)!;
+    const alpha = f.bots.get(f.alpha)!;
+    const handed = completedIn(beta.core, (item) => item.source === 'bot');
+    const sent = await f.bossCat.handle(f.alpha, call('hub_message_bot', { bot: f.beta, text: 'What is on your list?' }));
+    assert.equal(sent.isError, undefined, sent.text);
+    const work = await handed;
+    await alpha.core.clearConversation('home');
+
+    const replied = completedIn(alpha.core, (item) => item.chain?.kind === 'reply');
+    await f.bossCat.turnCompleted(f.beta, work);
+    const reply = await replied;
+    assert.equal(reply.conversationId, `bot-${f.beta}`, 'the cleared direct message does not get an answer to a question it no longer has');
+    assert.deepEqual(alpha.core.transcript('home'), []);
+
+    // A hub that does not say when the message was sent is answered where it asked, as before.
+    const older = alpha.core.admitBotMessage({
+      deliveryId: 'reply-older', chainId: reply.chain!.id, hop: 2, kind: 'reply', from: f.beta, fromName: 'Beta',
+      conversationId: 'home', text: 'an older hub',
+    });
+    assert.equal(older.conversationId, 'home');
+  } finally {
+    await f.stop();
+  }
+});
+
 test('each message and each reply is a hop, messages per hour are limited, and only the holder continues its chains (FR-8)', async () => {
   const f = await setUp('limits', { hopsPerChain: 4, messagesPerHour: 3 });
   try {

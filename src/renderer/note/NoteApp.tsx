@@ -628,6 +628,17 @@ export function NoteApp() {
             .then(markSeenIfFocused)
             .then(refreshHeader);
           return;
+        case 'conversation.cleared':
+          // SPEC-002 FR-5b: the direct message starts over; a reload only adds, so what it showed goes first.
+          if (event.conversation.id !== id) return;
+          structuredWork.current.clear();
+          tookOver.current.clear();
+          setEntries([]);
+          setWorkItems([]);
+          setPending(null);
+          setRunning(false);
+          void reload();
+          return;
         case 'conversation.updated':
           if (event.conversation.id !== id) return;
           void refreshHeader();
