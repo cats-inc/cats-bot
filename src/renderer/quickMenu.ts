@@ -37,8 +37,8 @@ function draw(view: QuickMenuView): HTMLButtonElement[] {
     if (item.waiting) {
       const waiting = document.createElement('span');
       waiting.className = 'waiting';
+      // Its visible words are its accessible name, so voice control can say what it reads.
       waiting.textContent = translate(view.locale, 'Needs you');
-      waiting.setAttribute('aria-label', translate(view.locale, 'waiting for you'));
       button.append(waiting);
     }
     if (item.unread > 0) {

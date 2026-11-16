@@ -234,7 +234,8 @@ app.whenReady().then(async () => {
     const profile = createProfile({ id: 'mochi', name: 'Mochi', provider: 'codex', cwd: evidence });
     const status = {
       id: 'mochi', name: 'Mochi', avatar: profile.avatar, root: evidence, runtime: { state: 'ready', pid: 1 },
-      queue: { queued: 0, running: null }, pendingInteractions: 0, awaitingOwner: 0, bossCat: { holder: false, tools: false },
+      queue: { queued: 0, running: null }, pendingInteractions: 0, awaitingOwner: 0, awaitingOwnerConversations: [],
+      bossCat: { holder: false, tools: false },
       conversations: 1, schedules: 0,
       heartbeat: { enabled: false, nextAt: null, mode: 'quiet', phase: 'awake_hours', unanswered: 0, waitingForOwner: false },
       lastTickAt: null, lock: null, telegram: { enabled: false, polling: false, ownerChatId: null },

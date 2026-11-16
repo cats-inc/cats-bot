@@ -236,10 +236,15 @@ The floating Cat's quick menu (SPEC-002 FR-7a, ADR-027) has these unit tests:
   - The items and their order by latest message.
   - Contact notes are left out, and one New conversation item is added.
   - Waiting notes come right after the direct message, tagged, still four at
-    most, and Linux's native label carries the tag.
+    most (the four latest when more wait), and Linux's native label carries
+    the tag.
   - What waits is read from questions and approvals, the running turn's
-    provider requests and desktop-control grant requests, with two reads when
-    nothing waits; a grant state that cannot be read leaves its note untagged.
+    provider requests and desktop-control grant requests, in two reads unless a
+    grant request waits. A grant state that cannot be read, a provider request
+    without a running turn and a core older than `awaitingOwnerConversations`
+    leave notes untagged.
+- `tests/core/life.test.ts`: `status().awaitingOwnerConversations` names the
+  conversation an `ask_owner` question waits in, and empties once it is decided.
   - The placement: inside the work area, clear of the Cat, on either side, on a
     second display and on a narrow one.
 - `tests/renderer/floatingClicks.test.ts`: single and double clicks, the 300 ms

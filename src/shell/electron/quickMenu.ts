@@ -74,29 +74,22 @@ export function quickMenuNativeLabel(item: QuickMenuItem, locale: Locale): strin
 /**
  * The conversations where something waits for the owner: a question or an
  * approval the bot asked (`awaiting_owner`), a provider request in the running
- * turn, or a desktop-control grant request. Two light reads in the usual case;
- * the details are fetched only when the counts say something waits.
+ * turn, or a desktop-control grant request. Two light reads, read together;
+ * each conversation's grant state is read only when a grant request waits.
  */
 export async function waitingConversations(
-  core: Pick<RemoteBotCore, 'status' | 'listWorkItems' | 'desktopControlState'>,
+  core: Pick<RemoteBotCore, 'status' | 'desktopControlState'>,
 ): Promise<Set<string>> {
   const [status, desktop] = await Promise.all([core.status(), core.desktopControlState()]);
-  const waiting = new Set<string>();
+  // A core started before this field existed (the Hub can attach to one still running) names none.
+  const waiting = new Set<string>(status.awaitingOwnerConversations ?? []);
   if (status.pendingInteractions > 0 && status.queue.running) waiting.add(status.queue.running.conversationId);
-  const details: Array<Promise<unknown>> = [];
-  if (status.awaitingOwner > 0) {
-    details.push(Promise.resolve(core.listWorkItems()).then((items) => {
-      for (const item of items) if (item.state === 'awaiting_owner') waiting.add(item.conversationId);
-    }));
-  }
   if (desktop.pendingRequests > 0) {
-    for (const conversationId of desktop.conversations) {
-      details.push(Promise.resolve(core.desktopControlState(conversationId)).then((one) => {
+    await Promise.all(desktop.conversations.map((conversationId) =>
+      Promise.resolve(core.desktopControlState(conversationId)).then((one) => {
         if (one.conversation?.pendingRequests.length) waiting.add(conversationId);
-      }, () => undefined));
-    }
+      }, () => undefined)));
   }
-  await Promise.all(details);
   return waiting;
 }
 
