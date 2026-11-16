@@ -40,8 +40,7 @@ export function parseProviderPolicy(value: unknown): SessionExecutionPolicy | nu
 export function assertPolicyBoundary(policy: SessionExecutionPolicy | null, permissions: BotPermissions): void {
   if (!policy) return;
   const access = policy.mode === 'provider' ? policy.constraints.maxAccess : policy.access;
-  if (permissions.allowedTools?.length || permissions.permissionMode === 'whitelist'
-    || permissions.workspaceAccess === 'read_only' && access !== 'read-only') {
-    throw new Error('Provider policy cannot exceed the read-only workspace or replace a tool allowlist.');
+  if (permissions.workspaceAccess === 'read_only' && access !== 'read-only') {
+    throw new Error('Provider policy cannot exceed the read-only workspace.');
   }
 }

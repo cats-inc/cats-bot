@@ -9,7 +9,12 @@ import {
   appFacts,
   bossCatChoice,
   bossCatToolsHint,
-  botForm,
+  botSettings,
+  editedPages,
+  pendingNotice,
+  staleLook,
+  withPermission,
+  withProvider,
   brandState,
   layerStack,
   removalCopy,
@@ -30,7 +35,6 @@ import {
   providerChoices,
   providerHint,
   RequestGate,
-  saveNotice,
   sortNotes,
   telegramFacts,
 } from '../../src/renderer/settings/settingsLogic.ts';
@@ -48,7 +52,7 @@ const PROFILE: BotProfile = {
   environment: { kind: 'native' },
   executionTarget: { provider: 'claude', model: 'haiku' },
   configRevision: 3,
-  permissions: { workspaceAccess: 'read_write', permissionMode: 'whitelist', allowedTools: ['Read', 'Grep'], cwd: 'C:/work' },
+  permissions: { workspaceAccess: 'read_write', permissionMode: 'default', cwd: 'C:/work' },
   heartbeat: { enabled: true, mode: 'auto', bedtime: '23:00', wakeWindowStart: '07:00', wakeWindowEnd: '09:00', wakeMinMinutes: 2, wakeMaxMinutes: 10, regularMinMinutes: 30, regularMaxMinutes: 120 },
   idleSleepMinutes: 15,
   telegram: { enabled: false, ownerChatId: null },
@@ -174,53 +178,75 @@ test('providers: only supported choices are offered, always in the requested ord
   assert.deepEqual(providerHint(providers, 'kimi'), { text: '', warn: false });
 });
 
-test('saving sends only what changed', () => {
-  const form = botForm(PROFILE);
-  assert.equal(botPatch(PROFILE, form), null, 'an untouched form changes nothing');
-  assert.equal(botPatch(PROFILE, { ...form, allowedTools: 'Read,  Grep' }), null, 'the same tools, spaced differently');
-  assert.deepEqual(botPatch(PROFILE, { ...form, name: '  Mochi ' }), { name: 'Mochi' });
-  assert.deepEqual(botPatch(PROFILE, { ...form, model: null }), { executionTarget: { provider: 'claude', model: null } });
-  assert.deepEqual(botPatch(PROFILE, { ...form, provider: 'codex', model: 'gpt-6.1-sol' }), { executionTarget: { provider: 'codex', model: 'gpt-6.1-sol' } });
-  assert.deepEqual(botPatch(PROFILE, { ...form, allowedTools: 'Read, WebSearch' }), { permissions: { allowedTools: ['Read', 'WebSearch'] } });
-  assert.deepEqual(botPatch(PROFILE, { ...form, permissionMode: 'skip', allowedTools: 'Read, WebSearch' }), { permissions: { permissionMode: 'skip' } },
-    'tools only matter for the whitelist');
-  assert.deepEqual(botPatch(PROFILE, { ...form, cwd: '  ' }), null, 'an emptied folder is not saved');
+const KEEP = { model: 'haiku' };
+
+test('an untouched page saves nothing, and only what changed is sent (SPEC-002 FR-2, ADR-030)', () => {
+  const view = botSettings(PROFILE, true);
+  assert.equal(botPatch(PROFILE, view, KEEP), null, 'an untouched page changes nothing');
+  assert.deepEqual(botPatch(PROFILE, { ...view, name: '  Mochi ' }, KEEP), { name: 'Mochi' });
+  assert.deepEqual(botPatch(PROFILE, view, { model: null }), { executionTarget: { provider: 'claude', model: null } });
+  // A new provider takes its permission choice with it, and its policy always goes too.
+  assert.deepEqual(botPatch(PROFILE, { ...view, ...withProvider(view, 'codex') }, { model: 'gpt-6.1-sol' }),
+    { executionTarget: { provider: 'codex', model: 'gpt-6.1-sol' }, providerPolicy: null });
+  assert.deepEqual(botPatch(PROFILE, { ...view, cwd: '  ' }, KEEP), null, 'an emptied folder is not saved');
+  const asks = withPermission(view, { ask: 'ask', level: 'full-access', network: true });
+  assert.deepEqual(botPatch(PROFILE, { ...view, ...asks }, KEEP),
+    { providerPolicy: { version: 1, mode: 'explicit', access: 'full-access', network: true, approval: 'on-request' } });
 });
 
 test('the look is sent only when it changed (SPEC-008 FR-29)', () => {
-  const form = botForm(PROFILE);
-  assert.equal(form.avatar, 'tuxedo');
-  assert.deepEqual(botPatch(PROFILE, { ...form, avatar: 'calico' }), { avatar: 'calico' });
+  const view = botSettings(PROFILE, true);
+  assert.equal(view.avatar, 'tuxedo');
+  assert.deepEqual(botPatch(PROFILE, { ...view, avatar: 'calico' }, KEEP), { avatar: 'calico' });
   // A core still running the previous version sends no look: the page shows the default Cat and saves nothing for it.
   const { avatar: _none, ...older } = PROFILE;
   const fromOlderCore = older as BotProfile;
-  assert.equal(botForm(fromOlderCore).avatar, 'ginger');
-  assert.equal(botPatch(fromOlderCore, botForm(fromOlderCore)), null);
+  assert.equal(botSettings(fromOlderCore, true).avatar, 'ginger');
+  assert.equal(botPatch(fromOlderCore, botSettings(fromOlderCore, true), KEEP), null);
+  assert.equal(staleLook({ avatar: 'calico' }, fromOlderCore), true);
+  assert.equal(staleLook({ avatar: 'calico' }, { ...PROFILE, avatar: 'calico' }), false);
 });
 
 test('Claude in Chrome is saved for Claude only and turned off when the provider changes', () => {
-  const form = botForm(PROFILE);
-  assert.equal(form.claudeInChrome, false);
-  assert.deepEqual(botPatch(PROFILE, { ...form, claudeInChrome: true }),
+  const view = botSettings(PROFILE, true);
+  assert.equal(view.claudeInChrome, false);
+  assert.deepEqual(botPatch(PROFILE, { ...view, claudeInChrome: true }, KEEP),
     { executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } });
-  assert.equal(botPatch(PROFILE, { ...form, provider: 'codex', claudeInChrome: true })?.executionTarget?.claudeInChrome, undefined,
+  assert.equal(botPatch(PROFILE, { ...view, ...withProvider(view, 'codex'), claudeInChrome: true }, { model: null })?.executionTarget?.claudeInChrome, undefined,
     'never sent for another provider when it was off');
   const chrome = { ...PROFILE, executionTarget: { provider: 'claude', model: 'haiku', claudeInChrome: true } };
-  assert.equal(botForm(chrome).claudeInChrome, true);
-  assert.equal(botPatch(chrome, botForm(chrome)), null);
-  assert.deepEqual(botPatch(chrome, { ...botForm(chrome), provider: 'codex', model: null }),
-    { executionTarget: { provider: 'codex', model: null, claudeInChrome: false } });
-  assert.match(saveNotice(PROFILE, chrome, { executionTarget: chrome.executionTarget }), /Claude in Chrome on/u);
+  const on = botSettings(chrome, true);
+  assert.equal(on.claudeInChrome, true);
+  assert.equal(botPatch(chrome, on, KEEP), null);
+  assert.deepEqual(botPatch(chrome, { ...on, ...withProvider(on, 'codex') }, { model: null }),
+    { executionTarget: { provider: 'codex', model: null, claudeInChrome: false }, providerPolicy: null });
+  const patch = botPatch(PROFILE, { ...view, claudeInChrome: true }, KEEP);
+  assert.match(pendingNotice(PROFILE, { ...view, claudeInChrome: true }, patch, 'Claude Code', false).join(' '), /Claude in Chrome on/u);
 });
 
-test('after a save the page says when sessions are replaced and when the runtime restarts', () => {
-  const after = { ...PROFILE, configRevision: 4 };
-  assert.match(saveNotice(PROFILE, after, { instructions: 'x' }), /fresh session/u);
-  assert.match(saveNotice(PROFILE, after, { executionTarget: { provider: 'codex', model: null } }), /runtime restarts for codex/u);
-  assert.equal(saveNotice(PROFILE, PROFILE, { name: 'Mochi' }), '');
-  assert.equal(saveNotice(PROFILE, { ...PROFILE, avatar: 'calico' }, { avatar: 'calico' }), '', 'a new look replaces no session');
-  const { avatar: _none, ...olderCore } = PROFILE;
-  assert.match(saveNotice(PROFILE, olderCore as BotProfile, { avatar: 'calico' }), /older version/u);
+test('the save bar says before saving what saving does (SPEC-002 FR-2, ADR-030)', () => {
+  const view = botSettings(PROFILE, true);
+  const say = (next: typeof view, target: { model: string | null } = KEEP, floating = false) => pendingNotice(PROFILE, next, botPatch(PROFILE, next, target), 'Codex', floating).join(' ');
+  assert.match(say({ ...view, instructions: 'x' }), /fresh session/u);
+  assert.match(say({ ...view, ...withProvider(view, 'codex') }, { model: null }), /Switching to Codex: the runtime restarts/u);
+  assert.match(say({ ...view, name: 'Mochi' }), /name and look change no conversation/u);
+  assert.doesNotMatch(say({ ...view, name: 'Mochi' }), /fresh session/u);
+  assert.match(say({ ...view, floating: false }, KEEP, true), /name and look/u);
+  const desktop = { ...PROFILE, desktopControl: { enabled: true }, providerPolicy: { version: 1, mode: 'explicit', access: 'full-access', network: true, approval: 'on-request' } } as BotProfile;
+  const withDesk = botSettings(desktop, true);
+  const away = { ...withDesk, ...withPermission(withDesk, { ask: 'cli', level: 'full-access', network: true }) };
+  assert.equal(away.desktopControl, false, 'desktop control cannot stay on without Ask me first');
+  assert.match(pendingNotice(desktop, away, botPatch(desktop, away, KEEP), 'Claude Code', false).join(' '), /revokes every app grant/u);
+});
+
+test('the rail marks the pages with an edit not saved; an edit put back is none (ADR-030)', () => {
+  const base = botSettings(PROFILE, true);
+  assert.deepEqual([...editedPages(base, {}, false)], []);
+  assert.deepEqual([...editedPages(base, { name: 'Mochi' }, false)], ['look']);
+  assert.deepEqual([...editedPages(base, { name: PROFILE.name }, false)], [], 'put back');
+  assert.deepEqual([...editedPages(base, withProvider(base, 'codex'), false)].sort(), ['brain', 'perm']);
+  assert.deepEqual([...editedPages(base, {}, true)], ['brain'], 'a model chosen on the menu');
+  assert.deepEqual([...editedPages(base, { floating: false }, false)], ['look']);
 });
 
 test('notes: home first, then the most recently active; ages read like a person would say them', () => {
@@ -322,10 +348,10 @@ test('reply language choices: the display language first and Unspecified last, a
   }
 });
 
-test('the Bot tab sends a reply language only when it changed (SPEC-008 FR-28)', () => {
-  assert.equal(botForm(PROFILE).replyLanguage, 'hub');
-  assert.equal(botPatch(PROFILE, botForm(PROFILE)), null);
-  assert.deepEqual(botPatch(PROFILE, { ...botForm(PROFILE), replyLanguage: 'ko' }), { replyLanguage: 'ko' });
+test('Name and look sends a reply language only when it changed (SPEC-008 FR-28)', () => {
+  const view = botSettings(PROFILE, true);
+  assert.equal(view.replyLanguage, 'hub');
+  assert.deepEqual(botPatch(PROFILE, { ...view, replyLanguage: 'ko' }, KEEP), { replyLanguage: 'ko' });
 });
 
 test('a Bots row names the provider and state, and a pid only for another program (SPEC-008 FR-5)', () => {

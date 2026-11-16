@@ -194,12 +194,10 @@ test('Kimi runs only on its hosted target, and leaving it drops only the policy 
   const unmarked = normalizeProfile({ ...kimi, providerPolicyAuto: undefined }, kimi);
   assert.equal(unmarked.providerPolicyAuto, undefined);
   assert.deepEqual(leave(unmarked, 'codex').providerPolicy, HOSTED_PROVIDER_POLICY);
-  // Full machine access cannot go with a read-only filespace or an allowlist: refused, never written.
+  // Full machine access cannot go with a read-only filespace: refused, never written.
   assert.throws(() => applyProfilePatch(createProfile({ name: 'Ro', provider: 'codex', cwd: '/tmp/ro', workspaceAccess: 'read_only', now }),
     { executionTarget: { provider: 'kimi', model: null } }, now), /read-only workspace/u);
-  for (const input of [{ permissionMode: 'whitelist' as const, allowedTools: ['Read'] }, { workspaceAccess: 'read_only' as const }]) {
-    assert.throws(() => createProfile({ name: 'Kai', provider: 'kimi', cwd: '/tmp/kai', now, ...input }),
-      /Kimi runs only with full machine access/u);
-  }
+  assert.throws(() => createProfile({ name: 'Kai', provider: 'kimi', cwd: '/tmp/kai', now, workspaceAccess: 'read_only' }),
+    /Kimi runs only with full machine access/u);
   assert.doesNotThrow(() => assertHostedProviderPolicy('kimi', HOSTED_PROVIDER_POLICY));
 });

@@ -77,7 +77,8 @@ freeze of the storage format.
 1. FR-1: `BotProfile` fields: `schemaVersion`, `id` (generated on first creation and never changed afterwards),
    `name`, `instructions` (the persona, the bootstrap instructions of every session),
    `executionTarget: { provider, model | null }`, `configRevision`,
-   `permissions: { workspaceAccess, permissionMode, allowedTools?, cwd }`,
+   `permissions: { workspaceAccess, permissionMode, cwd }` (`permissionMode` is `default` or `skip`; the tool
+   allowlist was removed on 2026-11-16, ADR-030),
    `heartbeat: { enabled, wakeMinMinutes, wakeMaxMinutes, regularMinMinutes, regularMaxMinutes }`
    (defaults `true`, 2, 10, 30, 120; SPEC-011 FR-1 adds `mode` and the daily rhythm),
    `idleSleepMinutes` (default 15), `updatedAt`.
@@ -347,7 +348,13 @@ freeze of the storage format.
 ### Permissions and approval
 
 30. FR-30: All sessions are created with the profile's `permissions`, the same for background and interactive
-    turns. When the model calls `ask_owner`, an `awaiting_owner` work item is created, shown in the tray and
+    turns.
+    - The owner sets them on the Permissions page as two questions, offered per provider only as Runtime admits
+      them: whether it asks before it acts, and what it can reach (ADR-030). Each choice is stored in
+      `permissions` and `providerPolicy`, and every stored combination reads as exactly one choice.
+    - A profile with the former tool allowlist (`whitelist`, `allowedTools`) is upgraded once at start, with a
+      copy kept beside it and `configRevision` bumped. Claude Code and Codex with a writable filespace move to
+      asking first; a read-only filespace stays read-only; other CLIs keep their default. When the model calls `ask_owner`, an `awaiting_owner` work item is created, shown in the tray and
     the home conversation; with no window open it waits in place; it is never auto-approved; on timeout
     (default 24 hours) it is marked `failed` with a reason.
 31. FR-31: The core never reads provider credential files; quota and usage are obtained only through the

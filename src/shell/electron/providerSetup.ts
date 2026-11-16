@@ -286,6 +286,8 @@ const CHECKS_AT_ONCE = 3;
 export class ProviderSetup {
   private readonly runHelper: SetupHelperRunner;
   private selected: string | null = null;
+  /** The CLIs the last check of a provider found working, for its sign-in (SPEC-013 FR-10). */
+  private working = new Set<string>();
   private active: { controller: AbortController; installing: boolean } | null = null;
   private waiters: Array<() => void> = [];
   private readonly windows: boolean;
@@ -309,12 +311,20 @@ export class ProviderSetup {
   get installing(): boolean {
     return this.active?.installing === true;
   }
+  /** ADR-030: Windows Codex first-time setup, from a cat bot's page, once its check found Codex working. */
+  get windowsCodexWorks(): boolean {
+    return this.windows && this.working.has('codex');
+  }
   get codexSelected(): boolean {
     return this.windows && this.selected === 'codex';
   }
   /** SPEC-013 FR-11: Codex first-time setup opens from the Agent CLIs tab only once Codex works. */
   get codexReadyOnComputer(): boolean {
     return this.windows && this.readyOnComputer('codex');
+  }
+  /** SPEC-013 FR-10, ADR-030: a provider the last check of it, from a cat bot's page, found working. */
+  providerWorks(provider: unknown): boolean {
+    return typeof provider === 'string' && this.working.has(provider);
   }
   /** SPEC-013 FR-10: a provider the last check of this computer found working. */
   readyOnComputer(helper: unknown): boolean {
@@ -694,6 +704,8 @@ export class ProviderSetup {
       }
     }
     this.mergeIntoComputer(provider, steps);
+    if (steps.some((step) => step.id === 'provider' && stepDone(step))) this.working.add(provider);
+    else this.working.delete(provider);
     return {
       provider,
       steps,

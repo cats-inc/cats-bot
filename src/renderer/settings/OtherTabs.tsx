@@ -18,6 +18,7 @@ import { FactRow, Group, Row } from './Rows.tsx';
 import { useToast } from './toast.ts';
 import { Updates } from './Updates.tsx';
 import { LanguageField } from '../LanguageField.tsx';
+import { SessionCheck } from './SessionCheck.tsx';
 import { ReplyLanguageField } from './ReplyLanguageField.tsx';
 
 /** SPEC-002 FR-4, FR-6: a bot's Life, Telegram and Details tabs, and Cats Bot Settings' General tab (PLAN-010). */
@@ -293,10 +294,9 @@ export function GeneralTab() {
   );
 }
 
-/** A bot's own presence and facts; the app's items are in Cats Bot Settings (D20). */
+/** A bot's own facts and folder, and the session check; the app's items are in Cats Bot Settings (D20). */
 export function AppTab() {
   useI18n();
-  const toast = useToast();
   const [shell, setShell] = useState<ShellStateView | null>(null);
   const [status, setStatus] = useState<BotStatus | null>(null);
 
@@ -309,26 +309,9 @@ export function AppTab() {
     void load();
   }, [load]);
 
-  const setFloating = async (visible: boolean) => {
-    await api.shell.setFloatingVisible(visible);
-    toast(visible ? t('The cat is back') : t('The cat is hidden; the tray can bring it back'));
-    await load();
-  };
-
   return (
     <section className="panel" data-panel="app">
       <h2>{t('Details')}</h2>
-      <Group>
-        <Row label={t('Show the floating cat above other windows')} htmlFor="app-floating">
-          <input
-            type="checkbox"
-            className="switch"
-            id="app-floating"
-            checked={shell?.floatingVisible ?? false}
-            onChange={(event) => void setFloating(event.target.checked)}
-          />
-        </Row>
-      </Group>
       <Group id="app-facts">
         {shell && status && appFacts(status, shell.version)
           .filter(([label]) => label !== 'Data folder')
@@ -339,6 +322,7 @@ export function AppTab() {
           </button>
         </Row>
       </Group>
+      <div className="group"><SessionCheck /></div>
     </section>
   );
 }

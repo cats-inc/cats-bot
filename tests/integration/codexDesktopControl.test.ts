@@ -47,7 +47,7 @@ test('packed Codex desktop tools wait for tool consent and a separate app grant'
     expectedRevision: i.revision, idempotencyKey: `answer-${i.interactionId}`, answer: value,
   });
   try {
-    await core.updateProfile({ permissions: { allowedTools: [] }, desktopControl: { enabled: true }, providerPolicy: {
+    await core.updateProfile({ desktopControl: { enabled: true }, providerPolicy: {
       version: 1, mode: 'explicit', access: 'workspace-write', network: false, approval: 'on-request',
     } });
     await core.start();
