@@ -3,8 +3,8 @@
 // FR-34, SPEC-002).
 // Commands go to the core through `bot:invoke`; events come back on
 // `bot:event`. Window-only actions use `window:*`, shell preferences
-// `shell:*`, the floating bot `floating:*`, first-run setup `setup:*` and the
-// hub's bot management `hub:*`;
+// `shell:*`, the floating bot `floating:*`, its quick menu `quickMenu:*`,
+// first-run setup `setup:*` and the hub's bot management `hub:*`;
 // the main process checks which
 // window sent each one. Nothing here can reach the runtime: the renderer never
 // learns its URL or key. Plain CommonJS on purpose: sandboxed preload scripts
@@ -144,6 +144,9 @@ contextBridge.exposeInMainWorld('catsBot', {
     setOpenAtLogin(enabled) {
       return ipcRenderer.invoke('shell:setOpenAtLogin', enabled);
     },
+    setFloatingQuickMenu(enabled) {
+      return ipcRenderer.invoke('shell:setFloatingQuickMenu', enabled);
+    },
     chooseFolder(current) {
       return ipcRenderer.invoke('shell:chooseFolder', current);
     },
@@ -185,12 +188,37 @@ contextBridge.exposeInMainWorld('catsBot', {
     menu() {
       return ipcRenderer.invoke('floating:menu');
     },
+    openQuickMenu(pressedAt) {
+      return ipcRenderer.invoke('floating:openQuickMenu', pressedAt);
+    },
+    closeQuickMenu() {
+      ipcRenderer.send('floating:closeQuickMenu');
+    },
+    onQuickMenu(listener) {
+      const wrapped = (_event, state) => listener(state);
+      ipcRenderer.on('floating:quickMenu', wrapped);
+      return () => {
+        ipcRenderer.removeListener('floating:quickMenu', wrapped);
+      };
+    },
     onBubble(listener) {
       const wrapped = (_event, message) => listener(message);
       ipcRenderer.on('floating:bubble', wrapped);
       return () => {
         ipcRenderer.removeListener('floating:bubble', wrapped);
       };
+    },
+  },
+  // ADR-026: the quick menu's own page; the shell answers no other window.
+  quickMenu: {
+    state() {
+      return ipcRenderer.invoke('quickMenu:state');
+    },
+    choose(index) {
+      ipcRenderer.send('quickMenu:choose', index);
+    },
+    close() {
+      ipcRenderer.send('quickMenu:close');
     },
   },
   setup: {

@@ -65,6 +65,7 @@ Use [000-template.md](./000-template.md) as the starting point for new ADRs.
 | [025](./025-add-kimi-code-as-a-hosted-only-sixth-cli.md) | Add Kimi Code as a Hosted-Only Sixth CLI | Accepted | 2026-11-16 |
 
 | [025](./025-name-notes-from-their-first-exchange-in-a-side-session.md) | Name Notes from Their First Exchange in a Side Session | Accepted | 2026-11-16 |
+| [026](./026-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) | Open the Floating Cat's Quick Menu in Its Own Focusable Window | Accepted | 2026-11-16 |
 
 <!-- Add new ADRs above this line -->
 

@@ -23,6 +23,7 @@ import type { VoiceCaptureEvent, VoiceCaptureStartOptions } from '../shared/voic
 import type { SystemSettingsPane } from '../shared/systemSettings.ts';
 import type { BotAvatar } from '../shared/avatars.ts';
 import type { BossCatToolsState } from '../shared/providerTools.ts';
+import type { QuickMenuState, QuickMenuView } from '../shared/quickMenu.ts';
 
 /**
  * ADR-003: the type of `window.catsBot`, which `assets/preload.cjs` exposes.
@@ -129,6 +130,8 @@ export interface ShellStateView {
   openAtLoginAvailable: boolean;
   /** ADR-020: macOS registered the login item but wants the owner's approval in Login Items. */
   loginItemNeedsApproval: boolean;
+  /** SPEC-008 FR-32: a single click on a floating Cat opens its quick menu. */
+  floatingQuickMenu: boolean;
   floatingVisible: boolean;
   version: string;
   /** The bot's folder, or the Cats Bot root in Cats Bot Settings. */
@@ -236,6 +239,8 @@ export interface CatsBotBridge {
     onUpdate(listener: (state: BotUpdateState) => void): Unsubscribe;
     state(): Promise<ShellStateView | null>;
     setOpenAtLogin(enabled: boolean): Promise<boolean | null>;
+    /** Cats Bot Settings only (FR-32). */
+    setFloatingQuickMenu(enabled: boolean): Promise<boolean | null>;
     chooseFolder(current: string): Promise<string | null>;
     openDataFolder(): Promise<null>;
     openSettings(tab?: string): Promise<null>;
@@ -252,7 +257,17 @@ export interface CatsBotBridge {
     dragEnd(): void;
     activate(): Promise<null>;
     menu(): Promise<null>;
+    /** ADR-026: `pressedAt` is when the click began (ms since the epoch). */
+    openQuickMenu(pressedAt: number): Promise<null>;
+    closeQuickMenu(): void;
+    onQuickMenu(listener: (state: QuickMenuState) => void): Unsubscribe;
     onBubble(listener: (message: FloatingBubbleMessage) => void): Unsubscribe;
+  };
+  /** ADR-026: the quick menu's own page only. */
+  quickMenu: {
+    state(): Promise<QuickMenuView | null>;
+    choose(index: number): void;
+    close(): void;
   };
   /** SPEC-013: Cats Bot Settings' Agent CLIs tab only; every other window is refused. */
   computer: {

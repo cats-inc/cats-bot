@@ -75,6 +75,7 @@ import { registerComputerSetupIpc } from './computerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
 import { SETUP_WINDOW_SIZE, createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { popupMenu } from './popupMenu.ts';
+import { quickMenuItems, type QuickMenuItem } from './quickMenu.ts';
 import { logTerminal, runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
@@ -284,6 +285,7 @@ async function main(): Promise<void> {
       language: shellState?.language ?? 'system',
       replyLanguage: HUB_REPLY_LANGUAGE_DEFAULT,
       openAtLogin: shellState?.openAtLogin === true,
+      floatingQuickMenu: true,
     };
   })();
   const saveHubState = (next: HubState) => {
@@ -754,6 +756,7 @@ async function main(): Promise<void> {
     log,
     isQuitting: () => quitting,
     locale,
+    floatingQuickMenu: () => hubState.floatingQuickMenu,
     refreshTray: () => { void refreshTray(); },
     // SPEC-009 FR-8: a bot that finished a Boss Cat's message answers it.
     event: (presenter, event) => {
@@ -1644,6 +1647,7 @@ async function main(): Promise<void> {
       openAtLogin: hubState.openAtLogin,
       openAtLoginAvailable,
       loginItemNeedsApproval: openAtLoginAvailable && hubState.openAtLogin && loginItemNeedsApproval(app),
+      floatingQuickMenu: hubState.floatingQuickMenu,
       floatingVisible: presenter ? presenter.windows.shellState.floatingBot.visible : false,
       version: app.getVersion(),
       root: presenter ? presenter.root : home,
@@ -1675,17 +1679,77 @@ async function main(): Promise<void> {
   ipcMain.handle('floating:activate', async (event) => {
     const presenter = fromFloating(event);
     if (!presenter) return null;
+    presenter.floating.closeQuickMenu();
     await presenter.windows.open('home');
     void refreshTray();
     return null;
+  });
+  // SPEC-002 FR-7a / ADR-026: the quick menu a single click opens. Main builds and
+  // translates its items; its page can only choose one of them or close it.
+  const runQuickMenuItem = (presenter: BotPresenter, item: QuickMenuItem) => {
+    const actions = botMenuActionsFor(() => presenter);
+    if (item.conversationId === null) actions.onNewNote();
+    else actions.onOpenConversation(item.conversationId);
+  };
+  ipcMain.handle('floating:openQuickMenu', async (event, pressedAt: unknown) => {
+    const presenter = fromFloating(event);
+    if (!presenter) return null;
+    try {
+      const owner = presenter.floating.browserWindow;
+      if (!owner || !hubState.floatingQuickMenu || typeof pressedAt !== 'number' || !Number.isFinite(pressedAt)) return null;
+      const items = quickMenuItems(await presenter.core.listConversations(), locale());
+      if (process.platform !== 'linux') {
+        await presenter.floating.openQuickMenu(items, pressedAt, { locale: locale(), title: t('Quick menu') });
+        return null;
+      }
+      // ADR-014: a window of ours cannot learn of every outside click on Linux; a native menu can.
+      const menu = Menu.buildFromTemplate(items.map((item) => ({
+        label: item.unread ? `${item.label} (${item.unread})` : item.label,
+        click: () => runQuickMenuItem(presenter, item),
+      })));
+      menu.once('menu-will-close', () => presenter.floating.setNativeQuickMenuOpen(false));
+      presenter.floating.setNativeQuickMenuOpen(true);
+      try {
+        popupMenu(menu, owner);
+      } catch (error) {
+        presenter.floating.setNativeQuickMenuOpen(false);
+        throw error;
+      }
+      return null;
+    } finally {
+      // The page counts the menu open as soon as it asks; declined, failed or open, it learns what is true.
+      presenter.floating.sendQuickMenuState();
+    }
+  });
+  ipcMain.on('floating:closeQuickMenu', (event) => {
+    fromFloating(event)?.floating.closeQuickMenu();
+  });
+  const fromQuickMenu = (event: Electron.IpcMainInvokeEvent | Electron.IpcMainEvent) =>
+    presented().find((presenter) => presenter.floating.quickMenu.owns(event.sender.id)) ?? null;
+  ipcMain.handle('quickMenu:state', (event) => fromQuickMenu(event)?.floating.quickMenu.state() ?? null);
+  ipcMain.on('quickMenu:choose', (event, index: unknown) => {
+    const presenter = fromQuickMenu(event);
+    const item = presenter?.floating.quickMenu.choose(index);
+    if (presenter && item) runQuickMenuItem(presenter, item);
+  });
+  ipcMain.on('quickMenu:close', (event) => {
+    fromQuickMenu(event)?.floating.quickMenu.close();
   });
   ipcMain.handle('floating:menu', async (event) => {
     const presenter = fromFloating(event);
     const owner = presenter?.floating.browserWindow;
     if (!presenter || !owner) return null;
+    presenter.floating.closeQuickMenu();
     const template = buildBotMenuTemplate(await trayModel(presenter), botMenuActionsFor(() => presenter)) as MenuItemConstructorOptions[];
     popupMenu(Menu.buildFromTemplate(template), owner);
     return null;
+  });
+  // SPEC-008 FR-32: one switch for every bot's floating Cat, applied at once.
+  ipcMain.handle('shell:setFloatingQuickMenu', (event, enabled: unknown) => {
+    if (!fromHubSettings(event) || typeof enabled !== 'boolean') return null;
+    saveHubState({ ...hubState, floatingQuickMenu: enabled });
+    for (const presenter of presented()) presenter.floating.quickMenuChanged();
+    return hubState.floatingQuickMenu;
   });
   ipcMain.handle('shell:setOpenAtLogin', (event, enabled: unknown) => {
     if (!fromHubSettings(event) || typeof enabled !== 'boolean') return null;

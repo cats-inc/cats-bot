@@ -343,6 +343,12 @@ export const zhTW: Record<string, string> = {
   'Stop all desktop control': '停止所有桌面控制',
   'Some Cat status is unavailable': '部分貓咪狀態無法取得',
   'Show floating cat': '顯示浮動貓咪',
+  'Quick menu': '快速選單',
+  'Quick menu on a floating cat': '浮動貓咪的快速選單',
+  'One click lists the direct message and recent conversations; a double click opens the direct message. Off: one click opens the direct message.':
+    '單擊貓咪會列出私訊和最近的對話，雙擊直接開啟私訊。關閉時，單擊就會開啟私訊。',
+  'Quick menu on': '快速選單已開啟',
+  'Quick menu off': '快速選單已關閉',
   'Stop desktop control': '停止桌面控制',
   'Update available': '有可用更新',
   'Update ready to install': '更新已可安裝',

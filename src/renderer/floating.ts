@@ -1,10 +1,13 @@
 // The floating bot (SPEC-002 FR-7): a cat on the topmost layer that shows
 // whether the bot is awake, thinking, asleep or has unread replies. The
 // window ignores the mouse except over the cat and the bubble; dragging moves
-// the window, a click opens the home note and a right click opens the tray menu.
+// the window and a right click opens the tray menu. A click opens the home note,
+// or, with the hub's quick menu on (ADR-026), a double click does and a single
+// click opens the quick menu (floatingClicks.ts).
 import type { RuntimeState } from '../core/types.ts';
 import { translate, type Locale } from '../shared/language.ts';
 import { avatarSvg } from './avatarArt.ts';
+import { CatClicks } from './floatingClicks.ts';
 
 const api = window.catsBot;
 const $ = (id: string): HTMLElement => {
@@ -127,6 +130,15 @@ api.onEvent((event) => {
 // makes Chromium report a leave at once, which would switch it back.
 let interactive = false;
 let drag: { x: number; y: number; windowX: number; windowY: number; moved: boolean } | null = null;
+/** The last press moved the cat, so the click that ends it is no click. */
+let lastPressDragged = false;
+const clicks = new CatClicks({
+  activate: () => void api.floating.activate(),
+  openMenu: (pressedAt) => void api.floating.openQuickMenu(pressedAt),
+  closeMenu: () => api.floating.closeQuickMenu(),
+  setTimer: (run, ms) => setTimeout(run, ms),
+  clearTimer: (handle) => clearTimeout(handle as ReturnType<typeof setTimeout>),
+});
 function setInteractive(value: boolean): void {
   if (value === interactive) return;
   interactive = value;
@@ -142,28 +154,33 @@ cat.addEventListener('pointerdown', (event) => {
   if (event.button !== 0) return;
   cat.setPointerCapture(event.pointerId);
   drag = { x: event.screenX, y: event.screenY, windowX: window.screenX, windowY: window.screenY, moved: false };
+  clicks.press(Date.now());
 });
 cat.addEventListener('pointermove', (event) => {
   if (!drag) return;
   const dx = event.screenX - drag.x;
   const dy = event.screenY - drag.y;
   if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+  if (!drag.moved) clicks.dragStarted();
   drag.moved = true;
   cat.classList.add('dragging');
   api.floating.moveTo(drag.windowX + dx, drag.windowY + dy);
 });
 const endDrag = (event: PointerEvent): void => {
   if (!drag) return;
-  const wasClick = !drag.moved;
+  lastPressDragged = drag.moved;
   drag = null;
   cat.classList.remove('dragging');
   if (cat.hasPointerCapture(event.pointerId)) cat.releasePointerCapture(event.pointerId);
-  if (wasClick) void api.floating.activate();
-  else api.floating.dragEnd();
+  if (lastPressDragged) api.floating.dragEnd();
   if (!cat.matches(':hover')) setInteractive(false);
 };
 cat.addEventListener('pointerup', endDrag);
 cat.addEventListener('pointercancel', endDrag);
+// The click count tells a double click from two single ones, as the system's setting has it.
+cat.addEventListener('click', (event) => {
+  if (!lastPressDragged) clicks.click(event.detail);
+});
 cat.addEventListener('contextmenu', (event) => {
   event.preventDefault();
   void api.floating.menu();
@@ -183,6 +200,14 @@ bubble.addEventListener('click', () => {
 $('bubble-close').addEventListener('click', (event) => {
   event.stopPropagation();
   hideBubble();
+});
+// SPEC-002 FR-7a: opening the quick menu puts the bubble away; one that arrives while it is open waits under it.
+api.floating.onQuickMenu((state) => {
+  const opened = state.open && !body.classList.contains('menu-open');
+  clicks.update(state);
+  body.classList.toggle('menu-open', state.open);
+  if (opened) hideBubble();
+  reportInputRegions();
 });
 api.floating.onBubble((message) => {
   bubbleConversation = message.conversationId;

@@ -228,6 +228,12 @@ export function GeneralTab() {
     toast((actual ?? enabled) ? t('Starts at sign-in') : t('No longer starts at sign-in'));
     await load();
   };
+  // SPEC-008 FR-32: every bot's floating cat follows at once.
+  const setQuickMenu = async (enabled: boolean) => {
+    const actual = await api.shell.setFloatingQuickMenu(enabled);
+    toast((actual ?? enabled) ? t('Quick menu on') : t('Quick menu off'));
+    await load();
+  };
 
   return (
     <section className="panel" data-panel="general">
@@ -260,6 +266,20 @@ export function GeneralTab() {
             )}
           </Row>
         )}
+        <Row
+          label={t('Quick menu on a floating cat')}
+          hint={t('One click lists the direct message and recent conversations; a double click opens the direct message. Off: one click opens the direct message.')}
+          htmlFor="app-quick-menu"
+          id="app-quick-menu-row"
+        >
+          <input
+            type="checkbox"
+            className="switch"
+            id="app-quick-menu"
+            checked={shell?.floatingQuickMenu ?? true}
+            onChange={(event) => void setQuickMenu(event.target.checked)}
+          />
+        </Row>
       </Group>
       <Updates />
       <Group id="general-facts">
