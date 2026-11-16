@@ -21,8 +21,8 @@ FR-32, and [SPEC-009](../specs/SPEC-009-boss-cat-role.md) FR-8.
   - The select cut "On the desktop (below windows, above icons)" short.
 - The direct message cannot be deleted. Until now nothing could empty it.
 - Deleting a note closed and deleted only its current Runtime session.
-  - A session a provider or model change replaced (SPEC-001 FR-27) was only closed and then forgotten. The
-    owner's bot had 27 closed sessions in its Runtime, most of them unlabelled.
+  - A session a provider or model change replaced (SPEC-001 FR-27) was only closed and then forgotten, so a
+    bot's Runtime collects closed sessions that nothing will delete.
   - The journal keeps every work item whole, prompt and reply included, and never shortens.
 - A Boss Cat reply returns to the conversation that asked (SPEC-009 FR-8). A reply to a deleted conversation
   already goes to the contact note. A cleared direct message still exists, so a reply would land in it with
@@ -94,7 +94,7 @@ FR-32, and [SPEC-009](../specs/SPEC-009-boss-cat-role.md) FR-8.
 ### Negative
 
 - Sessions replaced before this change were never remembered. They stay in the bot's Runtime until a data
-  reset (ADR-023); the owner's bot has 27 such closed sessions.
+  reset (ADR-023).
 - Text outside the bot's own files remains:
   - Telegram's copy of the chat;
   - attachments in the working directory's `.cats-attachments/`, which every conversation shares;

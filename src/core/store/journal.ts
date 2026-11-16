@@ -55,11 +55,16 @@ export function blankWorkItemText(item: WorkItem): WorkItem {
 }
 
 /**
- * Blanks one conversation's text in `journal.jsonl`: its work items' prompts and replies and, with `schedules`,
- * its schedules' prompts. The file is rewritten line by line, so a line that cannot be read stays as it was, and
- * atomically, without a backup copy, which would keep exactly what is erased. Returns how many lines changed.
+ * Blanks one conversation's text in `journal.jsonl`: its work items' prompts and replies (with `before`, only of
+ * work admitted before then) and, with `schedules`, its schedules' prompts. The file is rewritten line by line, so
+ * a line that cannot be read stays as it was, and atomically, without a backup copy, which would keep exactly
+ * what is erased. Returns how many lines changed.
  */
-export function blankJournalText(paths: BotPaths, conversationId: string, options: { schedules: boolean }): number {
+export function blankJournalText(
+  paths: BotPaths,
+  conversationId: string,
+  options: { schedules: boolean; before?: string },
+): number {
   let text: string;
   try {
     text = readFileSync(paths.journal, 'utf8');
@@ -76,7 +81,8 @@ export function blankJournalText(paths: BotPaths, conversationId: string, option
     } catch {
       return line;
     }
-    if (entry?.type === 'work' && entry.item?.conversationId === conversationId) {
+    if (entry?.type === 'work' && entry.item?.conversationId === conversationId
+      && (options.before === undefined || !(entry.item.createdAt >= options.before))) {
       const blank = blankWorkItemText(entry.item);
       if (blank.prompt === entry.item.prompt && blank.result?.text === entry.item.result?.text) return line;
       changed += 1;

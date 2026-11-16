@@ -481,7 +481,11 @@ export function NotesTab() {
                 setPanel(null);
                 setRenaming(record.id);
               }}
-              onRenamed={() => setRenaming(null)}
+              onRenamed={() => {
+                // The new name is read back once the field closes.
+                stale.current = true;
+                setRenaming(null);
+              }}
               onPanel={(kind, trigger) => togglePanel(kind, record.id, trigger)}
             />
           ))}

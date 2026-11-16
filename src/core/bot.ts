@@ -1796,7 +1796,7 @@ export class BotCore implements BotHostApi {
     const at = this.now().toISOString();
     this.clearing = id;
     let sessions: Array<string | null> = [];
-    let cleared!: ConversationRecord;
+    let cleared: ConversationRecord;
     try {
       await this.endConversationWork(id, 'conversation cleared', at);
       const current = this.conversations.require(id);
@@ -1805,9 +1805,13 @@ export class BotCore implements BotHostApi {
       cleared = this.conversations.clear(id, at);
       this.blankConversationText(id, { schedules: false, before: at });
       this.log(`conversation ${id} cleared`);
-    } finally {
+    } catch (error) {
       this.clearing = null;
+      this.pump();
+      throw error;
     }
+    this.clearing = null;
+    // Windows hear of the clear before any new turn's work, which they would otherwise drop with it.
     this.bus.emit({ type: 'conversation.cleared', conversation: cleared });
     this.bus.emit({ type: 'conversation.updated', conversation: cleared });
     this.pump();
@@ -1824,6 +1828,12 @@ export class BotCore implements BotHostApi {
   private async endConversationWork(id: string, reason: string, before?: string): Promise<void> {
     const ours = (item: WorkItem) => item.conversationId === id && (before === undefined || item.createdAt < before);
     this.dropPendingWork(ours, reason);
+    // A decision it waits for the owner on ends too; whoever waits for it hears so, as for dropped work.
+    for (const item of [...this.workItems.values()]) {
+      if (item.state !== 'awaiting_owner' || !ours(item)) continue;
+      const cancelled = this.record(transitionWorkItem(item, 'cancelled', this.now(), { error: reason }));
+      this.bus.emit({ type: 'turn.completed', conversationId: cancelled.conversationId, workItem: cancelled });
+    }
     if (this.running?.item.conversationId === id) {
       await this.cancelTurn(id);
       let timer: NodeJS.Timeout | undefined;

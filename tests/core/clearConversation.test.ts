@@ -38,6 +38,7 @@ test('clearing the direct message empties it, deletes every session it had and k
     assert.equal((await sendAndWait(core, 'home', 'and the red key')).state, 'completed');
     const before = (await core.listConversations()).find((record) => record.id === 'home')!;
     assert.deepEqual(before.retiredSessionIds, [replacedId]);
+    const question = core.askOwner('home', 'May I tidy the downloads folder?');
     const schedule = core.createSchedule({
       conversationId: 'home', prompt: 'water the plant', kind: 'cron', cron: '0 9 * * *', createdBy: 'owner',
     });
@@ -59,6 +60,8 @@ test('clearing the direct message empties it, deletes every session it had and k
     assert.deepEqual((core.transcript('home') as TranscriptEntry[]), []);
     assert.deepEqual(new Set(sessionDeletes((await fetchFakeState(core)).calls)), new Set([replacedId, before.attachment.sessionId]));
     assert.equal((await core.listSchedules()).find((entry) => entry.id === schedule.id)?.state, 'active', 'its schedules stay');
+    assert.equal(core.listWorkItems().find((item) => item.id === question.id)?.state, 'cancelled', 'a decision it waited for ends');
+    assert.equal(core.listWorkItems().filter((item) => item.state === 'awaiting_owner').length, 0);
 
     // Its earlier work is no longer the conversation's, but a message accepted once stays accepted once.
     assert.deepEqual(core.listWorkItems('home'), []);
@@ -169,10 +172,12 @@ test('blanking the journal keeps every line it cannot read and every id (FR-5b)'
   });
   const heartbeat = JSON.stringify({ type: 'work', at: '2026-11-16T00:00:00.000Z',
     item: { id: 'w-beat', kind: 'heartbeat', source: 'heartbeat', conversationId: 'home', prompt: '[Cats heartbeat. Say hi]', createdAt: '2026-11-16T00:00:00.000Z', state: 'completed' } });
-  const lines = [item('w-1', 'home', 'my bank pin'), '{"type":"work", torn', item('w-2', 'conv-1', 'keep me'), heartbeat, ''];
+  const later = JSON.stringify({ type: 'work', at: '2026-11-16T00:05:00.000Z',
+    item: { id: 'w-later', kind: 'heartbeat', source: 'heartbeat', conversationId: 'home', prompt: 'admitted after the clear began', createdAt: '2026-11-16T00:05:00.000Z', state: 'queued' } });
+  const lines = [item('w-1', 'home', 'my bank pin'), '{"type":"work", torn', item('w-2', 'conv-1', 'keep me'), heartbeat, later, ''];
   mkdirSync(paths.root, { recursive: true });
   writeFileSync(paths.journal, lines.join('\n'));
-  assert.equal(blankJournalText(paths, 'home', { schedules: false }), 2);
+  assert.equal(blankJournalText(paths, 'home', { schedules: false, before: '2026-11-16T00:01:00.000Z' }), 2);
   const after = readFileSync(paths.journal, 'utf8').split('\n');
   assert.equal(after.length, lines.length);
   assert.equal(after[1], '{"type":"work", torn', 'a line it cannot read stays');
@@ -182,5 +187,6 @@ test('blanking the journal keeps every line it cannot read and every id (FR-5b)'
   assert.equal(blanked.result.text, '');
   assert.equal(blanked.sourceRef, 'telegram:1:w-1');
   assert.equal(JSON.parse(after[3]!).item.prompt, '[Cats heartbeat.', 'a heartbeat stays one');
-  assert.equal(blankJournalText(paths, 'home', { schedules: false }), 0, 'nothing left to blank');
+  assert.equal(after[4], later, 'work admitted after the clear began keeps its prompt');
+  assert.equal(blankJournalText(paths, 'home', { schedules: false, before: '2026-11-16T00:01:00.000Z' }), 0, 'nothing left to blank');
 });
