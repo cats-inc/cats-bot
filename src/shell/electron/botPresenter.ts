@@ -6,6 +6,8 @@ import { DEFAULT_BOT_AVATAR, type BotAvatar } from '../../shared/avatars.ts';
 import { translate, type LanguageState, type Locale } from '../../shared/language.ts';
 import type { HostedCore } from './coreHost.ts';
 import { FloatingBot } from './floatingBot.ts';
+import { FLOATING_CAT } from './floatingPlacement.ts';
+import type { ArrangeKind } from './noteArrangement.ts';
 import { SettingsWindow } from './settingsWindow.ts';
 import type { TrayDesktopControl, BotMenuModel } from './trayMenu.ts';
 import type { DesktopHost } from './win32Desktop.ts';
@@ -124,6 +126,19 @@ export class BotPresenter {
     this.host.refreshTray();
   }
 
+  /** SPEC-002 FR-7b: stacks this bot's open notes beside its Cat, or spreads them over the Cat's display. */
+  async arrangeNotes(kind: ArrangeKind): Promise<void> {
+    const conversations = await this.core.listConversations();
+    const floating = this.floating.browserWindow;
+    // Only the Cat's own menu asks, so a Cat that has gone since has nothing to arrange beside.
+    if (!floating || floating.isDestroyed()) return;
+    const { x, y } = floating.getBounds();
+    this.windows.arrange(kind, { ...FLOATING_CAT, x: x + FLOATING_CAT.x, y: y + FLOATING_CAT.y }, conversations);
+    // On Windows a raised top-layer note is as topmost as the Cat; the Cat stays in front of it.
+    // moveTop() also shows a window, and the Cat may have been hidden while the list was read.
+    if (floating.isVisible()) floating.moveTop();
+  }
+
   /** SPEC-006 BDC-10: whether desktop control is on, which note has a grant request waiting, and what is held. */
   private async trayDesktopControl(): Promise<TrayDesktopControl> {
     const state = await this.core.desktopControlState();
@@ -150,7 +165,7 @@ export class BotPresenter {
       conversations,
       heartbeatEnabled: profile.heartbeat.enabled,
       awaitingOwner: status.awaitingOwner,
-      floatingVisible: this.windows.shellState.floatingBot.visible,
+      arrangement: { notes: this.windows.arrangeable().length, canUndo: this.windows.canUndoArrangement() },
       desktopControl,
       grantsActive: this.grantedConversations.length > 0,
     };

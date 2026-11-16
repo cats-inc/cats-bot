@@ -357,7 +357,10 @@ export const zhTW: Record<string, string> = {
   'Arrange all floating cats': '將所有貓咪歸位排整齊',
   'Stop all desktop control': '停止所有桌面控制',
   'Some Cat status is unavailable': '部分貓咪狀態無法取得',
-  'Show floating cat': '顯示浮動貓咪',
+  'Hide this cat': '隱藏這隻貓',
+  'Stack conversation windows': '堆疊對話視窗',
+  'Spread conversation windows': '攤開對話視窗',
+  'Undo arrangement': '復原排列',
   'Quick menu': '快速選單',
   'Quick menu on a floating cat': '浮動貓咪的快速選單',
   'One click lists the direct message and recent conversations; a double click opens the direct message. Off: one click opens the direct message.':

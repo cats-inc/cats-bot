@@ -1,5 +1,6 @@
 import type { BotStatus, ConversationRecord, DesktopControlHolding } from '../../core/types.ts';
 import { translate, type Locale } from '../../shared/language.ts';
+import type { ArrangeKind } from './noteArrangement.ts';
 
 /**
  * SPEC-001 FR-33: what the tray menu offers, as plain data so it can be
@@ -28,8 +29,8 @@ export interface BotMenuModel {
   conversations: ConversationRecord[];
   heartbeatEnabled: boolean;
   awaitingOwner: number;
-  /** SPEC-002 FR-7. */
-  floatingVisible: boolean;
+  /** SPEC-002 FR-7b: how many open notes the Cat menu can arrange, and whether the last arrangement can be undone. */
+  arrangement?: { notes: number; canUndo: boolean };
   desktopControl: TrayDesktopControl;
   /** ADR-028: whether any of this bot's conversations holds standing grants. */
   grantsActive?: boolean;
@@ -41,7 +42,11 @@ export interface BotMenuActions {
   /** SPEC-002 FR-4: opens the settings window, on a given tab when one is named. */
   onOpenSettings(tab?: string): void;
   onToggleHeartbeat(enabled: boolean): void;
-  onToggleFloating(visible: boolean): void;
+  /** SPEC-002 FR-7b: stacks this Cat's open notes beside it, or spreads them over its display. */
+  onArrangeNotes(kind: ArrangeKind): void;
+  onUndoArrangement(): void;
+  /** SPEC-002 FR-7: the hub tray's Show floating cats brings it back. */
+  onHideFloating(): void;
   /** SPEC-006 BDC-10: stops desktop control in every conversation. */
   onStopDesktopControl(): void;
 }
@@ -180,6 +185,9 @@ export function buildTrayTooltip(model: BotMenuModel): string {
 
 /**
  * One Cat's avatar menu. Its model and actions cannot carry hub operations.
+ * SPEC-002 FR-7: its groups are what waits for the owner (under the status),
+ * the conversations, the Cat's windows on screen, then the bot's behaviour and
+ * settings.
  */
 export function buildBotMenuTemplate(
   model: BotMenuModel,
@@ -192,28 +200,16 @@ export function buildBotMenuTemplate(
   const unread = unreadTotal(model.conversations);
   const desktop = model.desktopControl;
   const held = heldApps(desktop);
+  const arrangement = model.arrangement ?? { notes: 0, canUndo: false };
   const template: TrayMenuItem[] = [];
   if (held.length) {
     // SPEC-006 BDC-10 / SPEC-133 DC-12: while the bot holds control, Stop is the nearest item.
     template.push({ label: `Stop desktop control (${held.join(', ')})`, click: () => actions.onStopDesktopControl() },
       { type: 'separator' });
   }
-  template.push(
-    {
-      label:
-        `${model.botName}: ${runtimeLabel(model.status)}${unread ? `, ${unread} unread` : ''}` +
-        `${model.awaitingOwner ? `, ${model.awaitingOwner} waiting for you` : ''}`,
-      enabled: false,
-    },
-    { type: 'separator' },
-    {
-      label:
-        home && home.unreadCount
-          ? `Open direct message (${home.unreadCount})`
-          : 'Open direct message',
-      click: () => actions.onOpenConversation(home?.id ?? 'home'),
-    },
-  );
+  const header: TrayMenuItem = { label: '', enabled: false };
+  template.push(header);
+  // What waits for the owner sits under the status that counts it.
   if (model.status.pendingInteractions && model.status.queue.running) {
     const conversationId = model.status.queue.running.conversationId;
     template.push({ label: `Provider requests (${model.status.pendingInteractions})`, click: () => actions.onOpenConversation(conversationId) });
@@ -225,6 +221,16 @@ export function buildBotMenuTemplate(
       click: () => actions.onOpenConversation(desktop.waitingConversationId ?? home?.id ?? 'home'),
     });
   }
+  template.push(
+    { type: 'separator' },
+    {
+      label:
+        home && home.unreadCount
+          ? `Open direct message (${home.unreadCount})`
+          : 'Open direct message',
+      click: () => actions.onOpenConversation(home?.id ?? 'home'),
+    },
+  );
   if (notes.length > 0) {
     template.push({
       label: 'Conversations',
@@ -242,6 +248,14 @@ export function buildBotMenuTemplate(
     { label: 'New conversation', click: () => actions.onNewNote() },
     { label: 'Manage conversations…', click: () => actions.onOpenSettings('notes') },
     { type: 'separator' },
+    // FR-7b: shown even with nothing to arrange, so the owner can find them.
+    { label: 'Stack conversation windows', enabled: arrangement.notes > 0, click: () => actions.onArrangeNotes('stack') },
+    { label: 'Spread conversation windows', enabled: arrangement.notes > 0, click: () => actions.onArrangeNotes('spread') },
+  );
+  if (arrangement.canUndo) template.push({ label: 'Undo arrangement', click: () => actions.onUndoArrangement() });
+  template.push(
+    { label: 'Hide this cat', click: () => actions.onHideFloating() },
+    { type: 'separator' },
     {
       label: model.heartbeatEnabled ? 'Pause own initiative' : 'Resume own initiative',
       click: () => actions.onToggleHeartbeat(!model.heartbeatEnabled),
@@ -250,16 +264,10 @@ export function buildBotMenuTemplate(
   if (!held.length && (desktop.enabled || desktop.pendingRequests)) {
     template.push({ label: 'Stop desktop control', click: () => actions.onStopDesktopControl() });
   }
-  template.push({
-    label: 'Show floating cat',
-    type: 'checkbox',
-    checked: model.floatingVisible,
-    click: () => actions.onToggleFloating(!model.floatingVisible),
-  });
   template.push({ label: 'Cat bot settings…', click: () => actions.onOpenSettings() });
   // Translate only product-owned labels. Conversation titles remain the owner's words.
   for (const item of template) {
-    if (item.label) {
+    if (item.label && item !== header) {
       const count =
         /^(Open direct message|Provider requests|Desktop control requests|Stop desktop control) \((.+)\)$/u.exec(
           item.label,
@@ -267,7 +275,7 @@ export function buildBotMenuTemplate(
       item.label = count ? `${t(count[1]!)} (${count[2]})` : t(item.label);
     }
   }
-  template.find((item) => item.enabled === false)!.label =
+  header.label =
     `${model.botName}: ${runtimeLabel(model.status, model.locale)}` +
     (unread ? `, ${t('{count} unread', { count: unread })}` : '') +
     (model.awaitingOwner
