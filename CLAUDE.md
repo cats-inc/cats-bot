@@ -80,7 +80,7 @@ To sync skills after changes:
 ### Preferred Behaviors
 
 - **Precision over speed**: Take time to understand requirements fully
-- **Test before commit**: Always validate changes work as expected
+- **Test before commit**: Validate changes with the checks AGENTS.md "Local Validation Scope" selects; CI runs the full suite
 - **Document decisions**: Use ADRs for architectural choices
 - **Communicate clearly**: Report progress and blockers promptly
 
