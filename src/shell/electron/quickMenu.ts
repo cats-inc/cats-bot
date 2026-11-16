@@ -1,3 +1,4 @@
+import type { RemoteBotCore } from '../../core/host-api/remote.ts';
 import type { ConversationRecord } from '../../core/types.ts';
 import { translate, type Locale } from '../../shared/language.ts';
 import type { QuickMenuItemKind } from '../../shared/quickMenu.ts';
@@ -17,6 +18,8 @@ export interface QuickMenuItem {
   conversationId: string | null;
   label: string;
   unread: number;
+  /** Something in it waits for the owner (`waitingConversations`). */
+  waiting: boolean;
 }
 
 /** When a note last had a message from either side; one without any counts from when it was made. */
@@ -30,30 +33,64 @@ export function noteActivity(record: Pick<ConversationRecord, 'lastOwnerMessageA
 }
 
 /**
- * The direct message first, then the notes with the latest messages. Contact
- * notes (SPEC-012 FR-5) are left out. Fewer than four notes leaves room for
- * one New conversation item.
+ * The direct message first, then the notes with something waiting for the
+ * owner, then the notes with the latest messages; waiting notes are never
+ * crowded out by newer ones. Contact notes (SPEC-012 FR-5) are left out.
+ * Fewer than four notes leaves room for one New conversation item.
  */
-export function quickMenuItems(conversations: readonly ConversationRecord[], locale: Locale): QuickMenuItem[] {
+export function quickMenuItems(
+  conversations: readonly ConversationRecord[],
+  locale: Locale,
+  waiting: ReadonlySet<string> = new Set(),
+): QuickMenuItem[] {
   const home = conversations.find((record) => record.role === 'home');
+  const homeId = home?.id ?? 'home';
   const items: QuickMenuItem[] = [{
     kind: 'home',
-    conversationId: home?.id ?? 'home',
+    conversationId: homeId,
     label: home && !['Home', 'Direct message'].includes(home.title) ? home.title : translate(locale, 'Direct message'),
     unread: home?.unreadCount ?? 0,
+    waiting: waiting.has(homeId),
   }];
   const notes = conversations
     .filter((record) => record.role === 'note' && !record.contactOf)
-    .map((record) => ({ record, at: noteActivity(record) }))
-    .sort((a, b) => b.at - a.at || a.record.id.localeCompare(b.record.id))
+    .map((record) => ({ record, at: noteActivity(record), waiting: waiting.has(record.id) }))
+    .sort((a, b) => Number(b.waiting) - Number(a.waiting) || b.at - a.at || a.record.id.localeCompare(b.record.id))
     .slice(0, QUICK_MENU_NOTES);
-  for (const { record } of notes) {
-    items.push({ kind: 'note', conversationId: record.id, label: record.title, unread: record.unreadCount });
+  for (const { record, waiting: waits } of notes) {
+    items.push({ kind: 'note', conversationId: record.id, label: record.title, unread: record.unreadCount, waiting: waits });
   }
   if (notes.length < QUICK_MENU_NOTES) {
-    items.push({ kind: 'new', conversationId: null, label: translate(locale, 'New conversation'), unread: 0 });
+    items.push({ kind: 'new', conversationId: null, label: translate(locale, 'New conversation'), unread: 0, waiting: false });
   }
   return items;
+}
+
+/** An item as a line of Linux's native quick menu: its unread count, then its waiting mark. */
+export function quickMenuNativeLabel(item: QuickMenuItem, locale: Locale): string {
+  return item.label + (item.unread ? ` (${item.unread})` : '') + (item.waiting ? ` · ${translate(locale, 'Needs you')}` : '');
+}
+
+/**
+ * The conversations where something waits for the owner: a question or an
+ * approval the bot asked (`awaiting_owner`), a provider request in the running
+ * turn, or a desktop-control grant request. Two light reads, read together;
+ * each conversation's grant state is read only when a grant request waits.
+ */
+export async function waitingConversations(
+  core: Pick<RemoteBotCore, 'status' | 'desktopControlState'>,
+): Promise<Set<string>> {
+  const [status, desktop] = await Promise.all([core.status(), core.desktopControlState()]);
+  // A core started before this field existed (the Hub can attach to one still running) names none.
+  const waiting = new Set<string>(status.awaitingOwnerConversations ?? []);
+  if (status.pendingInteractions > 0 && status.queue.running) waiting.add(status.queue.running.conversationId);
+  if (desktop.pendingRequests > 0) {
+    await Promise.all(desktop.conversations.map((conversationId) =>
+      Promise.resolve(core.desktopControlState(conversationId)).then((one) => {
+        if (one.conversation?.pendingRequests.length) waiting.add(conversationId);
+      }, () => undefined)));
+  }
+  return waiting;
 }
 
 type Rect = { x: number; y: number; width: number; height: number };

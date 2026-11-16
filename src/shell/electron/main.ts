@@ -76,7 +76,7 @@ import { registerComputerSetupIpc } from './computerSetup.ts';
 import { botNameProblem, normalizeBotName } from '../../shared/botText.ts';
 import { SETUP_WINDOW_SIZE, createPageWindow, pageUrl, SettingsWindow } from './settingsWindow.ts';
 import { popupMenu } from './popupMenu.ts';
-import { quickMenuItems, type QuickMenuItem } from './quickMenu.ts';
+import { quickMenuItems, quickMenuNativeLabel, waitingConversations, type QuickMenuItem } from './quickMenu.ts';
 import { logTerminal, runFirstRunSetup } from './setup.ts';
 import { validateSetupInput } from './setupInput.ts';
 import { BotTray } from './tray.ts';
@@ -1748,14 +1748,22 @@ async function main(): Promise<void> {
     try {
       const owner = presenter.floating.browserWindow;
       if (!owner || !hubState.floatingQuickMenu || typeof pressedAt !== 'number' || !Number.isFinite(pressedAt)) return null;
-      const items = quickMenuItems(await presenter.core.listConversations(), locale());
+      // What waits for the owner is a mark on top; the menu still opens when it cannot be read.
+      const [conversations, waiting] = await Promise.all([
+        presenter.core.listConversations(),
+        waitingConversations(presenter.core).catch((error: unknown) => {
+          log(`quick menu: what waits for the owner could not be read: ${diagnosticError(error)}`, 'warn');
+          return new Set<string>();
+        }),
+      ]);
+      const items = quickMenuItems(conversations, locale(), waiting);
       if (process.platform !== 'linux') {
         await presenter.floating.openQuickMenu(items, pressedAt, { locale: locale(), title: t('Quick menu') });
         return null;
       }
       // ADR-014: a window of ours cannot learn of every outside click on Linux; a native menu can.
       const menu = Menu.buildFromTemplate(items.map((item) => ({
-        label: item.unread ? `${item.label} (${item.unread})` : item.label,
+        label: quickMenuNativeLabel(item, locale()),
         click: () => runQuickMenuItem(presenter, item),
       })));
       menu.once('menu-will-close', () => presenter.floating.setNativeQuickMenuOpen(false));
