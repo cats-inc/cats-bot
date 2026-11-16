@@ -491,6 +491,7 @@ export function NoteApp() {
   const [interactions, setInteractions] = useState<BotInteraction[]>([]);
   const [grants, setGrants] = useState<StandingGrant[]>([]);
   const [stoppingGrants, setStoppingGrants] = useState(false);
+  const [stopGrantsFailed, setStopGrantsFailed] = useState(false);
   const desktop = useDesktopControl(conversation);
   const refreshDesktop = desktop.refresh;
   const refreshInteractions = useCallback(async () => {
@@ -846,11 +847,12 @@ export function NoteApp() {
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
       {contact === null && (
-        <StandingGrantsBar grants={grants} busy={stoppingGrants} onStop={() => {
+        <StandingGrantsBar grants={grants} busy={stoppingGrants} error={stopGrantsFailed} onStop={() => {
           setStoppingGrants(true);
+          setStopGrantsFailed(false);
           void api.invoke('stopStandingGrants', conversation.current)
             .then((snapshot) => { setInteractions(snapshot.interactions); setGrants(snapshot.standingGrants ?? []); })
-            .catch(() => refreshInteractions().catch(() => undefined))
+            .catch(() => { setStopGrantsFailed(true); return refreshInteractions().catch(() => undefined); })
             .finally(() => setStoppingGrants(false));
         }} />
       )}

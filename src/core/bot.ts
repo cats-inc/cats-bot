@@ -47,7 +47,7 @@ import {
   writeTelegramLastUpdateId,
   type TelegramStatus,
 } from './transports/telegram.ts';
-import type { RuntimeClient, RuntimeMcpServer } from './runtime/client.ts';
+import { RuntimeHttpError, type RuntimeClient, type RuntimeMcpServer } from './runtime/client.ts';
 import { assertHostedProviderPolicy, providerCanOfferSessionTools, usesHostedProvider } from './runtime/providerPolicy.ts';
 import { RuntimeSupervisor, runtimeRestartDelayMs, type RuntimeSupervisorEvent } from './runtime/supervisor.ts';
 import { readJsonFile, writeJsonAtomic } from './store/atomicFile.ts';
@@ -250,6 +250,8 @@ export class BotCore implements BotHostApi {
   private recovering = false;
   private started = false;
   private stopped = false;
+  /** ADR-026: while above zero, Stop is ending grants and no send may use them. */
+  private stoppingGrants = 0;
 
   private constructor(options: BotCoreOptions, profile: BotProfile) {
     this.options = options;
@@ -368,7 +370,8 @@ export class BotCore implements BotHostApi {
         // ADR-026: only a message the owner sent in person (note or local CLI) may use standing grants;
         // Telegram, heartbeats, schedules and recovery reruns keep every approval card.
         // An answer to the bot's own question continues whatever turn asked it, which may be a background one.
-        ...(item.kind === 'owner_message' && item.source === 'owner' && !item.sourceRef?.startsWith('decision:')
+        // While Stop is ending grants, a queued message that starts in the meantime never uses them.
+        ...(item.kind === 'owner_message' && item.source === 'owner' && !item.sourceRef?.startsWith('decision:') && this.stoppingGrants === 0
           ? { standingGrants: true as const } : {}) }),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
@@ -1277,19 +1280,29 @@ export class BotCore implements BotHostApi {
   async stopStandingGrants(conversationId?: string): Promise<void> {
     const ids = conversationId ? [this.conversations.require(this.resolveConversationId(conversationId)).id]
       : this.interactions.grantedConversations();
-    for (const id of ids) if (this.running?.item.conversationId === id) await this.cancelRunningTurn(id);
-    const client = this.client();
+    this.stoppingGrants++;
     const unconfirmed: string[] = [];
-    for (const id of ids) {
-      const sessionId = this.conversations.get(id)?.attachment.sessionId;
-      // Without a session or a running Runtime there is nothing that could hold a grant.
-      if (!sessionId || !client) { this.interactions.setGrants(id, []); continue; }
-      try {
-        const snapshot = await client.revokeStandingGrants(sessionId);
-        this.interactions.setGrants(id, snapshot.standingGrants);
-        if (snapshot.standingGrants?.length) unconfirmed.push(id);
-      } catch { unconfirmed.push(id); }
-    }
+    try {
+      // Stop the action now: abort locally first, then end the grants, then tell Runtime to cancel the turn.
+      const running = this.running && ids.includes(this.running.item.conversationId) ? this.running.item.conversationId : null;
+      const cancelled = running ? this.abortRunningTurn(running) : null;
+      const client = this.client();
+      await Promise.all(ids.map(async (id) => {
+        const sessionId = this.conversations.get(id)?.attachment.sessionId;
+        // Without a session or a running Runtime there is nothing that could hold a grant.
+        if (!sessionId || !client) { this.interactions.setGrants(id, []); return; }
+        try {
+          const snapshot = await client.revokeStandingGrants(sessionId);
+          this.interactions.setGrants(id, snapshot.standingGrants);
+          if (snapshot.standingGrants?.length) unconfirmed.push(id);
+        } catch (error) {
+          // A session Runtime no longer has holds no grants either.
+          if (error instanceof RuntimeHttpError && error.status === 404) this.interactions.setGrants(id, []);
+          else unconfirmed.push(id);
+        }
+      }));
+      if (cancelled && client) await client.cancelSession(cancelled).catch(() => undefined);
+    } finally { this.stoppingGrants--; }
     this.log(`standing grants stopped in ${ids.length - unconfirmed.length} of ${ids.length} conversation(s)`);
     if (unconfirmed.length) throw new Error('Runtime did not confirm that every grant ended. Stop again, or quit Cats Bot to end them all.');
   }
@@ -1923,19 +1936,22 @@ export class BotCore implements BotHostApi {
 
   /** Cancels the turn running in a conversation, leaving its queued work queued. */
   private async cancelRunningTurn(id: string): Promise<void> {
+    const sessionId = this.abortRunningTurn(id);
+    const client = this.client();
+    if (sessionId && client) await client.cancelSession(sessionId).catch(() => undefined);
+  }
+
+  /** Aborts the conversation's running turn here; returns the Runtime session still to cancel, if any. */
+  private abortRunningTurn(id: string): string | null {
     const running = this.running;
-    if (!running || running.item.conversationId !== id) return;
+    if (!running || running.item.conversationId !== id) return null;
     // A rejected send can still be unwinding while its work is deferred. It
     // owns no Runtime turn: cancelling it must not cancel the other turn.
-    if (this.workItems.get(running.item.id)?.state !== 'running') return;
+    if (this.workItems.get(running.item.id)?.state !== 'running') return null;
     this.log(`turn ${running.item.id} cancelled by the owner`);
     running.controller.abort();
-    if (!this.admittedTurns.has(running.item.id)) return;
-    const sessionId = running.item.run?.sessionId;
-    const client = this.client();
-    if (sessionId && client) {
-        await client.cancelSession(sessionId).catch(() => undefined);
-      }
+    if (!this.admittedTurns.has(running.item.id)) return null;
+    return running.item.run?.sessionId ?? null;
   }
 
   async markSeen(conversationId: string): Promise<void> {

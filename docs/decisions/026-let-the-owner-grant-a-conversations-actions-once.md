@@ -29,8 +29,9 @@ long one answer lasts. The owner decided on 2026-11-16:
 - **No waiting state.** A request Runtime answered from a grant never counts as waiting. No bubble, Telegram notice
   or gate fires for it.
 - **Visible and stoppable.** While a conversation holds grants:
-  - Its note shows them with the time left and a Stop. Stop revokes the session's grants and cancels the
-    conversation's turn.
+  - Its note shows them with the time left and a Stop. Stop cancels the conversation's running turn, then
+    revokes the session's grants, and fails visibly unless Runtime confirms. Queued messages stay queued and run
+    afterwards, asking again; one that starts while Stop is still ending grants never uses them.
   - The tray's first item is "Stop actions allowed without asking", for every bot.
   - The global hotkey Ctrl+Alt+Shift+S does the same. The Hub registers it only while a grant is in force, so it
     never holds the chord otherwise.

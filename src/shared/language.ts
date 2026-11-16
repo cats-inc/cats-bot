@@ -179,6 +179,8 @@ export const zhTW: Record<string, string> = {
   'Allowed without asking': '免詢問的授權',
   'Stop also cancels the current reply. Ctrl+Alt+Shift+S stops every cat bot from anywhere.': '停止也會取消目前的回覆。在任何地方按 Ctrl+Alt+Shift+S 都能停止所有機器貓。',
   'Allow for this conversation': '這個對話都允許',
+  'Stop was not confirmed, so these may still be allowed. Press Stop again, or quit Cats Bot.':
+    '停止沒有得到確認，這些可能仍然有效。請再按一次停止，或結束 Cats Bot。',
   'Operating the desktop is as broad as you at the keyboard: it can also start programs and change files.':
     '操作電腦的範圍就跟你坐在鍵盤前一樣：它也能開啟程式、修改檔案。',
   'Allow for {minutes} minutes': '允許 {minutes} 分鐘',
