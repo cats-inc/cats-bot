@@ -47,3 +47,51 @@ for (const provider of ['muse', 'grok', 'antigravity', 'kimi']) {
     } finally { await core.stop(); home.cleanup(); }
   });
 }
+
+test('packed Runtime lets an owner grant Kimi commands once, never for Telegram, until Stop (ADR-028)', { timeout: 120_000 }, async () => {
+  const home = makeTempHome('cats-hosted-kimi-grants-');
+  const { core } = openTestBot({ botsHome: home.botsHome, profile: { provider: 'kimi' }, core: {
+    runtime: { runtimeEntry: resolveRuntimeEntry(), providerCommand: process.execPath,
+      providerLaunchArgs: [resolve('tests/support/fixture-cli/hosted-fixture.mjs'), 'kimi'], readyTimeoutMs: 60_000,
+      env: { ...process.env, HOME: home.root, USERPROFILE: home.root,
+        XDG_CONFIG_HOME: join(home.root, '.config'), XDG_DATA_HOME: join(home.root, '.local', 'share'),
+        APPDATA: join(home.root, 'roaming'), LOCALAPPDATA: join(home.root, 'local') } },
+  } });
+  const answerNext = async (source: 'owner' | 'telegram', answer: Record<string, unknown> | null) => {
+    const done = waitForEvent(core, event => event.type === 'turn.completed', 30_000);
+    let cardSeen = false;
+    const pending = answer ? waitForEvent(core, event => event.type === 'provider.interactions' && event.pending === 1, 30_000) : null;
+    await core.sendOwnerMessage('home', 'fixture:approval', source);
+    if (pending) {
+      await pending;
+      const card = (await core.providerInteractions('home')).interactions.find(item => item.status === 'pending')!;
+      cardSeen = true;
+      assert.equal(card.prompt?.grantCategory, 'command');
+      await core.respondProviderInteraction('home', card.interactionId, { workItemId: card.workItemId,
+        workerGeneration: card.workerGeneration, executionId: card.executionId, expectedRevision: card.revision,
+        idempotencyKey: `grant-${Date.now()}`, answer: answer as never });
+    }
+    const result = await done;
+    assert.ok(result.type === 'turn.completed');
+    return { text: result.workItem.result?.text, cardSeen };
+  };
+  try {
+    await core.start();
+    // 1. The owner allows commands for the conversation from the card.
+    assert.deepEqual(await answerNext('owner', { action: 'accept', choice: 'allow', standingGrant: { until: 'session' } }),
+      { text: 'native approval accepted', cardSeen: true });
+    assert.deepEqual((await core.providerInteractions('home')).standingGrants?.map(grant => grant.category), ['command']);
+    // 2. The owner's next message runs without a card: nothing waits for the owner at any point.
+    const waited: number[] = [];
+    const unsubscribe = core.subscribe((event) => { if (event.type === 'provider.interactions') waited.push(event.pending); });
+    assert.equal((await answerNext('owner', null)).text, 'native approval accepted');
+    unsubscribe();
+    assert.deepEqual(waited.filter((count) => count > 0), []);
+    // 3. A Telegram message still asks.
+    assert.deepEqual(await answerNext('telegram', { action: 'decline' }), { text: 'native approval denied', cardSeen: true });
+    // 4. After Stop the owner is asked again.
+    await core.stopStandingGrants('home');
+    assert.equal((await core.providerInteractions('home')).standingGrants, undefined);
+    assert.deepEqual(await answerNext('owner', { action: 'accept', choice: 'allow' }), { text: 'native approval accepted', cardSeen: true });
+  } finally { await core.stop(); home.cleanup(); }
+});

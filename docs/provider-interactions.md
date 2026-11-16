@@ -142,7 +142,13 @@ asking. Kimi's computer use is its own plugin, set up by the owner:
 2. Run `kimi` in a terminal, type `/plugins` and install Kimi Computer Use for Windows.
 3. Start a new conversation in the bot, since Kimi loads plugins when a session starts.
 
-Each computer-use call then waits for Approve once in the conversation. Settings → Provider
+Each computer-use call then asks in the conversation. Choose **Allow for this conversation** or
+**Allow for 30 minutes** to stop being asked for that kind of action (computer use, commands or file
+changes, each separately) in messages you send yourself; Telegram messages, heartbeats and schedules
+always ask (ADR-028). While a grant is in force the note shows it with **Stop**, the tray offers
+**Stop actions allowed without asking**, and Ctrl+Alt+Shift+S stops every cat bot from anywhere;
+`cats-bot grants home --stop` does the same from a terminal. A computer-use grant is as broad as you at
+the keyboard: through the desktop Kimi can also start programs and change files. Settings → Provider
 access → Current session shows whether Kimi loaded the plugin and whether its runtime and
 Node.js are ready. Background turns wait for the owner like any other approval, and Telegram
 can only notify. Cats desktop control is not offered for Kimi: it needs an explicit

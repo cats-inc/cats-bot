@@ -478,6 +478,10 @@ export interface BotHostApi {
   respondDesktopGrant(conversationId: string, requestId: string, decision: DesktopGrantDecision): Promise<void>;
   /** SPEC-006 BDC-10 / SPEC-133 DC-12: without a conversation, stops every conversation. */
   stopDesktopControl(conversationId?: string): Promise<void>;
+  /** ADR-028: ends standing grants and cancels the turn; without a conversation, every conversation. */
+  stopStandingGrants(conversationId?: string): Promise<void>;
+  /** ADR-028: conversations whose standing grants the core last saw (a presenting host's tray and hotkey). */
+  standingGrantConversations(): Promise<string[]>;
   quit(): Promise<void>;
 }
 
@@ -519,7 +523,9 @@ export type BotHostEvent =
    * SPEC-006: desktop control changed; `pendingRequests` counts grant requests waiting in the conversation,
    * and `holding` says whether it (or, without a conversation, any conversation) holds control.
    */
-  | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; holding: boolean; notify?: boolean };
+  | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; holding: boolean; notify?: boolean }
+  /** ADR-028: the conversations holding standing grants now; the tray and the Stop hotkey follow it. */
+  | { type: 'grants.changed'; conversations: string[] };
 
 // ---- Command results the presentation reads (SPEC-001 FR-32, SPEC-002) ----------
 // Kept here, free of imports, so the renderer can type the bridge from this file
@@ -676,6 +682,15 @@ export interface InteractionField {
   maxLength?: number;
 }
 
+/** Runtime ADR-055: what one standing grant covers. Grants never cover each other. */
+export type GrantCategory = 'computer_use' | 'command' | 'file';
+export interface StandingGrant {
+  category: GrantCategory;
+  until: 'session' | 'time';
+  grantedAt: string;
+  expiresAt?: string;
+}
+
 export interface InteractionPrompt {
   kind: InteractionKind;
   title: string;
@@ -689,6 +704,8 @@ export interface InteractionPrompt {
   /** Provider-normalized permission units. Granting one never grants another unit. */
   permissions?: InteractionOption[];
   scopes?: ('turn' | 'session')[];
+  /** Runtime ADR-055: set when accepting may also grant later calls of this category. */
+  grantCategory?: GrantCategory;
 }
 
 export interface ProviderInteraction {
@@ -714,6 +731,8 @@ export interface InteractionAnswer {
   values?: Record<string, string | number | boolean | string[]>;
   grants?: string[];
   scope?: 'turn' | 'session';
+  /** Runtime ADR-055: with accept on a categorized prompt, approve that category for the conversation or a time. */
+  standingGrant?: { until: 'session' } | { until: 'time'; durationMs: number };
 }
 
 export interface InteractionResponse {
@@ -728,6 +747,7 @@ export interface InteractionSnapshot {
   workerGeneration: string | null;
   revision: number;
   interactions: ProviderInteraction[];
+  standingGrants?: StandingGrant[];
 }
 
 export type ExecutionAccess = 'read-only' | 'workspace-write' | 'full-access';
@@ -863,6 +883,8 @@ export interface BotInteractionSnapshot {
   supported: boolean;
   reason?: string;
   interactions: BotInteraction[];
+  /** ADR-028: what the owner granted in this conversation's session; the note shows it with Stop. */
+  standingGrants?: StandingGrant[];
 }
 export interface BotInteractionResponse extends InteractionResponse {
   workerGeneration: string;

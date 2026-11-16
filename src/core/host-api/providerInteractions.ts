@@ -3,9 +3,11 @@ import { join } from 'node:path';
 import type { RuntimeClient, RuntimeStreamEvent } from '../runtime/client.ts';
 import { writeJsonAtomic } from '../store/atomicFile.ts';
 import { INTERACTION_KINDS, type BotInteraction, type BotInteractionResponse, type BotInteractionSnapshot,
-  type InteractionAnswer, type WorkItem } from '../types.ts';
+  type InteractionAnswer, type StandingGrant, type WorkItem } from '../types.ts';
 
 const live = (i: BotInteraction) => i.status === 'pending' || i.status === 'responding';
+// ADR-028: a request Runtime answered from a standing grant never waits for the owner.
+const waiting = (i: BotInteraction) => live(i) && i.reason !== 'standing_grant';
 
 /**
  * SPEC-012 FR-6: in a contact note the owner answers a provider request by
@@ -18,6 +20,8 @@ export function assertChoicesOnly(interaction: BotInteraction, answer: Interacti
     throw new Error('In a contact note only listed choices can be sent; typed answers stay with the owner.');
   };
   if (!answer || !['accept', 'decline', 'cancel'].includes(answer.action)) refuse();
+  // ADR-028: a standing grant is the owner's own decision for their own sessions, never for a contact's.
+  if (answer!.standingGrant !== undefined) refuse();
   const prompt = interaction.prompt;
   if (answer!.choice !== undefined && !prompt?.choices?.some((choice) => choice.id === answer!.choice)) refuse();
   if (answer!.grants?.some((grant) => !prompt?.permissions?.some((permission) => permission.id === grant))) refuse();
@@ -62,10 +66,16 @@ export class BotInteractions {
   private readonly entries = new Map<string, BotInteraction>();
   private readonly contexts = new Map<string, { item: WorkItem; client: RuntimeClient; executionId?: string; generation?: string; dirty?: boolean }>();
   private readonly refreshes = new Map<string, Promise<BotInteractionSnapshot>>();
+  /** ADR-028: the standing grants Runtime last reported per conversation. */
+  private readonly grants = new Map<string, StandingGrant[]>();
   private readonly botId: string;
   private readonly changed: (conversationId: string, pending: number, notify?: boolean) => void;
 
-  constructor(root: string, botId: string, changed: (conversationId: string, pending: number, notify?: boolean) => void) {
+  private readonly grantsChanged: (conversations: string[]) => void;
+
+  constructor(root: string, botId: string, changed: (conversationId: string, pending: number, notify?: boolean) => void,
+    grantsChanged: (conversations: string[]) => void = () => undefined) {
+    this.grantsChanged = grantsChanged;
     this.file = join(root, 'provider-interactions.json');
     this.botId = botId;
     this.changed = changed;
@@ -116,7 +126,7 @@ export class BotInteractions {
   }
 
   pending(conversationId?: string): number {
-    return [...this.entries.values()].filter(i => live(i) && (!conversationId || i.conversationId === conversationId)).length;
+    return [...this.entries.values()].filter(i => waiting(i) && (!conversationId || i.conversationId === conversationId)).length;
   }
 
   async snapshot(conversationId: string): Promise<BotInteractionSnapshot> {
@@ -150,7 +160,7 @@ export class BotInteractions {
           this.end(context.item.id, 'worker_changed');
           return this.view(conversationId, 'worker_changed');
         }
-        let changed = false;
+        let changed = this.setGrants(conversationId, snapshot.standingGrants);
         let notify = false;
         for (const i of snapshot.interactions) {
           if (i.executionId !== context.executionId || i.workerGeneration !== context.generation
@@ -171,8 +181,45 @@ export class BotInteractions {
   }
 
   private view(conversationId: string, reason?: string): BotInteractionSnapshot {
+    const grants = this.grants.get(conversationId);
     return { version: 1, supported: !reason, ...(reason ? { reason } : {}),
-      interactions: structuredClone([...this.entries.values()].filter(i => i.conversationId === conversationId)) };
+      interactions: structuredClone([...this.entries.values()].filter(i => i.conversationId === conversationId)),
+      ...(grants?.length ? { standingGrants: structuredClone(grants) } : {}) };
+  }
+
+  /** Records what Runtime reported; returns whether it changed. Unknown or malformed entries are dropped. */
+  setGrants(conversationId: string, reported: unknown): boolean {
+    const grants = Array.isArray(reported) ? reported.slice(0, 3).filter((g): g is StandingGrant =>
+      !!g && ['computer_use', 'command', 'file'].includes(g.category) && ['session', 'time'].includes(g.until)
+      && typeof g.grantedAt === 'string' && (g.expiresAt === undefined || typeof g.expiresAt === 'string')) : [];
+    const before = JSON.stringify(this.grants.get(conversationId) ?? []);
+    if (grants.length) this.grants.set(conversationId, grants); else this.grants.delete(conversationId);
+    const changed = before !== JSON.stringify(grants);
+    if (changed) this.grantsChanged(this.grantedConversations());
+    this.scheduleExpiry();
+    return changed;
+  }
+
+  private expiryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** A timed grant leaves the note, the tray and the hotkey when it expires, also with no note open. */
+  private scheduleExpiry(): void {
+    clearTimeout(this.expiryTimer);
+    const expiries = [...this.grants.values()].flat().flatMap((grant) => grant.expiresAt ? [Date.parse(grant.expiresAt)] : [])
+      .filter(Number.isFinite);
+    if (!expiries.length) return;
+    this.expiryTimer = setTimeout(() => {
+      const now = Date.now();
+      for (const [conversationId, grants] of [...this.grants]) {
+        this.setGrants(conversationId, grants.filter((grant) => !grant.expiresAt || Date.parse(grant.expiresAt) > now));
+      }
+    }, Math.max(0, Math.min(...expiries) - Date.now()) + 50);
+    this.expiryTimer.unref?.();
+  }
+
+  /** Conversations Runtime last reported grants for. */
+  grantedConversations(): string[] {
+    return [...this.grants.keys()];
   }
 
   async respond(conversationId: string, id: string, body: BotInteractionResponse,
@@ -193,6 +240,8 @@ export class BotInteractions {
       this.entries.set(id, { ...response, botId: this.botId, conversationId, workItemId: context.item.id });
       this.save();
       this.changed(conversationId, this.pending(conversationId));
+      // A new standing grant shows in the note at once, with its Stop.
+      if (body.answer.standingGrant) { context.dirty = true; void this.snapshot(conversationId).catch(() => {}); }
     }
   }
 

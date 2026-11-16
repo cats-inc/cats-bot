@@ -77,6 +77,8 @@ export interface SendMessageRequest {
   message: string;
   instructions?: string;
   mcpServers?: RuntimeMcpServer[];
+  /** Runtime ADR-055 / ADR-028: only a turn the owner started in person may use standing grants. */
+  standingGrants?: true;
 }
 
 export interface RuntimeHealth {
@@ -269,6 +271,11 @@ export class RuntimeClient {
 
   interactions(id: string): Promise<InteractionSnapshot> {
     return this.request('GET', `/sessions/${encodeURIComponent(id)}/interactions`);
+  }
+
+  /** Runtime ADR-055: ends a session's standing grants; answers with its interaction snapshot. */
+  revokeStandingGrants(id: string): Promise<InteractionSnapshot> {
+    return this.request('DELETE', `/sessions/${encodeURIComponent(id)}/interactions/grants`);
   }
 
   respondInteraction(id: string, interactionId: string, body: InteractionResponse): Promise<ProviderInteraction> {

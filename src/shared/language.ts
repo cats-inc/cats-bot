@@ -171,10 +171,25 @@ export const zhTW: Record<string, string> = {
   'Enable native tools with provider permissions': '啟用原生工具，沿用供應商權限',
   "Native tools can use files, commands and network. The provider keeps its own permission settings; requests that need your approval appear in the cat bot's conversation. A cat bot cannot impose a smaller file or network boundary in this mode.": '原生工具可使用檔案、指令和網路。供應商會沿用自身的權限設定，需要你核准的要求會出現在機器貓的對話中。此模式下機器貓無法額外限制檔案或網路存取範圍。',
   'Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.': 'Antigravity 原生工具需要 Google 官方 Antigravity ACP server 並完成登入，僅安裝一般 agy CLI 並不足夠。目前此供應商尚未開放 Cats 工具。',
+  'operate the desktop': '操作電腦',
+  'run commands': '執行指令',
+  'change files': '修改檔案',
+  'May {what} without asking in this conversation': '在這個對話裡可以不經詢問{what}',
+  'May {what} without asking for {minutes} more min': '還有 {minutes} 分鐘可以不經詢問{what}',
+  'Allowed without asking': '免詢問的授權',
+  'Stop also cancels the current reply. Ctrl+Alt+Shift+S stops every cat bot from anywhere.': '停止也會取消目前的回覆。在任何地方按 Ctrl+Alt+Shift+S 都能停止所有機器貓。',
+  'Allow for this conversation': '這個對話都允許',
+  'Stop was not confirmed, so these may still be allowed. Press Stop again, or quit Cats Bot.':
+    '停止沒有得到確認，這些可能仍然有效。請再按一次停止，或結束 Cats Bot。',
+  'Operating the desktop is as broad as you at the keyboard: it can also start programs and change files.':
+    '操作電腦的範圍就跟你坐在鍵盤前一樣：它也能開啟程式、修改檔案。',
+  'Allow for {minutes} minutes': '允許 {minutes} 分鐘',
+  'Lets it {what} without asking in your own messages until then or until you press Stop': '在你親自送出的訊息裡，讓它不經詢問{what}，直到時間到或你按下停止',
+  'Stop actions allowed without asking': '停止免詢問的動作',
   'Kimi runs only with full machine access, so it cannot use a read-only filespace or a tool allowlist.':
     'Kimi 只能以完整電腦權限執行，所以不能搭配唯讀 Filespace 或工具允許清單。',
-  'Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so each command, file change and tool call that Kimi does not consider safe, including every computer-use action, waits for your approval in the conversation. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.':
-    'Kimi 只能搭配原生工具使用。Cats 會讓 Kimi 維持在 Default 模式，所以 Kimi 不認為安全的每個指令、檔案修改與工具呼叫（包括每一次電腦操作）都會在對話裡等你核准。要加上電腦操作：在終端機執行 kimi，輸入 /plugins，安裝 Kimi Computer Use 與它的 Windows runtime，然後開一個新對話。',
+  'Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so its first command, file change or computer-use action asks in the conversation; choose "Allow for this conversation" or "Allow for 30 minutes" there to stop being asked for that kind in messages you send yourself. Stop in the conversation, the tray or Ctrl+Alt+Shift+S ends it. Telegram messages, heartbeats and schedules always ask. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.':
+    'Kimi 只能搭配原生工具使用。Cats 會讓 Kimi 維持在 Default 模式，所以它第一次執行指令、修改檔案或操作電腦時，會在對話裡先問你；在那裡選「這個對話都允許」或「允許 30 分鐘」，之後你親自送出的訊息就不會再為這一類動作詢問。按對話裡的停止、托盤選單或 Ctrl+Alt+Shift+S 就能結束授權。Telegram 訊息、心跳和排程永遠會先問。要加上電腦操作：在終端機執行 kimi，輸入 /plugins，安裝 Kimi Computer Use 與它的 Windows runtime，然後開一個新對話。',
   'Hops per chain': '每條對話鏈的轉送次數',
   'Messages per hour': '每小時訊息數',
   'Only you can allow this. The request expires in 10 minutes.': '只有你能允許這件事。這個請求 10 分鐘後失效。',

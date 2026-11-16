@@ -29,11 +29,12 @@ export const CORE_COMMANDS = [
   'listSchedules', 'cancelSchedule', 'listWorkItems', 'resolveApproval', 'status',
   'listProviders', 'listModels', 'renameConversation', 'telegramStatus', 'setTelegramToken',
   'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
+  'stopStandingGrants',
 ] as const;
 
 /** Window lifecycle and host-only commands the presenting host sends for itself. */
 export const HOST_ONLY_COMMANDS = [
-  'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'useCommandDirectory',
+  'openView', 'closeView', 'setViewFocused', 'protectSecretsAtRest', 'stopAllDesktopControl', 'stopAllStandingGrants', 'standingGrantConversations', 'useCommandDirectory',
   'admitBotMessage', 'botDeliveries', 'setBossCat', 'setHubLanguage', 'workStatus', 'setPeerBoards', 'quit',
 ] as const;
 
@@ -227,6 +228,15 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
     case 'stopAllDesktopControl':
       await target.stopDesktopControl();
       return target.desktopControlState();
+    case 'stopStandingGrants':
+      // ADR-028: a note stops its own conversation; the tray and the hotkey stop every conversation.
+      await target.stopStandingGrants(asString(args[0], 'conversationId'));
+      return target.providerInteractions(asString(args[0], 'conversationId'));
+    case 'stopAllStandingGrants':
+      await target.stopStandingGrants();
+      return null;
+    case 'standingGrantConversations':
+      return target.standingGrantConversations();
     case 'openView':
       await target.openView(asString(args[0], 'conversationId'));
       return null;

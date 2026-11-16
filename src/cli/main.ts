@@ -80,6 +80,8 @@ Commands:
   interactions [conversation|home]      list live provider requests as JSON
   respond <conversation|home> <request>  read typed response JSON from stdin
   capabilities [conversation|home] [--refresh]  inspect the current session without a model turn
+  grants [conversation|home] [--stop [--all]]  what the bot may do without asking (computer use, commands, files);
+                                         --stop ends those grants and cancels the turn (--all: every conversation)
   desktop [conversation|home] [--enable | --disable | --grant <requestId> allow|deny | --stop [--all]]
                                          desktop control (Windows) as JSON: the conversation switch, an
                                          app grant request's answer, or stop (--all: every conversation)
@@ -570,6 +572,30 @@ async function commandProviderControl(parsed: ParsedArgs, env: NodeJS.ProcessEnv
   return 0;
 }
 
+/** ADR-028: the owner's standing grants, read or stopped through the running Bot's control endpoint. */
+async function commandGrants(parsed: ParsedArgs, env: NodeJS.ProcessEnv): Promise<number> {
+  const target = resolveTarget(parsed, env);
+  const positional = [...parsed.positional];
+  // `--stop home`: the parser reads the next word as the flag's value; it is the conversation.
+  const stopValue = parsed.flags.get('stop');
+  if (typeof stopValue === 'string') positional.push(stopValue);
+  const stop = stopValue !== undefined;
+  const all = parsed.flags.has('all');
+  if (all && !stop) throw new Error('--all goes with --stop.');
+  if (!target.running) {
+    // Grants live only in the running Runtime; with no running bot there is nothing to stop.
+    if (stop) { process.stdout.write(`${JSON.stringify({ stopped: true }, null, 2)}\n`); return 0; }
+    throw new Error('Start the bot before inspecting its standing grants.');
+  }
+  const conversationId = positional[0] ?? 'home';
+  const result = await callHostControl(target.root, stop
+    ? { operation: 'grants_stop', ...(all ? { all: true } : { conversationId }) }
+    : { operation: 'interactions', conversationId });
+  const snapshot = result as { standingGrants?: unknown } | null;
+  process.stdout.write(`${JSON.stringify(stop && all ? result : { standingGrants: snapshot?.standingGrants ?? [] }, null, 2)}\n`);
+  return 0;
+}
+
 /**
  * SPEC-006 BDC-07 / BDC-10: desktop control through the running Bot's control endpoint. Grants and
  * requests live only in the running core, so every action needs it, and a grant is answered here
@@ -698,6 +724,8 @@ export async function main(argv: string[], env: NodeJS.ProcessEnv = process.env)
         return await commandProviderControl(parsed, env);
       case 'desktop':
         return await commandDesktop(parsed, env);
+      case 'grants':
+        return await commandGrants(parsed, env);
       case 'heartbeat':
         return await commandHeartbeat(parsed, env);
       case 'tick':

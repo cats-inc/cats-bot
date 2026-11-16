@@ -4,9 +4,9 @@ Bot consumes an exact packed Runtime artifact through its process/HTTP boundary,
 never source imports from another checkout.
 
 <!-- runtime-pin:start -->
-Source `b9819a6c1213aa6954babaf086d50dedbaf9ea1c`, package version 0.6.2.
-Artifact: `vendor/cats-runtime-0.6.2-b9819a6c.tgz`; 1,880,119 bytes.
-SHA-256: `8d1651a8c1ddd0ae78ba5af697150a9c333c51ca5774bb2918c2fe9f9b03cc21`.
+Source `b95d9294a91164c6225beb717e42249288594239`, package version 0.6.2.
+Artifact: `vendor/cats-runtime-0.6.2-b95d9294.tgz`; 1,890,762 bytes.
+SHA-256: `838dee2cca538e019a8f8758fa5a3159ee64c5462e79422c20f3fb3197d366aa`.
 <!-- runtime-pin:end -->
 
 `vendor/runtime-source.json` is the machine-readable source/artifact pin, and
@@ -42,6 +42,11 @@ The Kimi Code selection (ADR-025) moves the pin to Runtime main at
 
 A Kimi bot always runs on that hosted target; print mode is never selected for it.
 The pin adds no Bot profile, journal or conversation format change.
+
+ADR-028 moves the pin to Runtime main at `b95d9294a91164c6225beb717e42249288594239`, which adds
+#230 (Runtime ADR-055): standing grants for computer use, commands and file changes, used only by
+sends the Bot marks as owner-started, revoked by Stop. It carries #229 too, a Muse catalog-probe
+fallback that does not change Bot behavior.
 
 Bot 0.5.12 selects the same Runtime main, which had nothing after that commit at
 selection; a clean-clone rebuild reproduced the same artifact bytes.

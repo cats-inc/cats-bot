@@ -278,6 +278,8 @@ test('ask_owner waits for the owner, a decision continues the conversation, and 
     assert.equal(core.getWorkItem(waiting.id)?.state, 'completed');
     const followUp = await done;
     assert.match(followUp.type === 'turn.completed' ? followUp.workItem.prompt : '', /Decision on your question "May I delete the cache\?": approved/u);
+    // ADR-028: the decision continues whatever turn asked, so it is never marked to use standing grants.
+    assert.equal(followUp.type === 'turn.completed' ? followUp.workItem.sourceRef : '', `decision:${waiting.id}`);
     await assert.rejects(core.resolveApproval(waiting.id, 'deny'), /not awaiting/u);
 
     const expiring = core.askOwner('home', 'Second question?');

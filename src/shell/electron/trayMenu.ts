@@ -31,6 +31,8 @@ export interface BotMenuModel {
   /** SPEC-002 FR-7. */
   floatingVisible: boolean;
   desktopControl: TrayDesktopControl;
+  /** ADR-028: whether any of this bot's conversations holds standing grants. */
+  grantsActive?: boolean;
 }
 
 export interface BotMenuActions {
@@ -103,6 +105,8 @@ export interface HubTrayActions {
   onArrangeFloatingCats(): void;
   /** Resolve the current presented bots when clicked, independent of status reads. */
   onStopAllDesktopControl(): void;
+  /** ADR-028: ends every bot's standing grants and cancels their turns, like the Stop hotkey. */
+  onStopAllStandingGrants?(): void;
   onCheckForUpdates?(): void;
   onToggleOpenAtLogin(enabled: boolean): void;
   onQuit(): void;
@@ -121,6 +125,11 @@ export function buildHubTrayMenuTemplate(model: HubTrayModel, actions: HubTrayAc
     click: () => actions.onStopAllDesktopControl(),
   };
   const template: TrayMenuItem[] = [];
+  // ADR-028: while anything may act without asking, its Stop comes first of all.
+  if (actions.onStopAllStandingGrants && model.bots.some((bot) => bot?.grantsActive)) {
+    template.push({ label: t('Stop actions allowed without asking') + ' (Ctrl+Alt+Shift+S)', click: () => actions.onStopAllStandingGrants!() },
+      { type: 'separator' });
+  }
   // Keep the emergency stop first, including when the controlling Cat is hidden.
   if (held.length || uncertain) template.push(stopAll, { type: 'separator' });
   template.push(

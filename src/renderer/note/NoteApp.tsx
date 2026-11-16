@@ -18,9 +18,10 @@ import { avatarUrl } from '../avatarArt.ts';
 import { conversationTitle } from '../localeStore.ts';
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode } from 'react';
 
-import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction } from '../../core/types.ts';
+import type { ApprovalDecision, TranscriptEntry, WorkItem, BotInteraction, StandingGrant } from '../../core/types.ts';
 import { DesktopControlBar, DesktopGrantCard, useDesktopControl } from '../desktopControl/DesktopControl.tsx';
 import { InteractionCard } from '../interactions/InteractionCard.tsx';
+import { StandingGrantsBar } from '../interactions/StandingGrants.tsx';
 import type { NoteLayer } from '../bridge.ts';
 import { screenshotOutcome } from './screenshot.ts';
 import { MAX_ATTACHMENT_BYTES, attachedFilesMessage, extractAttachments, type MessageAttachment } from '../../shared/attachments.ts';
@@ -488,6 +489,9 @@ export function NoteApp() {
   };
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [interactions, setInteractions] = useState<BotInteraction[]>([]);
+  const [grants, setGrants] = useState<StandingGrant[]>([]);
+  const [stoppingGrants, setStoppingGrants] = useState(false);
+  const [stopGrantsFailed, setStopGrantsFailed] = useState(false);
   const desktop = useDesktopControl(conversation);
   const refreshDesktop = desktop.refresh;
   const refreshInteractions = useCallback(async () => {
@@ -496,6 +500,7 @@ export function NoteApp() {
       api.invoke('providerInteractions', id), api.invoke('status'), api.invoke('listWorkItems', id),
     ]);
     setInteractions(snapshot.interactions);
+    setGrants(snapshot.standingGrants ?? []);
     setWorkItems(current => mergeWorkItems(current, work.filter(item => item.conversationId === id)));
     setRunningState(status.queue.running?.conversationId === conversation.current);
     runningRef.current = status.queue.running?.conversationId === conversation.current;
@@ -592,6 +597,9 @@ export function NoteApp() {
           return;
         case 'desktop.control':
           if (event.conversationId === null || event.conversationId === id) void refreshDesktop();
+          return;
+        case 'grants.changed':
+          void refreshInteractions();
           return;
         case 'turn.delta':
           if (event.conversationId !== id) return;
@@ -849,6 +857,16 @@ export function NoteApp() {
         </button>
       </header>
       {contact === null && <DesktopControlBar model={desktop} />}
+      {contact === null && (
+        <StandingGrantsBar grants={grants} busy={stoppingGrants} error={stopGrantsFailed} onStop={() => {
+          setStoppingGrants(true);
+          setStopGrantsFailed(false);
+          void api.invoke('stopStandingGrants', conversation.current)
+            .then((snapshot) => { setInteractions(snapshot.interactions); setGrants(snapshot.standingGrants ?? []); })
+            .catch(() => { setStopGrantsFailed(true); return refreshInteractions().catch(() => undefined); })
+            .finally(() => setStoppingGrants(false));
+        }} />
+      )}
       <main className="note-transcript catsConversation" id="transcript" ref={transcriptRef} aria-live="polite"
         onScroll={() => {
           const element = transcriptRef.current;

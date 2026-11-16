@@ -142,7 +142,7 @@ export function ProviderSettings({
               {t('Antigravity native tools require the official Google Antigravity ACP server and its sign-in. The regular agy CLI alone is not sufficient. Cats tools are not yet available for this provider.')}
             </p>}
             {profile.executionTarget.provider === 'kimi' && <p className="hint">
-              {t('Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so each command, file change and tool call that Kimi does not consider safe, including every computer-use action, waits for your approval in the conversation. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.')}
+              {t('Kimi runs only with its native tools. Cats keeps Kimi in its Default mode, so its first command, file change or computer-use action asks in the conversation; choose \"Allow for this conversation\" or \"Allow for 30 minutes\" there to stop being asked for that kind in messages you send yourself. Stop in the conversation, the tray or Ctrl+Alt+Shift+S ends it. Telegram messages, heartbeats and schedules always ask. To add computer use, run kimi in a terminal, type /plugins, install Kimi Computer Use and its Windows runtime, then start a new conversation.')}
             </p>}
             {profile.executionTarget.provider === 'claude' && (
               <p className="hint warn">

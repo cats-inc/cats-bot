@@ -37,7 +37,7 @@ export class HostControlServer {
         }
         const body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as Record<string, unknown> | null;
         // Stopping desktop control everywhere (`desktop_stop` with `all`) is the only operation without a conversation.
-        const everyConversation = body?.operation === 'desktop_stop' && body.all === true;
+        const everyConversation = (body?.operation === 'desktop_stop' || body?.operation === 'grants_stop') && body.all === true;
         if (!body || (!everyConversation
           && (typeof body.conversationId !== 'string' || !body.conversationId || body.conversationId.length > 200))) {
           throw new Error('Invalid conversation.');
@@ -64,6 +64,10 @@ export class HostControlServer {
           case 'desktop_stop':
             await this.api.stopDesktopControl(everyConversation ? undefined : conversationId);
             result = await this.api.desktopControlState(everyConversation ? undefined : conversationId); break;
+          // ADR-028: the owner's Stop for standing grants, also from the local CLI.
+          case 'grants_stop':
+            await this.api.stopStandingGrants(everyConversation ? undefined : conversationId);
+            result = everyConversation ? { stopped: true } : await this.api.providerInteractions(conversationId); break;
           default: throw new Error('Unsupported control operation.');
         }
         res.end(JSON.stringify(result));
