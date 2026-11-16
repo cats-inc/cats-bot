@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { after, before, test } from 'node:test';
 
@@ -238,6 +238,70 @@ test('v1 upgrade preserves legacy permissions, backs up original bytes and repla
   assert.equal(loadProfile(paths, current).ok, false, 'unknown primary never recovers from an older backup');
 });
 
+test('a tool allowlist is upgraded once to asking first, keeping a read-only filespace read-only (ADR-030)', () => {
+  const base = createProfile({ id: 'list', name: 'List', provider: 'claude', cwd: 'C:/work', now });
+  const stored = (provider: string, permissions: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({ ...base, executionTarget: { provider, model: null }, configRevision: 3, providerPolicy: null,
+      permissions: { workspaceAccess: 'read_write', permissionMode: 'whitelist', allowedTools: ['Read', 'Grep'], cwd: 'C:/work', ...permissions }, ...extra });
+  const asks = (approval: string) => ({ version: 1, mode: 'explicit', access: 'full-access', network: true, approval });
+  const cases: Array<[string, string, Record<string, unknown>, Record<string, unknown>, unknown, string, number]> = [
+    ['claude asks first', 'claude', {}, {}, asks('on-request'), 'read_write', 4],
+    ['codex asks first', 'codex', {}, {}, asks('untrusted'), 'read_write', 4],
+    ['claude stays read-only', 'claude', { workspaceAccess: 'read_only' }, {}, null, 'read_only', 4],
+    ['codex stays read-only', 'codex', { workspaceAccess: 'read_only' }, {}, null, 'read_only', 4],
+    ['grok keeps its default', 'grok', {}, {}, null, 'read_write', 4],
+    ['a list beside another mode is only dropped', 'codex', { permissionMode: 'skip' }, {}, null, 'read_write', 3],
+    ['a version 1 profile moves too', 'claude', {}, { schemaVersion: 1 }, asks('on-request'), 'read_write', 4],
+  ];
+  for (const [name, provider, permissions, extra, policy, access, revision] of cases) {
+    const paths = botPathsFor(`${home.botsHome}/allowlist-${name.replaceAll(' ', '-')}`);
+    mkdirSync(paths.root, { recursive: true });
+    const original = stored(provider, permissions, extra);
+    writeFileSync(paths.profile, original);
+    const peek = loadProfile(paths, base);
+    assert.ok(peek.ok, name);
+    assert.equal(readFileSync(paths.profile, 'utf8'), original, `${name}: reading alone writes nothing`);
+    const loaded = loadProfile(paths, base, true);
+    assert.ok(loaded.ok, name);
+    const profile = loaded.profile;
+    assert.deepEqual(profile.providerPolicy, policy, name);
+    assert.equal(profile.permissions.workspaceAccess, access, name);
+    assert.equal(profile.permissions.permissionMode, permissions.permissionMode === 'skip' ? 'skip' : 'default', name);
+    assert.equal(Object.hasOwn(profile.permissions, 'allowedTools'), false, name);
+    assert.equal(profile.configRevision, revision, `${name}: sessions made with the list are replaced`);
+    const written = JSON.parse(readFileSync(paths.profile, 'utf8'));
+    assert.equal(written.permissions.permissionMode === 'whitelist' || 'allowedTools' in written.permissions, false, name);
+    assert.equal(readFileSync(extra.schemaVersion === 1 ? `${paths.profile}.v1.bak` : `${paths.profile}.allowlist.bak`, 'utf8'), original, name);
+    const again = readFileSync(paths.profile, 'utf8');
+    assert.ok(loadProfile(paths, base, true).ok);
+    assert.equal(readFileSync(paths.profile, 'utf8'), again, `${name}: upgraded once`);
+  }
+});
+
+test('an allowlist written again by an older Bot is upgraded again, keeping both copies (ADR-030)', () => {
+  const paths = botPathsFor(`${home.botsHome}/allowlist-twice`);
+  mkdirSync(paths.root, { recursive: true });
+  const base = createProfile({ id: 'twice', name: 'Twice', provider: 'codex', cwd: 'C:/work', now });
+  const first = JSON.stringify({ ...base, permissions: { ...base.permissions, permissionMode: 'whitelist', allowedTools: ['Read'] } });
+  writeFileSync(paths.profile, first);
+  assert.ok(loadProfile(paths, base, true).ok);
+  const second = JSON.stringify({ ...base, permissions: { ...base.permissions, permissionMode: 'whitelist', allowedTools: ['Grep'] } });
+  writeFileSync(paths.profile, second);
+  const loaded = loadProfile(paths, base, true);
+  assert.ok(loaded.ok, 'a different earlier copy never stops the bot');
+  assert.equal(readFileSync(`${paths.profile}.allowlist.bak`, 'utf8'), first);
+  const copies = readdirSync(paths.root).filter((file) => /^profile\.json\.allowlist\.\d+\.bak$/u.test(file));
+  assert.equal(copies.length, 1);
+  assert.equal(readFileSync(join(paths.root, copies[0]!), 'utf8'), second);
+});
+
+test('nothing writes an allowlist any more (ADR-030)', () => {
+  const profile = createProfile({ id: 'w', name: 'W', provider: 'claude', cwd: 'C:/work', now });
+  assert.throws(() => applyProfilePatch(profile, { permissions: { permissionMode: 'whitelist' as never } }, now), /default or skip/u);
+  assert.throws(() => applyProfilePatch(profile, { permissions: { allowedTools: ['Read'] } as never }, now), /no longer supported/u);
+  assert.throws(() => createProfile({ name: 'W', provider: 'claude', cwd: 'C:/work', permissionMode: 'whitelist' as never }), /default or skip/u);
+});
+
 test('failed upgrade preserves original and backup; invalid policy cannot widen a boundary', () => {
   const paths = botPathsFor(`${home.botsHome}/failed-upgrade`);
   mkdirSync(paths.root, { recursive: true });
@@ -302,7 +366,6 @@ test('applyProfilePatch bumps configRevision for instructions, permissions and c
     { permissions: { workspaceAccess: 'read_only' as const } },
     { permissions: { permissionMode: 'skip' as const } },
     { permissions: { cwd: 'C:/elsewhere' } },
-    { permissions: { allowedTools: ['Read'] } },
   ]) {
     const result = applyProfilePatch(profile, patch, now);
     assert.equal(result.sessionChanged, true, JSON.stringify(patch));

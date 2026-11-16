@@ -53,8 +53,9 @@ versioned Runtime provider/explicit policy. A Kimi bot carries the hosted provid
 the optional `providerPolicyAuto: true` while Cats filled it in rather than the owner
 (ADR-025); leaving Kimi drops only such a policy. An older Bot that drops the field keeps
 the policy, which never widens access. Explicit policy separates local
-access, network and approval. Read-only workspace and allowlist boundaries cannot
-be overridden. Selecting a policy requires Runtime capability negotiation before
+access, network and approval. A read-only workspace boundary cannot be overridden.
+The tool allowlist was removed (ADR-030): a profile that had one moves to asking first.
+Settings → Permissions offers per provider only the choices Runtime admits. Selecting a policy requires Runtime capability negotiation before
 create/resume; absence is unavailable, never silently ignored. Global changes
 take effect after the current turn, through the existing configuration revision.
 
@@ -74,8 +75,8 @@ Claude Code bots use the same control (Runtime SPEC-039 R8). Questions arrive as
 other tool, including Claude in Chrome, as `tool_approval`; MCP forms and URL
 requests work as for Codex. Claude Code has no native-Windows sandbox, so only the
 full-access-with-network policy can be selected for it, and a narrower one is
-refused when it is saved while the runtime is ready. The Cat bot tab's Claude in Chrome
-option adds `--chrome` to the CLI launch and restarts the runtime after the
+refused when it is saved while the runtime is ready. The Permissions page's "Use Chrome or Edge"
+(Claude in Chrome) adds `--chrome` to the CLI launch and restarts the runtime after the
 current turn. Computer use is not available to headless Claude Code.
 
 The note displays native requests near the current turn, separate from `ask_owner`.
@@ -111,8 +112,8 @@ These providers initially require full machine access with network. Native
 permission settings and reviewers still decide actions; the setting does not
 switch to unconditional approval. To require human review, configure that in the
 native provider. Bot rejects smaller ceilings and explicit overrides because
-these native modes cannot prove the requested hard boundary. Existing read-only
-workspace or allowlist settings must be removed deliberately before enabling it.
+these native modes cannot prove the requested hard boundary. An existing read-only
+workspace must be widened deliberately before enabling it.
 
 | Provider | Native transport | Cats tools | Approval/input support |
 | --- | --- | --- | --- |
@@ -148,8 +149,8 @@ changes, each separately) in messages you send yourself; Telegram messages, hear
 always ask (ADR-028). While a grant is in force the note shows it with **Stop**, the tray offers
 **Stop actions allowed without asking**, and Ctrl+Alt+Shift+S stops every cat bot from anywhere;
 `cats-bot grants home --stop` does the same from a terminal. A computer-use grant is as broad as you at
-the keyboard: through the desktop Kimi can also start programs and change files. Settings → Provider
-access → Current session shows whether Kimi loaded the plugin and whether its runtime and
+the keyboard: through the desktop Kimi can also start programs and change files. Settings → Details →
+Session check shows whether Kimi loaded the plugin and whether its runtime and
 Node.js are ready. Background turns wait for the owner like any other approval, and Telegram
 can only notify. Cats desktop control is not offered for Kimi: it needs an explicit
 interactive policy, which a hosted provider does not have.

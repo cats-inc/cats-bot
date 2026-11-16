@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { buildHeartbeatPrompt } from '../../src/core/life/heartbeat.ts';
 import { applyProfilePatch, createProfile } from '../../src/core/profile/profile.ts';
 import type { BotProfile } from '../../src/core/types.ts';
-import { botForm, botPatch, botTextErrors } from '../../src/renderer/settings/settingsLogic.ts';
+import { botPatch, botSettings, botTextErrors } from '../../src/renderer/settings/settingsLogic.ts';
 import { validateSetupInput } from '../../src/shell/electron/setupInput.ts';
 
 const now = new Date('2026-11-04T10:00:00.000Z');
@@ -50,9 +50,9 @@ test('stored text from before the rule keeps working until the owner changes it'
 
 test('a stored name sent back trimmed is no change, so an unrelated save still works', () => {
   const start = { ...profile(), name: `Mi${OVERRIDE}a `, instructions: `${HIDDEN} persona\r\n` };
-  const form = { ...botForm(start), name: start.name, instructions: start.instructions, replyLanguage: 'en' as const };
+  const form = { ...botSettings(start, true), name: start.name, instructions: start.instructions, replyLanguage: 'en' as const };
   assert.deepEqual(botTextErrors(start, form), { name: null, instructions: null });
-  const patch = botPatch(start, form);
+  const patch = botPatch(start, form, { model: start.executionTarget.model });
   assert.equal(patch?.name, undefined, 'the page does not send a name it left alone');
   const saved = applyProfilePatch(start, patch!, now);
   assert.equal(saved.profile.name, start.name);

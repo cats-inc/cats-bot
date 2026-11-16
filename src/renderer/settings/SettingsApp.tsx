@@ -6,11 +6,11 @@ import { DEFAULT_BOT_AVATAR } from '../../shared/avatars.ts';
 import { avatarUrl } from '../avatarArt.ts';
 import { executionSummary } from '../note/executionSummary.ts';
 import { AgentClisTab } from './AgentClisTab.tsx';
-import { BotTab } from './BotTab.tsx';
+import { BotPages } from './BotPages.tsx';
 import { BotsTab } from './BotsTab.tsx';
 import { NotesTab } from './NotesTab.tsx';
 import { AppTab, GeneralTab, LifeTab, TelegramTab } from './OtherTabs.tsx';
-import { brandState } from './settingsLogic.ts';
+import { brandState, type BotPage } from './settingsLogic.ts';
 import { ToastContext } from './toast.ts';
 import { DataTab } from './DataTab.tsx';
 
@@ -24,12 +24,15 @@ import { DataTab } from './DataTab.tsx';
  */
 
 const api = window.catsBot;
-// A bot's settings reach only that bot; Cats Bot Settings holds the app and the bots (D17, D20).
-const BOT_TABS = ['bot', 'notes', 'life', 'telegram', 'app'] as const;
+// A bot's settings reach only that bot; Cats Bot Settings holds the app and the bots (D17, D20). The
+// first three follow the setup wizard's order and share one save bar (ADR-030).
+const BOT_TABS = ['look', 'brain', 'perm', 'notes', 'life', 'telegram', 'app'] as const;
 const HUB_TABS = ['general', 'bots', 'clis', 'data'] as const;
 type Tab = (typeof BOT_TABS)[number] | (typeof HUB_TABS)[number];
 const TAB_LABELS: Record<Tab, string> = {
-  bot: 'Cat bot',
+  look: 'Name and look',
+  brain: 'Provider and model',
+  perm: 'Permissions',
   notes: 'Conversations',
   life: 'Life',
   telegram: 'Telegram',
@@ -44,10 +47,16 @@ function isTabOf(tabs: readonly Tab[], value: string | null): value is Tab {
   return value !== null && (tabs as readonly string[]).includes(value);
 }
 
+/** The old single Cat bot tab opens on the first of the three that replaced it. */
+const tabName = (value: string | null): string | null => (value === 'bot' ? 'look' : value);
+
 export function SettingsApp({ initialTab, scope }: { initialTab: string | null; scope: 'bot' | 'hub' }) {
   const { locale } = useI18n();
   const tabs: readonly Tab[] = scope === 'hub' ? HUB_TABS : BOT_TABS;
-  const [tab, setTab] = useState<Tab>(isTabOf(tabs, initialTab) ? initialTab : tabs[0]!);
+  const asked = tabName(initialTab);
+  const [tab, setTab] = useState<Tab>(isTabOf(tabs, asked) ? asked : tabs[0]!);
+  const [editedPages, setEditedPages] = useState<ReadonlySet<BotPage>>(new Set());
+  const [setupRunning, setSetupRunning] = useState(false);
   // SPEC-013 FR-3: once opened, the Agent CLIs tab stays mounted, so its results, ticks and
   // log survive a look at another tab while a run goes on.
   const [clisOpened, setClisOpened] = useState(tab === 'clis');
@@ -87,7 +96,8 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
       if (event.type === 'runtime.status') void refreshStatus();
     });
     const offNavigate = api.onNavigate((next) => {
-      if (isTabOf(BOT_TABS, next)) setTab(next);
+      const name = tabName(next);
+      if (isTabOf(BOT_TABS, name)) setTab(name);
     });
     // SPEC-008 FR-28: Cats Bot Settings can change what this bot follows while
     // the window is open; coming back to it reads the profile again.
@@ -142,17 +152,22 @@ export function SettingsApp({ initialTab, scope }: { initialTab: string | null; 
           {tabs.map((name) => (
             <button
               key={name}
-              className="tab"
+              className={name === 'notes' && scope === 'bot' ? 'tab is-after-rule' : 'tab'}
               data-tab={name}
               aria-selected={tab === name}
               onClick={() => setTab(name)}
             >
               {t(TAB_LABELS[name])}
+              {name === 'brain' && setupRunning
+                ? <i className="tab-mark is-running" aria-label={t('A setup step is running')} />
+                : editedPages.has(name as BotPage) && <i className="tab-mark" aria-label={t('Not saved')} />}
             </button>
           ))}
         </nav>
-        <main className={tab === 'clis' ? 'panels is-flush' : 'panels'}>
-          {tab === 'bot' && profile && <BotTab profile={profile} onSaved={saved} />}
+        <main className="panels">
+          {scope === 'bot' && profile && (
+            <BotPages profile={profile} tab={tab} onSaved={saved} onPages={setEditedPages} onBusy={setSetupRunning} />
+          )}
           {tab === 'notes' && <NotesTab />}
           {tab === 'life' && <LifeTab onSaved={saved} />}
           {tab === 'telegram' && <TelegramTab />}

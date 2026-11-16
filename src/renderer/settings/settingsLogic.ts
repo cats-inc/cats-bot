@@ -28,6 +28,15 @@ import type {
   TelegramSettingsStatus,
 } from '../../core/types.ts';
 import type { BotAction, BotRow, NoteLayer } from '../bridge.ts';
+import {
+  askTitle,
+  carryChoice,
+  currentChoice,
+  desktopControlAllowed,
+  permissionPatch,
+  type PermissionChoice,
+  type StoredPermissions,
+} from './permissionChoices.ts';
 
 /**
  * SPEC-002 FR-1–FR-6, SPEC-003 FR-6: what the settings and first-run pages
@@ -214,53 +223,106 @@ export function botReplyLanguageOptions(
   return [{ value: 'hub', label: follow }, ...hubReplyLanguageOptions(locale)];
 }
 
-// ---- Bot tab ----------------------------------------------------------------------
+// ---- The cat bot's three pages (ADR-030) ------------------------------------------
 
-export interface BotForm {
+/**
+ * What Name and look, Provider and model, and Permissions show. The pages keep only the
+ * owner's edits on top of this, so the profile read again on focus never undoes one.
+ */
+export interface BotSettings {
   name: string;
   avatar: BotAvatar;
+  instructions: string;
+  replyLanguage: BotReplyLanguage;
+  /** The floating Cat, the shell's and not the profile's. */
+  floating: boolean;
   provider: string;
-  model: string | null;
-  modelSelection?: ModelSelection;
   /** Applies only while the provider is Claude Code. */
   claudeInChrome: boolean;
-  instructions: string;
   cwd: string;
-  workspaceAccess: BotPermissions['workspaceAccess'];
-  permissionMode: BotPermissions['permissionMode'];
-  allowedTools: string;
-  replyLanguage: BotReplyLanguage;
+  permission: PermissionChoice;
+  desktopControl: boolean;
 }
 
-export function botForm(profile: BotProfile): BotForm {
+export type BotEdits = Partial<BotSettings>;
+export type BotPage = 'look' | 'brain' | 'perm';
+
+const PAGE_OF: Record<keyof BotSettings, BotPage> = {
+  name: 'look', avatar: 'look', instructions: 'look', replyLanguage: 'look', floating: 'look',
+  provider: 'brain',
+  claudeInChrome: 'perm', cwd: 'perm', permission: 'perm', desktopControl: 'perm',
+};
+
+export function storedPermissions(profile: BotProfile): StoredPermissions {
   return {
-    name: profile.name,
-    avatar: resolveBotAvatar(profile.avatar),
     provider: profile.executionTarget.provider,
-    model: profile.executionTarget.model,
-    ...(profile.executionTarget.modelSelection
-      ? { modelSelection: profile.executionTarget.modelSelection }
-      : {}),
-    claudeInChrome: profile.executionTarget.claudeInChrome === true,
-    instructions: profile.instructions,
-    cwd: profile.permissions.cwd,
+    providerPolicy: profile.providerPolicy,
     workspaceAccess: profile.permissions.workspaceAccess,
     permissionMode: profile.permissions.permissionMode,
-    allowedTools: (profile.permissions.allowedTools ?? []).join(', '),
-    replyLanguage: profile.replyLanguage,
   };
 }
 
-export function parseTools(text: string): string[] {
-  return text.split(',').map((tool) => tool.trim()).filter(Boolean);
+export function botSettings(profile: BotProfile, floating: boolean): BotSettings {
+  return {
+    name: profile.name,
+    avatar: resolveBotAvatar(profile.avatar),
+    instructions: profile.instructions,
+    replyLanguage: profile.replyLanguage,
+    floating,
+    provider: profile.executionTarget.provider,
+    claudeInChrome: profile.executionTarget.claudeInChrome === true,
+    cwd: profile.permissions.cwd,
+    permission: currentChoice(storedPermissions(profile)),
+    desktopControl: profile.desktopControl.enabled,
+  };
 }
 
-/** Only what changed, so an unchanged target or permission never bumps the configuration revision. */
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/** The edits that still differ from what is there; an edit put back is no edit. */
+export function liveEdits(base: BotSettings, edits: BotEdits): BotEdits {
+  const live: BotEdits = {};
+  for (const [key, value] of Object.entries(edits) as Array<[keyof BotSettings, unknown]>) {
+    if (!same(value, base[key])) (live as Record<string, unknown>)[key] = value;
+  }
+  return live;
+}
+
+/** The pages with an edit not yet saved; a model chosen on the menu counts for Provider and model. */
+export function editedPages(base: BotSettings, edits: BotEdits, modelEdited: boolean): Set<BotPage> {
+  const pages = new Set<BotPage>();
+  for (const key of Object.keys(liveEdits(base, edits)) as Array<keyof BotSettings>) pages.add(PAGE_OF[key]);
+  if (modelEdited) pages.add('brain');
+  return pages;
+}
+
 /**
- * SPEC-010 FR-19: what is wrong with the form's text, as translation keys. A value
- * unchanged from the profile is not judged: it predates the rule and keeps working.
+ * A provider chosen: the permission choice goes with it, and desktop control where it cannot stay.
+ * Choosing the saved provider again brings back what is saved, so looking at another changes nothing.
  */
-export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 'instructions'>): { name: string | null; instructions: string | null } {
+export function withProvider(base: BotSettings, view: BotSettings, provider: string): BotEdits {
+  if (provider === base.provider) return { provider, permission: base.permission, desktopControl: base.desktopControl };
+  const permission = carryChoice(view.permission, view.provider, provider);
+  return {
+    provider,
+    permission,
+    ...(view.desktopControl && !desktopControlAllowed(provider, permission) ? { desktopControl: false } : {}),
+  };
+}
+
+/** A permission chosen: desktop control turns off where it cannot stay on. */
+export function withPermission(view: BotSettings, permission: PermissionChoice): BotEdits {
+  return {
+    permission,
+    ...(view.desktopControl && !desktopControlAllowed(view.provider, permission) ? { desktopControl: false } : {}),
+  };
+}
+
+/**
+ * SPEC-010 FR-19: what is wrong with the text, as translation keys. A value unchanged from
+ * the profile is not judged: it predates the rule and keeps working.
+ */
+export function botTextErrors(profile: BotProfile, form: Pick<BotSettings, 'name' | 'instructions'>): { name: string | null; instructions: string | null } {
   const name = normalizeBotName(form.name);
   const persona = normalizeBotPersona(form.instructions);
   const nameProblem = name === normalizeBotName(profile.name) ? null : botNameProblem(name);
@@ -271,74 +333,72 @@ export function botTextErrors(profile: BotProfile, form: Pick<BotForm, 'name' | 
   };
 }
 
-export function botPatch(profile: BotProfile, form: BotForm): BotProfilePatch | null {
+/** The model the save sends: the saved one until the menu is touched (`keepTarget`). */
+export interface ModelTarget {
+  model: string | null;
+  modelSelection?: ModelSelection;
+}
+
+/** Only what changed, so nothing untouched bumps the configuration revision (SPEC-002 FR-2). */
+export function botPatch(profile: BotProfile, view: BotSettings, target: ModelTarget): BotProfilePatch | null {
   const patch: BotProfilePatch = {};
-  const name = form.name.trim();
+  const name = view.name.trim();
   if (name && name !== profile.name.trim()) patch.name = name;
-  if (form.avatar !== resolveBotAvatar(profile.avatar)) patch.avatar = form.avatar;
-  const chrome = form.provider === 'claude' && form.claudeInChrome;
+  if (view.avatar !== resolveBotAvatar(profile.avatar)) patch.avatar = view.avatar;
+  if (view.instructions !== profile.instructions) patch.instructions = view.instructions;
+  if (view.replyLanguage !== profile.replyLanguage) patch.replyLanguage = view.replyLanguage;
+  const chrome = view.provider === 'claude' && view.claudeInChrome;
   if (
-    form.provider !== profile.executionTarget.provider ||
-    form.model !== profile.executionTarget.model ||
-    JSON.stringify(form.modelSelection) !==
-      JSON.stringify(profile.executionTarget.modelSelection) ||
+    view.provider !== profile.executionTarget.provider ||
+    target.model !== profile.executionTarget.model ||
+    !same(target.modelSelection, profile.executionTarget.modelSelection) ||
     chrome !== (profile.executionTarget.claudeInChrome === true)
   ) {
     patch.executionTarget = {
-      provider: form.provider,
-      model: form.model,
-      ...(form.modelSelection ? { modelSelection: form.modelSelection } : {}),
+      provider: view.provider,
+      model: target.model,
+      ...(target.modelSelection ? { modelSelection: target.modelSelection } : {}),
       ...(chrome || profile.executionTarget.claudeInChrome ? { claudeInChrome: chrome } : {}),
     };
   }
-  if (form.instructions !== profile.instructions) patch.instructions = form.instructions;
-  if (form.replyLanguage !== profile.replyLanguage) patch.replyLanguage = form.replyLanguage;
   const permissions: Partial<BotPermissions> = {};
-  const cwd = form.cwd.trim();
+  const cwd = view.cwd.trim();
   if (cwd && cwd !== profile.permissions.cwd) permissions.cwd = cwd;
-  if (form.workspaceAccess !== profile.permissions.workspaceAccess) permissions.workspaceAccess = form.workspaceAccess;
-  if (form.permissionMode !== profile.permissions.permissionMode) permissions.permissionMode = form.permissionMode;
-  const tools = parseTools(form.allowedTools);
-  if (form.permissionMode === 'whitelist' && JSON.stringify(tools) !== JSON.stringify(profile.permissions.allowedTools ?? [])) {
-    permissions.allowedTools = tools;
-  }
+  const choice = permissionPatch(storedPermissions(profile), view.provider, view.permission);
+  if (choice?.providerPolicy !== undefined) patch.providerPolicy = choice.providerPolicy;
+  Object.assign(permissions, choice?.permissions);
   if (Object.keys(permissions).length > 0) patch.permissions = permissions;
+  if (view.desktopControl !== profile.desktopControl.enabled) patch.desktopControl = { enabled: view.desktopControl };
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
-/** What the page tells the owner after a save (SPEC-002 FR-2). */
-export function saveNotice(before: BotProfile, after: BotProfile, patch: BotProfilePatch): string {
+/** What the save bar says saving will do (SPEC-002 FR-2), before it is pressed. */
+export function pendingNotice(profile: BotProfile, view: BotSettings, patch: BotProfilePatch | null, providerLabel: string, floatingChanged: boolean): string[] {
   const lines: string[] = [];
-  if (after.configRevision !== before.configRevision) {
-    lines.push(
-      t(
-        'Each conversation continues in a fresh session that gets a summary of what was said so far.',
-      ),
-    );
+  const providerChanged = view.provider !== profile.executionTarget.provider;
+  if (providerChanged) {
+    lines.push(t('Switching to {provider}: the runtime restarts once the current reply has finished.', { provider: providerLabel }));
+    if (view.permission.ask !== currentChoice(storedPermissions(profile)).ask) {
+      lines.push(t('Permissions become "{choice}".', { choice: askTitle(view.provider, providerLabel, view.permission.ask) }));
+    }
+  } else if (patch?.executionTarget && (patch.executionTarget.claudeInChrome === true) !== (profile.executionTarget.claudeInChrome === true)) {
+    lines.push(patch.executionTarget.claudeInChrome
+      ? t('The runtime restarts with Claude in Chrome on once the current reply has finished.')
+      : t('The runtime restarts with Claude in Chrome off once the current reply has finished.'));
   }
-  if (patch.executionTarget && patch.executionTarget.provider !== before.executionTarget.provider) {
-    lines.push(
-      t('The runtime restarts for {value0} once the current reply has finished.', {
-        value0: patch.executionTarget.provider,
-      }),
-    );
-  } else if (
-    patch.executionTarget &&
-    (after.executionTarget.claudeInChrome === true) !==
-      (before.executionTarget.claudeInChrome === true)
-  ) {
-    lines.push(
-      t(
-        'The runtime restarts with Claude in Chrome {value0} once the current reply has finished.',
-        { value0: after.executionTarget.claudeInChrome ? 'on' : 'off' },
-      ),
-    );
+  const replaces = patch !== null && (patch.executionTarget !== undefined || patch.instructions !== undefined
+    || patch.replyLanguage !== undefined || patch.permissions !== undefined || patch.providerPolicy !== undefined);
+  if (replaces) lines.push(t('Each conversation starts a fresh session with its next message, with a summary of what was said so far.'));
+  else if (patch?.name !== undefined || patch?.avatar !== undefined || floatingChanged) {
+    lines.push(t('The name and look change no conversation.'));
   }
-  // A core still running the previous version keeps nothing it does not know.
-  if (patch.avatar && after.avatar !== patch.avatar) {
-    lines.push(t('This cat bot runs an older version that cannot change its look. Restart it and choose again.'));
-  }
-  return lines.join(' ');
+  if (profile.desktopControl.enabled && !view.desktopControl) lines.push(t('Turning off desktop control revokes every app grant at once.'));
+  return lines;
+}
+
+/** A core still running the previous version keeps nothing it does not know (SPEC-008 FR-29). */
+export function staleLook(patch: BotProfilePatch, after: BotProfile): boolean {
+  return patch.avatar !== undefined && after.avatar !== patch.avatar;
 }
 
 /**
@@ -616,7 +676,7 @@ export function bossCatToolsHint(holder: Pick<BotRow, 'name' | 'provider' | 'pro
     case 'external':
       return { text: t('{name} runs in another program, so it does not get the Boss Cat tools. They come once Cats Bot runs it.', { name: holder.name }), warn: true };
     case 'needsAccess':
-      return { text: t('{provider} gives the Boss Cat tools once its access is set: {name}\'s Settings → Cat bot → Provider access and tools.', { provider, name: holder.name }), warn: true };
+      return { text: t('{provider} gives the Boss Cat tools once it uses its native tools: in {name}\'s Settings → Permissions, choose "Follow {provider}\'s own settings".', { provider, name: holder.name }), warn: true };
     case 'unsupported':
       return { text: t('{provider} does not support the Boss Cat tools. {name} keeps the role and gets them at its next reply after moving to another provider.', { provider, name: holder.name }), warn: true };
     default:

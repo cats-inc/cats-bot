@@ -10,7 +10,7 @@
 | **Related decision** | ADR-002                                                                                                                  |
 | **Related plan**     | [PLAN-002](../plans/PLAN-002-desktop-presence.md)                                                                        |
 | **Pending change**   | [SPEC-008](SPEC-008-hub-and-bots.md) moves first run (FR-1), settings (FR-4) and the floating bot (FR-7) into one hub (PLAN-009) |
-| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a) |
+| **Changed by**       | [SPEC-010](SPEC-010-setup-wizard.md) replaces the first-run page (FR-1) with a wizard, and `setup:providers` no longer scans PATH (FR-3) (PLAN-011); [ADR-027](../decisions/027-open-the-floating-cats-quick-menu-in-its-own-focusable-window.md) adds the floating Cat's quick menu (FR-7a); [ADR-030](../decisions/030-split-a-cat-bots-settings-into-the-wizards-pages-and-ask-two-questions-about-permissions.md) splits the Bot tab into three pages with one save bar (FR-2 to FR-4) |
 
 ## Summary
 
@@ -50,6 +50,12 @@ instead of opening the alert.
    turn (with a handoff summary) per SPEC-001 FR-27, and the page tells the owner so; when the
    provider changes, the runtime restarts only after the turn in progress ends. A change to the name or
    the Cat's look (SPEC-008 FR-29) keeps every session.
+   - Name and look, Provider and model, and Permissions (FR-4) share one save bar (ADR-030, 2026-11-16). It
+     appears with the first edit and says before saving what the save will do. A dot in the rail marks a page with
+     an edit not saved, and an edit survives a look at another tab.
+   - One `updateProfile` carries a provider together with the permissions it allows. An untouched page sends
+     nothing.
+   - Saving waits for its own fields only, never for a CLI to be installed.
 3. FR-3: `listProviders` lists the CLI providers supported by cats-runtime 0.6.1, each one's default
    command (for example antigravity is `agy`) and whether that command is on PATH; `listModels(provider)`
    asks the running runtime for the bot's current provider and reads the catalog shipped with the
@@ -58,8 +64,14 @@ instead of opening the alert.
    uses the provider name as the command.
 4. FR-4: There is one settings window per bot, opened from the floating Cat menu ("Bot settings…", "Manage
    conversations…") and from the ⚙ in a note's title bar, which opens it on the Notes tab like "Manage
-   conversations…" (2026-11-14); its tabs are Bot, Notes, Life, Telegram and Details
-   (the floating Cat, the bot's facts and folder), and it reaches only its own bot. The Life tab holds the
+   conversations…" (2026-11-14); its tabs are Name and look, Provider and model, Permissions, Notes, Life,
+   Telegram and Details (the bot's facts and folder, and the session check), and it reaches only its own bot.
+   - The first three follow the setup wizard's order and use its controls (ADR-030, 2026-11-16).
+     - Name and look: the name, the look, the personality, the reply language and the floating Cat.
+     - Provider and model: the provider cards, the CLI on this computer and its sign-in (SPEC-013 FR-13), the model.
+     - Permissions: whether it asks before it acts and what it can reach, as SPEC-001 FR-30 describes, with Claude
+       in Chrome and desktop control (SPEC-006 BDC-02) where they apply.
+   - Opening the window on `bot`, the tab before 2026-11-16, opens Name and look. The Life tab holds the
    heartbeat switch, its mode and Cats Desktop's daily rhythm (SPEC-011 FR-12). Cats Bot Settings,
    the hub's own window (tray "Settings…"), has General (display language, reply language, start at
    login, version and updates, the data folder) and Bots (SPEC-008 FR-5, FR-18, FR-28; PLAN-010).

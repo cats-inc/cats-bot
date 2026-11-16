@@ -126,7 +126,7 @@ it or spread them over its display, and undo that until one of them is moved,
 resized or put on the desktop. Its Hide
 this cat hides the avatar; the hub tray’s Show floating cats reveals every running
 Cat. Clicking the tray icon opens Cats Bot Settings on its Cat bots tab.
-A Cat has one of ten looks, chosen on the setup page or the Cat bot tab of its
+A Cat has one of ten looks, chosen on the setup page or the Name and look page of its
 settings. A new bot starts on a look no other bot uses; sharing one is allowed.
 Check for Updates in the tray opens a native dialog with the result and available
 actions. It does not open Settings.
@@ -307,7 +307,8 @@ do nothing on macOS and Linux.
 
 `init` takes `--model`, `--id`, `--cwd` (the CLI's working directory; default is
 the bot's own `filespace/`, or `workspace/` for bots made before 2026-11-16) and
-`--permission-mode skip|whitelist|default`.
+`--permission-mode default|skip`. The tool allowlist was removed (ADR-030); a bot
+that had one moves to asking first the next time it starts.
 The provider is the CLI's product name as cats-runtime knows it (`claude`,
 `codex`, `copilot`, `pi`, …); that CLI must be installed and logged in.
 

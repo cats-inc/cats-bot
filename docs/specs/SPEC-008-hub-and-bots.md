@@ -289,7 +289,7 @@ descriptions for the model and this documentation say "bot".
     use, so a System display language shows what it resolved to.
     - The hub keeps the choice as `replyLanguage` in `hub-state.json`. It
       defaults to `unspecified`, and a file without it reads as that.
-    - Each bot's Bot tab has its own reply language. It defaults to *Follow
+    - Each bot's Name and look page has its own reply language. It defaults to *Follow
       Cats Bot Settings (<language>)*, which names what Cats Bot Settings
       resolves to. Below it are the same choices as the hub's. The profile
       keeps the choice as `replyLanguage` (`hub` by default).
@@ -322,7 +322,7 @@ descriptions for the model and this documentation say "bot".
     pattern and face shape. There are more looks than the bot cap (FR-6), so a
     new bot always has one no active bot uses. The profile keeps the choice as
     `avatar`.
-    - The first-run page, the New bot page and the Bot tab offer all ten. A
+    - The first-run page, the New bot page and the Name and look page offer all ten. A
       bot's floating Cat, its settings window and its replies in a note show
       its look; Cats Bot Settings and the app and tray icons keep the default
       (the tray as a plain silhouette of it).

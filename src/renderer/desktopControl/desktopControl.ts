@@ -24,8 +24,7 @@ const REASONS: Record<string, string> = {
   no_turn_yet: 'it starts with your next message',
   session_changed: 'it starts with your next message',
   policy_unknown: 'the session has not reported its approval policy yet',
-  policy_not_explicit:
-    'choose "Choose access and approval separately" under Provider access and tools in Settings',
+  policy_not_explicit: 'choose "Ask me first" under Permissions in Settings',
   policy_preapproves_tools: 'the approval policy runs tools without asking; choose one that asks',
   no_tool_approval_host: 'this agent CLI cannot ask you before each tool call',
 };
