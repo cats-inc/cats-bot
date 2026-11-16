@@ -229,7 +229,7 @@ export async function runCoreCommand(target: CoreCommandTarget, command: string,
       await target.stopDesktopControl();
       return target.desktopControlState();
     case 'stopStandingGrants':
-      // ADR-027: a note stops its own conversation; the tray and the hotkey stop every conversation.
+      // ADR-028: a note stops its own conversation; the tray and the hotkey stop every conversation.
       await target.stopStandingGrants(asString(args[0], 'conversationId'));
       return target.providerInteractions(asString(args[0], 'conversationId'));
     case 'stopAllStandingGrants':

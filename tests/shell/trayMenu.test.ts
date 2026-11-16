@@ -460,7 +460,7 @@ test('unreadable Cat status preserves recovery and emergency Stop without a fals
   assert.equal(buildHubTrayTooltip(model), 'Cats Bot (1 cat bot) - Some Cat status is unavailable');
 });
 
-test('while a cat bot may act without asking, the Hub tray puts its Stop first (ADR-027)', () => {
+test('while a cat bot may act without asking, the Hub tray puts its Stop first (ADR-028)', () => {
   const clicks: string[] = [];
   const mochi = menuFixture('Mochi', clicks);
   const nori = menuFixture('Nori', clicks);

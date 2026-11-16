@@ -285,7 +285,8 @@ does not establish browser/desktop helper availability or successful invocation.
   owns the frameless sticky-note windows (close hides, bounds and
   always-on-top persist in `shell-state.json`); `tray.ts` and `trayMenu.ts`
   the tray and its menu. `assets/preload.cjs` is the sandboxed contextBridge.
-  The pages (notes, settings and first run, the floating cat) live in
+  The pages (notes, settings and first run, the floating cat and its quick
+  menu, ADR-027) live in
   `src/renderer/` and are built by Vite into `dist/renderer/` (ADR-003); they
   keep no durable state, type `window.catsBot` in `src/renderer/bridge.ts` and
   take only types from the core. The renderer never sees the runtime's URL

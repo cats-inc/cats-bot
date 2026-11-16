@@ -5,7 +5,7 @@ import { activeGrants, grantLine } from './grantText.ts';
 export { activeGrants, grantCategoryText, grantLine, STANDING_GRANT_MINUTES } from './grantText.ts';
 
 /**
- * ADR-027: what the owner granted, always in view, with Stop. Stop ends every grant of this
+ * ADR-028: what the owner granted, always in view, with Stop. Stop ends every grant of this
  * conversation and cancels its turn; Escape also interrupts Kimi Computer Use's own input.
  */
 export function StandingGrantsBar({ grants, busy, error = false, onStop }: {

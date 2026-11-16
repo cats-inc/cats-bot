@@ -48,7 +48,7 @@ for (const provider of ['muse', 'grok', 'antigravity', 'kimi']) {
   });
 }
 
-test('packed Runtime lets an owner grant Kimi commands once, never for Telegram, until Stop (ADR-027)', { timeout: 120_000 }, async () => {
+test('packed Runtime lets an owner grant Kimi commands once, never for Telegram, until Stop (ADR-028)', { timeout: 120_000 }, async () => {
   const home = makeTempHome('cats-hosted-kimi-grants-');
   const { core } = openTestBot({ botsHome: home.botsHome, profile: { provider: 'kimi' }, core: {
     runtime: { runtimeEntry: resolveRuntimeEntry(), providerCommand: process.execPath,

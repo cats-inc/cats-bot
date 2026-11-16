@@ -1,7 +1,7 @@
 import { t } from '../localeStore.ts';
 import type { GrantCategory, StandingGrant } from '../../core/types.ts';
 
-/** ADR-027: the time a card's "for 30 minutes" grants. */
+/** ADR-028: the time a card's "for 30 minutes" grants. */
 export const STANDING_GRANT_MINUTES = 30;
 
 /** What one category lets the provider do without asking, as the owner reads it. */

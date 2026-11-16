@@ -2,9 +2,12 @@ import { app, BrowserWindow, screen } from 'electron';
 
 import type { BotHostEvent } from '../../core/types.ts';
 import type { BotAvatar } from '../../shared/avatars.ts';
+import type { Locale } from '../../shared/language.ts';
 import { bubbleText, FLOATING_CAT, FLOATING_SIZE, floatingInputRegions, placeFloating } from './floatingPlacement.ts';
 import { linuxWindowsAreX11 } from './linuxWindowing.ts';
 import { guardNavigation } from './navigation.ts';
+import type { QuickMenuItem } from './quickMenu.ts';
+import { QuickMenuWindow } from './quickMenuWindow.ts';
 import { pageUrl, type PageWindowOptions } from './settingsWindow.ts';
 import { applyWindowIdentity } from './windowIdentity.ts';
 import type { FloatingBotState } from './viewState.ts';
@@ -18,6 +21,8 @@ import { sharedX11InputShape, x11InputRects, type InputRect, type WindowInputSha
  * pointer is over the cat or its bubble, which the page reports. Linux cannot
  * forward moves through an ignored window, so there the page reports its
  * visible regions and they become the window's X11 input shape (ADR-014).
+ * Its quick menu (ADR-027) is a window of its own, which closes whenever the
+ * cat moves, hides or goes.
  */
 
 export interface FloatingBubble {
@@ -34,6 +39,8 @@ export interface FloatingBotOptions extends PageWindowOptions {
   avatar(): BotAvatar;
   /** SPEC-008 FR-17: the bot's place among the hub's bots, for a cat that was never moved. */
   slot?: number;
+  /** SPEC-008 FR-32: whether a single click opens the quick menu; without it, clicks behave as before. */
+  quickMenu?(): boolean;
 }
 
 export class FloatingBot {
@@ -42,9 +49,49 @@ export class FloatingBot {
   private watchingDisplays = false;
   private inputShape: WindowInputShape | null | undefined;
   private inputRegions: readonly InputRect[] = [FLOATING_CAT];
+  /** ADR-027: the quick menu beside the cat (Windows and macOS). */
+  readonly quickMenu: QuickMenuWindow;
+  /** Linux shows the quick menu as a native menu; the shell says while one is open. */
+  private nativeQuickMenuOpen = false;
 
   constructor(options: FloatingBotOptions) {
     this.options = options;
+    this.quickMenu = new QuickMenuWindow({ ...options, changed: () => this.sendQuickMenuState() });
+  }
+
+  private get quickMenuEnabled(): boolean {
+    return this.options.quickMenu?.() ?? false;
+  }
+
+  /** Tells the page whether clicks open the menu and whether it is open. */
+  sendQuickMenuState(): void {
+    this.browserWindow?.webContents.send('floating:quickMenu', {
+      enabled: this.quickMenuEnabled,
+      open: this.quickMenu.open || this.nativeQuickMenuOpen,
+    });
+  }
+
+  /** SPEC-008 FR-32: the hub's preference changed. */
+  quickMenuChanged(): void {
+    if (!this.quickMenuEnabled) this.quickMenu.close();
+    this.sendQuickMenuState();
+  }
+
+  /** ADR-027: `pressedAt` is when the click that asked for it began. */
+  async openQuickMenu(items: QuickMenuItem[], pressedAt: number, labels: { locale: Locale; title: string }): Promise<void> {
+    const window = this.browserWindow;
+    if (!window || !window.isVisible() || !this.quickMenuEnabled) return;
+    await this.quickMenu.show(window, items, pressedAt, labels);
+  }
+
+  /** Linux: a native quick menu opened or closed. */
+  setNativeQuickMenuOpen(open: boolean): void {
+    this.nativeQuickMenuOpen = open;
+    this.sendQuickMenuState();
+  }
+
+  closeQuickMenu(): void {
+    this.quickMenu.close();
   }
 
   private readonly applyInputRegions = (): void => {
@@ -62,6 +109,7 @@ export class FloatingBot {
   private readonly keepReachable = (): void => {
     const window = this.browserWindow;
     if (!window) return;
+    this.quickMenu.close();
     if (process.platform === 'linux') this.applyInputRegions();
     const [x = 0, y = 0] = window.getPosition();
     const next = placeFloating({ x, y }, screen.getAllDisplays(), screen.getPrimaryDisplay());
@@ -149,6 +197,7 @@ export class FloatingBot {
     resetInput();
     // Forwarded moves go to the page's own child window, which a load replaces.
     window.webContents.on('did-finish-load', resetInput);
+    window.webContents.on('did-finish-load', () => this.sendQuickMenuState());
     // The first request can reach the server before the window does; showing is always after it.
     if (process.platform === 'linux') window.on('show', this.applyInputRegions);
     window.on('move', () => this.remember());
@@ -156,6 +205,7 @@ export class FloatingBot {
       if (this.window === window) {
         this.window = null;
         this.watchDisplays(false);
+        this.quickMenu.close();
       }
     });
     this.watchDisplays(true);
@@ -182,6 +232,7 @@ export class FloatingBot {
 
   /** SPEC-003 FR-9: out of a region screenshot, without changing whether it is shown; returns how to give it back. */
   hideForScreenshot(): () => void {
+    this.quickMenu.close();
     const window = this.browserWindow;
     if (!window || !window.isVisible()) return () => {};
     window.hide();
@@ -194,6 +245,7 @@ export class FloatingBot {
     const state = this.options.state();
     state.visible = false;
     this.options.persist();
+    this.quickMenu.close();
     this.browserWindow?.hide();
   }
 
@@ -216,6 +268,7 @@ export class FloatingBot {
   moveTo(x: number, y: number): void {
     const window = this.browserWindow;
     if (!window || !Number.isFinite(x) || !Number.isFinite(y)) return;
+    this.quickMenu.close();
     // setPosition at a fractional scale factor grows the window a pixel at a time; fixed bounds do not.
     window.setBounds({ x: Math.round(x), y: Math.round(y), ...FLOATING_SIZE });
     this.remember();
@@ -243,6 +296,7 @@ export class FloatingBot {
 
   destroy(): void {
     this.watchDisplays(false);
+    this.quickMenu.close();
     this.browserWindow?.destroy();
     this.window = null;
   }

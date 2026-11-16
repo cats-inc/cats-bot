@@ -256,7 +256,7 @@ export class BotCore implements BotHostApi {
   private recovering = false;
   private started = false;
   private stopped = false;
-  /** ADR-027: while above zero, Stop is ending grants and no send may use them. */
+  /** ADR-028: while above zero, Stop is ending grants and no send may use them. */
   private stoppingGrants = 0;
 
   private constructor(options: BotCoreOptions, profile: BotProfile) {
@@ -373,7 +373,7 @@ export class BotCore implements BotHostApi {
         }
       },
       prepareSend: async (item, sessionId) => ({ ...await this.prepareSend(item.conversationId, sessionId),
-        // ADR-027: only a message the owner sent in person (note or local CLI) may use standing grants;
+        // ADR-028: only a message the owner sent in person (note or local CLI) may use standing grants;
         // Telegram, heartbeats, schedules and recovery reruns keep every approval card.
         // An answer to the bot's own question continues whatever turn asked it, which may be a background one.
         // While Stop is ending grants, a queued message that starts in the meantime never uses them.
@@ -1281,7 +1281,7 @@ export class BotCore implements BotHostApi {
 
   async providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
     const record = this.conversations.require(this.resolveConversationId(conversationId));
-    // ADR-027: between turns the note still shows standing grants; read them from the session itself.
+    // ADR-028: between turns the note still shows standing grants; read them from the session itself.
     const sessionId = record.attachment.sessionId;
     const client = this.client();
     if (sessionId && client && this.running?.item.conversationId !== record.id) {
@@ -1292,7 +1292,7 @@ export class BotCore implements BotHostApi {
   }
 
   /**
-   * ADR-027: the owner's Stop. Cancels the turn running in a granted conversation first, then ends the grants of
+   * ADR-028: the owner's Stop. Cancels the turn running in a granted conversation first, then ends the grants of
    * one conversation's session, or of every granted conversation (tray, hotkey). Queued work stays queued, and a
    * conversation without grants is left alone. Throws unless Runtime confirmed every grant ended.
    */
@@ -1326,7 +1326,7 @@ export class BotCore implements BotHostApi {
     if (unconfirmed.length) throw new Error('Runtime did not confirm that every grant ended. Stop again, or quit Cats Bot to end them all.');
   }
 
-  /** ADR-027: the conversations whose grants the core last saw, for a presenting host that attaches later. */
+  /** ADR-028: the conversations whose grants the core last saw, for a presenting host that attaches later. */
   async standingGrantConversations(): Promise<string[]> {
     return this.interactions.grantedConversations();
   }

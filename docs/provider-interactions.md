@@ -145,7 +145,7 @@ asking. Kimi's computer use is its own plugin, set up by the owner:
 Each computer-use call then asks in the conversation. Choose **Allow for this conversation** or
 **Allow for 30 minutes** to stop being asked for that kind of action (computer use, commands or file
 changes, each separately) in messages you send yourself; Telegram messages, heartbeats and schedules
-always ask (ADR-027). While a grant is in force the note shows it with **Stop**, the tray offers
+always ask (ADR-028). While a grant is in force the note shows it with **Stop**, the tray offers
 **Stop actions allowed without asking**, and Ctrl+Alt+Shift+S stops every cat bot from anywhere;
 `cats-bot grants home --stop` does the same from a terminal. A computer-use grant is as broad as you at
 the keyboard: through the desktop Kimi can also start programs and change files. Settings → Provider

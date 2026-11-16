@@ -13,7 +13,7 @@ type Remote<F> = F extends (...args: infer A) => infer R ? (...args: A) => Promi
 export type RemoteBotCore = { [K in Exclude<CoreCommand, 'stopAllDesktopControl' | 'stopAllStandingGrants'>]: Remote<CoreCommandTarget[K]> } & {
   /** Every conversation's desktop control, as the tray stops it (SPEC-006 BDC-10). */
   stopAllDesktopControl(): Promise<DesktopControlState>;
-  /** ADR-027: every conversation's standing grants, as the tray and the Stop hotkey end them. */
+  /** ADR-028: every conversation's standing grants, as the tray and the Stop hotkey end them. */
   stopAllStandingGrants(): Promise<null>;
   subscribe(listener: (event: BotHostEvent) => void): () => void;
 };

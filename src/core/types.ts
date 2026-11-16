@@ -478,9 +478,9 @@ export interface BotHostApi {
   respondDesktopGrant(conversationId: string, requestId: string, decision: DesktopGrantDecision): Promise<void>;
   /** SPEC-006 BDC-10 / SPEC-133 DC-12: without a conversation, stops every conversation. */
   stopDesktopControl(conversationId?: string): Promise<void>;
-  /** ADR-027: ends standing grants and cancels the turn; without a conversation, every conversation. */
+  /** ADR-028: ends standing grants and cancels the turn; without a conversation, every conversation. */
   stopStandingGrants(conversationId?: string): Promise<void>;
-  /** ADR-027: conversations whose standing grants the core last saw (a presenting host's tray and hotkey). */
+  /** ADR-028: conversations whose standing grants the core last saw (a presenting host's tray and hotkey). */
   standingGrantConversations(): Promise<string[]>;
   quit(): Promise<void>;
 }
@@ -524,7 +524,7 @@ export type BotHostEvent =
    * and `holding` says whether it (or, without a conversation, any conversation) holds control.
    */
   | { type: 'desktop.control'; conversationId: string | null; pendingRequests: number; holding: boolean; notify?: boolean }
-  /** ADR-027: the conversations holding standing grants now; the tray and the Stop hotkey follow it. */
+  /** ADR-028: the conversations holding standing grants now; the tray and the Stop hotkey follow it. */
   | { type: 'grants.changed'; conversations: string[] };
 
 // ---- Command results the presentation reads (SPEC-001 FR-32, SPEC-002) ----------
@@ -883,7 +883,7 @@ export interface BotInteractionSnapshot {
   supported: boolean;
   reason?: string;
   interactions: BotInteraction[];
-  /** ADR-027: what the owner granted in this conversation's session; the note shows it with Stop. */
+  /** ADR-028: what the owner granted in this conversation's session; the note shows it with Stop. */
   standingGrants?: StandingGrant[];
 }
 export interface BotInteractionResponse extends InteractionResponse {

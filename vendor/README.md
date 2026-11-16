@@ -43,7 +43,7 @@ The Kimi Code selection (ADR-025) moves the pin to Runtime main at
 A Kimi bot always runs on that hosted target; print mode is never selected for it.
 The pin adds no Bot profile, journal or conversation format change.
 
-ADR-027 moves the pin to Runtime main at `b95d9294a91164c6225beb717e42249288594239`, which adds
+ADR-028 moves the pin to Runtime main at `b95d9294a91164c6225beb717e42249288594239`, which adds
 #230 (Runtime ADR-055): standing grants for computer use, commands and file changes, used only by
 sends the Bot marks as owner-started, revoked by Stop. It carries #229 too, a Muse catalog-probe
 fallback that does not change Bot behavior.

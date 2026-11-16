@@ -6,7 +6,7 @@ import { defineConfig } from 'vite';
 import { thirdPartyNotices } from './scripts/third-party-notices.ts';
 
 /**
- * ADR-003: the renderer pages (note, settings and first-run, floating cat)
+ * ADR-003: the renderer pages (note, settings and first-run, floating cat and its quick menu)
  * are built from `src/renderer` into `dist/renderer`, which the shell loads
  * over file:// with relative URLs. The page names and their query strings
  * (`?conversation=`, `?mode=setup`, `?tab=`) are the shell's contract.
@@ -29,6 +29,8 @@ export default defineConfig({
         note: `${root}note.html`,
         settings: `${root}settings.html`,
         floating: `${root}floating.html`,
+        // ADR-027: the floating cat's quick menu, a window of its own.
+        quickMenu: `${root}quickMenu.html`,
         // SPEC-003 FR-9: one overlay per display while a region screenshot is taken.
         screenshotOverlay: `${root}screenshotOverlay.html`,
       },

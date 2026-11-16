@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { activeGrants, grantCategoryText, STANDING_GRANT_MINUTES } from '../../src/renderer/interactions/grantText.ts';
 
-test('the note shows only grants still in force, and names each kind of action (ADR-027)', () => {
+test('the note shows only grants still in force, and names each kind of action (ADR-028)', () => {
   const now = Date.parse('2026-11-16T10:00:00.000Z');
   const grants = [
     { category: 'computer_use' as const, until: 'session' as const, grantedAt: '2026-11-16T09:00:00.000Z' },

@@ -6,6 +6,7 @@
 
 | Document | Date | Topic | Summary |
 |----------|------|-------|---------|
+| [Avatar quick menu](2026-11-16-avatar-quick-menu.md) | 2026-11-16 | Single-click quick menu | Windows native spike and acceptance: a separate focusable menu window takes focus after a click on the unfocusable Cat and blurs on outside clicks; click counts; macOS/Linux boundary; evidence for ADR-027 |
 | [Agent memory architecture survey](2026-11-11-agent-memory-architecture-survey.md) | 2026-11-11 | Conversation storage and long-term memory | Source read of OpenClaw, Hermes Agent and Paperclip; Bot's JSONL access patterns, tool reach and privacy constraints; node:sqlite, CJK bigram and Windows WAL probes; evidence for ADR-021/022 |
 | [Avatar menu focus](2026-11-02-avatar-menu-focus.md) | 2026-11-02 | Outside-click dismissal | Windows native reproduction, temporary menu-owner focus and the macOS validation boundary |
 | [Runtime catalog consumer validation](2026-11-01-runtime-catalog-consumer-validation.md) | 2026-11-01 | Five-provider Runtime catalog consumer | New Terra, exact shared labels/controls, isolated candidate package and 18 focused tests |

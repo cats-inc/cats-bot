@@ -156,7 +156,7 @@ export function InteractionCard({
     }
   };
   const submit = (event: FormEvent) => { event.preventDefault(); void send('accept'); };
-  // A contact note answers only for its contact's turn, never for longer (ADR-027).
+  // A contact note answers only for its contact's turn, never for longer (ADR-028).
   const grantable = !choicesOnly && Boolean(i.prompt?.grantCategory) && Boolean(i.prompt?.choices?.length);
   const grantTitle = i.prompt?.grantCategory
     ? t('Lets it {what} without asking in your own messages until then or until you press Stop', { what: grantCategoryText(i.prompt.grantCategory) })
@@ -238,7 +238,7 @@ export function InteractionCard({
                   {i.kind === 'mcp_url' ? t('I completed the steps') : t('Submit response')}
                 </button>
               )}
-              {/* ADR-027: approve this kind of request once for longer, so the owner need not keep clicking. */}
+              {/* ADR-028: approve this kind of request once for longer, so the owner need not keep clicking. */}
               {grantable && (
                 <>
                   <button type="button" className="grant-button" title={grantTitle} onClick={() => void send('accept', i.prompt!.choices![0]!.id, { until: 'session' })}>

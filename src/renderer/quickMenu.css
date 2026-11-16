@@ -1,0 +1,105 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+  font: 13px/1.4 "Segoe UI", system-ui, sans-serif;
+  color: #2b2a26;
+  user-select: none;
+}
+
+.menu {
+  position: absolute;
+  inset: 0;
+}
+
+/*
+ * One item: the bubble's paper (floating.css), cut short with an ellipsis. The
+ * page sets each item's place and size, and where the cat's head is from it
+ * (--head-x, --head-y), so the item can turn out from the head.
+ */
+.item {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid #f1e3a6;
+  border-radius: 17px;
+  background: #fff8d6;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  box-shadow: 0 2px 5px rgba(60, 40, 10, 0.25);
+  cursor: var(--paw-cursor);
+  transform-origin: var(--head-x) var(--head-y);
+  animation: fan-out 240ms cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+  animation-delay: var(--delay);
+}
+
+.item:hover,
+.item:focus-visible {
+  background: #ffefb0;
+  border-color: #e3c25a;
+  outline: none;
+}
+
+.item.home {
+  font-weight: 600;
+}
+
+.item.new {
+  border-style: dashed;
+  color: #7b7560;
+}
+
+.label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* The cat's own unread badge (floating.css). */
+.unread {
+  flex: none;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: #d8453b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 20px;
+  text-align: center;
+}
+
+/* From the head, a little turned, out to its place. */
+@keyframes fan-out {
+  from {
+    opacity: 0;
+    transform: rotate(var(--turn)) scale(0.45);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .item {
+    animation: fade-in 120ms ease-out both;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
