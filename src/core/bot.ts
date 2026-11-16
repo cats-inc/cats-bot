@@ -268,6 +268,7 @@ export class BotCore implements BotHostApi {
           );
         }
       },
+      (conversations) => this.bus.emit({ type: 'grants.changed', conversations }),
     );
     this.control = new HostControlServer(this.paths.root, this);
     this.channel = new HostChannelServer(this.paths.root, this, {
@@ -363,7 +364,10 @@ export class BotCore implements BotHostApi {
           this.record({ ...item, error: undefined });
         }
       },
-      prepareSend: (item, sessionId) => this.prepareSend(item.conversationId, sessionId),
+      prepareSend: async (item, sessionId) => ({ ...await this.prepareSend(item.conversationId, sessionId),
+        // ADR-026: only a message the owner sent in person (note or local CLI) may use standing grants;
+        // Telegram, heartbeats, schedules and recovery reruns keep every approval card.
+        ...(item.kind === 'owner_message' && item.source === 'owner' ? { standingGrants: true as const } : {}) }),
       log: this.log,
       ...(options.turnRetry ? { delays: options.turnRetry } : {}),
     });
@@ -1251,9 +1255,34 @@ export class BotCore implements BotHostApi {
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
   }
 
-  providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
+  async providerInteractions(conversationId: string): Promise<BotInteractionSnapshot> {
     const record = this.conversations.require(this.resolveConversationId(conversationId));
+    // ADR-026: between turns the note still shows standing grants; read them from the session itself.
+    const sessionId = record.attachment.sessionId;
+    const client = this.client();
+    if (sessionId && client && this.running?.item.conversationId !== record.id) {
+      try { this.interactions.setGrants(record.id, (await client.interactions(sessionId)).standingGrants); }
+      catch { /* An unreachable Runtime holds no grants for this view. */ this.interactions.setGrants(record.id, []); }
+    }
     return this.interactions.snapshot(record.id);
+  }
+
+  /**
+   * ADR-026: the owner's Stop. Ends the standing grants of one conversation's session, or of every
+   * conversation (tray, hotkey), and cancels the turn running there. Runtime's cancel ends the provider
+   * process, which for Kimi also ends a running computer-use cell.
+   */
+  async stopStandingGrants(conversationId?: string): Promise<void> {
+    const ids = conversationId ? [this.conversations.require(this.resolveConversationId(conversationId)).id]
+      : [...new Set([...this.interactions.grantedConversations(), ...(this.running ? [this.running.item.conversationId] : [])])];
+    const client = this.client();
+    for (const id of ids) {
+      const sessionId = this.conversations.get(id)?.attachment.sessionId;
+      if (sessionId && client) await client.revokeStandingGrants(sessionId).catch(() => undefined);
+      this.interactions.setGrants(id, []);
+      if (this.running?.item.conversationId === id) await this.cancelTurn(id);
+    }
+    this.log(`standing grants stopped in ${ids.length} conversation(s)`);
   }
 
   async respondProviderInteraction(conversationId: string, interactionId: string, response: BotInteractionResponse): Promise<void> {

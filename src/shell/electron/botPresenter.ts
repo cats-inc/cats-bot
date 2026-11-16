@@ -30,6 +30,8 @@ export interface PresenterHost {
   /** The hub's display language (FR-18). */
   locale(): Locale;
   refreshTray(): void;
+  /** ADR-026: some bot's standing grants changed; the hub keeps its Stop hotkey in step. */
+  grantsChanged?(): void;
   /** Every event of this bot's core, after its windows had it. */
   event?(presenter: BotPresenter, event: BotHostEvent): void;
   /** A `cats-bot quit` handed to this bot's core. */
@@ -147,8 +149,12 @@ export class BotPresenter {
       awaitingOwner: status.awaitingOwner,
       floatingVisible: this.windows.shellState.floatingBot.visible,
       desktopControl,
+      grantsActive: this.grantedConversations.length > 0,
     };
   }
+
+  /** ADR-026: conversations holding standing grants, as the core last reported. */
+  grantedConversations: string[] = [];
 
   private async showBubble(conversationId: string, text: string): Promise<void> {
     const [profile, conversations] = await Promise.all([this.core.getProfile(), this.core.listConversations()]);
@@ -166,6 +172,11 @@ export class BotPresenter {
       if (event.notify && !this.windows.isFocused(event.conversationId)) {
         void this.showBubble(event.conversationId, this.t('The provider is waiting for your response.'));
       }
+      refresh();
+    }
+    if (event.type === 'grants.changed') {
+      this.grantedConversations = [...event.conversations];
+      this.host.grantsChanged?.();
       refresh();
     }
     if (event.type === 'desktop.control') {

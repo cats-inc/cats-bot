@@ -67,6 +67,8 @@ export interface HostCommands {
   setConversationDesktopControl: { args: [conversationId: string, enabled: boolean]; result: DesktopControlState };
   respondDesktopGrant: { args: [conversationId: string, requestId: string, decision: DesktopGrantDecision]; result: DesktopControlState };
   stopDesktopControl: { args: [conversationId: string]; result: DesktopControlState };
+  /** ADR-026: ends this conversation's standing grants and cancels its turn. */
+  stopStandingGrants: { args: [conversationId: string]; result: BotInteractionSnapshot };
 }
 
 export type HostCommandName = keyof HostCommands;
@@ -98,6 +100,7 @@ export const BRIDGE_COMMANDS = [
   'telegramStatus',
   'setTelegramToken',
   'desktopControlState', 'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
+  'stopStandingGrants',
 ] as const satisfies readonly HostCommandName[];
 
 /** Where a note lives (SPEC-002 FR-8); the shell's `NOTE_LAYERS`. */

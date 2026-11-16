@@ -1,4 +1,5 @@
 import { t, useI18n } from '../i18n.ts';
+import { grantCategoryText, STANDING_GRANT_MINUTES } from './grantText.ts';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { BotInteraction, InteractionAnswer, InteractionField } from '../../core/types.ts';
 
@@ -103,7 +104,7 @@ export function InteractionCard({
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
   const active = i.status === 'pending' && Date.parse(i.expiresAt) > now;
   useEffect(() => { if (!active) { form.current?.reset(); attempt.current = null; } }, [active]);
-  const send = async (action: InteractionAnswer['action'], choice?: string) => {
+  const send = async (action: InteractionAnswer['action'], choice?: string, standingGrant?: InteractionAnswer['standingGrant']) => {
     if (!active || busy) return;
     if (action === 'accept' && !form.current?.reportValidity()) return;
     if (action === 'accept' && choicesOnly && i.prompt?.fields?.some((f) => f.required && isTypedField(f))) {
@@ -111,7 +112,7 @@ export function InteractionCard({
       return;
     }
     const data = new FormData(form.current!);
-    const answer: InteractionAnswer = { action, ...(choice ? { choice } : {}) };
+    const answer: InteractionAnswer = { action, ...(choice ? { choice } : {}), ...(standingGrant ? { standingGrant } : {}) };
     if (action === 'accept') {
       if (i.prompt?.fields?.length) {
         const values: NonNullable<InteractionAnswer['values']> = Object.create(null);
@@ -155,6 +156,11 @@ export function InteractionCard({
     }
   };
   const submit = (event: FormEvent) => { event.preventDefault(); void send('accept'); };
+  // A contact note answers only for its contact's turn, never for longer (ADR-026).
+  const grantable = !choicesOnly && Boolean(i.prompt?.grantCategory) && Boolean(i.prompt?.choices?.length);
+  const grantTitle = i.prompt?.grantCategory
+    ? t('Lets it {what} without asking in your own messages until then or until you press Stop', { what: grantCategoryText(i.prompt.grantCategory) })
+    : undefined;
   return (
     <section className="provider-card" aria-label={t('Provider request')}>
       <strong>{i.prompt?.title ?? `Provider ${i.kind.replaceAll('_', ' ')}`}</strong>
@@ -232,9 +238,26 @@ export function InteractionCard({
                   {i.kind === 'mcp_url' ? t('I completed the steps') : t('Submit response')}
                 </button>
               )}
+              {/* ADR-026: approve this kind of request once for longer, so the owner need not keep clicking. */}
+              {grantable && (
+                <>
+                  <button type="button" className="grant-button" title={grantTitle} onClick={() => void send('accept', i.prompt!.choices![0]!.id, { until: 'session' })}>
+                    {t('Allow for this conversation')}
+                  </button>
+                  <button type="button" className="grant-button" title={grantTitle} onClick={() => void send('accept', i.prompt!.choices![0]!.id,
+                    { until: 'time', durationMs: STANDING_GRANT_MINUTES * 60_000 })}>
+                    {t('Allow for {minutes} minutes', { minutes: String(STANDING_GRANT_MINUTES) })}
+                  </button>
+                </>
+              )}
               <button type="button" onClick={() => void send('decline')}>
                 {t('Decline')}
               </button>
+              {grantable && i.prompt?.grantCategory === 'computer_use' && (
+                <p className="hint warn grant-warning">
+                  {t('Operating the desktop is as broad as you at the keyboard: it can also start programs and change files.')}
+                </p>
+              )}
               <button type="button" onClick={() => void send('cancel')}>
                 {t('Cancel request')}
               </button>

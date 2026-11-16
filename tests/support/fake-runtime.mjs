@@ -65,7 +65,7 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function handleMessage(req, res, session, body) {
   const message = String(body.message ?? '');
-  calls.push({ op: 'message', id: session.id, message });
+  calls.push({ op: 'message', id: session.id, message, ...(body.standingGrants === true ? { standingGrants: true } : {}) });
   if (session.unavailable) {
     return json(res, 410, { error: 'The provider session can no longer be resumed.', code: UNAVAILABLE });
   }
@@ -322,12 +322,29 @@ const server = createServer(async (req, res) => {
     sessions.set(session.id, session);
     return json(res, 200, view(session));
   }
+  // Runtime ADR-055: a session's standing grants, revoked by DELETE (no FAKE flag needed).
+  const grantsRoute = /^\/sessions\/([^/]+)\/interactions\/grants$/u.exec(path);
+  if (grantsRoute && req.method === 'DELETE') {
+    const session = sessions.get(grantsRoute[1]);
+    if (!session) return json(res, 404, {});
+    calls.push({ op: 'revoke_grants', id: session.id });
+    session.standingGrants = [];
+    return json(res, 200, { version: 1, sessionId: session.id, workerGeneration: session.generation, revision: 0, interactions: [], standingGrants: [] });
+  }
+  if (grantsRoute && req.method === 'POST') {
+    // Test-only: seed grants the way an owner's card answer would.
+    const session = sessions.get(grantsRoute[1]);
+    if (!session) return json(res, 404, {});
+    session.standingGrants = (await readBody(req)).standingGrants ?? [];
+    return json(res, 200, { standingGrants: session.standingGrants });
+  }
   const control = /^\/sessions\/([^/]+)\/interactions(?:\/([^/]+)\/responses)?$/u.exec(path);
   if (control && process.env.FAKE_PROVIDER_INTERACTIONS === '1') {
     const session = sessions.get(control[1]);
     if (!session) return json(res, 404, {});
     if (req.method === 'GET') return json(res, 200, { version: 1, sessionId: session.id, workerGeneration: session.generation,
-      revision: session.interaction?.revision ?? 0, interactions: session.interaction ? [session.interaction] : [] });
+      revision: session.interaction?.revision ?? 0, interactions: session.interaction ? [session.interaction] : [],
+      ...(session.standingGrants?.length ? { standingGrants: session.standingGrants } : {}) });
     const body = await readBody(req);
     const i = session.interaction;
     if (!i || control[2] !== i.interactionId || body.expectedRevision !== i.revision || i.status !== 'pending') return json(res, 409, { error: 'stale' });

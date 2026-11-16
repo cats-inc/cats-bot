@@ -20,7 +20,7 @@ export const HOST_COMMANDS: readonly HostCommand[] = [...CORE_COMMANDS, 'openPro
 export const NOTE_ONLY_COMMANDS: readonly HostCommand[] = [
   'conversationTranscript', 'retryOwnerMessage', 'addOwnerAttachment', 'attachmentPreview',
   'providerInteractions', 'respondProviderInteraction', 'openProviderInteractionUrl',
-  'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl',
+  'setConversationDesktopControl', 'respondDesktopGrant', 'stopDesktopControl', 'stopStandingGrants',
 ];
 
 /** The window a `bot:invoke` came from: a note's conversation, Settings or the floating cat. */

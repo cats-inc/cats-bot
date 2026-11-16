@@ -108,7 +108,7 @@ export interface TurnRunnerDependencies {
    * SPEC-006 BDC-04: decided inside the session gate right before the prompt is sent; may
    * return the session's MCP server set, which Runtime keeps until a send changes it.
    */
-  prepareSend?(item: WorkItem, sessionId: string): Promise<Pick<SendMessageRequest, 'mcpServers'>>;
+  prepareSend?(item: WorkItem, sessionId: string): Promise<Pick<SendMessageRequest, 'mcpServers' | 'standingGrants'>>;
   log(line: string): void;
   delays?: Partial<TurnRetryDelays>;
 }

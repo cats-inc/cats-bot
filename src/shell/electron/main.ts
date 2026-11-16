@@ -9,6 +9,7 @@ import {
   Menu,
   app,
   dialog,
+  globalShortcut,
   ipcMain,
   safeStorage,
   shell,
@@ -684,6 +685,31 @@ async function main(): Promise<void> {
     hubSettings.browserWindow?.webContents.send('hub:botsChanged');
   };
 
+  /**
+   * ADR-026: the owner's Stop for actions allowed without asking. Every bot's grants end and their turns
+   * are cancelled. The hotkey is registered only while some bot holds grants, so it never takes the
+   * chord from other apps the rest of the time.
+   */
+  const STOP_HOTKEY = 'CommandOrControl+Alt+Shift+S';
+  let stopHotkeyRegistered = false;
+  const stopAllStandingGrants = (from: 'tray' | 'hotkey') => {
+    log(`standing grants: stop from the ${from}`);
+    for (const presenter of presented()) {
+      void presenter.core.stopAllStandingGrants().then(refreshTray).catch((error: unknown) => {
+        log(`stop standing grants failed: ${diagnosticError(error)}`, 'error');
+      });
+    }
+  };
+  const syncStopHotkey = () => {
+    const wanted = !quitting && presented().some((presenter) => presenter.grantedConversations.length > 0);
+    if (wanted && !stopHotkeyRegistered) {
+      stopHotkeyRegistered = globalShortcut.register(STOP_HOTKEY, () => stopAllStandingGrants('hotkey'));
+      if (!stopHotkeyRegistered) log(`standing grants: ${STOP_HOTKEY} is taken by another app; use the tray or the note to stop`, 'error');
+    } else if (!wanted && stopHotkeyRegistered) {
+      globalShortcut.unregister(STOP_HOTKEY);
+      stopHotkeyRegistered = false;
+    }
+  };
   const trayModel = async (presenter: BotPresenter): Promise<BotMenuModel> => ({
     ...(await presenter.trayModel()),
     locale: locale(),
@@ -755,6 +781,7 @@ async function main(): Promise<void> {
     isQuitting: () => quitting,
     locale,
     refreshTray: () => { void refreshTray(); },
+    grantsChanged: () => syncStopHotkey(),
     // SPEC-009 FR-8: a bot that finished a Boss Cat's message answers it.
     event: (presenter, event) => {
       if (event.type === 'turn.completed') {
@@ -1095,6 +1122,7 @@ async function main(): Promise<void> {
     onStopAllDesktopControl: () => {
       for (const presenter of presented()) botMenuActionsFor(() => presenter).onStopDesktopControl();
     },
+    onStopAllStandingGrants: () => stopAllStandingGrants('tray'),
     onOpenSettings: () => openHubSettings(),
     onCheckForUpdates: () => {
       void trayUpdates.open().catch((error) => log(diagnosticError(error), 'error'));
@@ -1576,7 +1604,7 @@ async function main(): Promise<void> {
       await (control === 'stop' ? voice.stopVoiceCapture(sessionId) : voice.cancelVoiceCapture(sessionId));
     });
   }
-  app.once('will-quit', () => voice.dispose());
+  app.once('will-quit', () => { voice.dispose(); globalShortcut.unregisterAll(); });
   ipcMain.handle('window:hide', (event) => {
     const presenter = senderOf(event)?.presenter;
     const owner = presenter?.windows.windowFor(event.sender.id);

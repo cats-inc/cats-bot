@@ -459,3 +459,19 @@ test('unreadable Cat status preserves recovery and emergency Stop without a fals
   assert.deepEqual(clicks, ['hub:arrange-cats', 'hub:show-cats', 'hub:stop-all']);
   assert.equal(buildHubTrayTooltip(model), 'Cats Bot (1 cat bot) - Some Cat status is unavailable');
 });
+
+test('while a cat bot may act without asking, the Hub tray puts its Stop first (ADR-026)', () => {
+  const clicks: string[] = [];
+  const mochi = menuFixture('Mochi', clicks);
+  const nori = menuFixture('Nori', clicks);
+  const actions = { ...hubActions(clicks), onStopAllStandingGrants: () => clicks.push('hub:stop-grants') };
+  const quiet = buildHubTrayMenuTemplate({ bots: [mochi.model, nori.model], openAtLogin: false, openAtLoginAvailable: true }, actions);
+  assert.equal(quiet.some((item) => item.label?.startsWith('Stop actions allowed without asking')), false);
+  nori.model.grantsActive = true;
+  const menu = buildHubTrayMenuTemplate({ bots: [mochi.model, nori.model], openAtLogin: false, openAtLoginAvailable: true }, actions);
+  assert.equal(menu[0]!.label, 'Stop actions allowed without asking (Ctrl+Alt+Shift+S)');
+  menu[0]!.click!();
+  assert.deepEqual(clicks, ['hub:stop-grants']);
+  const zh = buildHubTrayMenuTemplate({ locale: 'zh-TW', bots: [nori.model], openAtLogin: false, openAtLoginAvailable: true }, actions);
+  assert.equal(zh[0]!.label, '停止免詢問的動作 (Ctrl+Alt+Shift+S)');
+});
