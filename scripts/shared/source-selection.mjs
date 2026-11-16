@@ -98,12 +98,25 @@ export async function requireTestedReleaseSource({ github, owner, repo, sourceCo
     throw new Error(`Publish from main or the frozen ${releaseBranch} branch; ordinary feature branches are not release sources.`);
   }
   const candidates = [{ event: 'push', branch: 'main' }, { event: 'workflow_dispatch', branch: releaseBranch }];
+  let documentationOnly = false;
   for (const candidate of candidates) {
     const { data } = await github.rest.actions.listWorkflowRuns({ owner, repo, workflow_id: 'ci.yaml', head_sha: sourceCommit,
       ...candidate, status: 'completed', per_page: 100 });
-    if (data.workflow_runs.some(run => run.head_sha === sourceCommit && run.head_branch === candidate.branch
+    for (const run of data.workflow_runs.filter(run => run.head_sha === sourceCommit && run.head_branch === candidate.branch
       && run.event === candidate.event && run.status === 'completed' && run.conclusion === 'success'
-      && run.head_repository?.full_name === `${owner}/${repo}`)) return;
+      && run.head_repository?.full_name === `${owner}/${repo}`)) {
+      // A main push that changed only documentation passes without running the tests, so it proves nothing about this
+      // code. A skip of code that already passed elsewhere still counts, and release-branch dispatches run everything.
+      if (candidate.event !== 'push' || !(await skippedTestsAsDocumentation({ github, owner, repo, run }))) return;
+      documentationOnly = true;
+    }
   }
-  throw new Error(`CI has not passed on frozen source ${sourceCommit}; run ci.yaml manually on ${releaseBranch}, or wait for this exact main push's CI. Do not advance the release source.`);
+  const reason = documentationOnly ? ' (its main push changed only documentation, so the tests were skipped)' : '';
+  throw new Error(`CI has not passed on frozen source ${sourceCommit}${reason}; run ci.yaml manually on ${releaseBranch}, or wait for this exact main push's CI. Do not advance the release source.`);
+}
+
+/** Whether a ci.yaml run took its documentation-only path, which skips install, typecheck and tests. */
+async function skippedTestsAsDocumentation({ github, owner, repo, run }) {
+  const { data } = await github.rest.actions.listJobsForWorkflowRun({ owner, repo, run_id: run.id, filter: 'latest', per_page: 100 });
+  return data.jobs.some(job => (job.steps ?? []).some(step => step.name === 'Documentation-only change' && step.conclusion === 'success'));
 }

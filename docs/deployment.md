@@ -75,7 +75,9 @@ new inputs and validating the affected scope again.
 
 The workflow pins the selected SHA and refuses it unless CI passed on that commit
 through main push CI or manual CI on the matching release branch, in this same
-repository; it does not rerun typecheck or the tests. It serializes all preview
+repository; it does not rerun typecheck or the tests. A main push whose CI took
+the documentation-only path does not count, because it skipped the tests; one
+that reused an earlier green run of the same code does. It serializes all preview
 releases, reserves a draft, builds all platforms, verifies every asset, attaches
 source/checksums and provenance, then publishes a prerelease with
 `make_latest=false`. The tag is created only at publication. No push or tag
