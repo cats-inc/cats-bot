@@ -36,6 +36,11 @@ accepts shape updates only from that bot's floating window.
 - The core, Runtime, public host commands and persisted data formats are unchanged.
 - Backend selection must happen at process startup. Mutating the Ozone switch
   after Electron initializes can mix native window and renderer backends.
+- XWayland must be able to show windows. GNOME Remote Login on Ubuntu 24.04
+  (mutter 46.2, headless without a GPU) cannot: GNOME Shell crashed as soon as the
+  avatar, or any other XWayland window, appeared, ending the session (observed
+  2026-11-19). Delaying the avatar until the display settled did not avoid it. The
+  setup guide lists the workarounds; the decision is unchanged.
 
 ## Alternatives Considered
 
