@@ -22,6 +22,25 @@ import {
 const assets = fileURLToPath(new URL('../../assets/setup/', import.meta.url));
 const ready = (): HelperResult => ({ status: 'ready', installed: true, detectedVersion: '1.2.3' });
 
+test('Unix setup checks preserve helper results and report exits without a result', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const home = mkdtempSync(join(tmpdir(), 'cats-bot-setup-result-'));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  const folder = join(home, process.platform === 'darwin' ? 'macos' : 'linux');
+  mkdirSync(folder);
+  const file = join(folder, 'install-codex.sh');
+  const run = createHelperRunner(home);
+  const missing = { status: 'changes_required', installed: false, plannedActions: ['@openai/codex:install'] };
+  writeFileSync(file, `printf '%s\\n' '${JSON.stringify(missing)}'\n`);
+  assert.deepEqual(await run('codex', false), missing);
+  const failed = { status: 'failed', warnings: ['Check failed'] };
+  writeFileSync(file, `printf '%s\\n' '${JSON.stringify(failed)}'\nexit 1\n`);
+  assert.deepEqual(await run('codex', false), failed);
+  writeFileSync(file, 'exit 7\n');
+  await assert.rejects(run('codex', false), /exited with code 7 without reporting a result/u);
+});
+
 test('Windows Codex check reports an install plan when npm has no global prefix', {
   skip: process.platform !== 'win32',
 }, async () => {

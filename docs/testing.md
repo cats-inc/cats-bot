@@ -826,6 +826,10 @@ verifies readiness, screenshot and graceful drain without installed-app changes.
 
 ## Setup wizard
 
+The Unix helper-runner regression covers an install plan for a missing tool, a
+reported failure with JSON, and an unexpected exit without a result. The first
+two retain the helper report. An unexpected exit shows its exit code.
+
 `tests/shell/providerSetup.test.ts` runs the Windows npm helper in read-only mode with
 temporary paths and explicit probe values. Its `changes_required` result anticipates a
 restart after changing PATH; setup keeps that unapplied plan tickable. The renderer
