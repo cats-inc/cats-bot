@@ -24,7 +24,11 @@ import {
 const execute = promisify(execFile);
 
 /** A check owns its whole process tree, including a CLI that stops answering. */
-function executeCheck(command: string, args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<{ stdout: string }> {
+function executeCheck(command: string, args: string[], env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<{
+  stdout: string;
+  exitCode: number | null;
+  exitSignal: NodeJS.Signals | null;
+}> {
   signal?.throwIfAborted();
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -59,14 +63,14 @@ function executeCheck(command: string, args: string[], env: NodeJS.ProcessEnv, s
       } else output.push(chunk);
     });
     child.on('error', error => { failure = error; });
-    child.on('close', () => {
+    child.on('close', (exitCode, exitSignal) => {
       clearTimeout(timeout);
       signal?.removeEventListener('abort', stop);
       void (async () => {
         await stopping;
         signal?.throwIfAborted();
         if (failure) throw failure;
-        resolve({ stdout: Buffer.concat(output).toString('utf8') });
+        resolve({ stdout: Buffer.concat(output).toString('utf8'), exitCode, exitSignal });
       })().catch(reject);
     });
   });
@@ -219,28 +223,33 @@ export function createHelperRunner(assets: string, onCommandDirectory?: (directo
     // Electron's bundled Node must never pretend to be the user's Node/npm.
     const env = { ...process.env };
     delete env.ELECTRON_RUN_AS_NODE;
-    let stdout: string;
+    let output: { stdout: string; exitCode?: number | null; exitSignal?: NodeJS.Signals | null };
     try {
-      ({ stdout } = await (change ? execute(invocation.command, invocation.args, {
+      output = await (change ? execute(invocation.command, invocation.args, {
         windowsHide: true,
         env,
         timeout: 15 * 60_000,
         maxBuffer: 1024 * 1024,
         encoding: 'utf8',
-      }) : executeCheck(invocation.command, invocation.args, env, signal)));
+      }) : executeCheck(invocation.command, invocation.args, env, signal));
     } catch (error) {
       signal?.throwIfAborted();
-      const output = (error as { stdout?: string }).stdout;
-      if (!output)
+      const stdout = (error as { stdout?: string }).stdout;
+      if (!stdout)
         throw new Error(
           'The provider helper could not complete. Check your installation and try again.',
         );
-      stdout = output;
+      output = { stdout };
     }
     signal?.throwIfAborted();
+    const stdout = output.stdout.replace(/^\uFEFF/u, '').trim();
+    if (!stdout && (output.exitCode || output.exitSignal)) {
+      const exit = output.exitSignal ? `was terminated by ${output.exitSignal}` : `exited with code ${output.exitCode}`;
+      throw new Error(`The provider helper ${exit} without reporting a result.`);
+    }
     let result: HelperResult;
     try {
-      result = JSON.parse(stdout.replace(/^\uFEFF/u, '').trim()) as HelperResult;
+      result = JSON.parse(stdout) as HelperResult;
     } catch {
       throw new Error('The provider helper returned an unreadable result.');
     }
