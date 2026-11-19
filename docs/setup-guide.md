@@ -146,6 +146,8 @@ starting any bot. Explicit `--ozone-platform=wayland` remains an advanced overri
 and does not support these floating-window features. See
 [ADR-012](decisions/012-use-xwayland-for-linux-floating-windows.md) and
 [ADR-014](decisions/014-set-linux-avatar-input-through-the-x11-input-shape.md).
+GNOME Remote Login on Ubuntu 24.04 can't show XWayland windows: see
+[The remote session ends when Cats Bot starts](#the-remote-session-ends-when-cats-bot-starts-gnome-remote-login).
 
 Finishing the first run turns Start at login on, once, on every platform; a development
 shell, a portable copy, a Mac app outside Applications and a copy run with
@@ -346,9 +348,30 @@ rule through `erasableSyntaxOnly`, so run `npm run typecheck` first.
 That is intentional: Node resolves the file that exists on disk, and
 `rewriteRelativeImportExtensions` makes `tsc` emit `.js` in `dist/`.
 
+### The remote session ends when Cats Bot starts (GNOME Remote Login)
+
+Seen on Ubuntu 24.04 (GNOME Shell 46, mutter 46.2) on an NVIDIA DGX Spark, signing in
+over RDP through GNOME's Remote Login (gnome-remote-desktop). That session runs headless
+and its log says `Created surfaceless renderer without GPU`. Within a second of any
+XWayland window appearing in it, GNOME Shell crashes with signal 11 and the whole session
+ends; the RDP client is disconnected a few seconds after you enter your password. Cats
+Bot's floating Cat is an XWayland window, so Start at login triggers it on every remote
+sign-in. Other X11 programs do the same (for example GNOME's keyboard layout viewer), and
+a Cats Bot build that waited for the display to settle before showing the Cat still
+crashed it. The crash is in mutter, not in Cats Bot, and it was not reported upstream.
+A session on a local monitor is not affected.
+
+- To keep using Remote Login, turn Start at login off before you sign in remotely (in
+  the tray or Settings, or remove `~/.config/autostart/cats-bot.desktop` over SSH), and
+  don't start Cats Bot in that session.
+- To use Cats Bot remotely, sign in on the machine itself and connect to that session
+  with GNOME Desktop Sharing instead of Remote Login.
+- To confirm it is this crash, look for `GNOME Shell crashed with signal 11` in
+  `journalctl --since "10 min ago"` right after a disconnect.
+
 ---
 
-_Last updated: 2026-10-27_
+_Last updated: 2026-11-19_
 
 
 For Muse, Grok, Kimi and Antigravity work tools, see
